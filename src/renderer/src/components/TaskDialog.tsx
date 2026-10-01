@@ -156,18 +156,7 @@ export function TaskDialog({
             </>
           ) : null}
           <Button onClick={() => void showPreview()}>Preview prompt</Button>
-          <select
-            className={inputClass}
-            value={provider}
-            onChange={(event) => setProvider(event.target.value as 'claude' | 'codex')}
-          >
-            {settings.enabledProviders.map((item) => (
-              <option key={item} value={item}>
-                {item === 'claude' ? 'Claude Code' : 'Codex'}
-              </option>
-            ))}
-          </select>
-          <Button onClick={() => void saveAndLaunch(provider)} disabled={saving}>
+          <Button variant="primary" onClick={() => void saveAndLaunch(provider)} disabled={saving}>
             Save &amp; start
           </Button>
           <Button variant="primary" onClick={() => void saveAndClose()} disabled={saving}>
@@ -252,26 +241,43 @@ export function TaskDialog({
               onChange={(repoPath) => patch({ repoPath })}
             />
           </Field>
-          <Field
-            label="Prompt template"
-            hint={
-              form.promptTemplateId
-                ? 'Pinned — this task always uses this template, whatever column it is in.'
-                : `Auto — this task currently runs "${routedName}".`
-            }
-          >
-            <Select
-              value={form.promptTemplateId}
-              onChange={(event) => patch({ promptTemplateId: event.target.value })}
+          <div className="flex flex-col gap-3">
+            <Field
+              label="Prompt template"
+              hint={
+                form.promptTemplateId
+                  ? 'Pinned — this task always uses this template, whatever column it is in.'
+                  : `Auto — this task currently runs "${routedName}".`
+              }
             >
-              <option value="">Auto — match the column</option>
-              {settings.promptTemplates.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
+              <Select
+                value={form.promptTemplateId}
+                onChange={(event) => patch({ promptTemplateId: event.target.value })}
+              >
+                <option value="">Auto — match the column</option>
+                {settings.promptTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field
+              label="Provider"
+              hint="Choose the agent for this run. The default is configured in Integrations."
+            >
+              <Select
+                value={provider}
+                onChange={(event) => setProvider(event.target.value as 'claude' | 'codex')}
+              >
+                {settings.enabledProviders.map((item) => (
+                  <option key={item} value={item}>
+                    {item === 'claude' ? 'Claude Code' : 'Codex'}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
         </div>
 
         <Checkbox
