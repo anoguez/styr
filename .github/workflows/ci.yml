@@ -2,8 +2,11 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   check:
@@ -22,3 +25,11 @@ jobs:
       - run: yarn lint
       - run: yarn format:check
       - run: yarn build
+      - run: yarn test:coverage
+
+      - uses: codecov/codecov-action@5975040f7f7d40edaff8d784b576fd65ae95c073 # v5.5.5
+        with:
+          files: ./coverage/lcov.info
+          disable_search: true
+          fail_ci_if_error: true
+          use_oidc: true
