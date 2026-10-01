@@ -91,7 +91,12 @@ export type ShortcutBindings = Record<ShortcutCommand, string[]>
 
 /** What Orchestrate would do, without the task objects the renderer does not need. */
 export interface OrchestrationSummary {
-  dispatch: { taskId: string; title: string; lane: OrchestrationLane }[]
+  dispatch: {
+    taskId: string
+    title: string
+    lane: OrchestrationLane
+    provider: 'claude' | 'codex'
+  }[]
   occupied: OrchestrationCapacity
   capacity: OrchestrationCapacity
   eligible: OrchestrationCapacity

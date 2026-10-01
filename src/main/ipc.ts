@@ -249,7 +249,12 @@ function buildPlan(): OrchestrationPlan {
 function summarisePlan(): OrchestrationSummary {
   const plan = buildPlan()
   return {
-    dispatch: plan.dispatch.map(({ task, lane }) => ({ taskId: task.id, title: task.title, lane })),
+    dispatch: plan.dispatch.map(({ task, lane }) => ({
+      taskId: task.id,
+      title: task.title,
+      lane,
+      provider: providerForLane(loadSettings(), lane)
+    })),
     occupied: plan.occupied,
     capacity: plan.capacity,
     eligible: plan.eligible,
