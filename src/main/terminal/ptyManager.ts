@@ -45,7 +45,10 @@ function sanitisedEnv(extra?: Record<string, string>): Record<string, string> {
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value
   }
-  return { ...withoutSessionMarkers(env), ...extra, TERM: 'xterm-256color' }
+  // xterm.js renders 24-bit colour, but programs only use it when COLORTERM says so. Without it,
+  // TUIs such as Codex quantise their colours to the 256-colour palette, which turns a background
+  // blended from the theme into flat grey.
+  return { ...withoutSessionMarkers(env), ...extra, TERM: 'xterm-256color', COLORTERM: 'truecolor' }
 }
 
 export function onTerminalData(listener: DataListener): void {
