@@ -160,6 +160,7 @@ export function createTask(draft: TaskDraft): Task {
     worktreePath: draft.worktreePath,
     contextFiles: draft.contextFiles ?? [],
     promptTemplateId: draft.promptTemplateId,
+    provider: draft.provider,
     claudeSessionId: draft.claudeSessionId,
     sessions: draft.sessions ?? [],
     externalRef: draft.externalRef,
