@@ -237,6 +237,13 @@ while also leaking a byte to the shell. Nothing may reintroduce a second list:
 Core is compiled without the DOM lib, so `ShortcutKeyEvent` is spelled out rather than picked from
 `KeyboardEvent`; the renderer's `ModifierKeyEvent` extends it with `type`.
 
+`SHORTCUT_SCOPES` says where each binding applies. A `terminal` command answers only while an
+embedded terminal has focus (⌘T, New terminal tab), so its key stays free elsewhere. `commandForEvent`
+takes a required `ShortcutContext` for this — required so no caller can forget scope exists. `App`
+derives it with `isTerminalTarget` (xterm types into a hidden textarea inside `.xterm`), and
+`isAppShortcut` always passes `terminalFocused: true`. Scope gates only the key; the palette runs
+every command from anywhere.
+
 A binding is a list, not a string, because the terminal panel answers to both ``⌃` `` and ``⌘` ``,
 and because unbinding is then an empty list rather than a sentinel. `RESERVED` cannot be bound —
 binding `⌃C` would remove the only way to interrupt a program in the panel, from inside the panel.

@@ -28,5 +28,15 @@ export function multilineSequence(event: ModifierKeyEvent): string | null {
  */
 export function isAppShortcut(event: ModifierKeyEvent, bindings: ShortcutBindings): boolean {
   if (event.type !== 'keydown') return false
-  return commandForEvent(bindings, event) !== null
+  return commandForEvent(bindings, event, { terminalFocused: true }) !== null
+}
+
+/**
+ * Whether a key event came from inside an embedded terminal. xterm takes keys through a hidden
+ * textarea inside its `.xterm` root, so that is what the window-level listener sees as the target.
+ */
+export function isTerminalTarget(
+  target: { closest?: (selector: string) => unknown } | null
+): boolean {
+  return typeof target?.closest === 'function' && target.closest('.xterm') !== null
 }

@@ -20,6 +20,7 @@ import { OrchestrateDialog } from './components/OrchestrateDialog.js'
 import { CommandPalette, type CommandEntry } from './components/CommandPalette.js'
 import { StatusBar } from './components/StatusBar.js'
 import { useUpdates } from './hooks/useUpdates.js'
+import { isTerminalTarget } from './lib/terminalKeys.js'
 import { SECTIONS, SettingsDialog, type SectionId } from './components/SettingsDialog.js'
 import { TaskDialog } from './components/TaskDialog.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
@@ -346,7 +347,9 @@ export default function App(): ReactNode {
         setPaletteOpen(false)
         return
       }
-      const command = commandForEvent(bindings, event)
+      const command = commandForEvent(bindings, event, {
+        terminalFocused: isTerminalTarget(event.target as Element | null)
+      })
       if (!command) return
       event.preventDefault()
       runCommand(command)
