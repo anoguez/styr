@@ -520,3 +520,29 @@ Mouse and terminal:
 | Hover a card → **Edit**                | Edit the task                          |
 | Hover a card → **▶ Claude**            | Start Claude on that task              |
 | `Shift+↵` / `Option+↵` in the terminal | Insert a newline instead of submitting |
+
+#### Done means landed
+
+A passing review does not move a worktree task to Done while its branch has commits that are not on
+the base branch (the remote's default branch, else `main`/`master`, else the branch your main
+checkout is on). The reviewer leaves the task in **In Review** and records the branch, the base and
+the number of commits left to land in the Activity log. It offers a PR when the repo has a GitHub
+remote and `gh` is installed, and otherwise tells you to merge or push by hand — it never assumes a
+host. A failing review is unchanged: back to In Progress with the required fixes.
+
+Styr also watches for the merge itself. When an In Review task's branch lands on the base — a normal,
+fast-forward, squash or rebase merge, seen against the local base or `origin/<base>` — it moves to
+Done on its own, whatever host you use. For squash and rebase merges, where the commits are not
+reachable from the base, "landed" means every file the branch changed since its merge-base is
+identical on the base.
+
+Once a task is Done because its work landed, Styr removes what it left behind: the worktree
+(`git worktree remove`, never forced), the local branch `styr/<id>` and the remote branch if it still
+exists with the same tip. A worktree with uncommitted or untracked changes is left alone, and so is
+its branch; a branch whose work cannot be shown to be on the base is kept. Each outcome is noted in
+Activity, and `worktreePath` is cleared once the worktree is gone so the next launch makes a fresh
+one. Tasks without a worktree are untouched by all of this: there is no branch to compare, so the
+reviewer simply asks you before setting Done.
+
+Custom or older saved review templates keep their own wording, but the board protocol appended to
+every prompt carries the same "Done only when landed" rule.

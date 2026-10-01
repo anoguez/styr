@@ -63,8 +63,19 @@ const REVIEW_TEMPLATE = [
   '',
   '## When you are done',
   '- Append your verdict as a bullet under `## Activity` at the end of {{filePath}}.',
-  '- If it passes, set `status: done`.',
-  '- If it does not, set `status: in_progress` and list the required fixes in that note.'
+  '- If it does not pass, set `status: in_progress` and list the required fixes in that note.',
+  '- If it passes, `done` means the work has landed, not that it was approved. Find the base',
+  '  branch (the remote default branch, else `main`/`master`, else the branch the main checkout',
+  '  is on) and count the commits on this branch that are not on it, e.g.',
+  '  `git rev-list --count <base>..HEAD`.',
+  '  - Nothing left to land (or the user confirms it has landed): set `status: done`.',
+  '  - Otherwise leave `status: in_review`. In your note record the branch, the base and the',
+  '    commit count, and say what is left to land.',
+  '  - Offer the landing step that fits: open a PR if `git remote -v` shows a GitHub remote and',
+  '    `gh` is installed, otherwise tell me to merge or push the branch by hand. Never assume a',
+  '    host, and do not merge or push without my say-so.',
+  '- Styr moves the task to done by itself once it sees the work on the base branch, then removes',
+  '  the task worktree and branches. Do not delete them yourself.'
 ].join('\n')
 
 const FOLLOWUP_TEMPLATE = [

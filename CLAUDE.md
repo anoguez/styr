@@ -400,6 +400,24 @@ the wrong column, and stored templates are user data that older configs still ca
 `Task`, so the renderer can resolve against unsaved form state. It is shared by the main process and
 the renderer — keep it free of Node imports.
 
+## Done means landed
+
+The shipped `code-review` template (`config.ts`) and `boardProtocol` (`prompt.ts`) tell the agent
+that `done` means the work is on the base branch, not that it was approved: a passing review with
+commits still unlanded stays `in_review` and notes branch/base/count. The prompt never assumes a PR
+or host — `gh` only when there is a GitHub remote.
+
+Styr does not rely on the agent. `main/landing.ts` runs from `notifyTasksChanged` (so the watcher
+covers external merges): an `in_review` worktree task whose branch has landed moves to `done`, and a
+`done` task with a `worktreePath` is cleaned up through `cleanupLandedTask` in `core/worktree.ts`.
+`branchLanding` checks the local base and `origin/<base>`; "landed" is either zero commits ahead, or
+(squash/rebase) every file changed since the merge-base identical on the base. A branch with no
+commits of its own is not landed — the reflog tells a never-moved tip from a fast-forward merge.
+Cleanup never forces the worktree removal, uses `branch -D` only after that check, deletes the remote
+branch only when its tip equals the local one, and reports refusals once (in-memory `reported` set —
+the note write retriggers the watcher). `worktreePath` is cleared via `taskStore` once the worktree
+is gone. Tasks with `useWorktree: false` are skipped entirely.
+
 ## Hand-edited task files
 
 Task markdown is edited by humans and by Claude sessions, not just by this app. Two rules protect it:
