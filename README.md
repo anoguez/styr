@@ -1,0 +1,101 @@
+# Styr
+
+**An agentic IDE built around a kanban board.** Write tasks, and Styr launches a coding agent on each
+one in its own terminal tab, often in its own git worktree, and watches them work. Agents move
+their own cards as they go: spec, build, review, done.
+
+> *Styr* (Old Norse, *stýra*): to steer. You set the course; the agents row.
+
+<!-- TODO: screenshot or short GIF of the board, terminal and agents sidebar -->
+
+## Why
+
+Running several coding agents at once is mostly bookkeeping: which one is waiting on you, which
+branch it is on, what it was asked to do, whether the review has happened. Styr keeps that state on
+a board you can see, and in plain files you can read.
+
+- **Tasks are markdown files.** One file per task, with YAML frontmatter. You can edit them in any
+  editor, track them in git, and generate them from scripts. The app's database is only a cache.
+- **Agents drive the board.** Every prompt tells the agent how to move its task between columns and
+  log notes. A bundled MCP server lets agents list, create and update tasks.
+- **The prompt follows the column.** A task that needs a spec gets a spec prompt, a task in Backlog
+  gets an implementation prompt, and a task in Review gets a fresh reviewer that is not the session
+  that wrote the code.
+- **Live agent state.** Each task shows Working, Waiting on you, Finished or Stopped in the board,
+  the sidebar, the macOS menu bar and notifications. Waiting always sorts first.
+- **Isolated worktrees.** Tick one box and a task runs on its own branch in its own checkout, so
+  parallel agents never share a working directory.
+- **Orchestrate.** One button starts every task that is ready, up to a number of slots per lane
+  (spec, implement, review). It shows exactly what it will start before it starts anything.
+- **Chats you can resume.** Each task remembers its conversations. Close the app, come back
+  tomorrow, and pick up where the agent left off.
+- **A real terminal.** Embedded xterm tabs, drag to reorder, a command palette (`⌘P`), rebindable
+  shortcuts and a fully themeable UI.
+
+## Agent support
+
+Styr talks to agent CLIs through a small provider interface (`src/core/providers/`).
+
+| Agent | Status |
+| --- | --- |
+| [Claude Code](https://docs.claude.com/en/docs/claude-code) | Supported: launch, resume, live state through hooks, MCP |
+| Codex CLI | Planned |
+| Gemini CLI | Planned |
+| Local models (Ollama, through an agent CLI) | Planned |
+
+Any agent can already move its task. The board protocol is just editing the task file, and the
+path is in every prompt.
+
+## Quick start
+
+You need macOS, a recent Node with Yarn, git, and the [Claude Code](https://docs.claude.com/en/docs/claude-code)
+CLI on your `PATH`.
+
+```sh
+git clone https://github.com/anoguez/styr.git
+cd styr
+yarn install
+yarn dev
+```
+
+Then:
+
+1. **Settings → Workspace**: pick a folder for the board's own data (the default is `~/Styr`) and
+   a default working directory for agents, usually a folder holding your repos.
+2. **New task** (`⌘N`): give it a title, a description and the repository it applies to.
+3. Hover the card and press **▶ Claude**. The task moves to In Progress and a terminal tab opens
+   with the agent already working.
+4. **Settings → Integrations**: copy the `claude mcp add styr …` command and run it once, so agents
+   can query and create tasks.
+
+To install it as an app in `/Applications`, see [Building and packaging](docs/building.md).
+
+## How it fits together
+
+```
+tasks/*.md  ──(source of truth)──┬──> SQLite index ──> app UI (kanban)
+     ▲                           │         ▲
+     │                           │    file watcher
+     └── agents (files or MCP) ──┘
+```
+
+Markdown is the only source of truth. The SQLite index is rebuilt from the files, so deleting it
+costs nothing. Agents, the MCP server, your editor and `git pull` all write files, and a watcher
+picks the changes up.
+
+## Documentation
+
+- [User guide](docs/guide.md): tasks, launching agents, worktrees, prompt routing, Orchestrate,
+  the MCP server, settings, themes and shortcuts.
+- [Building and packaging](docs/building.md): scripts, building a `.app`, and sharing it.
+- [`CLAUDE.md`](CLAUDE.md): architecture rules and design decisions, for contributors and the
+  agents working on Styr itself.
+
+## Status
+
+Early and moving fast. Styr is developed and tested on macOS (Apple silicon). Other platforms
+aren't supported yet: the menu bar integration, packaging and signing are macOS-specific.
+
+## License
+
+[MIT](LICENSE)
