@@ -125,8 +125,16 @@ export class CodexAppServer {
       return
     }
     const event = message.method ? EVENT_BY_NOTIFICATION[message.method] : undefined
+    const directThreadId = message.params?.threadId
+    const nestedThread = message.params?.thread
     const threadId =
-      typeof message.params?.threadId === 'string' ? message.params.threadId : undefined
+      typeof directThreadId === 'string'
+        ? directThreadId
+        : typeof nestedThread === 'object' &&
+            nestedThread !== null &&
+            typeof (nestedThread as { id?: unknown }).id === 'string'
+          ? (nestedThread as { id: string }).id
+          : undefined
     if (event && threadId) this.onEvent(threadId, event)
   }
 
