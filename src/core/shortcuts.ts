@@ -30,7 +30,30 @@ export const SHORTCUT_LABELS: Record<ShortcutCommand, string> = {
   toggleTerminal: 'Toggle the terminal panel',
   toggleAgents: 'Toggle the agents sidebar',
   orchestrate: 'Orchestrate',
-  newShell: 'New shell'
+  newShell: 'New terminal tab'
+}
+
+/**
+ * Where a command's key binding applies. `terminal` commands answer only while an embedded terminal
+ * has focus, so ⌘T opens a tab when you are typing in one and stays free everywhere else. Scope
+ * only gates the key: the command palette runs every command from anywhere.
+ */
+export type ShortcutScope = 'window' | 'terminal'
+
+export const SHORTCUT_SCOPES: Record<ShortcutCommand, ShortcutScope> = {
+  newTask: 'window',
+  commandPalette: 'window',
+  focusSearch: 'window',
+  settings: 'window',
+  toggleTerminal: 'window',
+  toggleAgents: 'window',
+  orchestrate: 'window',
+  newShell: 'terminal'
+}
+
+/** What a key event happened in. Required, so no caller can forget that scope exists. */
+export interface ShortcutContext {
+  terminalFocused: boolean
 }
 
 /**
@@ -52,14 +75,19 @@ export function matchesAccelerator(event: ShortcutKeyEvent, accelerator: string)
   return acceleratorFor(event) === accelerator
 }
 
-/** The command a key event triggers, or null when nothing is bound to it. */
+/**
+ * The command a key event triggers, or null when nothing is bound to it here. A terminal-scoped
+ * command is skipped outside the terminal, so its key falls through to whatever else holds it.
+ */
 export function commandForEvent(
   bindings: ShortcutBindings,
-  event: ShortcutKeyEvent
+  event: ShortcutKeyEvent,
+  context: ShortcutContext
 ): ShortcutCommand | null {
   const pressed = acceleratorFor(event)
   if (!pressed) return null
   for (const command of SHORTCUT_COMMANDS) {
+    if (SHORTCUT_SCOPES[command] === 'terminal' && !context.terminalFocused) continue
     if (bindings[command].includes(pressed)) return command
   }
   return null
