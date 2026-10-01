@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -21,6 +21,7 @@ async function taskStoreInTemporaryWorkspace() {
 
 afterEach(() => {
   vi.doUnmock('./config.js')
+  vi.doUnmock('node:fs')
 
   for (const directory of temporaryDirectories.splice(0)) {
     rmSync(directory, { recursive: true, force: true })
@@ -74,5 +75,36 @@ describe('task store', () => {
 
     expect(created.provider).toBe('codex')
     expect(store.getTask(created.id)).toMatchObject({ provider: 'codex' })
+  })
+
+  it('preserves a task file when its replacement write is interrupted', async () => {
+    const store = await taskStoreInTemporaryWorkspace()
+    const created = store.createTask({ title: 'Keep this task safe' })
+    const originalContents = readFileSync(created.filePath, 'utf8')
+
+    vi.resetModules()
+    vi.doMock('./config.js', () => ({
+      tasksDir: () => join(created.filePath, '..')
+    }))
+    vi.doMock('node:fs', async () => {
+      const filesystem = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return {
+        ...filesystem,
+        writeFileSync: (
+          filePath: Parameters<typeof filesystem.writeFileSync>[0],
+          ...args: Parameters<typeof filesystem.writeFileSync> extends [unknown, ...infer Rest]
+            ? Rest
+            : never
+        ) => {
+          if (filePath === created.filePath) throw new Error('simulated interrupted write')
+          return filesystem.writeFileSync(filePath, ...args)
+        }
+      }
+    })
+    const interruptedStore = await import('./taskStore.js')
+
+    expect(() => interruptedStore.updateTask(created.id, { status: 'in_review' })).not.toThrow()
+    expect(readFileSync(created.filePath, 'utf8')).not.toBe(originalContents)
+    expect(interruptedStore.getTask(created.id)).toMatchObject({ status: 'in_review' })
   })
 })

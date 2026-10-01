@@ -1,5 +1,13 @@
-import { readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync
+} from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { basename, dirname, extname, join } from 'node:path'
 import { jsonTaskSchema } from './taskSchema.js'
 import { hasFrontmatter, parseTaskMarkdown, serialiseTask } from './markdown.js'
 import { tasksDir } from './config.js'
@@ -90,13 +98,26 @@ export function readTaskAtPath(filePath: string, fallbackIndex = 1): Task | null
   }
 }
 
+function writeAtomically(filePath: string, contents: string): void {
+  const temporaryPath = join(dirname(filePath), `.${basename(filePath)}.${randomUUID()}.tmp`)
+  try {
+    writeFileSync(temporaryPath, contents, 'utf8')
+    renameSync(temporaryPath, filePath)
+  } catch (error) {
+    if (existsSync(temporaryPath)) unlinkSync(temporaryPath)
+    throw error
+  }
+}
+
 function writeTask(task: Task): Task {
+  let contents: string
   if (task.format === 'json') {
     const { filePath: _filePath, format: _format, ...payload } = task
-    writeFileSync(task.filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-    return task
+    contents = `${JSON.stringify(payload, null, 2)}\n`
+  } else {
+    contents = serialiseTask(task)
   }
-  writeFileSync(task.filePath, serialiseTask(task), 'utf8')
+  writeAtomically(task.filePath, contents)
   return task
 }
 
