@@ -3,9 +3,15 @@ name: Release
 on:
   push:
     branches: [main]
-  # Manual run: a full signed and notarised build, kept as a workflow artifact instead of being
-  # attached to a release. Use it to check signing works before cutting a real release.
+  # Manual run: a full signed and notarised build. Without a tag the DMG is kept as a workflow
+  # artifact, to check signing before cutting a release; with one, that tag is rebuilt and its
+  # release gets the DMG, which recovers a release whose build failed.
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to rebuild and attach the DMG to (e.g. v0.2.0)
+        required: false
+        default: ''
 
 jobs:
   release-please:
@@ -35,11 +41,13 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: write
+    env:
+      # Empty on a manual run without a tag, which builds the commit the run was started from.
+      TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
-          # Empty on a manual run, which checks out the commit the run was started from.
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ env.TAG }}
 
       - uses: actions/setup-node@v4
         with:
@@ -51,14 +59,35 @@ jobs:
 
       - run: yarn build
 
-      # electron-builder decodes CSC_LINK into a temporary keychain itself, signs the app and DMG with
-      # the Developer ID, and notarises the app because the APPLE_* variables are present;
-      # scripts/notarize-dmg.mjs then notarises and staples the DMG.
-      - name: Package, sign and notarise
-        run: yarn electron-builder --mac --publish never
+      # The keychain is set up here rather than by handing CSC_LINK to electron-builder: its own
+      # temporary keychain fails `set-key-partition-list` on the macOS runners ("passphrase not
+      # correct"), which is what broke the v0.2.0 build.
+      - name: Import the signing certificate
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          password="$(uuidgen)"
+          security create-keychain -p "$password" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$password" "$KEYCHAIN"
+          echo "$CSC_LINK" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$CSC_KEY_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$KEYCHAIN"
+          security find-identity -v -p codesigning "$KEYCHAIN"
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+
+      # electron-builder finds the Developer ID in that keychain, signs the app and DMG, and notarises
+      # the app because the APPLE_* variables are present; scripts/notarize-dmg.mjs then notarises
+      # and staples the DMG.
+      - name: Package, sign and notarise
+        run: yarn electron-builder --mac --publish never
+        env:
+          CSC_KEYCHAIN: ${{ env.KEYCHAIN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -75,14 +104,18 @@ jobs:
           done
 
       - name: Keep the DMG as a workflow artifact
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ env.TAG == '' }}
         uses: actions/upload-artifact@v4
         with:
           name: styr-macos
           path: dist/*.dmg
 
       - name: Upload to release
-        if: ${{ github.event_name == 'push' }}
-        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" dist/*.dmg --clobber
+        if: ${{ env.TAG != '' }}
+        run: gh release upload "$TAG" dist/*.dmg --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove the signing keychain
+        if: ${{ always() }}
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
