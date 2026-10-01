@@ -206,6 +206,12 @@ export default function App(): ReactNode {
     setShowSettings(true)
   }, [])
 
+  const closeSession = useCallback(async (id: string) => {
+    await window.api.terminal.kill(id)
+    setSessions((current) => current.filter((session) => session.id !== id))
+    setActiveSession((current) => (current === id ? null : current))
+  }, [])
+
   const runCommand = useCallback(
     (command: ShortcutCommand) => {
       switch (command) {
@@ -226,9 +232,11 @@ export default function App(): ReactNode {
           return setConfirmingOrchestrate(true)
         case 'newShell':
           return void newShell()
+        case 'closeShell':
+          return activeSession ? void closeSession(activeSession) : undefined
       }
     },
-    [openSettings, newShell]
+    [openSettings, newShell, closeSession, activeSession]
   )
 
   const commandEntries = useMemo<CommandEntry[]>(() => {
@@ -241,6 +249,7 @@ export default function App(): ReactNode {
     const keywords: Partial<Record<ShortcutCommand, string>> = {
       orchestrate: 'dispatch run agents',
       newShell: 'terminal session',
+      closeShell: 'terminal session kill',
       settings: 'preferences options'
     }
     const entries: CommandEntry[] = SHORTCUT_COMMANDS.map((command) => ({
@@ -335,12 +344,6 @@ export default function App(): ReactNode {
         .map((id) => byId.get(id))
         .filter((session): session is TerminalSessionInfo => session !== undefined)
     })
-  }, [])
-
-  const closeSession = useCallback(async (id: string) => {
-    await window.api.terminal.kill(id)
-    setSessions((current) => current.filter((session) => session.id !== id))
-    setActiveSession((current) => (current === id ? null : current))
   }, [])
 
   useEffect(() => {

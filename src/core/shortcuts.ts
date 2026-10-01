@@ -30,7 +30,8 @@ export const SHORTCUT_LABELS: Record<ShortcutCommand, string> = {
   toggleTerminal: 'Toggle the terminal panel',
   toggleAgents: 'Toggle the agents sidebar',
   orchestrate: 'Orchestrate',
-  newShell: 'New terminal tab'
+  newShell: 'New terminal tab',
+  closeShell: 'Close terminal tab'
 }
 
 /**
@@ -48,7 +49,8 @@ export const SHORTCUT_SCOPES: Record<ShortcutCommand, ShortcutScope> = {
   toggleTerminal: 'window',
   toggleAgents: 'window',
   orchestrate: 'window',
-  newShell: 'terminal'
+  newShell: 'terminal',
+  closeShell: 'terminal'
 }
 
 /** What a key event happened in. Required, so no caller can forget that scope exists. */

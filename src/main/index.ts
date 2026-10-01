@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, Menu, shell } from 'electron'
 import { tasksDir } from '@core/config.js'
 import {
   broadcast,
@@ -18,6 +18,23 @@ import {
 import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
 import { createTray, destroyTray } from './tray.js'
 import { initUpdater } from './updater.js'
+
+/**
+ * Electron's default menu binds ⌘W to Close Window, and a menu accelerator is handled before the
+ * renderer sees the key — so ⌘W closed the whole window instead of reaching the shortcut system.
+ * The standard menu is rebuilt with that one accelerator removed; closing the window stays
+ * available from the menu and the traffic light.
+ */
+function installAppMenu(): void {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    { role: 'appMenu' },
+    { role: 'fileMenu', submenu: [{ role: 'close', accelerator: 'Shift+CmdOrCtrl+W' }] },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' }
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
 
 function showWindow(): void {
   const [existing] = BrowserWindow.getAllWindows()
@@ -65,6 +82,7 @@ app.whenReady().then(() => {
   tasksDir()
   syncIndex()
   registerIpcHandlers()
+  installAppMenu()
 
   onTerminalData((id, data, sequence) => broadcast('terminal:data', { id, data, sequence }))
   onTerminalExit((id, exitCode) => {

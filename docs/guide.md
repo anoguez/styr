@@ -486,16 +486,17 @@ Templates and `0004` finds `TASK-0004`. `↑`/`↓` (or `⌃p`/`⌃n`) move, `�
 Every one of these is rebindable in **Settings → Shortcuts** — click **Change** on a row and press
 the combination you want. These are the defaults:
 
-| Key                | Action                                             |
-| ------------------ | -------------------------------------------------- |
-| `⌘P` or `⌘K`       | Command palette                                    |
-| `⌘N`               | New task                                           |
-| `⌘F`               | Focus search                                       |
-| `⌘,`               | Open Settings                                      |
-| ``⌃` `` or ``⌘` `` | Toggle the terminal panel                          |
-| `⌘T`               | New terminal tab — only while a terminal has focus |
+| Key                | Action                                               |
+| ------------------ | ---------------------------------------------------- |
+| `⌘P` or `⌘K`       | Command palette                                      |
+| `⌘N`               | New task                                             |
+| `⌘F`               | Focus search                                         |
+| `⌘,`               | Open Settings                                        |
+| ``⌃` `` or ``⌘` `` | Toggle the terminal panel                            |
+| `⌘T`               | New terminal tab — only while a terminal has focus   |
+| `⌘W`               | Close terminal tab — only while a terminal has focus |
 
-`⌘T` is scoped to the terminal, so it does nothing on the board; Settings marks such shortcuts
+`⌘T` and `⌘W` are scoped to the terminal, so they do nothing on the board (`⌘W` no longer closes the window; use `⇧⌘W` for that); Settings marks such shortcuts
 _in the terminal_. The command palette still opens a new tab from anywhere.
 
 Toggle the agents sidebar and Orchestrate are commands too, but ship unbound — give them a key if
