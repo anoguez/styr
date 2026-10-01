@@ -1,5 +1,8 @@
 # Styr
 
+[![Latest release](https://img.shields.io/github/v/release/anoguez/styr)](https://github.com/anoguez/styr/releases/latest)
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/noguez)
+
 **An agentic IDE built around a kanban board.** Write tasks, and Styr launches a coding agent on each
 one in its own terminal tab, often in its own git worktree, and watches them work. Agents move
 their own cards as they go: spec, build, review, done.
@@ -97,6 +100,11 @@ picks the changes up.
 
 Early and moving fast. Styr is developed and tested on macOS (Apple silicon). Other platforms
 aren't supported yet: the menu bar integration, packaging and signing are macOS-specific.
+
+## Support
+
+Styr is free to use. If it saves you time, you can
+[buy me a coffee](https://www.buymeacoffee.com/noguez) ☕.
 
 ## License
 
