@@ -103,8 +103,9 @@ aren't supported yet: the menu bar integration, packaging and signing are macOS-
 
 ## Support
 
-Styr is free to use. If it saves you time, you can
-[buy me a coffee](https://www.buymeacoffee.com/noguez) ☕.
+Styr is free to use. If it saves you time, you can buy me a coffee ☕.
+
+<a href="https://www.buymeacoffee.com/noguez"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" height="50"></a>
 
 ## License
 
