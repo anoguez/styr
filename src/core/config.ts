@@ -92,6 +92,7 @@ function defaults(): Settings {
     shell: process.env.SHELL ?? '/bin/zsh',
     claudeCommand: 'claude',
     codexCommand: 'codex',
+    enabledProviders: ['claude'],
     defaultProvider: 'claude',
     providerRouting: { spec: 'claude', implement: 'claude', review: 'claude' },
     defaultPromptTemplateId: 'implement',

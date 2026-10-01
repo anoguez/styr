@@ -348,6 +348,19 @@ export function SettingsDialog({
       return next
     })
 
+  function toggleProvider(provider: 'claude' | 'codex', enabled: boolean): void {
+    const enabledProviders = enabled
+      ? [...new Set([...draft.enabledProviders, provider])]
+      : draft.enabledProviders.filter((item) => item !== provider)
+    if (enabledProviders.length === 0) return
+    patch({
+      enabledProviders,
+      defaultProvider: enabledProviders.includes(draft.defaultProvider)
+        ? draft.defaultProvider
+        : enabledProviders[0]!
+    })
+  }
+
   function updateTemplate(changes: Partial<PromptTemplate>): void {
     if (!selected) return
     patch({
@@ -491,8 +504,12 @@ export function SettingsDialog({
                     patch({ defaultProvider: event.target.value as 'claude' | 'codex' })
                   }
                 >
-                  <option value="claude">Claude Code</option>
-                  <option value="codex">Codex</option>
+                  {draft.enabledProviders.includes('claude') ? (
+                    <option value="claude">Claude Code</option>
+                  ) : null}
+                  {draft.enabledProviders.includes('codex') ? (
+                    <option value="codex">Codex</option>
+                  ) : null}
                 </select>
               </Field>
             </div>
@@ -523,8 +540,12 @@ export function SettingsDialog({
                           })
                         }
                       >
-                        <option value="claude">Claude Code</option>
-                        <option value="codex">Codex</option>
+                        {draft.enabledProviders.includes('claude') ? (
+                          <option value="claude">Claude Code</option>
+                        ) : null}
+                        {draft.enabledProviders.includes('codex') ? (
+                          <option value="codex">Codex</option>
+                        ) : null}
                       </select>
                     </label>
                   ))}
@@ -964,47 +985,68 @@ export function SettingsDialog({
           {section === 'integrations' ? (
             <div className="flex flex-col gap-4">
               <Field
-                label="Claude MCP server"
-                hint="Run this once in a terminal, then start a new Claude session. It lets Claude query the board — what is in review, what needs a spec — from anywhere."
+                label="Installed providers"
+                hint="Enable the coding CLIs you use. At least one provider must remain enabled."
               >
-                <div className="flex flex-col gap-2">
-                  <pre className="overflow-x-auto rounded-lg border border-edge-strong bg-chrome p-3 font-mono text-[11px] leading-relaxed text-dim">
-                    {mcpCommand || 'Building command…'}
-                  </pre>
-                  <div className="flex items-center gap-2.5">
+                <div className="flex flex-col gap-2 rounded-lg border border-edge bg-chrome/40 p-3">
+                  <Checkbox
+                    checked={draft.enabledProviders.includes('claude')}
+                    onChange={(enabled) => toggleProvider('claude', enabled)}
+                    label="Claude Code"
+                  />
+                  <Checkbox
+                    checked={draft.enabledProviders.includes('codex')}
+                    onChange={(enabled) => toggleProvider('codex', enabled)}
+                    label="Codex"
+                  />
+                </div>
+              </Field>
+              {draft.enabledProviders.includes('claude') ? (
+                <Field
+                  label="Claude MCP server"
+                  hint="Run this once in a terminal, then start a new Claude session. It lets Claude query the board — what is in review, what needs a spec — from anywhere."
+                >
+                  <div className="flex flex-col gap-2">
+                    <pre className="overflow-x-auto rounded-lg border border-edge-strong bg-chrome p-3 font-mono text-[11px] leading-relaxed text-dim">
+                      {mcpCommand || 'Building command…'}
+                    </pre>
+                    <div className="flex items-center gap-2.5">
+                      <Button
+                        disabled={!mcpCommand}
+                        onClick={() => {
+                          void navigator.clipboard.writeText(mcpCommand).then(() => {
+                            setCopied(true)
+                            setTimeout(() => setCopied(false), 1600)
+                          })
+                        }}
+                      >
+                        Copy command
+                      </Button>
+                      {copied ? (
+                        <span className="text-[11.5px] text-[var(--color-col-done)]">Copied</span>
+                      ) : null}
+                    </div>
+                  </div>
+                </Field>
+              ) : null}
+              {draft.enabledProviders.includes('codex') ? (
+                <Field
+                  label="Codex MCP server"
+                  hint="Run this once, then start a new Codex session to let it query and update the board."
+                >
+                  <div className="flex flex-col gap-2">
+                    <pre className="overflow-x-auto rounded-lg border border-edge-strong bg-chrome p-3 font-mono text-[11px] leading-relaxed text-dim">
+                      {codexMcpCommand || 'Building command…'}
+                    </pre>
                     <Button
-                      disabled={!mcpCommand}
-                      onClick={() => {
-                        void navigator.clipboard.writeText(mcpCommand).then(() => {
-                          setCopied(true)
-                          setTimeout(() => setCopied(false), 1600)
-                        })
-                      }}
+                      disabled={!codexMcpCommand}
+                      onClick={() => void navigator.clipboard.writeText(codexMcpCommand)}
                     >
                       Copy command
                     </Button>
-                    {copied ? (
-                      <span className="text-[11.5px] text-[var(--color-col-done)]">Copied</span>
-                    ) : null}
                   </div>
-                </div>
-              </Field>
-              <Field
-                label="Codex MCP server"
-                hint="Run this once, then start a new Codex session to let it query and update the board."
-              >
-                <div className="flex flex-col gap-2">
-                  <pre className="overflow-x-auto rounded-lg border border-edge-strong bg-chrome p-3 font-mono text-[11px] leading-relaxed text-dim">
-                    {codexMcpCommand || 'Building command…'}
-                  </pre>
-                  <Button
-                    disabled={!codexMcpCommand}
-                    onClick={() => void navigator.clipboard.writeText(codexMcpCommand)}
-                  >
-                    Copy command
-                  </Button>
-                </div>
-              </Field>
+                </Field>
+              ) : null}
             </div>
           ) : null}
 

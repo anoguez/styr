@@ -142,6 +142,10 @@ export const settingsSchema = z.object({
   shell: z.string().default(''),
   claudeCommand: z.string().default('claude'),
   codexCommand: z.string().default('codex'),
+  enabledProviders: z
+    .array(z.enum(['claude', 'codex']))
+    .min(1)
+    .default(['claude']),
   defaultProvider: z.enum(['claude', 'codex']).default('claude'),
   providerRouting: providerRoutingSchema.default({
     spec: 'claude',

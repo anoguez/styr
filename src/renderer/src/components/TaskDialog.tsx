@@ -72,6 +72,7 @@ export function TaskDialog({
   const [form, setForm] = useState<FormState>(() => toForm(task, settings))
   const [preview, setPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [provider, setProvider] = useState<'claude' | 'codex'>(settings.defaultProvider)
 
   const patch = (changes: Partial<FormState>): void =>
     setForm((current) => ({ ...current, ...changes }))
@@ -155,11 +156,19 @@ export function TaskDialog({
             </>
           ) : null}
           <Button onClick={() => void showPreview()}>Preview prompt</Button>
-          <Button onClick={() => void saveAndLaunch('claude')} disabled={saving}>
-            Save &amp; start Claude
-          </Button>
-          <Button onClick={() => void saveAndLaunch('codex')} disabled={saving}>
-            Save &amp; start Codex
+          <select
+            className={inputClass}
+            value={provider}
+            onChange={(event) => setProvider(event.target.value as 'claude' | 'codex')}
+          >
+            {settings.enabledProviders.map((item) => (
+              <option key={item} value={item}>
+                {item === 'claude' ? 'Claude Code' : 'Codex'}
+              </option>
+            ))}
+          </select>
+          <Button onClick={() => void saveAndLaunch(provider)} disabled={saving}>
+            Save &amp; start
           </Button>
           <Button variant="primary" onClick={() => void saveAndClose()} disabled={saving}>
             Save <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↵</kbd>
