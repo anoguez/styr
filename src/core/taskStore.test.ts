@@ -66,4 +66,13 @@ describe('task store', () => {
 
     expect(store.getTask(second.id)).toBeNull()
   })
+
+  it('retains a selected provider when creating a task', async () => {
+    const store = await taskStoreInTemporaryWorkspace()
+
+    const created = store.createTask({ title: 'Review with Codex', provider: 'codex' })
+
+    expect(created.provider).toBe('codex')
+    expect(store.getTask(created.id)).toMatchObject({ provider: 'codex' })
+  })
 })
