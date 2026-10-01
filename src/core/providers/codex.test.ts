@@ -23,14 +23,12 @@ describe('codexCommand', () => {
     expect(command).toContain(`--cd '/my dir/it'\\''s'`)
   })
 
-  it('uses automatic approval review without widening the workspace sandbox', () => {
-    expect(
-      codexCommand(
-        { ...settings, codexApprovalReviewer: 'auto_review' },
-        { sessionId: 'id', resume: false, cwd: '/w', prompt: 'Implement the task' }
-      )
-    ).toBe(
-      `codex --remote unix:// --cd '/w' --sandbox workspace-write --approve-for-me Implement the task`
+  it('uses automatic approval review without a conflicting --sandbox flag', () => {
+    const command = codexCommand(
+      { ...settings, codexApprovalReviewer: 'auto_review' },
+      { sessionId: 'id', resume: false, cwd: '/w', prompt: 'Implement the task' }
     )
+    expect(command).toBe(`codex --remote unix:// --cd '/w' --approve-for-me Implement the task`)
+    expect(command).not.toContain('--sandbox')
   })
 })
