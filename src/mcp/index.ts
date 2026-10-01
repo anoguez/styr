@@ -18,6 +18,7 @@ function summarise(task: Task): Record<string, unknown> {
     repoPath: task.repoPath,
     useWorktree: task.useWorktree,
     worktreePath: task.worktreePath,
+    prUrl: task.prUrl,
     contextFiles: task.contextFiles,
     updatedAt: task.updatedAt,
     filePath: task.filePath
@@ -92,7 +93,7 @@ server.registerTool(
       'Update any field of a task, including moving it to another board column. Set readiness to ' +
       '"ready" once a task is specified well enough to be worked on, or "needs_spec" when it is not. ' +
       'contextFiles replaces the task attachment list — absolute paths to files worth reading for ' +
-      'this task.',
+      'this task. prUrl is the link to the pull/merge request opened for the task, on any host.',
     inputSchema: {
       id: z.string(),
       title: z.string().optional(),
@@ -103,7 +104,8 @@ server.registerTool(
       project: z.string().optional(),
       tags: z.array(z.string()).optional(),
       repoPath: z.string().optional(),
-      contextFiles: z.array(z.string()).optional()
+      contextFiles: z.array(z.string()).optional(),
+      prUrl: z.string().optional()
     }
   },
   async ({ id, ...patch }) => json(summarise(updateTask(id, patch)))

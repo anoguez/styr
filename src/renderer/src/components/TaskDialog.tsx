@@ -32,6 +32,7 @@ interface FormState {
   project: string
   tags: string
   repoPath: string
+  prUrl: string
   useWorktree: boolean
   orchestrate: boolean
   contextFiles: string[]
@@ -49,6 +50,7 @@ function toForm(task: Task | null, settings: Settings): FormState {
     project: task?.project ?? '',
     tags: task?.tags.join(', ') ?? '',
     repoPath: task?.repoPath ?? settings.defaultRepoPath,
+    prUrl: task?.prUrl ?? '',
     useWorktree: task?.useWorktree ?? false,
     orchestrate: task?.orchestrate ?? true,
     contextFiles: task?.contextFiles ?? [],
@@ -94,6 +96,7 @@ export function TaskDialog({
       .map((tag) => tag.trim())
       .filter(Boolean),
     repoPath: form.repoPath.trim() || undefined,
+    prUrl: form.prUrl.trim() || undefined,
     useWorktree: form.useWorktree,
     orchestrate: form.orchestrate,
     contextFiles: form.contextFiles,
@@ -299,6 +302,19 @@ export function TaskDialog({
               : 'Set a working directory first — the worktree is created from that repository.'
           }
         />
+
+        <Field
+          label="Pull request"
+          hint="Optional link to the PR or MR for this task, on any host."
+        >
+          <input
+            type="url"
+            value={form.prUrl}
+            placeholder="https://…"
+            onChange={(event) => patch({ prUrl: event.target.value })}
+            className={inputClass}
+          />
+        </Field>
 
         {task?.worktreePath ? (
           <Field
