@@ -44,6 +44,13 @@ Status records are provider-neutral: whatever a CLI's hooks look like, they writ
 `{taskId, event, at, payload}` into `agentsDir`, with `event` drawn from `EVENT_STATE` (whose names
 come from Claude Code). A provider that has no hooks still gets `TerminalExit`.
 
+`sessionEnvKeys` lists the environment variables a CLI uses to mark its own session.
+`withoutSessionMarkers` strips every provider's list from each terminal `ptyManager` opens. Without
+it, Styr started from inside Claude Code (`yarn dev` in a Claude Code terminal) passes those markers
+on, every agent it launches believes it is a child session and turns transcript saving off, and
+resume then silently starts a fresh chat. List session markers only — `CLAUDE_CODE_*` settings a user
+exports on purpose must still reach the agents.
+
 Still Claude-named, deliberately left for when a second provider lands: `Task.claudeSessionId`,
 `Settings.claudeCommand` and the `terminal:launchClaude` channel. Renaming the first two changes
 the on-disk format, so it should happen together with recording a provider per session.

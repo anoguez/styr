@@ -32,4 +32,11 @@ export interface AgentProvider {
   sessionTime(sessionId: string, homeRoot?: string): string | undefined
   /** The command a user runs once to give this CLI the board's MCP server. */
   mcpInstallCommand(serverEntry: string): string
+  /**
+   * Environment variables the CLI sets on its own processes to mark a running session. Styr strips
+   * them from every terminal it opens, so an app started from inside such a session (`yarn dev` in
+   * a Claude Code terminal) does not make its agents believe they are nested in it. Only session
+   * markers belong here, never settings a user exports on purpose.
+   */
+  sessionEnvKeys: readonly string[]
 }

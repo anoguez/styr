@@ -76,5 +76,20 @@ export const claudeProvider: AgentProvider = {
   },
 
   mcpInstallCommand: (serverEntry) =>
-    `claude mcp add styr --scope user -- node '${shellQuote(serverEntry)}'`
+    `claude mcp add styr --scope user -- node '${shellQuote(serverEntry)}'`,
+
+  // Inherited, these make a launched `claude` treat itself as a child of the parent session: it
+  // turns transcript saving off, so the next launch finds no transcript and starts a fresh chat
+  // instead of resuming. CLAUDE_CODE_* settings such as CLAUDE_CODE_USE_BEDROCK are left alone.
+  sessionEnvKeys: [
+    'CLAUDECODE',
+    'CLAUDE_CODE_ENTRYPOINT',
+    'CLAUDE_CODE_CHILD_SESSION',
+    'CLAUDE_CODE_SESSION_ID',
+    'CLAUDE_CODE_SESSION_ATTENDED',
+    'CLAUDE_CODE_MESSAGING_SOCKET',
+    'CLAUDE_CODE_MESSAGING_TOKEN',
+    'CLAUDE_CODE_EXECPATH',
+    'CLAUDE_PID'
+  ]
 }

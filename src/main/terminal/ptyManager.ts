@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { spawn, type IPty } from 'node-pty'
 import { nanoid } from 'nanoid'
+import { withoutSessionMarkers } from '@core/providers/index.js'
 import type { TerminalSessionInfo } from '@core/types.js'
 
 export interface SpawnOptions {
@@ -33,12 +34,16 @@ function resolveCwd(cwd?: string): string {
   return cwd && existsSync(cwd) ? cwd : homedir()
 }
 
+/**
+ * The app's environment for a new terminal, minus agent session markers it may have inherited (see
+ * `withoutSessionMarkers`), plus `extra`, which is applied last so it is never stripped.
+ */
 function sanitisedEnv(extra?: Record<string, string>): Record<string, string> {
-  const env: Record<string, string> = { ...extra }
+  const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value
   }
-  return { ...env, ...extra, TERM: 'xterm-256color' }
+  return { ...withoutSessionMarkers(env), ...extra, TERM: 'xterm-256color' }
 }
 
 export function onTerminalData(listener: DataListener): void {
