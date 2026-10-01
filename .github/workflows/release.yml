@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  # Manual run: a full signed and notarised build, kept as a workflow artifact instead of being
+  # attached to a release. Use it to check signing works before cutting a real release.
+  workflow_dispatch:
+
+jobs:
+  release-please:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          # A PR opened with GITHUB_TOKEN does not trigger other workflows, so CI would never run on
+          # the release PR. A fine-grained PAT in RELEASE_PLEASE_TOKEN avoids that.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build-macos:
+    needs: release-please
+    # always() lets a manual run proceed although release-please was skipped.
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
+    # macos-latest is Apple silicon, matching the arm64-only target.
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Empty on a manual run, which checks out the commit the run was started from.
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+
+      # postinstall rebuilds node-pty and better-sqlite3 against Electron's ABI.
+      - run: yarn install --frozen-lockfile
+
+      - run: yarn build
+
+      # electron-builder decodes CSC_LINK into a temporary keychain itself, signs the app and DMG with
+      # the Developer ID, and notarises the app because the APPLE_* variables are present;
+      # scripts/notarize-dmg.mjs then notarises and staples the DMG.
+      - name: Package, sign and notarise
+        run: yarn electron-builder --mac --publish never
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Verify signature and notarisation
+        run: |
+          app="dist/mac-arm64/Styr.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose "$app"
+          xcrun stapler validate "$app"
+          for dmg in dist/*.dmg; do
+            spctl --assess --type open --context context:primary-signature --verbose "$dmg"
+            xcrun stapler validate "$dmg"
+          done
+
+      - name: Keep the DMG as a workflow artifact
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: styr-macos
+          path: dist/*.dmg
+
+      - name: Upload to release
+        if: ${{ github.event_name == 'push' }}
+        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" dist/*.dmg --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
