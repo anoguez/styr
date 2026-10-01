@@ -7,6 +7,10 @@ afterAllArtifactBuild: scripts/notarize-dmg.mjs
 files:
   - out/**
   - package.json
+# The OFL requires the licence to travel with the bundled wordmark font.
+extraResources:
+  - from: node_modules/@fontsource/unbounded/LICENSE
+    to: licenses/Unbounded-OFL.txt
 asarUnpack:
   - '**/node_modules/node-pty/**'
   - '**/node_modules/better-sqlite3/**'

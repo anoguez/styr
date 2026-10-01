@@ -37,6 +37,7 @@
   --radius-card: 10px;
 
   --font-ui: ui-sans-serif, -apple-system, 'SF Pro Text', system-ui, sans-serif;
+  --font-wordmark: 'Unbounded', var(--font-ui);
 }
 
 html,

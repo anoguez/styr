@@ -407,6 +407,9 @@ export default function App(): ReactNode {
             />
           </svg>
         </span>
+        <span className="font-wordmark -ml-1 text-[13.5px] font-semibold tracking-[0.02em] text-ink">
+          Styr
+        </span>
         {appInfo && !appInfo.isPackaged ? (
           <Chip tone="warn" title={`Running from source · v${appInfo.version}`}>
             DEV
