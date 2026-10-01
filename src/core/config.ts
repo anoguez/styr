@@ -2,7 +2,13 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { settingsSchema } from './taskSchema.js'
-import { DEFAULT_SHORTCUTS, DEFAULT_THEME, type PromptTemplate, type Settings } from './types.js'
+import {
+  DEFAULT_SHORTCUTS,
+  DEFAULT_THEME,
+  DEFAULT_WORKSPACE_ID,
+  type PromptTemplate,
+  type Settings
+} from './types.js'
 
 const CONFIG_DIR = process.env.STYR_HOME ?? join(homedir(), '.styr')
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
@@ -98,7 +104,8 @@ const FOLLOWUP_TEMPLATE = [
 
 function defaults(): Settings {
   return {
-    workspaceDir: join(homedir(), 'Styr'),
+    storageDir: join(homedir(), 'Styr'),
+    activeWorkspaceId: DEFAULT_WORKSPACE_ID,
     defaultRepoPath: '',
     shell: process.env.SHELL ?? '/bin/zsh',
     claudeCommand: 'claude',
@@ -135,13 +142,21 @@ export function configDir(): string {
   return CONFIG_DIR
 }
 
+/** `workspaceDir` became `storageDir` once "workspace" came to mean an isolated board. */
+function renameStorageDir(raw: Record<string, unknown>): Record<string, unknown> {
+  if (typeof raw.workspaceDir !== 'string') return raw
+  const { workspaceDir, ...rest } = raw
+  return rest.storageDir === undefined ? { ...rest, storageDir: workspaceDir } : rest
+}
+
 /**
  * A config written before prompt routing existed keeps its own promptTemplates, which shadow the
  * shipped ones the routing table points at. Without this the routing silently falls back to a
  * single template for every column. Adds only the shipped templates the user does not already
  * have — their own definitions always win on an id collision.
  */
-function migrate(raw: Record<string, unknown>): Record<string, unknown> {
+function migrate(input: Record<string, unknown>): Record<string, unknown> {
+  const raw = renameStorageDir(input)
   if (raw.promptRouting) return raw
   const base = defaults()
   const existing = Array.isArray(raw.promptTemplates)
@@ -158,14 +173,56 @@ function migrate(raw: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
+let workspaceOverride: string | undefined
+
+/**
+ * Pins the process to one workspace regardless of the saved preference. The MCP server is
+ * registered once for every agent, so it learns its workspace from the agent's environment —
+ * otherwise switching the board would redirect a running agent's writes. The main process never
+ * calls this: it follows the preference.
+ */
+export function pinWorkspace(id: string | undefined): void {
+  workspaceOverride = id || undefined
+}
+
+const WORKSPACE_ID = /^[a-z0-9][a-z0-9-]*$/
+
+export function isWorkspaceId(id: string): boolean {
+  return id === DEFAULT_WORKSPACE_ID || WORKSPACE_ID.test(id)
+}
+
+/** Where a workspace keeps its `tasks/` and `.styr/`. Default is the storage root itself. */
+export function workspaceDir(settings: Settings, id: string = settings.activeWorkspaceId): string {
+  return id === DEFAULT_WORKSPACE_ID
+    ? settings.storageDir
+    : join(settings.storageDir, 'workspaces', id)
+}
+
+/** A copy of the settings that resolves every path inside `id`, for work in a background workspace. */
+export function inWorkspace(settings: Settings, id: string): Settings {
+  return { ...settings, activeWorkspaceId: id }
+}
+
+/**
+ * The preference as it applies now: a dangling one (the folder was removed, the config was hand
+ * edited) falls back to Default rather than pointing the board at nothing.
+ */
+function resolveActive(settings: Settings): Settings {
+  const wanted = workspaceOverride ?? settings.activeWorkspaceId
+  const usable =
+    isWorkspaceId(wanted) &&
+    (wanted === DEFAULT_WORKSPACE_ID || existsSync(workspaceDir(settings, wanted)))
+  return { ...settings, activeWorkspaceId: usable ? wanted : DEFAULT_WORKSPACE_ID }
+}
+
 export function loadSettings(): Settings {
-  if (!existsSync(CONFIG_FILE)) return defaults()
+  if (!existsSync(CONFIG_FILE)) return resolveActive(defaults())
   try {
     const raw = JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) as Record<string, unknown>
     const parsed = settingsSchema.safeParse({ ...defaults(), ...migrate(raw) })
-    return parsed.success ? parsed.data : defaults()
+    return resolveActive(parsed.success ? parsed.data : defaults())
   } catch {
-    return defaults()
+    return resolveActive(defaults())
   }
 }
 
@@ -177,13 +234,13 @@ export function saveSettings(settings: Settings): Settings {
 }
 
 export function tasksDir(settings: Settings = loadSettings()): string {
-  const dir = join(settings.workspaceDir, 'tasks')
+  const dir = join(workspaceDir(settings), 'tasks')
   mkdirSync(dir, { recursive: true })
   return dir
 }
 
 export function indexDbPath(settings: Settings = loadSettings()): string {
-  const dir = join(settings.workspaceDir, '.styr')
+  const dir = join(workspaceDir(settings), '.styr')
   mkdirSync(dir, { recursive: true })
   return join(dir, 'index.db')
 }

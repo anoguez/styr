@@ -6,14 +6,15 @@ import {
   markAgentExited,
   notifyAgentsChanged,
   notifyTasksChanged,
-  registerIpcHandlers
+  registerIpcHandlers,
+  switchWorkspace
 } from './ipc.js'
 import { closeIndex, syncIndex } from './taskIndex.js'
 import {
   killAllSessions,
   onTerminalData,
   onTerminalExit,
-  sessionTaskId
+  sessionTask
 } from './terminal/ptyManager.js'
 import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
 import { createTray, destroyTray } from './tray.js'
@@ -86,14 +87,23 @@ app.whenReady().then(() => {
 
   onTerminalData((id, data, sequence) => broadcast('terminal:data', { id, data, sequence }))
   onTerminalExit((id, exitCode) => {
-    const taskId = sessionTaskId(id)
+    const task = sessionTask(id)
     broadcast('terminal:exit', { id, exitCode })
-    if (taskId) markAgentExited(taskId)
+    if (task) markAgentExited(task.taskId, task.workspaceId)
   })
   createTray({
     onShowWindow: showWindow,
-    onActivateTask: (taskId) => {
+    onActivateTask: (taskId, workspaceId) => {
       showWindow()
+      // An agent from another workspace is activated by opening that workspace first; the
+      // renderer holds the request until the board it names has loaded.
+      if (workspaceId) {
+        try {
+          switchWorkspace(workspaceId)
+        } catch {
+          return
+        }
+      }
       broadcast('tasks:activate', taskId)
     },
     onQuit: () => app.quit()

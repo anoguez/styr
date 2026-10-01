@@ -78,7 +78,9 @@ export const SHORTCUT_COMMANDS = [
   'toggleAgents',
   'orchestrate',
   'newShell',
-  'closeShell'
+  'closeShell',
+  'switchWorkspace',
+  'newWorkspace'
 ] as const
 
 export type ShortcutCommand = (typeof SHORTCUT_COMMANDS)[number]
@@ -107,6 +109,32 @@ export interface OrchestrationSummary {
 }
 
 export const WORKTREE_BRANCH_PREFIX = 'styr/'
+
+/** The workspace every install has. Its folder is the storage root itself, as before workspaces. */
+export const DEFAULT_WORKSPACE_ID = 'default'
+export const DEFAULT_WORKSPACE_NAME = 'Default'
+
+/** An isolated board: its own tasks, agents and ids. Not to be confused with `storageDir`. */
+export interface WorkspaceInfo {
+  id: string
+  name: string
+}
+
+/** The workspaces as the UI lists them, with what it needs to warn before a delete. */
+export interface WorkspaceOverview {
+  activeId: string
+  workspaces: (WorkspaceInfo & { taskCount: number; liveSessions: number })[]
+}
+
+/**
+ * What names a task's worktree and branch. Task ids are per workspace, so two workspaces can both
+ * hold TASK-0001 on one repo; every non-default workspace therefore prefixes its id. Default keeps
+ * the bare id so worktrees made before workspaces existed still resolve. Pure, because the prompt
+ * (shared with the renderer) needs the branch name too.
+ */
+export function worktreeKey(workspaceId: string | undefined, taskId: string): string {
+  return !workspaceId || workspaceId === DEFAULT_WORKSPACE_ID ? taskId : `${workspaceId}-${taskId}`
+}
 
 export const TASK_READINESS = ['ready', 'needs_spec'] as const
 export type TaskReadiness = (typeof TASK_READINESS)[number]
@@ -235,11 +263,16 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   toggleAgents: [],
   orchestrate: [],
   newShell: ['mod+t'],
-  closeShell: ['mod+w']
+  closeShell: ['mod+w'],
+  switchWorkspace: [],
+  newWorkspace: []
 }
 
 export interface Settings {
-  workspaceDir: string
+  /** Where the app keeps its own data. Workspaces live inside it; the default one is its root. */
+  storageDir: string
+  /** Which workspace the board shows. A local preference, never stored in the task files. */
+  activeWorkspaceId: string
   defaultRepoPath: string
   shell: string
   claudeCommand: string
@@ -295,6 +328,8 @@ export interface TerminalSessionInfo {
   title: string
   cwd: string
   taskId?: string
+  /** The workspace the task belongs to; task ids are only unique within one. */
+  workspaceId?: string
   provider?: 'claude' | 'codex'
   /** A read-back of a past chat rather than the task's live session. */
   replay?: boolean

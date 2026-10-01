@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { rankBy } from '../lib/fuzzy.js'
 import { inputClass } from './ui.js'
 
-export type CommandGroup = 'Tasks' | 'Agents' | 'Terminals' | 'Settings' | 'Actions'
+export type CommandGroup = 'Tasks' | 'Agents' | 'Terminals' | 'Workspaces' | 'Settings' | 'Actions'
 
 export interface CommandEntry {
   id: string
@@ -16,7 +16,14 @@ export interface CommandEntry {
   runAlt?: () => void
 }
 
-const GROUP_ORDER: CommandGroup[] = ['Actions', 'Tasks', 'Agents', 'Terminals', 'Settings']
+const GROUP_ORDER: CommandGroup[] = [
+  'Actions',
+  'Workspaces',
+  'Tasks',
+  'Agents',
+  'Terminals',
+  'Settings'
+]
 
 function searchText(entry: CommandEntry): string {
   return [entry.label, entry.hint, entry.keywords, entry.group].filter(Boolean).join(' ')

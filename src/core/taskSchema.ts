@@ -137,7 +137,8 @@ export const shortcutsSchema = z
   .transform((value) => ({ ...DEFAULT_SHORTCUTS, ...value }))
 
 export const settingsSchema = z.object({
-  workspaceDir: z.string(),
+  storageDir: z.string(),
+  activeWorkspaceId: z.string().default('default'),
   defaultRepoPath: z.string().default(''),
   shell: z.string().default(''),
   claudeCommand: z.string().default('claude'),
