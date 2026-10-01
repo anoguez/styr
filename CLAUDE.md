@@ -414,19 +414,40 @@ renderer, preload, IPC layer and MCP server all share them.
 - `out/main/**` is in `asarUnpack`. The MCP server is launched by plain `node`, which cannot read
   inside an asar archive, so `app:mcpCommand` resolves it under `app.asar.unpacked` when packaged.
   Anything else that must be run by a non-Electron process needs the same treatment.
-- `productName` contains a space, so the packaged app path does too. Anything that builds a shell
-  command from a path must run it through `shellQuote` — `app:mcpCommand` is copy-pasted by the user
-  into a terminal and silently splits into two arguments without it.
+- Anything that builds a shell command from a path must run it through `shellQuote`.
+  `app:mcpCommand` is copy-pasted by the user into a terminal, and a path with a space (an
+  install location, a home folder) silently splits into two arguments without it.
 - `resources/icon.svg` is the icon source of truth; `resources/icon.icns` is derived by
   `yarn icon`. Never hand-edit the `.icns`.
-- `mac.identity` is `"-"` (ad-hoc), never `null`. `null` skips signing entirely, leaving the
-  bundle's resources unsealed — macOS then reports the app as *damaged* on any machine that applies
-  Gatekeeper, with no right-click-to-open escape. The entitlements file is mandatory alongside it:
-  hardened runtime plus an ad-hoc signature enforces library validation, which blocks `node-pty` and
-  `better-sqlite3` at launch.
+- Releases are signed with the Developer ID and notarised: electron-builder finds the identity in
+  the keychain locally or decodes `CSC_LINK` on CI, and notarises whenever the `APPLE_*` variables
+  are set. `yarn package:adhoc` (`mac.identity` `"-"`) is the fallback without a certificate. Never
+  set `mac.identity` to `null`: that skips signing entirely, leaving the bundle's resources unsealed,
+  and macOS then reports the app as *damaged* with no right-click-to-open escape.
+- The entitlements file is mandatory: the hardened runtime enforces library validation, which
+  blocks `node-pty` and `better-sqlite3` under an ad-hoc signature.
+
+## Releases
+
+`.github/workflows/release.yml` runs release-please on every push to `main`. It keeps a release PR
+open that bumps `package.json` and writes `CHANGELOG.md` from conventional commits; merging it tags
+the release, and a macOS job then builds, signs, notarises, verifies and attaches the DMG. Commit
+messages must therefore be conventional (`feat:`, `fix:`, `docs:` …) or they are left out of the
+changelog. `scripts/setup-signing-secrets.sh` sets the five signing secrets on the repo.
+
+Before 1.0, `feat` bumps the minor version and everything else the patch.
 
 ## Checks
 
 ```sh
-yarn build   # typechecks tsconfig.node.json + tsconfig.web.json, then builds
+yarn lint           # ESLint
+yarn format:check   # Prettier
+yarn build          # typechecks tsconfig.node.json + tsconfig.web.json, then builds
 ```
+
+CI runs all three on every PR. The pre-commit hook runs lint-staged (ESLint and Prettier on staged
+files) and the typecheck.
+
+TypeScript 7 (`@typescript/native`) is the compiler; the `typescript` package name is the TS 6
+compatibility build (`@typescript/typescript6`), because typescript-eslint needs the compiler API
+that TS 7 no longer ships.

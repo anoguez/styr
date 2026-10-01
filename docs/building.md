@@ -8,10 +8,15 @@
 | `yarn build` | Typecheck both projects, build `out/`, and fail if renderer code pulls in a Node builtin |
 | `yarn start` | Run the built app |
 | `yarn mcp` | Run the MCP server on stdio (for debugging) |
-| `yarn package` | Build a macOS `.app` and `.dmg` into `dist/` |
+| `yarn lint` | ESLint |
+| `yarn format` / `yarn format:check` | Prettier: rewrite, or only report |
+| `yarn package` | Build a signed macOS `.app` and `.dmg` into `dist/`, notarised if the `APPLE_*` variables are set |
+| `yarn package:adhoc` | The same with an ad-hoc signature, for building without a Developer ID |
 | `yarn icon` | Regenerate `resources/icon.icns` from `resources/icon.svg` |
 
-`yarn build` is the check to run before committing. There is no separate test suite yet.
+`yarn lint`, `yarn format:check` and `yarn build` are the checks; CI runs them on every pull request,
+and a pre-commit hook runs ESLint and Prettier on staged files plus the typecheck. There is no test
+suite yet.
 
 After changing dependencies, run `yarn postinstall` to rebuild the native modules (`node-pty`,
 `better-sqlite3`) against Electron.
@@ -29,25 +34,52 @@ Drag the app into Applications, or:
 cp -R "dist/mac-arm64/Styr.app" /Applications/
 ```
 
-## Sharing it with someone else
+## Signing and notarisation
 
-The app is **ad-hoc signed but not notarised** — there is no Apple Developer ID involved. On your
-own machine it opens normally, because a locally built app never gets a `com.apple.quarantine` flag.
+`yarn package` signs with the *Developer ID Application* certificate in your keychain. To notarise a
+local build as well, copy `.env.example` to `.env` and fill in `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`; `yarn package` loads it. Without them
+electron-builder skips notarisation with a warning. If you set `CSC_NAME`, leave out the
+`Developer ID Application:` prefix, or electron-builder refuses it. Check a build with:
 
-On anyone else's Mac, Gatekeeper will block it once. Tell them to either:
+```sh
+codesign --verify --deep --strict --verbose=2 "dist/mac-arm64/Styr.app"
+spctl --assess --type execute --verbose "dist/mac-arm64/Styr.app"
+```
 
-- right-click the app → **Open** → **Open** again, or
-- run `xattr -dr com.apple.quarantine "/Applications/Styr.app"`
+Without a Developer ID, `yarn package:adhoc` signs ad-hoc. That app runs on the machine that built
+it; on any other Mac Gatekeeper blocks it once (right-click → **Open**, or
+`xattr -dr com.apple.quarantine /Applications/Styr.app`).
 
-If they instead see **"damaged and can't be opened"**, the build was not signed properly — check
-`codesign --verify --deep --strict "Styr.app"` is silent and that `mac.identity` is `"-"`
-rather than `null` in `electron-builder.yml`. `null` skips signing altogether and leaves the
-bundle's resources unsealed, which macOS reports as damage rather than as an unknown developer.
+## Releases
 
-Distributing without that manual step needs a Developer ID certificate and notarisation.
+Releases are cut by [release-please](https://github.com/googleapis/release-please) from
+conventional commits:
+
+1. Every push to `main` updates a release PR that bumps the version and writes `CHANGELOG.md`.
+   `feat:` commits bump the minor version (before 1.0), everything else the patch.
+2. Merging the release PR tags `vX.Y.Z` and creates the GitHub release.
+3. A macOS runner then builds, signs, notarises and verifies the app, and attaches the DMG to that
+   release.
+
+The workflow needs these repository secrets. `scripts/setup-signing-secrets.sh` reads `.env`, exports
+the certificate from your keychain and sets all five with `gh`, prompting for anything `.env`
+does not have:
+
+| Secret | What it is |
+| --- | --- |
+| `CSC_LINK` | The Developer ID certificate and key as a base64 `.p12` |
+| `CSC_KEY_PASSWORD` | The password protecting that `.p12` |
+| `APPLE_ID` | The Apple ID used to notarise |
+| `APPLE_APP_SPECIFIC_PASSWORD` | An app-specific password for that Apple ID |
+| `APPLE_TEAM_ID` | The developer team id |
+
+Optionally add `RELEASE_PLEASE_TOKEN`, a fine-grained token with contents and pull-request write
+access. A release PR opened with the default token does not trigger other workflows, so CI would not
+run on it.
 
 **Re-register the MCP server after packaging.** Use the command Settings shows verbatim, quotes
-included — the installed path contains a space. The packaged app runs the MCP server from inside the
+included. The packaged app runs the MCP server from inside the
 bundle, so its path differs from the dev one. Open Settings in the packaged app, copy the command it
 shows, and run it — otherwise Claude keeps pointing at `out/` in this repo, which breaks if you move
 or clean the checkout.
