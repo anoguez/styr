@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.8.0](https://github.com/anoguez/styr/compare/v0.7.0...v0.8.0) (2026-10-01)
+
+
+### Features
+
+* add ⌘W shortcut to close the active terminal tab ([#23](https://github.com/anoguez/styr/issues/23)) ([afe88f1](https://github.com/anoguez/styr/commit/afe88f1489e82e97a10f2116764ae969431c9c4e))
+* add Preferences settings tab with new-task defaults ([#19](https://github.com/anoguez/styr/issues/19)) ([c7bba32](https://github.com/anoguez/styr/commit/c7bba32a1099c5590b8501536ed27a15a3fe29aa))
+* add workspaces — isolated boards switchable from the navbar ([#24](https://github.com/anoguez/styr/issues/24)) ([394dc70](https://github.com/anoguez/styr/commit/394dc70d4f786a57c3836faf5e49ce0cce6fc82d))
+* show a muted app version beside the title bar wordmark ([#22](https://github.com/anoguez/styr/issues/22)) ([fb69489](https://github.com/anoguez/styr/commit/fb69489cd0ec14f17f9f8d1e1517f5f75b6bf6b7))
+* show an optional PR link on the task card ([#20](https://github.com/anoguez/styr/issues/20)) ([20f47aa](https://github.com/anoguez/styr/commit/20f47aad1db5dc48d48cc3ddfcdef9956e2aeea7))
+
+
+### Bug Fixes
+
+* **codex:** drop --sandbox when using --approve-for-me ([#18](https://github.com/anoguez/styr/issues/18)) ([e235ffb](https://github.com/anoguez/styr/commit/e235ffb93e192d533d8068585859fb37434d3457))
+
 ## [0.7.0](https://github.com/anoguez/styr/compare/v0.6.0...v0.7.0) (2026-10-01)
 
 
