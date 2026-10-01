@@ -226,7 +226,7 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   toggleTerminal: ['ctrl+`', 'mod+`'],
   toggleAgents: [],
   orchestrate: [],
-  newShell: []
+  newShell: ['mod+t']
 }
 
 export interface Settings {
