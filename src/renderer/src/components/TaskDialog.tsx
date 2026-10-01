@@ -66,7 +66,7 @@ export function TaskDialog({
   task: Task | null
   settings: Settings
   onClose: () => void
-  onLaunch: (taskId: string, templateId?: string) => void
+  onLaunch: (taskId: string, templateId?: string, provider?: 'claude' | 'codex') => void
   onResumeSession: (taskId: string, sessionId: string) => void
 }): ReactNode {
   const [form, setForm] = useState<FormState>(() => toForm(task, settings))
@@ -115,10 +115,10 @@ export function TaskDialog({
     if (await save()) onClose()
   }
 
-  async function saveAndLaunch(): Promise<void> {
+  async function saveAndLaunch(provider?: 'claude' | 'codex'): Promise<void> {
     const saved = await save()
     if (!saved) return
-    onLaunch(saved.id, form.promptTemplateId || undefined)
+    onLaunch(saved.id, form.promptTemplateId || undefined, provider)
     onClose()
   }
 
@@ -155,8 +155,11 @@ export function TaskDialog({
             </>
           ) : null}
           <Button onClick={() => void showPreview()}>Preview prompt</Button>
-          <Button onClick={() => void saveAndLaunch()} disabled={saving}>
+          <Button onClick={() => void saveAndLaunch('claude')} disabled={saving}>
             Save &amp; start Claude
+          </Button>
+          <Button onClick={() => void saveAndLaunch('codex')} disabled={saving}>
+            Save &amp; start Codex
           </Button>
           <Button variant="primary" onClick={() => void saveAndClose()} disabled={saving}>
             Save <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↵</kbd>

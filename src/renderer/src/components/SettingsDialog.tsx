@@ -478,11 +478,56 @@ export function SettingsDialog({
                   onChange={(event) => patch({ codexCommand: event.target.value })}
                 />
               </Field>
+              <Field
+                label="Default agent"
+                hint="Used by manual launches; orchestration can route each lane independently."
+              >
+                <select
+                  className={inputClass}
+                  value={draft.defaultProvider}
+                  onChange={(event) =>
+                    patch({ defaultProvider: event.target.value as 'claude' | 'codex' })
+                  }
+                >
+                  <option value="claude">Claude Code</option>
+                  <option value="codex">Codex</option>
+                </select>
+              </Field>
             </div>
           ) : null}
 
           {section === 'routing' ? (
             <div className="flex flex-col gap-4">
+              <Field
+                label="Agent for each lane"
+                hint="Orchestrate uses these providers. Claude remains the default until you opt a lane into Codex."
+              >
+                <div className="grid grid-cols-3 gap-2.5 rounded-lg border border-edge bg-chrome/40 p-3">
+                  {(['spec', 'implement', 'review'] as const).map((lane) => (
+                    <label
+                      key={lane}
+                      className="flex flex-col gap-1.5 text-[11px] capitalize text-dim"
+                    >
+                      {lane}
+                      <select
+                        className={inputClass}
+                        value={draft.providerRouting[lane]}
+                        onChange={(event) =>
+                          patch({
+                            providerRouting: {
+                              ...draft.providerRouting,
+                              [lane]: event.target.value as 'claude' | 'codex'
+                            }
+                          })
+                        }
+                      >
+                        <option value="claude">Claude Code</option>
+                        <option value="codex">Codex</option>
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </Field>
               <Field
                 label="Which prompt runs where"
                 hint="A task with no pinned template uses these. Needs spec wins over the column, so unspecified work always gets specced first."

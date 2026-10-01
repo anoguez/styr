@@ -93,6 +93,7 @@ function defaults(): Settings {
     claudeCommand: 'claude',
     codexCommand: 'codex',
     defaultProvider: 'claude',
+    providerRouting: { spec: 'claude', implement: 'claude', review: 'claude' },
     defaultPromptTemplateId: 'implement',
     promptTemplates: [
       { id: 'spec', name: 'Spec the task', template: SPEC_TEMPLATE },

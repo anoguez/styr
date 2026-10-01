@@ -238,6 +238,7 @@ export interface Settings {
   claudeCommand: string
   codexCommand: string
   defaultProvider: 'claude' | 'codex'
+  providerRouting: Record<OrchestrationLane, 'claude' | 'codex'>
   defaultPromptTemplateId: string
   promptTemplates: PromptTemplate[]
   promptRouting: PromptRouting

@@ -138,8 +138,8 @@ export default function App(): ReactNode {
   }, [adoptSession, settings])
 
   const launchClaude = useCallback(
-    async (taskId: string, templateId?: string) => {
-      adoptSession(await window.api.terminal.launchAgent(taskId, templateId))
+    async (taskId: string, templateId?: string, provider?: 'claude' | 'codex') => {
+      adoptSession(await window.api.terminal.launchAgent(taskId, templateId, provider))
     },
     [adoptSession]
   )
@@ -583,7 +583,9 @@ export default function App(): ReactNode {
             setCreating(false)
             setEditing(null)
           }}
-          onLaunch={(taskId, templateId) => void launchClaude(taskId, templateId)}
+          onLaunch={(taskId, templateId, provider) =>
+            void launchClaude(taskId, templateId, provider)
+          }
           onResumeSession={(taskId, sessionId) => {
             void window.api.terminal.resumeSession(taskId, sessionId).then(adoptSession)
           }}

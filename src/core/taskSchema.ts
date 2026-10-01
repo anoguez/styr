@@ -107,6 +107,12 @@ export const orchestrationSchema = z.object({
   review: z.number().int().min(0).max(20)
 })
 
+export const providerRoutingSchema = z.object({
+  spec: z.enum(['claude', 'codex']).default('claude'),
+  implement: z.enum(['claude', 'codex']).default('claude'),
+  review: z.enum(['claude', 'codex']).default('claude')
+})
+
 const hexColour = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Use a 6-digit hex colour')
 
 export const themeSchema = z.object({
@@ -137,6 +143,11 @@ export const settingsSchema = z.object({
   claudeCommand: z.string().default('claude'),
   codexCommand: z.string().default('codex'),
   defaultProvider: z.enum(['claude', 'codex']).default('claude'),
+  providerRouting: providerRoutingSchema.default({
+    spec: 'claude',
+    implement: 'claude',
+    review: 'claude'
+  }),
   defaultPromptTemplateId: z.string().default('default'),
   promptTemplates: z.array(promptTemplateSchema).default([]),
   promptRouting: promptRoutingSchema,
