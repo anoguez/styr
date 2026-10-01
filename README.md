@@ -40,20 +40,27 @@ a board you can see, and in plain files you can read.
 
 Styr talks to agent CLIs through a small provider interface (`src/core/providers/`).
 
-| Agent                                                      | Status                                                   |
-| ---------------------------------------------------------- | -------------------------------------------------------- |
-| [Claude Code](https://docs.claude.com/en/docs/claude-code) | Supported: launch, resume, live state through hooks, MCP |
-| Codex CLI                                                  | Planned                                                  |
-| Gemini CLI                                                 | Planned                                                  |
-| Local models (Ollama, through an agent CLI)                | Planned                                                  |
+| Agent                                                      | Status                                                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [Claude Code](https://docs.claude.com/en/docs/claude-code) | Supported: launch, resume, live state through hooks, MCP                                          |
+| [Codex CLI](https://github.com/openai/codex)               | Supported: launch, resume, live state through the app-server daemon, MCP (needs 0.159.3 or later) |
+| Gemini CLI                                                 | Planned                                                                                           |
+| Local models (Ollama, through an agent CLI)                | Planned                                                                                           |
+
+Settings → Integrations enables each provider and sets which one runs the spec, implement and review
+lanes (every lane defaults to Claude). Each launch can override that from the task dialog, and a task
+keeps a mixed-provider chat history but only one live session at a time. A Codex launch is refused
+with a message saying what to fix if the CLI is older than 0.159.3 or its app-server daemon is
+unavailable.
 
 Any agent can already move its task. The board protocol is just editing the task file, and the
 path is in every prompt.
 
 ## Quick start
 
-You need macOS, a recent Node with Yarn, git, and the [Claude Code](https://docs.claude.com/en/docs/claude-code)
-CLI on your `PATH`.
+You need macOS, a recent Node with Yarn, git, and at least one agent CLI on your `PATH`:
+[Claude Code](https://docs.claude.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex)
+0.159.3 or later.
 
 ```sh
 git clone https://github.com/anoguez/styr.git
@@ -67,9 +74,9 @@ Then:
 1. **Settings → Workspace**: pick a folder for the board's own data (the default is `~/Styr`) and
    a default working directory for agents, usually a folder holding your repos.
 2. **New task** (`⌘N`): give it a title, a description and the repository it applies to.
-3. Hover the card and press **▶ Claude**. The task moves to In Progress and a terminal tab opens
+3. Hover the card and press **▶ Agent** (pick the provider in the task dialog). The task moves to In Progress and a terminal tab opens
    with the agent already working.
-4. **Settings → Integrations**: copy the `claude mcp add styr …` command and run it once, so agents
+4. **Settings → Integrations**: copy the `claude mcp add styr …` or `codex mcp add styr …` command for your provider and run it once, so agents
    can query and create tasks.
 
 To install it as an app instead, download the signed DMG from
