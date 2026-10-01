@@ -68,7 +68,9 @@ Then:
 4. **Settings → Integrations**: copy the `claude mcp add styr …` command and run it once, so agents
    can query and create tasks.
 
-To install it as an app in `/Applications`, see [Building and packaging](docs/building.md).
+To install it as an app instead, download the signed DMG from
+[Releases](https://github.com/anoguez/styr/releases), or build one yourself (see
+[Building and packaging](docs/building.md)).
 
 ## How it fits together
 
@@ -87,7 +89,7 @@ picks the changes up.
 
 - [User guide](docs/guide.md): tasks, launching agents, worktrees, prompt routing, Orchestrate,
   the MCP server, settings, themes and shortcuts.
-- [Building and packaging](docs/building.md): scripts, building a `.app`, and sharing it.
+- [Building and packaging](docs/building.md): scripts, signing, and how releases are cut.
 - [`CLAUDE.md`](CLAUDE.md): architecture rules and design decisions, for contributors and the
   agents working on Styr itself.
 
