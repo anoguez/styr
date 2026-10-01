@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/anoguez/styr/compare/v0.4.0...v0.5.0) (2026-10-01)
+
+
+### Features
+
+* open a new terminal tab with ⌘T ([d3c7019](https://github.com/anoguez/styr/commit/d3c701989db2a635e85076a6d870b75c8bfacdee))
+
+
+### Bug Fixes
+
+* advertise truecolor to programs in the terminal ([64b9a08](https://github.com/anoguez/styr/commit/64b9a089c8312c1245866b11d8d298dca4ce0705))
+* let ⌘T open a terminal tab when the panel has no sessions ([0df8c01](https://github.com/anoguez/styr/commit/0df8c01da8379bce85cd045fe3c78a3e47ed7d71))
+
 ## [0.4.0](https://github.com/anoguez/styr/compare/v0.3.0...v0.4.0) (2026-10-01)
 
 
