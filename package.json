@@ -1,0 +1,49 @@
+{
+  "name": "styr",
+  "version": "0.1.0",
+  "description": "An agentic IDE: a kanban board that dispatches AI coding agents into embedded terminals, with an MCP server so agents can drive the board",
+  "main": "./out/main/index.mjs",
+  "author": "Anderson Noguez",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/build.mjs",
+    "start": "electron-vite preview",
+    "mcp": "node ./out/main/mcp/index.mjs",
+    "package": "yarn build && electron-builder",
+    "postinstall": "electron-builder install-app-deps",
+    "icon": "node scripts/make-icon.mjs"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "better-sqlite3": "^13.0.3",
+    "chokidar": "^5.0.0",
+    "gray-matter": "^4.0.3",
+    "nanoid": "^6.0.1",
+    "node-pty": "^1.1.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.5.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}

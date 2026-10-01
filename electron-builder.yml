@@ -1,0 +1,26 @@
+appId: com.andersonnoguez.styr
+productName: Styr
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - "**/node_modules/node-pty/**"
+  - "**/node_modules/better-sqlite3/**"
+  # The MCP server is launched by plain `node`, which cannot read inside an asar archive.
+  - "out/main/**"
+mac:
+  target:
+    - target: dmg
+      arch: arm64
+  category: public.app-category.developer-tools
+  # No Developer ID, so sign ad-hoc. Skipping signing altogether leaves the bundle's resources
+  # unsealed, which macOS reports as "damaged" on any machine that applies Gatekeeper.
+  identity: "-"
+  gatekeeperAssess: false
+  # Ad-hoc signing plus the hardened runtime needs library validation disabled, or the bundled
+  # native modules (node-pty, better-sqlite3) fail to load at launch.
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist

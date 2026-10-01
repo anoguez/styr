@@ -1,0 +1,20 @@
+{
+  "include": ["src/renderer/src/**/*", "src/preload/*.d.ts", "src/core/types.ts", "src/core/taskSchema.ts", "src/core/prompt.ts", "src/core/agentState.ts", "src/core/shortcuts.ts"],
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "paths": { "@core/*": ["./src/core/*"], "@renderer/*": ["./src/renderer/src/*"] }
+  }
+}
