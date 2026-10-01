@@ -17,5 +17,10 @@ export function sessionLabel(
 ): SessionLabel {
   if (!session.taskId) return { name: session.title, detail: '' }
   const name = taskTitles.get(session.taskId) ?? session.title
-  return { name, detail: session.replay ? `${session.taskId} · replay` : session.taskId }
+  const provider =
+    session.provider === 'codex' ? 'Codex' : session.provider === 'claude' ? 'Claude' : ''
+  return {
+    name,
+    detail: [session.taskId, provider, session.replay ? 'replay' : ''].filter(Boolean).join(' · ')
+  }
 }

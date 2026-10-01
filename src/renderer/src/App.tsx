@@ -83,7 +83,7 @@ export default function App(): ReactNode {
     const tasks = Object.values(board).flat()
     return sortAgentRows(
       tasks
-        .filter((task) => agents.has(task.id) || task.claudeSessionId)
+        .filter((task) => agents.has(task.id) || task.agentSession)
         .filter((task) => !isAgentArchived(task.status))
         .map((task) => ({
           task,
@@ -137,9 +137,15 @@ export default function App(): ReactNode {
     )
   }, [adoptSession, settings])
 
-  const launchClaude = useCallback(
-    async (taskId: string, templateId?: string) => {
-      adoptSession(await window.api.terminal.launchClaude(taskId, templateId))
+  const launchAgent = useCallback(
+    async (taskId: string, templateId?: string, provider?: 'claude' | 'codex') => {
+      try {
+        adoptSession(await window.api.terminal.launchAgent(taskId, templateId, provider))
+      } catch (error) {
+        // A refused launch (an unsupported Codex install, a disabled provider) says what to fix.
+        const message = error instanceof Error ? error.message : String(error)
+        window.alert(message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+      }
     },
     [adoptSession]
   )
@@ -152,9 +158,9 @@ export default function App(): ReactNode {
         setTerminalOpen(true)
         return
       }
-      void launchClaude(taskId)
+      void launchAgent(taskId)
     },
-    [sessions, launchClaude]
+    [sessions, launchAgent]
   )
 
   useEffect(() => window.api.tasks.onActivateRequested(activateTask), [activateTask])
@@ -255,7 +261,7 @@ export default function App(): ReactNode {
         keywords: `${task.status} ${task.project ?? ''} ${task.tags.join(' ')}`,
         run: () => setEditing(task),
         altLabel: 'start Claude',
-        runAlt: () => void launchClaude(task.id)
+        runAlt: () => void launchAgent(task.id)
       })
     }
 
@@ -306,7 +312,7 @@ export default function App(): ReactNode {
     agentsOpen,
     bindings,
     runCommand,
-    launchClaude,
+    launchAgent,
     activateTask,
     openSettings
   ])
@@ -496,7 +502,7 @@ export default function App(): ReactNode {
                 agents={agents}
                 queued={queued}
                 onOpen={setEditing}
-                onLaunch={(task) => void launchClaude(task.id)}
+                onLaunch={(task) => void launchAgent(task.id)}
                 templateNameFor={(task) => resolveTemplateFor(settings, task).name}
               />
             )}
@@ -584,7 +590,9 @@ export default function App(): ReactNode {
             setCreating(false)
             setEditing(null)
           }}
-          onLaunch={(taskId, templateId) => void launchClaude(taskId, templateId)}
+          onLaunch={(taskId, templateId, provider) =>
+            void launchAgent(taskId, templateId, provider)
+          }
           onResumeSession={(taskId, sessionId) => {
             void window.api.terminal.resumeSession(taskId, sessionId).then(adoptSession)
           }}

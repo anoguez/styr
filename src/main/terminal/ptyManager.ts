@@ -10,6 +10,7 @@ export interface SpawnOptions {
   shell?: string
   title?: string
   taskId?: string
+  provider?: 'claude' | 'codex'
   replay?: boolean
   command?: string
   env?: Record<string, string>
@@ -19,9 +20,10 @@ interface Session {
   info: TerminalSessionInfo
   pty: IPty
   backlog: string
+  sequence: number
 }
 
-type DataListener = (id: string, data: string) => void
+type DataListener = (id: string, data: string, sequence: number) => void
 type ExitListener = (id: string, exitCode: number) => void
 
 const BACKLOG_LIMIT = 200_000
@@ -43,7 +45,10 @@ function sanitisedEnv(extra?: Record<string, string>): Record<string, string> {
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value
   }
-  return { ...withoutSessionMarkers(env), ...extra, TERM: 'xterm-256color' }
+  // xterm.js renders 24-bit colour, but programs only use it when COLORTERM says so. Without it,
+  // TUIs such as Codex quantise their colours to the 256-colour palette, which turns a background
+  // blended from the theme into flat grey.
+  return { ...withoutSessionMarkers(env), ...extra, TERM: 'xterm-256color', COLORTERM: 'truecolor' }
 }
 
 export function onTerminalData(listener: DataListener): void {
@@ -71,14 +76,16 @@ export function createSession(options: SpawnOptions): TerminalSessionInfo {
     title: options.title ?? 'Terminal',
     cwd,
     ...(options.taskId ? { taskId: options.taskId } : {}),
+    ...(options.provider ? { provider: options.provider } : {}),
     ...(options.replay ? { replay: true } : {})
   }
-  const session: Session = { info, pty: child, backlog: '' }
+  const session: Session = { info, pty: child, backlog: '', sequence: 0 }
   sessions.set(id, session)
 
   child.onData((data) => {
     session.backlog = (session.backlog + data).slice(-BACKLOG_LIMIT)
-    for (const listener of dataListeners) listener(id, data)
+    session.sequence += 1
+    for (const listener of dataListeners) listener(id, data, session.sequence)
   })
   child.onExit(({ exitCode }) => {
     if (info.taskId) exitedTaskIds.set(id, info.taskId)
@@ -105,8 +112,9 @@ export function killSession(id: string): void {
   sessions.delete(id)
 }
 
-export function sessionBacklog(id: string): string {
-  return sessions.get(id)?.backlog ?? ''
+export function sessionBacklog(id: string): { data: string; sequence: number } {
+  const session = sessions.get(id)
+  return { data: session?.backlog ?? '', sequence: session?.sequence ?? 0 }
 }
 
 export function sessionTaskId(id: string): string | undefined {

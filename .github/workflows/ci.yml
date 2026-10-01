@@ -2,8 +2,7 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
+    types: [opened, reopened, synchronize]
 
 jobs:
   check:
@@ -22,3 +21,4 @@ jobs:
       - run: yarn lint
       - run: yarn format:check
       - run: yarn build
+      - run: yarn test:coverage

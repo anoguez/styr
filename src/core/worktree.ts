@@ -3,16 +3,32 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { WORKTREE_BRANCH_PREFIX } from './types.js'
 
+const REPOSITORY_CONTEXT_ENV = [
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_COMMON_DIR',
+  'GIT_DIR',
+  'GIT_IMPLICIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_PREFIX',
+  'GIT_WORK_TREE'
+]
+
 export interface WorktreeResult {
   path: string
   branch: string
   created: boolean
 }
 
-function git(args: string[], cwd: string): string {
+function git(args: string[], cwd: string, timeout?: number): string {
+  const env = { ...process.env }
+  for (const key of REPOSITORY_CONTEXT_ENV) delete env[key]
+
   return execFileSync('git', args, {
     cwd,
+    env,
     encoding: 'utf8',
+    timeout,
     stdio: ['ignore', 'pipe', 'pipe']
   }).trim()
 }
@@ -98,4 +114,177 @@ export function removeWorktree(repoPath: string, taskId: string): void {
   const path = worktreePathFor(repoPath, taskId)
   if (existsSync(path)) git(['worktree', 'remove', path, '--force'], repoPath)
   git(['worktree', 'prune'], repoPath)
+}
+
+export interface Landing {
+  branch: string
+  /** The branch the work is meant to land on. */
+  base: string
+  /** Commits on the task branch that are not on the base. */
+  ahead: number
+  /** Every commit is on the base, or (squash/rebase merges) every file it changed matches the base. */
+  landed: boolean
+}
+
+function refExists(repoPath: string, ref: string): boolean {
+  try {
+    git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], repoPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The branch work is meant to land on: the remote's default branch when there is one, else
+ * `main`/`master`, else whatever the main checkout is on (a worktree branches from its HEAD).
+ */
+export function baseBranchFor(repoPath: string): string | undefined {
+  try {
+    const remoteHead = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repoPath)
+    const name = remoteHead.replace(/^origin\//, '')
+    if (name && refExists(repoPath, `refs/heads/${name}`)) return name
+  } catch {
+    // no remote, or origin/HEAD was never set
+  }
+  for (const name of ['main', 'master']) {
+    if (refExists(repoPath, `refs/heads/${name}`)) return name
+  }
+  try {
+    const current = git(['rev-parse', '--abbrev-ref', 'HEAD'], repoPath)
+    return current && current !== 'HEAD' ? current : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function countAhead(repoPath: string, base: string, branch: string): number {
+  return Number(git(['rev-list', '--count', `${base}..${branch}`], repoPath))
+}
+
+/** True when every file the branch changed since its merge-base is identical on `base`. */
+function contentLanded(repoPath: string, base: string, branch: string): boolean {
+  try {
+    const mergeBase = git(['merge-base', base, branch], repoPath)
+    const changed = git(['diff', '--name-only', '-z', mergeBase, branch], repoPath)
+      .split('\0')
+      .filter(Boolean)
+    if (changed.length === 0) return false
+    git(['diff', '--quiet', base, branch, '--', ...changed], repoPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Whether a task branch's work is on the base. A remote-tracking base counts too, so a PR merged on
+ * the host is seen before the user pulls. Undefined when there is no branch or no base to compare.
+ */
+export function branchLanding(repoPath: string, taskId: string): Landing | undefined {
+  if (!isGitRepo(repoPath)) return undefined
+  const branch = branchNameFor(taskId)
+  if (!branchExists(repoPath, branch)) return undefined
+  const base = baseBranchFor(repoPath)
+  if (!base) return undefined
+
+  const bases = [base, `origin/${base}`].filter((ref) => refExists(repoPath, ref))
+  let ahead = countAhead(repoPath, base, branch)
+  let landed = false
+  for (const ref of bases) {
+    const count = countAhead(repoPath, ref, branch)
+    ahead = Math.min(ahead, count)
+    if (count === 0 || contentLanded(repoPath, ref, branch)) landed = true
+  }
+  if (landed && ahead === 0 && !hasOwnCommits(repoPath, branch)) landed = false
+  return { branch, base, ahead, landed }
+}
+
+/**
+ * A fresh branch with no commits is trivially "on the base"; that is not landed work. The reflog
+ * remembers the commit the branch was created at, so a tip that never moved is told apart from one
+ * that was fast-forward merged. Without a reflog the branch is not assumed to have landed.
+ */
+function hasOwnCommits(repoPath: string, branch: string): boolean {
+  try {
+    const entries = git(['reflog', 'show', '--format=%H', `refs/heads/${branch}`], repoPath)
+      .split('\n')
+      .filter(Boolean)
+    return entries.length > 1 && entries[0] !== entries[entries.length - 1]
+  } catch {
+    return false
+  }
+}
+
+export interface CleanupResult {
+  /** The worktree directory is gone (or never existed), so `worktreePath` can be cleared. */
+  worktreeRemoved: boolean
+  /** One line per thing done or left in place, for the task's Activity. */
+  notes: string[]
+}
+
+/**
+ * Removes what a landed task left behind: its worktree, its local branch and its remote branch.
+ * Nothing is forced past a check — a dirty worktree stays, and a branch whose work cannot be shown
+ * to be on the base stays — and each refusal is reported rather than thrown.
+ */
+export function cleanupLandedTask(repoPath: string, taskId: string): CleanupResult {
+  const notes: string[] = []
+  const path = worktreePathFor(repoPath, taskId)
+  const branch = branchNameFor(taskId)
+  const landing = branchLanding(repoPath, taskId)
+
+  if (landing && !landing.landed) {
+    notes.push(
+      `Kept worktree and branch ${branch}: ${landing.ahead} commit(s) are not on ${landing.base}.`
+    )
+    return { worktreeRemoved: !existsSync(path), notes }
+  }
+
+  git(['worktree', 'prune'], repoPath)
+  if (existsSync(path)) {
+    try {
+      git(['worktree', 'remove', path], repoPath)
+      notes.push(`Removed worktree ${path}.`)
+    } catch {
+      notes.push(`Left worktree ${path} in place: it has uncommitted or untracked changes.`)
+      return { worktreeRemoved: false, notes }
+    }
+  }
+  if (!landing) return { worktreeRemoved: true, notes }
+
+  const remoteTip = remoteBranchTip(repoPath, branch)
+  const localTip = git(['rev-parse', branch], repoPath)
+  try {
+    git(['branch', '-D', branch], repoPath)
+    notes.push(`Deleted local branch ${branch}.`)
+  } catch (error) {
+    notes.push(`Could not delete local branch ${branch}: ${firstLine(error)}`)
+  }
+
+  if (remoteTip === localTip) {
+    try {
+      git(['push', 'origin', '--delete', branch], repoPath, 30_000)
+      notes.push(`Deleted remote branch origin/${branch}.`)
+    } catch (error) {
+      notes.push(`Could not delete remote branch origin/${branch}: ${firstLine(error)}`)
+    }
+  } else if (remoteTip) {
+    notes.push(`Kept remote branch origin/${branch}: it has commits that are not the local tip.`)
+  }
+  return { worktreeRemoved: true, notes }
+}
+
+function remoteBranchTip(repoPath: string, branch: string): string | undefined {
+  try {
+    const line = git(['ls-remote', '--heads', 'origin', branch], repoPath, 15_000)
+    return line.split(/\s/)[0] || undefined
+  } catch {
+    return undefined
+  }
+}
+
+function firstLine(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error)
+  return text.split('\n').find((line) => line.trim() && !line.startsWith('Command failed')) ?? text
 }

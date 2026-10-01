@@ -108,6 +108,11 @@ const LANE_HINTS: Record<OrchestrationLane, string> = {
 
 export const SECTIONS = [
   {
+    id: 'preferences',
+    label: 'Preferences',
+    blurb: 'Defaults for new tasks. Existing tasks keep their own settings.'
+  },
+  {
     id: 'workspace',
     label: 'Workspace',
     blurb: 'Where the board keeps its data and where work runs.'
@@ -319,18 +324,20 @@ export function SettingsDialog({
   onClose: () => void
 }): ReactNode {
   const [draft, setDraft] = useState<Settings>(settings)
-  const [section, setSection] = useState<SectionId>(initialSection ?? 'workspace')
+  const [section, setSection] = useState<SectionId>(initialSection ?? 'preferences')
   const [selectedId, setSelectedId] = useState<string>(
     settings.promptTemplates[0]?.id ?? settings.defaultPromptTemplateId
   )
   const [mcpCommand, setMcpCommand] = useState('')
+  const [codexMcpCommand, setCodexMcpCommand] = useState('')
   const [copied, setCopied] = useState(false)
   const [ansiSlot, setAnsiSlot] = useState<AnsiColour>('red')
   const [version, setVersion] = useState('')
   const update = useUpdates()
 
   useEffect(() => {
-    void window.api.app.mcpCommand().then(setMcpCommand)
+    void window.api.app.mcpCommand('claude').then(setMcpCommand)
+    void window.api.app.mcpCommand('codex').then(setCodexMcpCommand)
     void window.api.app.info().then((info) => setVersion(info.version))
   }, [])
 
@@ -345,6 +352,19 @@ export function SettingsDialog({
       if (changes.theme) onPreviewTheme(changes.theme)
       return next
     })
+
+  function toggleProvider(provider: 'claude' | 'codex', enabled: boolean): void {
+    const enabledProviders = enabled
+      ? [...new Set([...draft.enabledProviders, provider])]
+      : draft.enabledProviders.filter((item) => item !== provider)
+    if (enabledProviders.length === 0) return
+    patch({
+      enabledProviders,
+      defaultProvider: enabledProviders.includes(draft.defaultProvider)
+        ? draft.defaultProvider
+        : enabledProviders[0]!
+    })
+  }
 
   function updateTemplate(changes: Partial<PromptTemplate>): void {
     if (!selected) return
@@ -425,6 +445,27 @@ export function SettingsDialog({
             <p className="mt-0.5 text-[11.5px] text-faint">{active.blurb}</p>
           </header>
 
+          {section === 'preferences' ? (
+            <div className="flex flex-col gap-4">
+              <Checkbox
+                checked={draft.taskDefaults.orchestrate}
+                onChange={(orchestrate) =>
+                  patch({ taskDefaults: { ...draft.taskDefaults, orchestrate } })
+                }
+                label="Let Orchestrate start new tasks"
+                hint="When on, the Orchestrate checkbox is ticked when you create a task. You can still change it per task."
+              />
+              <Checkbox
+                checked={draft.taskDefaults.useWorktree}
+                onChange={(useWorktree) =>
+                  patch({ taskDefaults: { ...draft.taskDefaults, useWorktree } })
+                }
+                label="Run new tasks in their own git worktree"
+                hint="When on, the worktree checkbox is ticked when you create a task. Each agent then gets a separate checkout."
+              />
+            </div>
+          ) : null}
+
           {section === 'workspace' ? (
             <div className="flex flex-col gap-4">
               <Field
@@ -458,21 +499,45 @@ export function SettingsDialog({
                   onChange={(event) => patch({ shell: event.target.value })}
                 />
               </Field>
-              <Field
-                label="Claude command"
-                hint="Usually just `claude`. Change it if your CLI lives somewhere else or needs a wrapper."
-              >
-                <input
-                  className={inputClass}
-                  value={draft.claudeCommand}
-                  onChange={(event) => patch({ claudeCommand: event.target.value })}
-                />
-              </Field>
             </div>
           ) : null}
 
           {section === 'routing' ? (
             <div className="flex flex-col gap-4">
+              <Field
+                label="Agent for each lane"
+                hint="Orchestrate uses these providers. Claude remains the default until you opt a lane into Codex."
+              >
+                <div className="grid grid-cols-3 gap-2.5 rounded-lg border border-edge bg-chrome/40 p-3">
+                  {(['spec', 'implement', 'review'] as const).map((lane) => (
+                    <label
+                      key={lane}
+                      className="flex flex-col gap-1.5 text-[11px] capitalize text-dim"
+                    >
+                      {lane}
+                      <select
+                        className={inputClass}
+                        value={draft.providerRouting[lane]}
+                        onChange={(event) =>
+                          patch({
+                            providerRouting: {
+                              ...draft.providerRouting,
+                              [lane]: event.target.value as 'claude' | 'codex'
+                            }
+                          })
+                        }
+                      >
+                        {draft.enabledProviders.includes('claude') ? (
+                          <option value="claude">Claude Code</option>
+                        ) : null}
+                        {draft.enabledProviders.includes('codex') ? (
+                          <option value="codex">Codex</option>
+                        ) : null}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </Field>
               <Field
                 label="Which prompt runs where"
                 hint="A task with no pinned template uses these. Needs spec wins over the column, so unspecified work always gets specced first."
@@ -907,31 +972,128 @@ export function SettingsDialog({
           {section === 'integrations' ? (
             <div className="flex flex-col gap-4">
               <Field
-                label="Claude MCP server"
-                hint="Run this once in a terminal, then start a new Claude session. It lets Claude query the board — what is in review, what needs a spec — from anywhere."
+                label="Installed providers"
+                hint="Enable the coding CLIs you use. At least one provider must remain enabled."
               >
-                <div className="flex flex-col gap-2">
-                  <pre className="overflow-x-auto rounded-lg border border-edge-strong bg-chrome p-3 font-mono text-[11px] leading-relaxed text-dim">
-                    {mcpCommand || 'Building command…'}
-                  </pre>
-                  <div className="flex items-center gap-2.5">
+                <div className="flex flex-col gap-2 rounded-lg border border-edge bg-chrome/40 p-3">
+                  <Checkbox
+                    checked={draft.enabledProviders.includes('claude')}
+                    onChange={(enabled) => toggleProvider('claude', enabled)}
+                    label="Claude Code"
+                  />
+                  <Checkbox
+                    checked={draft.enabledProviders.includes('codex')}
+                    onChange={(enabled) => toggleProvider('codex', enabled)}
+                    label="Codex"
+                  />
+                </div>
+              </Field>
+              <Field
+                label="Default provider"
+                hint="Used by manual launches; orchestration can route each lane independently."
+              >
+                <Select
+                  value={draft.defaultProvider}
+                  onChange={(event) =>
+                    patch({ defaultProvider: event.target.value as 'claude' | 'codex' })
+                  }
+                >
+                  {draft.enabledProviders.includes('claude') ? (
+                    <option value="claude">Claude Code</option>
+                  ) : null}
+                  {draft.enabledProviders.includes('codex') ? (
+                    <option value="codex">Codex</option>
+                  ) : null}
+                </Select>
+              </Field>
+              {draft.enabledProviders.includes('claude') ? (
+                <Field
+                  label="Claude command"
+                  hint="Usually `claude`. Use a wrapper or absolute path when needed."
+                >
+                  <input
+                    className={inputClass}
+                    value={draft.claudeCommand}
+                    onChange={(event) => patch({ claudeCommand: event.target.value })}
+                  />
+                </Field>
+              ) : null}
+              {draft.enabledProviders.includes('claude') ? (
+                <Field
+                  label="Claude MCP server"
+                  hint="Run this once in a terminal, then start a new Claude session. It lets Claude query the board — what is in review, what needs a spec — from anywhere."
+                >
+                  <div className="flex flex-col gap-2">
+                    <pre className="overflow-x-auto rounded-lg border border-edge-strong bg-chrome p-3 font-mono text-[11px] leading-relaxed text-dim">
+                      {mcpCommand || 'Building command…'}
+                    </pre>
+                    <div className="flex items-center gap-2.5">
+                      <Button
+                        disabled={!mcpCommand}
+                        onClick={() => {
+                          void navigator.clipboard.writeText(mcpCommand).then(() => {
+                            setCopied(true)
+                            setTimeout(() => setCopied(false), 1600)
+                          })
+                        }}
+                      >
+                        Copy command
+                      </Button>
+                      {copied ? (
+                        <span className="text-[11.5px] text-[var(--color-col-done)]">Copied</span>
+                      ) : null}
+                    </div>
+                  </div>
+                </Field>
+              ) : null}
+              {draft.enabledProviders.includes('codex') ? (
+                <Field
+                  label="Codex command"
+                  hint="Usually `codex`. Codex always runs in the workspace-write sandbox."
+                >
+                  <input
+                    className={inputClass}
+                    value={draft.codexCommand}
+                    onChange={(event) => patch({ codexCommand: event.target.value })}
+                  />
+                </Field>
+              ) : null}
+              {draft.enabledProviders.includes('codex') ? (
+                <Field
+                  label="Codex approvals"
+                  hint="Approve for me sends eligible requests to Codex’s automatic reviewer; it does not grant full access."
+                >
+                  <Select
+                    value={draft.codexApprovalReviewer}
+                    onChange={(event) =>
+                      patch({
+                        codexApprovalReviewer: event.target.value as 'user' | 'auto_review'
+                      })
+                    }
+                  >
+                    <option value="user">Ask me</option>
+                    <option value="auto_review">Approve for me</option>
+                  </Select>
+                </Field>
+              ) : null}
+              {draft.enabledProviders.includes('codex') ? (
+                <Field
+                  label="Codex MCP server"
+                  hint="Run this once, then start a new Codex session to let it query and update the board."
+                >
+                  <div className="flex flex-col gap-2">
+                    <pre className="overflow-x-auto rounded-lg border border-edge-strong bg-chrome p-3 font-mono text-[11px] leading-relaxed text-dim">
+                      {codexMcpCommand || 'Building command…'}
+                    </pre>
                     <Button
-                      disabled={!mcpCommand}
-                      onClick={() => {
-                        void navigator.clipboard.writeText(mcpCommand).then(() => {
-                          setCopied(true)
-                          setTimeout(() => setCopied(false), 1600)
-                        })
-                      }}
+                      disabled={!codexMcpCommand}
+                      onClick={() => void navigator.clipboard.writeText(codexMcpCommand)}
                     >
                       Copy command
                     </Button>
-                    {copied ? (
-                      <span className="text-[11.5px] text-[var(--color-col-done)]">Copied</span>
-                    ) : null}
                   </div>
-                </div>
-              </Field>
+                </Field>
+              ) : null}
             </div>
           ) : null}
 

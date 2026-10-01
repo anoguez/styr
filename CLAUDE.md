@@ -51,9 +51,28 @@ on, every agent it launches believes it is a child session and turns transcript 
 resume then silently starts a fresh chat. List session markers only — `CLAUDE_CODE_*` settings a user
 exports on purpose must still reach the agents.
 
-Still Claude-named, deliberately left for when a second provider lands: `Task.claudeSessionId`,
-`Settings.claudeCommand` and the `terminal:launchClaude` channel. Renaming the first two changes
-the on-disk format, so it should happen together with recording a provider per session.
+`Settings.claudeCommand` and `Settings.codexCommand` are per-provider by nature. Task provider state
+is `Task.agentSession` (the live pointer) plus `Task.sessions` (history, every entry tagged with a
+provider). `claudeSessionId` no longer exists in memory: `core/migrateTask.ts` rewrites it, and
+untagged history, on read — before validation, in `parseTaskMarkdown` and the JSON reader.
+
+### Codex
+
+Codex's TUI runs against the shared app-server daemon (`codex --remote unix:// --cd <cwd>`; `--cd`
+is mandatory there, the daemon picks a new thread's directory), so its thread is observable. The
+daemon broadcasts `thread/started` and `thread/status/changed` for every thread to every connected
+client. `main/codexMonitor.ts` is one read-only listener that turns those into the hook-style
+events `EVENT_STATE` already knows (active → working, active + `waitingOn*` flag → waiting, idle →
+finished, started → ready). The pure half — version policy, mapping, `ThreadBindings`, WebSocket
+framing — is in `core/providers/codexProtocol.ts` and is what the tests cover.
+
+A fresh launch cannot know its thread id (the TUI creates it): `ThreadBindings.expect` claims the
+first non-ephemeral thread to start in that cwd, and the monitor saves the id as the session.
+Resumes bind the stored id up front. `prepareCodex` runs before anything is written and refuses the
+launch (CLI < 0.159.3, daemon missing/older) with an error naming the fix. The control socket
+speaks WebSocket, not raw JSON lines, so `codex app-server proxy` is of no use as a transport.
+
+The MCP install command for Codex sets `STYR_MCP_AUTHOR=codex` so board notes are attributed.
 
 ## Launching Claude
 
@@ -68,7 +87,7 @@ project directory name.
 
 `planLaunch` takes an optional `homeRoot` purely so tests can point it at a fixture directory.
 
-`terminal:launchClaude` returns an existing session (via `findSessionByTask`) before it plans
+`terminal:launchAgent` returns an existing session (via `findSessionByTask`) before it plans
 anything, so a second launch focuses the open tab instead of spawning a rival agent on the same
 task. The renderer dedupes by session id in `adoptSession`, so the same handler covers both cases.
 
@@ -196,6 +215,12 @@ panel's `bg-chrome` behind it. Setting it keeps the two in step and feeds xterm'
 maths; it is not what paints the panel. A hardcoded background sat there for a long time doing
 almost nothing, which is why nobody noticed it was from the old palette.
 
+## Preferences
+
+`Settings.taskDefaults` (`orchestrate`, `useWorktree`) only seeds the new-task form in `toForm`
+(`TaskDialog`). Existing tasks keep their saved values, so changing a default never rewrites a
+task. Preferences is the first `SECTIONS` entry and the dialog's default section.
+
 ## Title bar
 
 The window uses `titleBarStyle: 'hiddenInset'` with `trafficLightPosition` set to centre the lights
@@ -240,8 +265,9 @@ Core is compiled without the DOM lib, so `ShortcutKeyEvent` is spelled out rathe
 `SHORTCUT_SCOPES` says where each binding applies. A `terminal` command answers only while an
 embedded terminal has focus (⌘T, New terminal tab), so its key stays free elsewhere. `commandForEvent`
 takes a required `ShortcutContext` for this — required so no caller can forget scope exists. `App`
-derives it with `isTerminalTarget` (xterm types into a hidden textarea inside `.xterm`), and
-`isAppShortcut` always passes `terminalFocused: true`. Scope gates only the key; the palette runs
+derives it with `isTerminalTarget`: inside `.xterm` (xterm types into a hidden textarea there) or
+anywhere in the terminal panel, whose root is focusable (`tabIndex={-1}`, `data-terminal-panel`) so
+the empty state counts — without that, ⌘T could not open the first tab. `isAppShortcut` always passes `terminalFocused: true`. Scope gates only the key; the palette runs
 every command from anywhere.
 
 A binding is a list, not a string, because the terminal panel answers to both ``⌃` `` and ``⌘` ``,
@@ -379,6 +405,24 @@ the wrong column, and stored templates are user data that older configs still ca
 `resolveTemplateFor` takes `TemplateRouteInput` (status + readiness + optional pin), not a full
 `Task`, so the renderer can resolve against unsaved form state. It is shared by the main process and
 the renderer — keep it free of Node imports.
+
+## Done means landed
+
+The shipped `code-review` template (`config.ts`) and `boardProtocol` (`prompt.ts`) tell the agent
+that `done` means the work is on the base branch, not that it was approved: a passing review with
+commits still unlanded stays `in_review` and notes branch/base/count. The prompt never assumes a PR
+or host — `gh` only when there is a GitHub remote.
+
+Styr does not rely on the agent. `main/landing.ts` runs from `notifyTasksChanged` (so the watcher
+covers external merges): an `in_review` worktree task whose branch has landed moves to `done`, and a
+`done` task with a `worktreePath` is cleaned up through `cleanupLandedTask` in `core/worktree.ts`.
+`branchLanding` checks the local base and `origin/<base>`; "landed" is either zero commits ahead, or
+(squash/rebase) every file changed since the merge-base identical on the base. A branch with no
+commits of its own is not landed — the reflog tells a never-moved tip from a fast-forward merge.
+Cleanup never forces the worktree removal, uses `branch -D` only after that check, deletes the remote
+branch only when its tip equals the local one, and reports refusals once (in-memory `reported` set —
+the note write retriggers the watcher). `worktreePath` is cleared via `taskStore` once the worktree
+is gone. Tasks with `useWorktree: false` are skipped entirely.
 
 ## Hand-edited task files
 

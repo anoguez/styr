@@ -132,7 +132,13 @@ export function TerminalPanel({
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col border-t border-edge-strong bg-chrome">
+    // Focusable and marked so terminal-scoped shortcuts (⌘T) work anywhere in the panel — including
+    // its empty state, which has no xterm to take focus. A click on bare panel focuses the section.
+    <section
+      data-terminal-panel
+      tabIndex={-1}
+      className="flex h-full min-h-0 flex-col border-t border-edge-strong bg-chrome outline-none"
+    >
       <header className="flex items-stretch border-b border-edge">
         <div className="flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto px-2">
           <DndContext

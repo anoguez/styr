@@ -32,11 +32,15 @@ export function isAppShortcut(event: ModifierKeyEvent, bindings: ShortcutBinding
 }
 
 /**
- * Whether a key event came from inside an embedded terminal. xterm takes keys through a hidden
- * textarea inside its `.xterm` root, so that is what the window-level listener sees as the target.
+ * Whether a key event came from the terminal panel: an embedded terminal (xterm types into a hidden
+ * textarea inside its `.xterm` root), the tab strip, or the panel itself, which is focusable so its
+ * empty state counts too — otherwise ⌘T could not open the first tab.
  */
 export function isTerminalTarget(
   target: { closest?: (selector: string) => unknown } | null
 ): boolean {
-  return typeof target?.closest === 'function' && target.closest('.xterm') !== null
+  return (
+    typeof target?.closest === 'function' &&
+    target.closest('.xterm, [data-terminal-panel]') !== null
+  )
 }

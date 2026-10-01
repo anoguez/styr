@@ -91,7 +91,12 @@ export type ShortcutBindings = Record<ShortcutCommand, string[]>
 
 /** What Orchestrate would do, without the task objects the renderer does not need. */
 export interface OrchestrationSummary {
-  dispatch: { taskId: string; title: string; lane: OrchestrationLane }[]
+  dispatch: {
+    taskId: string
+    title: string
+    lane: OrchestrationLane
+    provider: 'claude' | 'codex'
+  }[]
   occupied: OrchestrationCapacity
   capacity: OrchestrationCapacity
   eligible: OrchestrationCapacity
@@ -128,7 +133,8 @@ export interface Task {
   worktreePath?: string
   contextFiles: string[]
   promptTemplateId?: string
-  claudeSessionId?: string
+  provider?: 'claude' | 'codex'
+  agentSession?: { provider: 'claude' | 'codex'; id: string }
   sessions: TaskSessionRef[]
   externalRef?: ExternalRef
   order: number
@@ -141,6 +147,7 @@ export interface Task {
 /** One Claude conversation started for a task, kept so past runs stay reachable. */
 export interface TaskSessionRef {
   id: string
+  provider: 'claude' | 'codex'
   startedAt: string
   label: string
 }
@@ -234,6 +241,11 @@ export interface Settings {
   defaultRepoPath: string
   shell: string
   claudeCommand: string
+  codexCommand: string
+  codexApprovalReviewer: 'user' | 'auto_review'
+  enabledProviders: ('claude' | 'codex')[]
+  defaultProvider: 'claude' | 'codex'
+  providerRouting: Record<OrchestrationLane, 'claude' | 'codex'>
   defaultPromptTemplateId: string
   promptTemplates: PromptTemplate[]
   promptRouting: PromptRouting
@@ -241,6 +253,15 @@ export interface Settings {
   theme: ThemeSettings
   shortcuts: ShortcutBindings
   updates: UpdateSettings
+  taskDefaults: TaskDefaults
+}
+
+/** Starting values for the new-task form. Existing tasks keep whatever they saved. */
+export interface TaskDefaults {
+  /** New tasks start with "Let Orchestrate start this task" checked. */
+  orchestrate: boolean
+  /** New tasks start with "Run in its own git worktree" checked. */
+  useWorktree: boolean
 }
 
 export interface UpdateSettings {
@@ -272,6 +293,7 @@ export interface TerminalSessionInfo {
   title: string
   cwd: string
   taskId?: string
+  provider?: 'claude' | 'codex'
   /** A read-back of a past chat rather than the task's live session. */
   replay?: boolean
 }

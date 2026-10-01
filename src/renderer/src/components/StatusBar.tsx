@@ -72,9 +72,7 @@ function StatusItem({
       aria-label={title}
       aria-pressed={active}
       className={`flex h-full items-center gap-1.5 px-2.5 text-[11px] transition-colors ${
-        active
-          ? 'bg-accent/15 text-[var(--color-accent-text)]'
-          : 'text-dim hover:bg-raised hover:text-ink'
+        active ? 'bg-raised text-ink' : 'text-dim hover:bg-raised hover:text-ink'
       }`}
       onClick={onClick}
     >

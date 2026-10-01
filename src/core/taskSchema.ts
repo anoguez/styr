@@ -21,6 +21,7 @@ export const externalRefSchema = z.object({
 
 export const taskSessionRefSchema = z.object({
   id: z.string(),
+  provider: z.enum(['claude', 'codex']).default('claude'),
   startedAt: z.string(),
   label: z.string()
 })
@@ -45,7 +46,8 @@ export const taskFrontmatterSchema = z.object({
   worktreePath: z.string().optional(),
   contextFiles: z.array(z.string()).default([]),
   promptTemplateId: z.string().optional(),
-  claudeSessionId: z.string().optional(),
+  provider: z.enum(['claude', 'codex']).optional(),
+  agentSession: z.object({ provider: z.enum(['claude', 'codex']), id: z.string() }).optional(),
   sessions: z.array(taskSessionRefSchema).default([]),
   externalRef: externalRefSchema.optional(),
   order: z.number().default(0),
@@ -72,7 +74,7 @@ export const taskDraftSchema = z.object({
   worktreePath: z.string().optional(),
   contextFiles: z.array(z.string()).optional(),
   promptTemplateId: z.string().optional(),
-  claudeSessionId: z.string().optional(),
+  provider: z.enum(['claude', 'codex']).optional(),
   sessions: z.array(taskSessionRefSchema).optional(),
   externalRef: externalRefSchema.optional(),
   order: z.number().optional()
@@ -105,6 +107,12 @@ export const orchestrationSchema = z.object({
   review: z.number().int().min(0).max(20)
 })
 
+export const providerRoutingSchema = z.object({
+  spec: z.enum(['claude', 'codex']).default('claude'),
+  implement: z.enum(['claude', 'codex']).default('claude'),
+  review: z.enum(['claude', 'codex']).default('claude')
+})
+
 const hexColour = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Use a 6-digit hex colour')
 
 export const themeSchema = z.object({
@@ -133,6 +141,18 @@ export const settingsSchema = z.object({
   defaultRepoPath: z.string().default(''),
   shell: z.string().default(''),
   claudeCommand: z.string().default('claude'),
+  codexCommand: z.string().default('codex'),
+  codexApprovalReviewer: z.enum(['user', 'auto_review']).default('user'),
+  enabledProviders: z
+    .array(z.enum(['claude', 'codex']))
+    .min(1)
+    .default(['claude']),
+  defaultProvider: z.enum(['claude', 'codex']).default('claude'),
+  providerRouting: providerRoutingSchema.default({
+    spec: 'claude',
+    implement: 'claude',
+    review: 'claude'
+  }),
   defaultPromptTemplateId: z.string().default('default'),
   promptTemplates: z.array(promptTemplateSchema).default([]),
   promptRouting: promptRoutingSchema,
@@ -141,5 +161,8 @@ export const settingsSchema = z.object({
   shortcuts: shortcutsSchema,
   updates: z
     .object({ checkAutomatically: z.boolean().default(true) })
-    .default({ checkAutomatically: true })
+    .default({ checkAutomatically: true }),
+  taskDefaults: z
+    .object({ orchestrate: z.boolean().default(true), useWorktree: z.boolean().default(false) })
+    .default({ orchestrate: true, useWorktree: false })
 })

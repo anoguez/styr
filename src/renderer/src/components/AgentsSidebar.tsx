@@ -66,7 +66,7 @@ function AgentRowItem({
       <button
         type="button"
         onClick={() => onActivate(row)}
-        title={session ? 'Focus this terminal tab' : 'Resume this Claude chat'}
+        title={session ? 'Focus this terminal tab' : 'Resume this agent chat'}
         className="flex w-full flex-col gap-1.5 rounded-lg border border-transparent px-2.5 py-2.5 text-left transition-colors hover:border-edge-strong hover:bg-raised"
       >
         <span className="flex items-center gap-1.5">
@@ -158,7 +158,7 @@ export function AgentsSidebar({
         <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-6 text-center">
           <p className="text-[12.5px] text-dim">No agents yet</p>
           <p className="text-[11.5px] leading-relaxed text-faint">
-            Start Claude on a task and it shows up here with its live status.
+            Start an agent on a task and it shows up here with its live status.
           </p>
         </div>
       ) : (

@@ -66,7 +66,7 @@ app.whenReady().then(() => {
   syncIndex()
   registerIpcHandlers()
 
-  onTerminalData((id, data) => broadcast('terminal:data', { id, data }))
+  onTerminalData((id, data, sequence) => broadcast('terminal:data', { id, data, sequence }))
   onTerminalExit((id, exitCode) => {
     const taskId = sessionTaskId(id)
     broadcast('terminal:exit', { id, exitCode })
