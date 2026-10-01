@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+
+      # Native modules are only needed to run the app, not to typecheck, lint or bundle it.
+      - run: yarn install --frozen-lockfile --ignore-scripts
+
+      - run: yarn lint
+      - run: yarn format:check
+      - run: yarn build
