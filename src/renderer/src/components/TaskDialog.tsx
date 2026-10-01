@@ -118,7 +118,7 @@ export function TaskDialog({
     if (await save()) onClose()
   }
 
-  async function saveAndLaunch(provider?: 'claude' | 'codex'): Promise<void> {
+  async function saveAndLaunch(): Promise<void> {
     const saved = await save()
     if (!saved) return
     onLaunch(saved.id, form.promptTemplateId || undefined, form.provider)

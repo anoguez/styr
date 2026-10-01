@@ -7,11 +7,12 @@ import type { AgentStatus } from '@core/agentState.js'
 import {
   planLaunch,
   renderPrompt,
-  sessionTranscriptTime,
   workingDirFor,
-  type LaunchOptions
+  type LaunchOptions,
+  type LaunchPlan
 } from '@core/launch.js'
 import { providerFor } from '@core/providers/index.js'
+import { newestCodexSessionFor } from '@core/providers/codex.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { readGitBranch, removeWorktree } from '@core/worktree.js'
 import { planOrchestration, type OrchestrationPlan } from '@core/orchestrate.js'
@@ -32,12 +33,12 @@ import {
 } from '@core/taskSchema.js'
 import {
   TASK_STATUSES,
+  type Task,
   type TaskPatch,
   type TaskStatus,
   type TerminalSessionInfo
 } from '@core/types.js'
 import { findTask, queryTasks, syncIndex } from './taskIndex.js'
-import { CodexAppServer } from './codexAppServer.js'
 import { updateTray } from './tray.js'
 import {
   createSession,
@@ -96,20 +97,83 @@ export function notifyTasksChanged(): void {
  * Starts (or focuses) an agent session for a task. Shared by the per-task launch and the
  * orchestrator so both advance the board and record the session the same way.
  */
-const codexTasks = new Map<string, string>()
 const taskLaunches = new TaskLaunchGate()
-let appServer: CodexAppServer | undefined
+const CODEX_SESSION_DISCOVERY_ATTEMPTS = 20
+const CODEX_SESSION_DISCOVERY_INTERVAL_MS = 250
 
-function getCodexAppServer(command: string): CodexAppServer {
-  if (!appServer) {
-    appServer = new CodexAppServer(command, (threadId, event) => {
-      const taskId = codexTasks.get(threadId)
-      if (!taskId) return
-      recordAgentEvent(loadSettings(), taskId, event)
-      notifyAgentsChanged()
+function launchPatch(
+  task: Task,
+  plan: LaunchPlan,
+  templateId: string | undefined,
+  sessionId?: string
+): TaskPatch {
+  const patch: TaskPatch = {}
+  if (task.status === 'backlog') patch.status = 'in_progress'
+  if (plan.worktreePath && task.worktreePath !== plan.worktreePath) {
+    patch.worktreePath = plan.worktreePath
+  }
+  if (!sessionId) return patch
+
+  if (task.claudeSessionId !== sessionId && plan.provider === 'claude') {
+    patch.claudeSessionId = sessionId
+  }
+  if (task.agentSession?.id !== sessionId || task.agentSession?.provider !== plan.provider) {
+    patch.agentSession = { provider: plan.provider, id: sessionId }
+  }
+  const history = [...task.sessions]
+  if (task.claudeSessionId && !history.some((entry) => entry.id === task.claudeSessionId)) {
+    history.unshift({
+      id: task.claudeSessionId,
+      provider: 'claude',
+      startedAt: task.updatedAt,
+      label: 'Earlier chat'
     })
   }
-  return appServer
+  if (!history.some((entry) => entry.id === sessionId)) {
+    history.push({
+      id: sessionId,
+      provider: plan.provider,
+      startedAt: new Date().toISOString(),
+      label: resolveTemplateFor(loadSettings(), task, templateId).name
+    })
+  }
+  if (history.length !== task.sessions.length) patch.sessions = history
+  return patch
+}
+
+function saveLaunchMetadata(
+  task: Task,
+  plan: LaunchPlan,
+  templateId: string | undefined,
+  sessionId?: string
+): void {
+  const patch = launchPatch(task, plan, templateId, sessionId)
+  if (Object.keys(patch).length > 0) updateTask(task.id, patch)
+  if (plan.warning) addNote(task.id, 'styr', plan.warning)
+  if (Object.keys(patch).length > 0 || plan.warning) notifyTasksChanged()
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+async function saveNewCodexSession(
+  taskId: string,
+  cwd: string,
+  startedAfter: string,
+  templateId: string | undefined,
+  plan: LaunchPlan
+): Promise<void> {
+  for (let attempt = 0; attempt < CODEX_SESSION_DISCOVERY_ATTEMPTS; attempt += 1) {
+    const sessionId = newestCodexSessionFor(cwd, startedAfter)
+    if (sessionId) {
+      const task = findTask(taskId)
+      if (!task) return
+      saveLaunchMetadata(task, plan, templateId, sessionId)
+      return
+    }
+    await wait(CODEX_SESSION_DISCOVERY_INTERVAL_MS)
+  }
 }
 
 async function launchSessionForTask(
@@ -137,57 +201,40 @@ async function startSessionForTask(
       `${requestedProvider === 'codex' ? 'Codex' : 'Claude Code'} is disabled in Settings → Integrations.`
     )
   }
-  let plan = planLaunch(settings, task, options)
-  if (plan.provider === 'codex' && !plan.resumed) {
-    const server = getCodexAppServer(settings.codexCommand)
-    const sessionId = await server.startThread(plan.cwd)
-    codexTasks.set(sessionId, task.id)
-    await server.startTurn(sessionId, renderPrompt(settings, task, options.templateId))
-    plan = planLaunch(settings, task, { ...options, sessionId, withPrompt: false })
-  }
+  const plan = planLaunch(settings, task, options)
+  const discoveringCodexSession = plan.provider === 'codex' && !plan.resumed
+  saveLaunchMetadata(
+    task,
+    plan,
+    options.templateId,
+    discoveringCodexSession ? undefined : plan.sessionId
+  )
 
-  const patch: TaskPatch = {}
-  if (task.status === 'backlog') patch.status = 'in_progress'
-  const provider = plan.provider
-  if (task.claudeSessionId !== plan.sessionId && provider === 'claude')
-    patch.claudeSessionId = plan.sessionId
-  if (task.agentSession?.id !== plan.sessionId || task.agentSession.provider !== provider) {
-    patch.agentSession = { provider, id: plan.sessionId }
-  }
-  const history = [...task.sessions]
-  if (task.claudeSessionId && !history.some((entry) => entry.id === task.claudeSessionId)) {
-    history.unshift({
-      id: task.claudeSessionId,
-      provider: 'claude',
-      startedAt: sessionTranscriptTime(settings, task, task.claudeSessionId) ?? task.updatedAt,
-      label: 'Earlier chat'
-    })
-  }
-  if (!history.some((entry) => entry.id === plan.sessionId)) {
-    history.push({
-      id: plan.sessionId,
-      provider,
-      startedAt: new Date().toISOString(),
-      label: resolveTemplateFor(settings, task, options.templateId).name
-    })
-  }
-  if (history.length !== task.sessions.length) patch.sessions = history
-  if (plan.worktreePath && task.worktreePath !== plan.worktreePath) {
-    patch.worktreePath = plan.worktreePath
-  }
-  if (Object.keys(patch).length > 0) updateTask(task.id, patch)
-  if (plan.warning) addNote(task.id, 'styr', plan.warning)
-  if (Object.keys(patch).length > 0 || plan.warning) notifyTasksChanged()
-
-  return createSession({
+  const session = createSession({
     cwd: plan.cwd,
     shell: settings.shell,
     title: task.title,
     taskId: task.id,
     provider: plan.provider,
     command: plan.command,
-    env: { STYR_TASK_ID: task.id, STYR_SESSION_ID: plan.sessionId }
+    env: {
+      STYR_TASK_ID: task.id,
+      ...(discoveringCodexSession ? {} : { STYR_SESSION_ID: plan.sessionId })
+    }
   })
+  if (plan.provider === 'codex') {
+    recordAgentEvent(
+      settings,
+      task.id,
+      plan.resumed && !options.withPrompt ? 'SessionStart' : 'UserPromptSubmit'
+    )
+    notifyAgentsChanged()
+  }
+  if (discoveringCodexSession) {
+    const startedAfter = new Date(Date.now() - 1_000).toISOString()
+    void saveNewCodexSession(task.id, plan.cwd, startedAfter, options.templateId, plan)
+  }
+  return session
 }
 
 function buildPlan(): OrchestrationPlan {

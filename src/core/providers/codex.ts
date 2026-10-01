@@ -1,23 +1,55 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { shellQuote } from '../shell.js'
 import type { AgentProvider } from './types.js'
 
+function sessionDirectory(root: string): string {
+  return join(root, '.codex', 'sessions')
+}
+
+function sessionFiles(path: string): string[] {
+  if (!existsSync(path)) return []
+  return readdirSync(path, { withFileTypes: true }).flatMap((entry) => {
+    const file = join(path, entry.name)
+    return entry.isDirectory() ? sessionFiles(file) : [file]
+  })
+}
+
 function transcript(id: string, root = homedir()): string | undefined {
-  const dir = join(root, '.codex', 'sessions')
-  if (!existsSync(dir)) return undefined
-  const visit = (path: string): string | undefined => {
-    for (const entry of readdirSync(path, { withFileTypes: true })) {
-      const file = join(path, entry.name)
-      if (entry.isDirectory()) {
-        const found = visit(file)
-        if (found) return found
-      } else if (entry.name.includes(id)) return file
+  return sessionFiles(sessionDirectory(root)).find((file) => file.includes(id))
+}
+
+interface SessionMeta {
+  type?: string
+  timestamp?: string
+  payload?: { id?: string; cwd?: string }
+}
+
+/**
+ * The interactive CLI chooses its own thread UUID. Find that newly-created local transcript so
+ * Styr stores a real id that `codex resume` can open later.
+ */
+export function newestCodexSessionFor(
+  cwd: string,
+  startedAfter: string,
+  root = homedir()
+): string | undefined {
+  const earliest = Date.parse(startedAfter)
+  const candidates = sessionFiles(sessionDirectory(root)).flatMap((file) => {
+    try {
+      const firstLine = readFileSync(file, 'utf8').split('\n', 1)[0]
+      if (!firstLine) return []
+      const meta = JSON.parse(firstLine) as SessionMeta
+      const id = meta.type === 'session_meta' ? meta.payload?.id : undefined
+      const startedAt = meta.timestamp ? Date.parse(meta.timestamp) : Number.NaN
+      return id && meta.payload?.cwd === cwd && startedAt >= earliest ? [{ id, startedAt }] : []
+    } catch {
+      return []
     }
-  }
-  return visit(dir)
+  })
+  return candidates.sort((left, right) => right.startedAt - left.startedAt)[0]?.id
 }
 
 export const codexProvider: AgentProvider = {
