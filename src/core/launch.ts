@@ -72,6 +72,8 @@ export function sessionTranscriptTime(
 
 export interface LaunchOptions {
   provider?: 'claude' | 'codex'
+  /** A provider-created session (Codex app-server) that must be resumed without probing disk. */
+  sessionId?: string
   templateId?: string
   homeRoot?: string
   /**
@@ -105,8 +107,10 @@ export function planLaunch(
     return `"$(cat '${shellQuote(file)}')"`
   }
 
-  const wanted = resume ?? existing
-  const resumable = Boolean(!fresh && wanted && provider.sessionExists(wanted, homeRoot))
+  const wanted = resume ?? options.sessionId ?? existing
+  const resumable = Boolean(
+    options.sessionId || (!fresh && wanted && provider.sessionExists(wanted, homeRoot))
+  )
   const sessionId =
     resumable && wanted
       ? wanted

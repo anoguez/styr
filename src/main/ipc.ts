@@ -37,6 +37,7 @@ import {
   type TerminalSessionInfo
 } from '@core/types.js'
 import { findTask, queryTasks, syncIndex } from './taskIndex.js'
+import { CodexAppServer } from './codexAppServer.js'
 import { updateTray } from './tray.js'
 import {
   createSession,
@@ -94,7 +95,25 @@ export function notifyTasksChanged(): void {
  * Starts (or focuses) an agent session for a task. Shared by the per-task launch and the
  * orchestrator so both advance the board and record the session the same way.
  */
-function launchSessionForTask(taskId: string, options: LaunchOptions = {}): TerminalSessionInfo {
+const codexTasks = new Map<string, string>()
+let appServer: CodexAppServer | undefined
+
+function getCodexAppServer(command: string): CodexAppServer {
+  if (!appServer) {
+    appServer = new CodexAppServer(command, (threadId, event) => {
+      const taskId = codexTasks.get(threadId)
+      if (!taskId) return
+      recordAgentEvent(loadSettings(), taskId, event)
+      notifyAgentsChanged()
+    })
+  }
+  return appServer
+}
+
+async function launchSessionForTask(
+  taskId: string,
+  options: LaunchOptions = {}
+): Promise<TerminalSessionInfo> {
   const task = findTask(taskId)
   if (!task) throw new Error(`Task ${taskId} not found`)
 
@@ -102,7 +121,12 @@ function launchSessionForTask(taskId: string, options: LaunchOptions = {}): Term
   if (live) return live
 
   const settings = loadSettings()
-  const plan = planLaunch(settings, task, options)
+  let plan = planLaunch(settings, task, options)
+  if (plan.provider === 'codex' && !plan.resumed) {
+    const sessionId = await getCodexAppServer(settings.codexCommand).startThread(plan.cwd)
+    codexTasks.set(sessionId, task.id)
+    plan = planLaunch(settings, task, { ...options, sessionId })
+  }
 
   const patch: TaskPatch = {}
   if (task.status === 'backlog') patch.status = 'in_progress'
@@ -240,16 +264,18 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('orchestrate:plan', () => summarisePlan())
 
-  ipcMain.handle('orchestrate:run', (_event, taskIds?: string[]) => {
+  ipcMain.handle('orchestrate:run', async (_event, taskIds?: string[]) => {
     const wanted = taskIds ? new Set(taskIds) : null
     const plan = buildPlan()
-    return plan.dispatch
-      .filter(({ task }) => !wanted || wanted.has(task.id))
-      .map(({ task, lane }) => ({
-        lane,
-        taskId: task.id,
-        session: launchSessionForTask(task.id, { withPrompt: true, fresh: lane === 'review' })
-      }))
+    return Promise.all(
+      plan.dispatch
+        .filter(({ task }) => !wanted || wanted.has(task.id))
+        .map(async ({ task, lane }) => ({
+          lane,
+          taskId: task.id,
+          session: launchSessionForTask(task.id, { withPrompt: true, fresh: lane === 'review' })
+        }))
+    )
   })
 
   ipcMain.handle('settings:get', () => loadSettings())
@@ -295,7 +321,7 @@ export function registerIpcHandlers(): void {
    */
   ipcMain.handle(
     'terminal:launchAgent',
-    (_event, taskId: string, templateId?: string, provider?: 'claude' | 'codex') =>
+    async (_event, taskId: string, templateId?: string, provider?: 'claude' | 'codex') =>
       launchSessionForTask(taskId, { templateId, provider })
   )
 
