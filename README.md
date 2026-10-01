@@ -100,4 +100,13 @@ aren't supported yet: the menu bar integration, packaging and signing are macOS-
 
 ## License
 
-[MIT](LICENSE)
+Styr is source-available under the [Functional Source License, Version 1.1, MIT Future License](LICENSE)
+(FSL-1.1-MIT).
+
+- **You can** download it, read the code, modify it, and use it for anything, including your work at
+  a company.
+- **You can't** sell Styr, or offer it, or something substantially like it, as a commercial product
+  or service.
+- **Each release becomes MIT two years after it is published**, with no restrictions at all.
+
+Versions up to and including v0.2.0 were published under MIT and remain available under MIT.

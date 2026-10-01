@@ -4,7 +4,7 @@
   "description": "An agentic IDE: a kanban board that dispatches AI coding agents into embedded terminals, with an MCP server so agents can drive the board",
   "main": "./out/main/index.mjs",
   "author": "Anderson Noguez",
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",
