@@ -8,7 +8,9 @@
       "include-v-in-tag": true,
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": false,
-      "include-component-in-tag": false
+      "include-component-in-tag": false,
+      "draft": true,
+      "force-tag-creation": true
     }
   },
   "changelog-sections": [

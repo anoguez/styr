@@ -58,15 +58,18 @@ conventional commits:
 
 1. Every push to `main` updates a release PR that bumps the version and writes `CHANGELOG.md`.
    `feat:` commits bump the minor version (before 1.0), everything else the patch.
-2. Merging the release PR tags `vX.Y.Z` and creates the GitHub release.
-3. A macOS runner then builds, signs, notarises and verifies the app, and attaches the DMG to that
-   release.
+2. Merging the release PR tags `vX.Y.Z` and creates the GitHub release **as a draft**, invisible
+   to visitors and to the updater.
+3. A macOS runner then builds, signs, notarises and verifies the app, attaches the files to the
+   draft, and publishes it. A release only goes public once it is complete; if the build fails, the
+   draft stays unpublished and can be rebuilt with **Run workflow** and its tag.
 
 Each release carries the DMG for people installing by hand, plus `Styr-x.y.z-arm64-mac.zip`, its
 `.blockmap` and `latest-mac.yml`: the update feed installed copies read through electron-updater.
-The feed location comes from the `publish` block in `electron-builder.yml`. For a few minutes after
-release-please publishes a release, the build is still attaching those files; the app treats a
-missing `latest-mac.yml` as "up to date" rather than an error.
+The feed location comes from the `publish` block in `electron-builder.yml`. Because releases are
+published only after those files are attached, an installed copy never sees a release without them;
+if one ever lacks `latest-mac.yml` anyway (a release edited by hand), the app reports "up to date"
+rather than an error.
 
 The workflow needs these repository secrets. First export the certificate from **Keychain Access →
 My Certificates → Developer ID Application: … → Export…** as a `.p12` with a password, then run:

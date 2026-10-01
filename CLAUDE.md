@@ -442,8 +442,8 @@ installs on its own: `autoInstallOnAppQuit` applies it at the next quit, and `up
 relaunches only after asking whenever a terminal is open, because a relaunch kills every agent
 running in the app. Keep it that way — an app that restarts itself mid-turn loses work.
 
-A dev build reports `unsupported` and never checks. A release without `latest-mac.yml` (the build
-attaches it minutes after release-please publishes) is reported as current, not as an error.
+A dev build reports `unsupported` and never checks. A release without `latest-mac.yml` (published
+by hand, or older than the updater) is reported as current, not as an error.
 
 electron-updater defines `autoUpdater` through a getter, which Node's ESM loader cannot see as a
 named export, so it is imported as the default export.
@@ -452,7 +452,10 @@ named export, so it is imported as the default export.
 
 `.github/workflows/release.yml` runs release-please on every push to `main`. It keeps a release PR
 open that bumps `package.json` and writes `CHANGELOG.md` from conventional commits; merging it tags
-the release, and a macOS job then builds, signs, notarises, verifies and attaches the DMG. Commit
+the release as a **draft** (`draft` + `force-tag-creation` in `release-please-config.json`), and a
+macOS job then builds, signs, notarises, verifies, attaches the files and only then publishes it.
+Never publish before the files are attached: a public release without `latest-mac.yml` is one the
+updater sees but cannot install. Commit
 messages must therefore be conventional (`feat:`, `fix:`, `docs:` …) or they are left out of the
 changelog. `scripts/setup-signing-secrets.sh <p12>` sets the five signing secrets on the repo from a
 `.p12` exported in Keychain Access — never from `security export`, which cannot reach the

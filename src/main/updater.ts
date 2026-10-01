@@ -28,9 +28,10 @@ function describe(error: unknown): string {
 }
 
 /**
- * release-please publishes the release a few minutes before the macOS build attaches the update
- * files to it, so a check in that window finds a release with no latest-mac.yml. That is not a
- * failure the user can act on: the version they have is still the newest one installable.
+ * Releases are published only after the build attaches the update files, so this should not
+ * happen — but a release published by hand, or one from before the updater existed (v0.2.0), has
+ * no latest-mac.yml. That is not a failure the user can act on: the version they have is still the
+ * newest one installable.
  */
 function isMissingUpdateManifest(error: unknown): boolean {
   return /latest-mac\.yml/.test(describe(error)) && /404|Cannot find/i.test(String(error))

@@ -144,6 +144,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # release-please creates the release as a draft (see release-please-config.json), so nothing
+      # is public — and installed copies see no new version — until every file is attached. A failed
+      # build leaves the draft unpublished rather than a release with nothing to download.
+      - name: Publish the release
+        if: ${{ env.TAG != '' }}
+        run: gh release edit "$TAG" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Remove the signing keychain
         if: ${{ always() }}
         run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
