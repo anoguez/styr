@@ -8,3 +8,8 @@ dist/
 .env*
 .styr/
 !.env.example
+
+# Signing material must never be committed
+*.p12
+*.cer
+temp-cert-export/

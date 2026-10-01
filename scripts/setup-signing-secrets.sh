@@ -24,11 +24,19 @@ P12="${1:-}"
 }
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Read .env as plain KEY=value lines, the way Node's --env-file does, rather than sourcing it: a
+# value like `Jane Doe (ABCDE12345)` is fine there but a syntax error as shell. Surrounding quotes
+# are stripped, and variables already set in the environment win.
 if [ -f "$ROOT/.env" ]; then
-  set -a
-  # shellcheck disable=SC1091
-  . "$ROOT/.env"
-  set +a
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if [[ "$value" =~ ^\"(.*)\"$ || "$value" =~ ^\'(.*)\'$ ]]; then value="${BASH_REMATCH[1]}"; fi
+    [ -n "${!key:-}" ] || export "$key=$value"
+  done < "$ROOT/.env"
 fi
 
 command -v gh >/dev/null || { echo "gh is required: brew install gh" >&2; exit 1; }
