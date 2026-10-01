@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/anoguez/styr/compare/v0.5.0...v0.6.0) (2026-10-01)
+
+
+### Features
+
+* add Codex as an agent provider ([#11](https://github.com/anoguez/styr/issues/11)) ([7d1426f](https://github.com/anoguez/styr/commit/7d1426fd92897c76675c359bfff933ba81bcc34c))
+
 ## [0.5.0](https://github.com/anoguez/styr/compare/v0.4.0...v0.5.0) (2026-10-01)
 
 
