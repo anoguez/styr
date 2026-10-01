@@ -36,6 +36,7 @@ interface FormState {
   orchestrate: boolean
   contextFiles: string[]
   promptTemplateId: string
+  provider: 'claude' | 'codex'
   description: string
 }
 
@@ -52,6 +53,7 @@ function toForm(task: Task | null, settings: Settings): FormState {
     orchestrate: task?.orchestrate ?? true,
     contextFiles: task?.contextFiles ?? [],
     promptTemplateId: task?.promptTemplateId ?? '',
+    provider: task?.provider ?? settings.defaultProvider,
     description: task?.description ?? ''
   }
 }
@@ -66,7 +68,7 @@ export function TaskDialog({
   task: Task | null
   settings: Settings
   onClose: () => void
-  onLaunch: (taskId: string, templateId?: string) => void
+  onLaunch: (taskId: string, templateId?: string, provider?: 'claude' | 'codex') => void
   onResumeSession: (taskId: string, sessionId: string) => void
 }): ReactNode {
   const [form, setForm] = useState<FormState>(() => toForm(task, settings))
@@ -96,6 +98,7 @@ export function TaskDialog({
     orchestrate: form.orchestrate,
     contextFiles: form.contextFiles,
     promptTemplateId: form.promptTemplateId || undefined,
+    provider: form.provider,
     description: form.description
   }
 
@@ -118,7 +121,7 @@ export function TaskDialog({
   async function saveAndLaunch(): Promise<void> {
     const saved = await save()
     if (!saved) return
-    onLaunch(saved.id, form.promptTemplateId || undefined)
+    onLaunch(saved.id, form.promptTemplateId || undefined, form.provider)
     onClose()
   }
 
@@ -155,8 +158,8 @@ export function TaskDialog({
             </>
           ) : null}
           <Button onClick={() => void showPreview()}>Preview prompt</Button>
-          <Button onClick={() => void saveAndLaunch()} disabled={saving}>
-            Save &amp; start Claude
+          <Button variant="primary" onClick={() => void saveAndLaunch()} disabled={saving}>
+            Save &amp; start
           </Button>
           <Button variant="primary" onClick={() => void saveAndClose()} disabled={saving}>
             Save <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↵</kbd>
@@ -240,26 +243,43 @@ export function TaskDialog({
               onChange={(repoPath) => patch({ repoPath })}
             />
           </Field>
-          <Field
-            label="Prompt template"
-            hint={
-              form.promptTemplateId
-                ? 'Pinned — this task always uses this template, whatever column it is in.'
-                : `Auto — this task currently runs "${routedName}".`
-            }
-          >
-            <Select
-              value={form.promptTemplateId}
-              onChange={(event) => patch({ promptTemplateId: event.target.value })}
+          <div className="flex flex-col gap-3">
+            <Field
+              label="Prompt template"
+              hint={
+                form.promptTemplateId
+                  ? 'Pinned — this task always uses this template, whatever column it is in.'
+                  : `Auto — this task currently runs "${routedName}".`
+              }
             >
-              <option value="">Auto — match the column</option>
-              {settings.promptTemplates.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
+              <Select
+                value={form.promptTemplateId}
+                onChange={(event) => patch({ promptTemplateId: event.target.value })}
+              >
+                <option value="">Auto — match the column</option>
+                {settings.promptTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field
+              label="Provider"
+              hint="Choose the agent for this run. The default is configured in Integrations."
+            >
+              <Select
+                value={form.provider}
+                onChange={(event) => patch({ provider: event.target.value as 'claude' | 'codex' })}
+              >
+                {settings.enabledProviders.map((item) => (
+                  <option key={item} value={item}>
+                    {item === 'claude' ? 'Claude Code' : 'Codex'}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
         </div>
 
         <Checkbox
@@ -304,8 +324,8 @@ export function TaskDialog({
 
         {task && task.sessions.length > 0 ? (
           <Field
-            label="Claude chats"
-            hint="Every run on this task, newest first. Open one to read back what it did — that reopens the conversation without starting new work. Forget only clears which chat the next run continues; the history stays."
+            label="Agent chats"
+            hint="Every Claude Code and Codex run on this task, newest first. Open one to resume it with its original provider. Forget only clears the next chat; history stays."
           >
             <ul className="flex flex-col divide-y divide-edge overflow-hidden rounded-lg border border-edge-strong bg-chrome">
               {[...task.sessions].reverse().map((entry) => (
@@ -313,7 +333,10 @@ export function TaskDialog({
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex items-center gap-2 text-[12.5px] text-ink">
                       {entry.label}
-                      {entry.id === task.claudeSessionId ? (
+                      <span className="rounded bg-edge px-1.5 text-[10px] text-dim">
+                        {entry.provider === 'codex' ? 'Codex' : 'Claude'}
+                      </span>
+                      {entry.id === task.agentSession?.id ? (
                         <span className="rounded bg-accent/15 px-1.5 text-[10px] text-[var(--color-accent-text)]">
                           continues next
                         </span>
@@ -335,7 +358,7 @@ export function TaskDialog({
                 </li>
               ))}
             </ul>
-            {task.claudeSessionId ? (
+            {task.agentSession ? (
               <Button
                 className="mt-2 self-start"
                 onClick={() => {

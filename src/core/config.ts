@@ -91,6 +91,11 @@ function defaults(): Settings {
     defaultRepoPath: '',
     shell: process.env.SHELL ?? '/bin/zsh',
     claudeCommand: 'claude',
+    codexCommand: 'codex',
+    codexApprovalReviewer: 'user',
+    enabledProviders: ['claude'],
+    defaultProvider: 'claude',
+    providerRouting: { spec: 'claude', implement: 'claude', review: 'claude' },
     defaultPromptTemplateId: 'implement',
     promptTemplates: [
       { id: 'spec', name: 'Spec the task', template: SPEC_TEMPLATE },

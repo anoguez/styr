@@ -4,8 +4,8 @@
 ![Test coverage](https://img.shields.io/badge/coverage-84.97%25-brightgreen)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/noguez)
 
-**An agentic IDE built around a kanban board.** Write tasks, and Styr launches a coding agent on each
-one in its own terminal tab, often in its own git worktree, and watches them work. Agents move
+**An agentic IDE built around a kanban board.** Write tasks, and Styr launches a coding agent (Claude Code
+or Codex) on each one in its own terminal tab, often in its own git worktree, and watches them work. Agents move
 their own cards as they go: spec, build, review, done.
 
 > _Styr_ (Old Norse, _stýra_): to steer. You set the course; the agents row.
@@ -26,13 +26,16 @@ a board you can see, and in plain files you can read.
   gets an implementation prompt, and a task in Review gets a fresh reviewer that is not the session
   that wrote the code.
 - **Live agent state.** Each task shows Working, Waiting on you, Finished or Stopped in the board,
-  the sidebar, the macOS menu bar and notifications. Waiting always sorts first.
+  the sidebar, the macOS menu bar and notifications, for Claude Code and Codex alike. Waiting always
+  sorts first.
 - **Isolated worktrees.** Tick one box and a task runs on its own branch in its own checkout, so
   parallel agents never share a working directory.
 - **Orchestrate.** One button starts every task that is ready, up to a number of slots per lane
-  (spec, implement, review). It shows exactly what it will start before it starts anything.
-- **Chats you can resume.** Each task remembers its conversations. Close the app, come back
-  tomorrow, and pick up where the agent left off.
+  (spec, implement, review), each lane on the agent you chose for it. It shows exactly what it will
+  start, and with which agent, before it starts anything.
+- **Chats you can resume.** Each task remembers its conversations, whichever agent ran them, and
+  resumes each through its own CLI. Close the app, come back tomorrow, and pick up where the agent
+  left off.
 - **A real terminal.** Embedded xterm tabs, drag to reorder, a command palette (`⌘P`), rebindable
   shortcuts and a fully themeable UI.
 
@@ -40,20 +43,27 @@ a board you can see, and in plain files you can read.
 
 Styr talks to agent CLIs through a small provider interface (`src/core/providers/`).
 
-| Agent                                                      | Status                                                   |
-| ---------------------------------------------------------- | -------------------------------------------------------- |
-| [Claude Code](https://docs.claude.com/en/docs/claude-code) | Supported: launch, resume, live state through hooks, MCP |
-| Codex CLI                                                  | Planned                                                  |
-| Gemini CLI                                                 | Planned                                                  |
-| Local models (Ollama, through an agent CLI)                | Planned                                                  |
+| Agent                                                      | Status                                                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [Claude Code](https://docs.claude.com/en/docs/claude-code) | Supported: launch, resume, live state through hooks, MCP                                          |
+| [Codex CLI](https://github.com/openai/codex)               | Supported: launch, resume, live state through the app-server daemon, MCP (needs 0.159.3 or later) |
+| Gemini CLI                                                 | Planned                                                                                           |
+| Local models (Ollama, through an agent CLI)                | Planned                                                                                           |
+
+Settings → Integrations enables each provider and sets which one runs the spec, implement and review
+lanes (every lane defaults to Claude). Each launch can override that from the task dialog, and a task
+keeps a mixed-provider chat history but only one live session at a time. A Codex launch is refused
+with a message saying what to fix if the CLI is older than 0.159.3 or its app-server daemon is
+unavailable.
 
 Any agent can already move its task. The board protocol is just editing the task file, and the
 path is in every prompt.
 
 ## Quick start
 
-You need macOS, a recent Node with Yarn, git, and the [Claude Code](https://docs.claude.com/en/docs/claude-code)
-CLI on your `PATH`.
+You need macOS, a recent Node with Yarn, git, and at least one agent CLI on your `PATH`:
+[Claude Code](https://docs.claude.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex)
+0.159.3 or later.
 
 ```sh
 git clone https://github.com/anoguez/styr.git
@@ -67,9 +77,9 @@ Then:
 1. **Settings → Workspace**: pick a folder for the board's own data (the default is `~/Styr`) and
    a default working directory for agents, usually a folder holding your repos.
 2. **New task** (`⌘N`): give it a title, a description and the repository it applies to.
-3. Hover the card and press **▶ Claude**. The task moves to In Progress and a terminal tab opens
+3. Hover the card and press **▶ Agent** (pick the provider in the task dialog). The task moves to In Progress and a terminal tab opens
    with the agent already working.
-4. **Settings → Integrations**: copy the `claude mcp add styr …` command and run it once, so agents
+4. **Settings → Integrations**: copy the `claude mcp add styr …` or `codex mcp add styr …` command for your provider and run it once, so agents
    can query and create tasks.
 
 To install it as an app instead, download the signed DMG from
@@ -86,7 +96,7 @@ tasks/*.md  ──(source of truth)──┬──> SQLite index ──> app UI 
 ```
 
 Markdown is the only source of truth. The SQLite index is rebuilt from the files, so deleting it
-costs nothing. Agents, the MCP server, your editor and `git pull` all write files, and a watcher
+costs nothing. Agents (Claude Code or Codex), the MCP server, your editor and `git pull` all write files, and a watcher
 picks the changes up.
 
 ## Documentation

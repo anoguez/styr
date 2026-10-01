@@ -51,9 +51,28 @@ on, every agent it launches believes it is a child session and turns transcript 
 resume then silently starts a fresh chat. List session markers only — `CLAUDE_CODE_*` settings a user
 exports on purpose must still reach the agents.
 
-Still Claude-named, deliberately left for when a second provider lands: `Task.claudeSessionId`,
-`Settings.claudeCommand` and the `terminal:launchClaude` channel. Renaming the first two changes
-the on-disk format, so it should happen together with recording a provider per session.
+`Settings.claudeCommand` and `Settings.codexCommand` are per-provider by nature. Task provider state
+is `Task.agentSession` (the live pointer) plus `Task.sessions` (history, every entry tagged with a
+provider). `claudeSessionId` no longer exists in memory: `core/migrateTask.ts` rewrites it, and
+untagged history, on read — before validation, in `parseTaskMarkdown` and the JSON reader.
+
+### Codex
+
+Codex's TUI runs against the shared app-server daemon (`codex --remote unix:// --cd <cwd>`; `--cd`
+is mandatory there, the daemon picks a new thread's directory), so its thread is observable. The
+daemon broadcasts `thread/started` and `thread/status/changed` for every thread to every connected
+client. `main/codexMonitor.ts` is one read-only listener that turns those into the hook-style
+events `EVENT_STATE` already knows (active → working, active + `waitingOn*` flag → waiting, idle →
+finished, started → ready). The pure half — version policy, mapping, `ThreadBindings`, WebSocket
+framing — is in `core/providers/codexProtocol.ts` and is what the tests cover.
+
+A fresh launch cannot know its thread id (the TUI creates it): `ThreadBindings.expect` claims the
+first non-ephemeral thread to start in that cwd, and the monitor saves the id as the session.
+Resumes bind the stored id up front. `prepareCodex` runs before anything is written and refuses the
+launch (CLI < 0.159.3, daemon missing/older) with an error naming the fix. The control socket
+speaks WebSocket, not raw JSON lines, so `codex app-server proxy` is of no use as a transport.
+
+The MCP install command for Codex sets `STYR_MCP_AUTHOR=codex` so board notes are attributed.
 
 ## Launching Claude
 
@@ -68,7 +87,7 @@ project directory name.
 
 `planLaunch` takes an optional `homeRoot` purely so tests can point it at a fixture directory.
 
-`terminal:launchClaude` returns an existing session (via `findSessionByTask`) before it plans
+`terminal:launchAgent` returns an existing session (via `findSessionByTask`) before it plans
 anything, so a second launch focuses the open tab instead of spawning a rival agent on the same
 task. The renderer dedupes by session id in `adoptSession`, so the same handler covers both cases.
 

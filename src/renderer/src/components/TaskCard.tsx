@@ -94,8 +94,8 @@ export function TaskCardBody({
         ))}
         {agent ? (
           <AgentBadge agent={agent} />
-        ) : task.claudeSessionId ? (
-          <span className="ml-auto text-faint" title="Has a Claude chat to resume">
+        ) : task.agentSession ? (
+          <span className="ml-auto text-faint" title="Has an agent chat to resume">
             ◈
           </span>
         ) : null}
@@ -176,11 +176,11 @@ export function TaskCard({
         <CardAction label="Edit" title={`Edit ${task.id}`} onTrigger={() => onOpen(task)} />
         <CardAction
           accent
-          label={task.claudeSessionId ? '⏵ Resume' : '▶ Claude'}
+          label={task.agentSession ? '⏵ Resume' : '▶ Agent'}
           title={
-            task.claudeSessionId
-              ? `Resume the existing Claude chat for ${task.id}`
-              : `Start Claude on ${task.id} — ${templateNameFor(task)}`
+            task.agentSession
+              ? `Resume the existing agent chat for ${task.id}`
+              : `Start the selected agent on ${task.id} — ${templateNameFor(task)}`
           }
           onTrigger={() => onLaunch(task)}
         />

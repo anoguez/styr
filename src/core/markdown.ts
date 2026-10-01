@@ -1,4 +1,5 @@
 import matter from 'gray-matter'
+import { migrateProviderFields } from './migrateTask.js'
 import { taskFrontmatterSchema } from './taskSchema.js'
 import type { ActivityEntry, Task } from './types.js'
 
@@ -82,7 +83,8 @@ export function serialiseTask(task: Task): string {
     ...(task.worktreePath ? { worktreePath: task.worktreePath } : {}),
     ...(task.contextFiles.length > 0 ? { contextFiles: task.contextFiles } : {}),
     ...(task.promptTemplateId ? { promptTemplateId: task.promptTemplateId } : {}),
-    ...(task.claudeSessionId ? { claudeSessionId: task.claudeSessionId } : {}),
+    ...(task.provider ? { provider: task.provider } : {}),
+    ...(task.agentSession ? { agentSession: task.agentSession } : {}),
     ...(task.sessions.length > 0 ? { sessions: task.sessions } : {}),
     ...(task.externalRef ? { externalRef: task.externalRef } : {}),
     order: task.order,
@@ -93,7 +95,7 @@ export function serialiseTask(task: Task): string {
 
 export function parseTaskMarkdown(raw: string, filePath: string): Task {
   const parsed = matter(raw)
-  const front = taskFrontmatterSchema.parse(tolerate(parsed.data))
+  const front = taskFrontmatterSchema.parse(migrateProviderFields(tolerate(parsed.data)))
   const markerAt = parsed.content.indexOf(ACTIVITY_MARKER)
   const description = (markerAt === -1 ? parsed.content : parsed.content.slice(0, markerAt)).trim()
   const activity = markerAt === -1 ? [] : parseActivity(parsed.content.slice(markerAt))

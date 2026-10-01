@@ -53,7 +53,8 @@ export function OrchestrateDialog({
                 <span className="font-mono text-[10px] text-faint">{entry.taskId}</span>
               </span>
               <span className="shrink-0 rounded bg-raised px-1.5 py-[1px] text-[10.5px] text-dim">
-                {ORCHESTRATION_LANE_LABELS[entry.lane]}
+                {ORCHESTRATION_LANE_LABELS[entry.lane]} ·{' '}
+                {entry.provider === 'codex' ? 'Codex' : 'Claude'}
               </span>
             </li>
           ))}
