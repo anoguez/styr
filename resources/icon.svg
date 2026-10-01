@@ -1,25 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1b2130"/>
-      <stop offset="1" stop-color="#0b0e14"/>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#203c53"/>
+      <stop offset="0.7" stop-color="#0f1c27"/>
+      <stop offset="1" stop-color="#0a1b29"/>
     </linearGradient>
+    <radialGradient id="glow" cx="0.12" cy="0.02" r="0.85">
+      <stop offset="0" stop-color="#6c3f75" stop-opacity="0.75"/>
+      <stop offset="0.6" stop-color="#6c3f75" stop-opacity="0"/>
+    </radialGradient>
     <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
       <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="rune" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d9b4e0"/>
+      <stop offset="0.55" stop-color="#aa75b5"/>
+      <stop offset="1" stop-color="#5f8df7"/>
     </linearGradient>
   </defs>
 
-  <g>
-    <rect x="92" y="92" width="840" height="840" rx="188" fill="url(#tile)"/>
-    <rect x="92" y="92" width="840" height="840" rx="188" fill="url(#sheen)"/>
-    <rect x="95.5" y="95.5" width="833" height="833" rx="184.5" fill="none"
-          stroke="#ffffff" stroke-opacity="0.10" stroke-width="7"/>
+  <rect x="92" y="92" width="840" height="840" rx="188" fill="url(#tile)"/>
+  <rect x="92" y="92" width="840" height="840" rx="188" fill="url(#glow)"/>
+  <rect x="92" y="92" width="840" height="840" rx="188" fill="url(#sheen)"/>
+  <rect x="95.5" y="95.5" width="833" height="833" rx="184.5" fill="none" stroke="#ffffff" stroke-opacity="0.10" stroke-width="7"/>
 
-    <g>
-      <rect x="200" y="272" width="172" height="480" rx="52" fill="#7d879c"/>
-      <rect x="426" y="272" width="172" height="360" rx="52" fill="#7aa2f7"/>
-      <rect x="652" y="272" width="172" height="240" rx="52" fill="#6bc48a"/>
-    </g>
-  </g>
+  <!-- The Styr rune, turned 30° so it reads as an S -->
+  <polyline points="388,262 388,548 636,476 636,762" transform="rotate(30 512 512)" fill="none" stroke="url(#rune)" stroke-width="116" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
