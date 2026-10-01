@@ -3,6 +3,17 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { WORKTREE_BRANCH_PREFIX } from './types.js'
 
+const REPOSITORY_CONTEXT_ENV = [
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_COMMON_DIR',
+  'GIT_DIR',
+  'GIT_IMPLICIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_PREFIX',
+  'GIT_WORK_TREE'
+]
+
 export interface WorktreeResult {
   path: string
   branch: string
@@ -10,8 +21,12 @@ export interface WorktreeResult {
 }
 
 function git(args: string[], cwd: string): string {
+  const env = { ...process.env }
+  for (const key of REPOSITORY_CONTEXT_ENV) delete env[key]
+
   return execFileSync('git', args, {
     cwd,
+    env,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe']
   }).trim()

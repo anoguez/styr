@@ -4,6 +4,7 @@ import type { ActivityEntry, Task } from './types.js'
 
 const ACTIVITY_MARKER = '<!-- styr:activity -->'
 const TOKEN_FIELDS = ['status', 'priority', 'readiness'] as const
+const TIMESTAMP_FIELDS = ['createdAt', 'updatedAt'] as const
 const ENTRY_RE = /^- `([^`]+)` \*\*([^*]+)\*\* — (.*)$/
 
 function renderActivity(activity: ActivityEntry[]): string {
@@ -56,6 +57,9 @@ function tolerate(data: Record<string, unknown>): Record<string, unknown> {
   const out = { ...data }
   for (const field of TOKEN_FIELDS) {
     if (field in out) out[field] = normaliseToken(out[field])
+  }
+  for (const field of TIMESTAMP_FIELDS) {
+    if (out[field] instanceof Date) out[field] = out[field].toISOString()
   }
   return out
 }
