@@ -43,6 +43,7 @@ export class CodexAppServer {
       clientInfo: { name: 'styr', title: 'Styr', version: '0.3.0' },
       capabilities: null
     })
+    this.notify('initialized', {})
     const result = (await this.request('thread/start', {
       cwd,
       approvalPolicy: 'on-request',
@@ -73,6 +74,10 @@ export class CodexAppServer {
     if (!child) return Promise.reject(new Error('Codex app-server is not running.'))
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
     return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }))
+  }
+
+  private notify(method: string, params: Record<string, unknown>): void {
+    this.process?.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method, params })}\n`)
   }
 
   private onLine(line: string): void {
