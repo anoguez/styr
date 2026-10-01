@@ -9,11 +9,16 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/build.mjs",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "start": "electron-vite preview",
     "mcp": "node ./out/main/mcp/index.mjs",
-    "package": "yarn build && electron-builder",
+    "package": "yarn build && node --env-file-if-exists=.env node_modules/electron-builder/cli.js",
+    "package:adhoc": "yarn build && electron-builder -c.mac.identity=-",
     "postinstall": "electron-builder install-app-deps",
-    "icon": "node scripts/make-icon.mjs"
+    "icon": "node scripts/make-icon.mjs",
+    "prepare": "husky"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -33,6 +38,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.3",
@@ -42,8 +48,24 @@
     "electron": "^44.5.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.9",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
+    "typescript-eslint": "^8.71.0",
     "vite": "^8.3.1"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,mjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,css,md,yml,html}": [
+      "prettier --write"
+    ]
   }
 }
