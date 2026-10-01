@@ -468,6 +468,16 @@ export function SettingsDialog({
                   onChange={(event) => patch({ claudeCommand: event.target.value })}
                 />
               </Field>
+              <Field
+                label="Codex command"
+                hint="Usually just `codex`. Codex sessions use workspace-write sandboxing and request approval when needed."
+              >
+                <input
+                  className={inputClass}
+                  value={draft.codexCommand}
+                  onChange={(event) => patch({ codexCommand: event.target.value })}
+                />
+              </Field>
             </div>
           ) : null}
 

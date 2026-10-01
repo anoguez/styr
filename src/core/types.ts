@@ -129,6 +129,7 @@ export interface Task {
   contextFiles: string[]
   promptTemplateId?: string
   claudeSessionId?: string
+  agentSession?: { provider: 'claude' | 'codex'; id: string }
   sessions: TaskSessionRef[]
   externalRef?: ExternalRef
   order: number
@@ -141,6 +142,7 @@ export interface Task {
 /** One Claude conversation started for a task, kept so past runs stay reachable. */
 export interface TaskSessionRef {
   id: string
+  provider?: 'claude' | 'codex'
   startedAt: string
   label: string
 }
@@ -234,6 +236,8 @@ export interface Settings {
   defaultRepoPath: string
   shell: string
   claudeCommand: string
+  codexCommand: string
+  defaultProvider: 'claude' | 'codex'
   defaultPromptTemplateId: string
   promptTemplates: PromptTemplate[]
   promptRouting: PromptRouting

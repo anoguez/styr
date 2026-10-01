@@ -21,6 +21,7 @@ export const externalRefSchema = z.object({
 
 export const taskSessionRefSchema = z.object({
   id: z.string(),
+  provider: z.enum(['claude', 'codex']).optional(),
   startedAt: z.string(),
   label: z.string()
 })
@@ -46,6 +47,7 @@ export const taskFrontmatterSchema = z.object({
   contextFiles: z.array(z.string()).default([]),
   promptTemplateId: z.string().optional(),
   claudeSessionId: z.string().optional(),
+  agentSession: z.object({ provider: z.enum(['claude', 'codex']), id: z.string() }).optional(),
   sessions: z.array(taskSessionRefSchema).default([]),
   externalRef: externalRefSchema.optional(),
   order: z.number().default(0),
@@ -133,6 +135,8 @@ export const settingsSchema = z.object({
   defaultRepoPath: z.string().default(''),
   shell: z.string().default(''),
   claudeCommand: z.string().default('claude'),
+  codexCommand: z.string().default('codex'),
+  defaultProvider: z.enum(['claude', 'codex']).default('claude'),
   defaultPromptTemplateId: z.string().default('default'),
   promptTemplates: z.array(promptTemplateSchema).default([]),
   promptRouting: promptRoutingSchema,

@@ -139,7 +139,7 @@ export default function App(): ReactNode {
 
   const launchClaude = useCallback(
     async (taskId: string, templateId?: string) => {
-      adoptSession(await window.api.terminal.launchClaude(taskId, templateId))
+      adoptSession(await window.api.terminal.launchAgent(taskId, templateId))
     },
     [adoptSession]
   )

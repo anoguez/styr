@@ -1,6 +1,6 @@
 import type { Settings } from '../types.js'
 
-export const AGENT_PROVIDER_IDS = ['claude'] as const
+export const AGENT_PROVIDER_IDS = ['claude', 'codex'] as const
 export type AgentProviderId = (typeof AGENT_PROVIDER_IDS)[number]
 
 export interface ProviderCommandInput {

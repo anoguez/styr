@@ -87,8 +87,12 @@ const api = {
   terminal: {
     create: (request: TerminalSpawnRequest): Promise<TerminalSessionInfo> =>
       ipcRenderer.invoke('terminal:create', request),
-    launchClaude: (taskId: string, templateId?: string): Promise<TerminalSessionInfo> =>
-      ipcRenderer.invoke('terminal:launchClaude', taskId, templateId),
+    launchAgent: (
+      taskId: string,
+      templateId?: string,
+      provider?: 'claude' | 'codex'
+    ): Promise<TerminalSessionInfo> =>
+      ipcRenderer.invoke('terminal:launchAgent', taskId, templateId, provider),
     resumeSession: (taskId: string, sessionId: string): Promise<TerminalSessionInfo> =>
       ipcRenderer.invoke('terminal:resumeSession', taskId, sessionId),
     previewPrompt: (taskId: string, templateId?: string): Promise<string> =>

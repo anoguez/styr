@@ -3,13 +3,14 @@ import { join } from 'node:path'
 import { clearAgentStatus, supportDir } from './agentStore.js'
 import { ensureWorktree, worktreePathFor } from './worktree.js'
 import { buildPrompt, resolveTemplateFor } from './prompt.js'
-import { providerFor } from './providers/index.js'
+import { providerById, providerFor } from './providers/index.js'
 import { shellQuote } from './shell.js'
 import type { Settings, Task } from './types.js'
 
 export { shellQuote }
 
 export interface LaunchPlan {
+  provider: 'claude' | 'codex'
   command: string
   cwd: string
   sessionId: string
@@ -70,6 +71,7 @@ export function sessionTranscriptTime(
 }
 
 export interface LaunchOptions {
+  provider?: 'claude' | 'codex'
   templateId?: string
   homeRoot?: string
   /**
@@ -90,9 +92,10 @@ export function planLaunch(
   options: LaunchOptions = {}
 ): LaunchPlan {
   const { templateId, homeRoot, withPrompt = false, fresh = false, resume } = options
-  const provider = providerFor(settings, task)
+  const provider = options.provider ? providerById(options.provider) : providerFor(settings, task)
   const workspace = workspaceFor(settings, task)
-  const existing = task.claudeSessionId
+  const existing =
+    task.agentSession?.provider === provider.id ? task.agentSession.id : task.claudeSessionId
 
   clearAgentStatus(settings, task.id)
 
@@ -113,6 +116,7 @@ export function planLaunch(
   const prompt = !resumable || withPrompt ? writePrompt() : undefined
 
   return {
+    provider: provider.id,
     command: provider.buildCommand({
       settings,
       taskId: task.id,

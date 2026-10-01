@@ -91,7 +91,7 @@ export function notifyTasksChanged(): void {
 }
 
 /**
- * Starts (or focuses) a Claude session for a task. Shared by the per-task launch and the
+ * Starts (or focuses) an agent session for a task. Shared by the per-task launch and the
  * orchestrator so both advance the board and record the session the same way.
  */
 function launchSessionForTask(taskId: string, options: LaunchOptions = {}): TerminalSessionInfo {
@@ -106,11 +106,17 @@ function launchSessionForTask(taskId: string, options: LaunchOptions = {}): Term
 
   const patch: TaskPatch = {}
   if (task.status === 'backlog') patch.status = 'in_progress'
-  if (task.claudeSessionId !== plan.sessionId) patch.claudeSessionId = plan.sessionId
+  const provider = plan.provider
+  if (task.claudeSessionId !== plan.sessionId && provider === 'claude')
+    patch.claudeSessionId = plan.sessionId
+  if (task.agentSession?.id !== plan.sessionId || task.agentSession.provider !== provider) {
+    patch.agentSession = { provider, id: plan.sessionId }
+  }
   const history = [...task.sessions]
   if (task.claudeSessionId && !history.some((entry) => entry.id === task.claudeSessionId)) {
     history.unshift({
       id: task.claudeSessionId,
+      provider: 'claude',
       startedAt: sessionTranscriptTime(settings, task, task.claudeSessionId) ?? task.updatedAt,
       label: 'Earlier chat'
     })
@@ -118,6 +124,7 @@ function launchSessionForTask(taskId: string, options: LaunchOptions = {}): Term
   if (!history.some((entry) => entry.id === plan.sessionId)) {
     history.push({
       id: plan.sessionId,
+      provider,
       startedAt: new Date().toISOString(),
       label: resolveTemplateFor(settings, task, options.templateId).name
     })
@@ -286,8 +293,10 @@ export function registerIpcHandlers(): void {
    * Starting a session on a Backlog task moves it to In Progress. Only Backlog is unambiguous —
    * launching on In Review is a review, and on Done a follow-up, neither of which is new work.
    */
-  ipcMain.handle('terminal:launchClaude', (_event, taskId: string, templateId?: string) =>
-    launchSessionForTask(taskId, { templateId })
+  ipcMain.handle(
+    'terminal:launchAgent',
+    (_event, taskId: string, templateId?: string, provider?: 'claude' | 'codex') =>
+      launchSessionForTask(taskId, { templateId, provider })
   )
 
   ipcMain.handle('terminal:resumeSession', (_event, taskId: string, sessionId: string) => {
@@ -307,7 +316,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('tasks:forgetSession', (_event, taskId: string) => {
-    const task = updateTask(taskId, { claudeSessionId: undefined })
+    const task = updateTask(taskId, { claudeSessionId: undefined, agentSession: undefined })
     notifyTasksChanged()
     return task
   })
