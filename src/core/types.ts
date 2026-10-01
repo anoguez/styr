@@ -77,7 +77,8 @@ export const SHORTCUT_COMMANDS = [
   'toggleTerminal',
   'toggleAgents',
   'orchestrate',
-  'newShell'
+  'newShell',
+  'closeShell'
 ] as const
 
 export type ShortcutCommand = (typeof SHORTCUT_COMMANDS)[number]
@@ -233,7 +234,8 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   toggleTerminal: ['ctrl+`', 'mod+`'],
   toggleAgents: [],
   orchestrate: [],
-  newShell: ['mod+t']
+  newShell: ['mod+t'],
+  closeShell: ['mod+w']
 }
 
 export interface Settings {
