@@ -6,7 +6,7 @@ their own cards as they go: spec, build, review, done.
 
 > _Styr_ (Old Norse, _stýra_): to steer. You set the course; the agents row.
 
-<!-- TODO: screenshot or short GIF of the board, terminal and agents sidebar -->
+![Styr: the board, two agents in the sidebar, and an agent's terminal](docs/images/screenshot.png)
 
 ## Why
 
