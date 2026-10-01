@@ -433,7 +433,15 @@ renderer, preload, IPC layer and MCP server all share them.
 open that bumps `package.json` and writes `CHANGELOG.md` from conventional commits; merging it tags
 the release, and a macOS job then builds, signs, notarises, verifies and attaches the DMG. Commit
 messages must therefore be conventional (`feat:`, `fix:`, `docs:` …) or they are left out of the
-changelog. `scripts/setup-signing-secrets.sh` sets the five signing secrets on the repo.
+changelog. `scripts/setup-signing-secrets.sh <p12>` sets the five signing secrets on the repo from a
+`.p12` exported in Keychain Access — never from `security export`, which cannot reach the
+data-protection keychain where the Developer ID key lives and silently exports other identities.
+
+The release job imports the certificate into its own keychain together with Apple's Developer ID
+intermediates (fingerprint-pinned), passes the Developer ID identity by name as `CSC_NAME`, and fails
+at import if there is none. Each of those fixed a real failure: electron-builder's own temporary
+keychain cannot set its partition list on the runners, and without a named identity it signs with
+any other identity in the `.p12`, which notarisation then rejects.
 
 Before 1.0, `feat` bumps the minor version and everything else the patch.
 

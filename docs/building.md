@@ -62,9 +62,18 @@ conventional commits:
 3. A macOS runner then builds, signs, notarises and verifies the app, and attaches the DMG to that
    release.
 
-The workflow needs these repository secrets. `scripts/setup-signing-secrets.sh` reads `.env`, exports
-the certificate from your keychain and sets all five with `gh`, prompting for anything `.env`
-does not have:
+The workflow needs these repository secrets. First export the certificate from **Keychain Access →
+My Certificates → Developer ID Application: … → Export…** as a `.p12` with a password, then run:
+
+```sh
+scripts/setup-signing-secrets.sh path/to/certificate.p12
+```
+
+It reads `.env`, checks the `.p12` really holds a Developer ID Application identity for your team,
+and sets all five secrets with `gh`, prompting for anything `.env` does not have. The export has to
+be done in Keychain Access: on current macOS the Developer ID key usually lives in the
+data-protection keychain, which `security export` cannot reach — a scripted export silently leaves
+it out, and CI then signs with the wrong identity.
 
 | Secret                        | What it is                                              |
 | ----------------------------- | ------------------------------------------------------- |
