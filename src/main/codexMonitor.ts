@@ -12,14 +12,23 @@ import {
   parseCodexVersion,
   type ThreadUpdate
 } from '@core/providers/codexProtocol.js'
+import { shellQuote } from '@core/shell.js'
 
 const run = promisify(execFile)
 const HANDSHAKE_TIMEOUT_MS = 5_000
 const RECONNECT_DELAY_MS = 3_000
 
+/**
+ * Runs through the user's login shell, as the embedded terminal does. A packaged app launched from
+ * Finder inherits a bare PATH, so spawning the configured command directly fails with ENOENT even
+ * though it works in a terminal. The command is a shell string (it may carry flags), as in a launch.
+ */
 async function output(command: string, args: string[]): Promise<string> {
+  const line = [command, ...args.map((arg) => `'${shellQuote(arg)}'`)].join(' ')
   try {
-    const { stdout } = await run(command, args, { timeout: 15_000 })
+    const { stdout } = await run(process.env.SHELL || '/bin/zsh', ['-l', '-c', line], {
+      timeout: 15_000
+    })
     return stdout
   } catch (error) {
     const detail = error instanceof Error ? error.message.split('\n')[0] : String(error)
