@@ -70,13 +70,37 @@ jobs:
           security create-keychain -p "$password" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$password" "$KEYCHAIN"
+
+          # The runner does not trust Developer ID certificates out of the box: without Apple's
+          # intermediates the identity is invalid and electron-builder silently falls back to any
+          # other identity in the .p12 (an Apple Development one, which notarisation rejects).
+          # Fingerprints are pinned so a tampered download is never trusted.
+          for ca in DeveloperIDCA:3B166C3B7DC4B751C9FE2AFAB9135641E388E186 \
+                    DeveloperIDG2CA:5B45F61068B29FCC8FFFF1A7E99B78DA9E9C4635; do
+            name="${ca%%:*}"
+            curl -fsSL -o "$RUNNER_TEMP/$name.cer" "https://www.apple.com/certificateauthority/$name.cer"
+            actual="$(openssl x509 -inform der -in "$RUNNER_TEMP/$name.cer" -noout -fingerprint -sha1 | cut -d= -f2 | tr -d :)"
+            [ "$actual" = "${ca#*:}" ] || { echo "::error::$name.cer fingerprint mismatch"; exit 1; }
+            security import "$RUNNER_TEMP/$name.cer" -k "$KEYCHAIN"
+          done
+
           echo "$CSC_LINK" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
           security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$CSC_KEY_PASSWORD" \
             -T /usr/bin/codesign -T /usr/bin/productbuild
           rm -f "$RUNNER_TEMP/certificate.p12"
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$KEYCHAIN"
-          security find-identity -v -p codesigning "$KEYCHAIN"
+
+          # Name the Developer ID identity explicitly, and stop here if there is none.
+          identity="$(security find-identity -v -p codesigning "$KEYCHAIN" |
+            sed -n 's/.*"Developer ID Application: \(.*\)"$/\1/p' | head -1)"
+          if [ -z "$identity" ]; then
+            echo "::error::CSC_LINK has no valid Developer ID Application identity"
+            security find-identity -p codesigning "$KEYCHAIN"
+            exit 1
+          fi
+          echo "Signing as: Developer ID Application: $identity"
+          echo "CSC_NAME=$identity" >> "$GITHUB_ENV"
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
