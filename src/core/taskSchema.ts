@@ -50,6 +50,7 @@ export const taskFrontmatterSchema = z.object({
   agentSession: z.object({ provider: z.enum(['claude', 'codex']), id: z.string() }).optional(),
   sessions: z.array(taskSessionRefSchema).default([]),
   externalRef: externalRefSchema.optional(),
+  prUrl: z.string().optional(),
   order: z.number().default(0),
   createdAt: z.string(),
   updatedAt: z.string()
@@ -77,6 +78,7 @@ export const taskDraftSchema = z.object({
   provider: z.enum(['claude', 'codex']).optional(),
   sessions: z.array(taskSessionRefSchema).optional(),
   externalRef: externalRefSchema.optional(),
+  prUrl: z.string().optional(),
   order: z.number().optional()
 })
 

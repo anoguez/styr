@@ -187,6 +187,7 @@ export function createTask(draft: TaskDraft): Task {
     provider: draft.provider,
     sessions: draft.sessions ?? [],
     externalRef: draft.externalRef,
+    prUrl: draft.prUrl,
     order: draft.order ?? existing.filter((task) => task.status === status).length,
     createdAt: stamp,
     updatedAt: stamp,

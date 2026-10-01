@@ -23,6 +23,7 @@ interface FormState {
   project: string
   tags: string[]
   repoPath: string
+  prUrl: string
   useWorktree: boolean
   orchestrate: boolean
   contextFiles: string[]
@@ -42,6 +43,7 @@ function toForm(task: Task | null, settings: Settings): FormState {
     project: task?.project ?? '',
     tags: task?.tags ?? [],
     repoPath: task?.repoPath ?? settings.defaultRepoPath,
+    prUrl: task?.prUrl ?? '',
     useWorktree: task?.useWorktree ?? settings.taskDefaults.useWorktree,
     orchestrate: task?.orchestrate ?? settings.taskDefaults.orchestrate,
     contextFiles: task?.contextFiles ?? [],
@@ -317,6 +319,7 @@ export function TaskDialog({
     project: form.project.trim() || undefined,
     tags: form.tags,
     repoPath: form.repoPath.trim() || undefined,
+    prUrl: form.prUrl.trim() || undefined,
     useWorktree: form.useWorktree,
     orchestrate: form.orchestrate,
     contextFiles: form.contextFiles,
@@ -688,6 +691,18 @@ export function TaskDialog({
                   value={form.project}
                   placeholder="None"
                   onChange={(event) => patch({ project: event.target.value })}
+                  className={`h-7 w-full rounded-[7px] px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
+                />
+              </div>
+              <div className="grid h-8 grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
+                <span className="text-[12px] text-dim">PR link</span>
+                <input
+                  aria-label="Pull request URL"
+                  type="url"
+                  value={form.prUrl}
+                  placeholder="None"
+                  title="Optional link to the pull or merge request, on any host"
+                  onChange={(event) => patch({ prUrl: event.target.value })}
                   className={`h-7 w-full rounded-[7px] px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
                 />
               </div>

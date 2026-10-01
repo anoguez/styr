@@ -138,6 +138,7 @@ export interface Task {
   agentSession?: { provider: 'claude' | 'codex'; id: string }
   sessions: TaskSessionRef[]
   externalRef?: ExternalRef
+  prUrl?: string
   order: number
   createdAt: string
   updatedAt: string
