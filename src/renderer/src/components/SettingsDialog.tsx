@@ -473,45 +473,6 @@ export function SettingsDialog({
                   onChange={(event) => patch({ shell: event.target.value })}
                 />
               </Field>
-              <Field
-                label="Claude command"
-                hint="Usually just `claude`. Change it if your CLI lives somewhere else or needs a wrapper."
-              >
-                <input
-                  className={inputClass}
-                  value={draft.claudeCommand}
-                  onChange={(event) => patch({ claudeCommand: event.target.value })}
-                />
-              </Field>
-              <Field
-                label="Codex command"
-                hint="Usually just `codex`. Codex sessions use workspace-write sandboxing and request approval when needed."
-              >
-                <input
-                  className={inputClass}
-                  value={draft.codexCommand}
-                  onChange={(event) => patch({ codexCommand: event.target.value })}
-                />
-              </Field>
-              <Field
-                label="Default agent"
-                hint="Used by manual launches; orchestration can route each lane independently."
-              >
-                <select
-                  className={inputClass}
-                  value={draft.defaultProvider}
-                  onChange={(event) =>
-                    patch({ defaultProvider: event.target.value as 'claude' | 'codex' })
-                  }
-                >
-                  {draft.enabledProviders.includes('claude') ? (
-                    <option value="claude">Claude Code</option>
-                  ) : null}
-                  {draft.enabledProviders.includes('codex') ? (
-                    <option value="codex">Codex</option>
-                  ) : null}
-                </select>
-              </Field>
             </div>
           ) : null}
 
@@ -1001,6 +962,36 @@ export function SettingsDialog({
                   />
                 </div>
               </Field>
+              <Field
+                label="Default provider"
+                hint="Used by manual launches; orchestration can route each lane independently."
+              >
+                <Select
+                  value={draft.defaultProvider}
+                  onChange={(event) =>
+                    patch({ defaultProvider: event.target.value as 'claude' | 'codex' })
+                  }
+                >
+                  {draft.enabledProviders.includes('claude') ? (
+                    <option value="claude">Claude Code</option>
+                  ) : null}
+                  {draft.enabledProviders.includes('codex') ? (
+                    <option value="codex">Codex</option>
+                  ) : null}
+                </Select>
+              </Field>
+              {draft.enabledProviders.includes('claude') ? (
+                <Field
+                  label="Claude command"
+                  hint="Usually `claude`. Use a wrapper or absolute path when needed."
+                >
+                  <input
+                    className={inputClass}
+                    value={draft.claudeCommand}
+                    onChange={(event) => patch({ claudeCommand: event.target.value })}
+                  />
+                </Field>
+              ) : null}
               {draft.enabledProviders.includes('claude') ? (
                 <Field
                   label="Claude MCP server"
@@ -1027,6 +1018,18 @@ export function SettingsDialog({
                       ) : null}
                     </div>
                   </div>
+                </Field>
+              ) : null}
+              {draft.enabledProviders.includes('codex') ? (
+                <Field
+                  label="Codex command"
+                  hint="Usually `codex`. Codex runs with workspace-write sandboxing and on-request approvals."
+                >
+                  <input
+                    className={inputClass}
+                    value={draft.codexCommand}
+                    onChange={(event) => patch({ codexCommand: event.target.value })}
+                  />
                 </Field>
               ) : null}
               {draft.enabledProviders.includes('codex') ? (
