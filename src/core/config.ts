@@ -100,6 +100,7 @@ function defaults(): Settings {
     ],
     orchestration: { spec: 1, implement: 2, review: 1 },
     updates: { checkAutomatically: true },
+    taskDefaults: { orchestrate: true, useWorktree: false },
     theme: DEFAULT_THEME,
     shortcuts: DEFAULT_SHORTCUTS,
     promptRouting: {

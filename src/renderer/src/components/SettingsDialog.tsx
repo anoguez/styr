@@ -108,6 +108,11 @@ const LANE_HINTS: Record<OrchestrationLane, string> = {
 
 export const SECTIONS = [
   {
+    id: 'preferences',
+    label: 'Preferences',
+    blurb: 'Defaults for new tasks. Existing tasks keep their own settings.'
+  },
+  {
     id: 'workspace',
     label: 'Workspace',
     blurb: 'Where the board keeps its data and where work runs.'
@@ -319,7 +324,7 @@ export function SettingsDialog({
   onClose: () => void
 }): ReactNode {
   const [draft, setDraft] = useState<Settings>(settings)
-  const [section, setSection] = useState<SectionId>(initialSection ?? 'workspace')
+  const [section, setSection] = useState<SectionId>(initialSection ?? 'preferences')
   const [selectedId, setSelectedId] = useState<string>(
     settings.promptTemplates[0]?.id ?? settings.defaultPromptTemplateId
   )
@@ -424,6 +429,27 @@ export function SettingsDialog({
             <h3 className="text-[13.5px] font-semibold tracking-[-0.01em]">{active.label}</h3>
             <p className="mt-0.5 text-[11.5px] text-faint">{active.blurb}</p>
           </header>
+
+          {section === 'preferences' ? (
+            <div className="flex flex-col gap-4">
+              <Checkbox
+                checked={draft.taskDefaults.orchestrate}
+                onChange={(orchestrate) =>
+                  patch({ taskDefaults: { ...draft.taskDefaults, orchestrate } })
+                }
+                label="Let Orchestrate start new tasks"
+                hint="When on, the Orchestrate checkbox is ticked when you create a task. You can still change it per task."
+              />
+              <Checkbox
+                checked={draft.taskDefaults.useWorktree}
+                onChange={(useWorktree) =>
+                  patch({ taskDefaults: { ...draft.taskDefaults, useWorktree } })
+                }
+                label="Run new tasks in their own git worktree"
+                hint="When on, the worktree checkbox is ticked when you create a task. Each agent then gets a separate checkout."
+              />
+            </div>
+          ) : null}
 
           {section === 'workspace' ? (
             <div className="flex flex-col gap-4">

@@ -196,6 +196,12 @@ panel's `bg-chrome` behind it. Setting it keeps the two in step and feeds xterm'
 maths; it is not what paints the panel. A hardcoded background sat there for a long time doing
 almost nothing, which is why nobody noticed it was from the old palette.
 
+## Preferences
+
+`Settings.taskDefaults` (`orchestrate`, `useWorktree`) only seeds the new-task form in `toForm`
+(`TaskDialog`). Existing tasks keep their saved values, so changing a default never rewrites a
+task. Preferences is the first `SECTIONS` entry and the dialog's default section.
+
 ## Title bar
 
 The window uses `titleBarStyle: 'hiddenInset'` with `trafficLightPosition` set to centre the lights

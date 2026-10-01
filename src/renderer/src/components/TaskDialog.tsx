@@ -48,8 +48,8 @@ function toForm(task: Task | null, settings: Settings): FormState {
     project: task?.project ?? '',
     tags: task?.tags.join(', ') ?? '',
     repoPath: task?.repoPath ?? settings.defaultRepoPath,
-    useWorktree: task?.useWorktree ?? false,
-    orchestrate: task?.orchestrate ?? true,
+    useWorktree: task?.useWorktree ?? settings.taskDefaults.useWorktree,
+    orchestrate: task?.orchestrate ?? settings.taskDefaults.orchestrate,
     contextFiles: task?.contextFiles ?? [],
     promptTemplateId: task?.promptTemplateId ?? '',
     description: task?.description ?? ''
