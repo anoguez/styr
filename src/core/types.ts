@@ -277,6 +277,7 @@ export interface TerminalSessionInfo {
   title: string
   cwd: string
   taskId?: string
+  provider?: 'claude' | 'codex'
   /** A read-back of a past chat rather than the task's live session. */
   replay?: boolean
 }

@@ -10,6 +10,7 @@ export interface SpawnOptions {
   shell?: string
   title?: string
   taskId?: string
+  provider?: 'claude' | 'codex'
   replay?: boolean
   command?: string
   env?: Record<string, string>
@@ -71,6 +72,7 @@ export function createSession(options: SpawnOptions): TerminalSessionInfo {
     title: options.title ?? 'Terminal',
     cwd,
     ...(options.taskId ? { taskId: options.taskId } : {}),
+    ...(options.provider ? { provider: options.provider } : {}),
     ...(options.replay ? { replay: true } : {})
   }
   const session: Session = { info, pty: child, backlog: '' }

@@ -307,8 +307,8 @@ export function TaskDialog({
 
         {task && task.sessions.length > 0 ? (
           <Field
-            label="Claude chats"
-            hint="Every run on this task, newest first. Open one to read back what it did — that reopens the conversation without starting new work. Forget only clears which chat the next run continues; the history stays."
+            label="Agent chats"
+            hint="Every Claude Code and Codex run on this task, newest first. Open one to resume it with its original provider. Forget only clears the next chat; history stays."
           >
             <ul className="flex flex-col divide-y divide-edge overflow-hidden rounded-lg border border-edge-strong bg-chrome">
               {[...task.sessions].reverse().map((entry) => (
@@ -316,7 +316,10 @@ export function TaskDialog({
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex items-center gap-2 text-[12.5px] text-ink">
                       {entry.label}
-                      {entry.id === task.claudeSessionId ? (
+                      <span className="rounded bg-edge px-1.5 text-[10px] text-dim">
+                        {entry.provider === 'codex' ? 'Codex' : 'Claude'}
+                      </span>
+                      {entry.id === task.agentSession?.id ? (
                         <span className="rounded bg-accent/15 px-1.5 text-[10px] text-[var(--color-accent-text)]">
                           continues next
                         </span>
@@ -338,7 +341,7 @@ export function TaskDialog({
                 </li>
               ))}
             </ul>
-            {task.claudeSessionId ? (
+            {task.agentSession || task.claudeSessionId ? (
               <Button
                 className="mt-2 self-start"
                 onClick={() => {

@@ -166,6 +166,7 @@ async function launchSessionForTask(
     shell: settings.shell,
     title: task.title,
     taskId: task.id,
+    provider: plan.provider,
     command: plan.command,
     env: { STYR_TASK_ID: task.id, STYR_SESSION_ID: plan.sessionId }
   })
@@ -333,12 +334,14 @@ export function registerIpcHandlers(): void {
     const task = findTask(taskId)
     if (!task) throw new Error(`Task ${taskId} not found`)
     const settings = loadSettings()
-    const plan = planLaunch(settings, task, { resume: sessionId })
+    const entry = task.sessions.find((item) => item.id === sessionId)
+    const plan = planLaunch(settings, task, { resume: sessionId, provider: entry?.provider })
     return createSession({
       cwd: plan.cwd,
       shell: settings.shell,
       title: task.title,
       taskId: task.id,
+      provider: plan.provider,
       replay: true,
       command: plan.command,
       env: { STYR_TASK_ID: task.id, STYR_SESSION_ID: plan.sessionId }
