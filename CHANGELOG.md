@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/anoguez/styr/compare/v0.6.0...v0.7.0) (2026-10-01)
+
+
+### Features
+
+* done means landed; clean up worktree and branches after landing ([#16](https://github.com/anoguez/styr/issues/16)) ([dfb32d2](https://github.com/anoguez/styr/commit/dfb32d2c5e3a1b765de44c423df696f9e3ea8fb4))
+* redesign the task dialog with tabs and a details sidebar ([#17](https://github.com/anoguez/styr/issues/17)) ([97c5c2a](https://github.com/anoguez/styr/commit/97c5c2a56fe1e44a06acdf84f09cd8d8b5711e16))
+
+
+### Bug Fixes
+
+* neutralize bottom bar active colors ([#13](https://github.com/anoguez/styr/issues/13)) ([23204f1](https://github.com/anoguez/styr/commit/23204f14849334d5b0950ab423c90cf5153c9184))
+* run Codex preflight checks through the login shell ([#15](https://github.com/anoguez/styr/issues/15)) ([330b11f](https://github.com/anoguez/styr/commit/330b11fcd0ffc61f52a42cd3d3710d736631645e))
+
 ## [0.6.0](https://github.com/anoguez/styr/compare/v0.5.0...v0.6.0) (2026-10-01)
 
 
