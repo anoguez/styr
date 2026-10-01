@@ -1,0 +1,10 @@
+# Actions are pinned to commit SHAs (the release job holds the signing secrets, and a tag can be
+# moved). Dependabot keeps those pins current by opening a PR for each new release.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
