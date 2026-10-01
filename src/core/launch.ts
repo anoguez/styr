@@ -96,8 +96,7 @@ export function planLaunch(
   const { templateId, homeRoot, withPrompt = false, fresh = false, resume } = options
   const provider = options.provider ? providerById(options.provider) : providerFor(settings, task)
   const workspace = workspaceFor(settings, task)
-  const existing =
-    task.agentSession?.provider === provider.id ? task.agentSession.id : task.claudeSessionId
+  const existing = task.agentSession?.provider === provider.id ? task.agentSession.id : undefined
 
   clearAgentStatus(settings, task.id)
 
@@ -126,6 +125,7 @@ export function planLaunch(
       taskId: task.id,
       sessionId,
       resume: resumable,
+      cwd: workspace.cwd,
       prompt
     }),
     cwd: workspace.cwd,

@@ -12,10 +12,9 @@ import {
   type LaunchPlan
 } from '@core/launch.js'
 import { providerFor } from '@core/providers/index.js'
-import { newestCodexSessionFor } from '@core/providers/codex.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { readGitBranch, removeWorktree } from '@core/worktree.js'
-import { planOrchestration, type OrchestrationPlan } from '@core/orchestrate.js'
+import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
 import type { OrchestrationSummary } from '@core/types.js'
 import {
   addNote,
@@ -51,6 +50,7 @@ import {
   type SpawnOptions
 } from './terminal/ptyManager.js'
 import { TaskLaunchGate } from './terminal/taskLaunchGate.js'
+import { CodexMonitor, prepareCodex } from './codexMonitor.js'
 
 function broadcast(channel: string, payload?: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
@@ -71,7 +71,33 @@ export function agentStatuses(): AgentStatus[] {
   })
 }
 
+/**
+ * Turns the Codex daemon's lifecycle broadcasts into the same agent records a Claude hook writes,
+ * so the sidebar, tray and terminal dots need no Codex-specific code.
+ */
+/** The template a fresh Codex launch used, for labelling its history entry once the id arrives. */
+const pendingTemplates = new Map<string, string | undefined>()
+
+const codexMonitor = new CodexMonitor((update) => {
+  const settings = loadSettings()
+  recordAgentEvent(settings, update.taskId, update.event)
+  if (update.boundSessionId) {
+    const task = findTask(update.taskId)
+    if (task) {
+      saveLaunchMetadata(
+        task,
+        { provider: 'codex' },
+        pendingTemplates.get(task.id),
+        update.boundSessionId
+      )
+    }
+    pendingTemplates.delete(update.taskId)
+  }
+  notifyAgentsChanged()
+})
+
 export function markAgentExited(taskId: string): void {
+  codexMonitor.release(taskId)
   recordAgentEvent(loadSettings(), taskId, 'TerminalExit')
   notifyAgentsChanged()
 }
@@ -98,12 +124,10 @@ export function notifyTasksChanged(): void {
  * orchestrator so both advance the board and record the session the same way.
  */
 const taskLaunches = new TaskLaunchGate()
-const CODEX_SESSION_DISCOVERY_ATTEMPTS = 20
-const CODEX_SESSION_DISCOVERY_INTERVAL_MS = 250
 
 function launchPatch(
   task: Task,
-  plan: LaunchPlan,
+  plan: Pick<LaunchPlan, 'provider' | 'worktreePath'>,
   templateId: string | undefined,
   sessionId?: string
 ): TaskPatch {
@@ -114,36 +138,26 @@ function launchPatch(
   }
   if (!sessionId) return patch
 
-  if (task.claudeSessionId !== sessionId && plan.provider === 'claude') {
-    patch.claudeSessionId = sessionId
-  }
   if (task.agentSession?.id !== sessionId || task.agentSession?.provider !== plan.provider) {
     patch.agentSession = { provider: plan.provider, id: sessionId }
   }
-  const history = [...task.sessions]
-  if (task.claudeSessionId && !history.some((entry) => entry.id === task.claudeSessionId)) {
-    history.unshift({
-      id: task.claudeSessionId,
-      provider: 'claude',
-      startedAt: task.updatedAt,
-      label: 'Earlier chat'
-    })
+  if (!task.sessions.some((entry) => entry.id === sessionId)) {
+    patch.sessions = [
+      ...task.sessions,
+      {
+        id: sessionId,
+        provider: plan.provider,
+        startedAt: new Date().toISOString(),
+        label: resolveTemplateFor(loadSettings(), task, templateId).name
+      }
+    ]
   }
-  if (!history.some((entry) => entry.id === sessionId)) {
-    history.push({
-      id: sessionId,
-      provider: plan.provider,
-      startedAt: new Date().toISOString(),
-      label: resolveTemplateFor(loadSettings(), task, templateId).name
-    })
-  }
-  if (history.length !== task.sessions.length) patch.sessions = history
   return patch
 }
 
 function saveLaunchMetadata(
   task: Task,
-  plan: LaunchPlan,
+  plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'warning'>,
   templateId: string | undefined,
   sessionId?: string
 ): void {
@@ -153,34 +167,15 @@ function saveLaunchMetadata(
   if (Object.keys(patch).length > 0 || plan.warning) notifyTasksChanged()
 }
 
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds))
-}
-
-async function saveNewCodexSession(
-  taskId: string,
-  cwd: string,
-  startedAfter: string,
-  templateId: string | undefined,
-  plan: LaunchPlan
-): Promise<void> {
-  for (let attempt = 0; attempt < CODEX_SESSION_DISCOVERY_ATTEMPTS; attempt += 1) {
-    const sessionId = newestCodexSessionFor(cwd, startedAfter)
-    if (sessionId) {
-      const task = findTask(taskId)
-      if (!task) return
-      saveLaunchMetadata(task, plan, templateId, sessionId)
-      return
-    }
-    await wait(CODEX_SESSION_DISCOVERY_INTERVAL_MS)
-  }
-}
-
 async function launchSessionForTask(
   taskId: string,
   options: LaunchOptions = {}
 ): Promise<TerminalSessionInfo> {
-  return taskLaunches.run(taskId, () => startSessionForTask(taskId, options))
+  return taskLaunches.startOrReuse(
+    taskId,
+    () => findSessionByTask(taskId),
+    () => startSessionForTask(taskId, options)
+  )
 }
 
 async function startSessionForTask(
@@ -190,9 +185,6 @@ async function startSessionForTask(
   const task = findTask(taskId)
   if (!task) throw new Error(`Task ${taskId} not found`)
 
-  const live = findSessionByTask(taskId)
-  if (live) return live
-
   const settings = loadSettings()
   const requestedProvider =
     options.provider ?? task.agentSession?.provider ?? task.provider ?? settings.defaultProvider
@@ -201,40 +193,46 @@ async function startSessionForTask(
       `${requestedProvider === 'codex' ? 'Codex' : 'Claude Code'} is disabled in Settings → Integrations.`
     )
   }
-  const plan = planLaunch(settings, task, options)
-  const discoveringCodexSession = plan.provider === 'codex' && !plan.resumed
-  saveLaunchMetadata(
-    task,
-    plan,
-    options.templateId,
-    discoveringCodexSession ? undefined : plan.sessionId
-  )
+  // Codex is refused up front when it cannot be monitored: a session with no live status is worse
+  // than an error that says what to fix. Nothing has been written yet, so a refusal leaves no trace.
+  const socketPath =
+    requestedProvider === 'codex' ? await prepareCodex(settings.codexCommand) : undefined
 
-  const session = createSession({
-    cwd: plan.cwd,
-    shell: settings.shell,
-    title: task.title,
-    taskId: task.id,
-    provider: plan.provider,
-    command: plan.command,
-    env: {
-      STYR_TASK_ID: task.id,
-      ...(discoveringCodexSession ? {} : { STYR_SESSION_ID: plan.sessionId })
+  const plan = planLaunch(settings, task, options)
+  // A fresh Codex thread is created by the TUI, so its id is only known once the daemon announces
+  // it; the monitor saves it then. Every other session has its id up front.
+  const awaitingThreadId = plan.provider === 'codex' && !plan.resumed
+  saveLaunchMetadata(task, plan, options.templateId, awaitingThreadId ? undefined : plan.sessionId)
+
+  if (socketPath) {
+    if (awaitingThreadId) {
+      pendingTemplates.set(task.id, options.templateId)
+      await codexMonitor.expect(socketPath, task.id, plan.cwd)
+    } else await codexMonitor.watch(socketPath, task.id, plan.sessionId)
+  }
+  try {
+    const session = createSession({
+      cwd: plan.cwd,
+      shell: settings.shell,
+      title: task.title,
+      taskId: task.id,
+      provider: plan.provider,
+      command: plan.command,
+      env: {
+        STYR_TASK_ID: task.id,
+        ...(awaitingThreadId ? {} : { STYR_SESSION_ID: plan.sessionId })
+      }
+    })
+    if (plan.provider === 'codex' && plan.resumed) {
+      recordAgentEvent(settings, task.id, 'SessionStart')
+      notifyAgentsChanged()
     }
-  })
-  if (plan.provider === 'codex') {
-    recordAgentEvent(
-      settings,
-      task.id,
-      plan.resumed && !options.withPrompt ? 'SessionStart' : 'UserPromptSubmit'
-    )
-    notifyAgentsChanged()
+    return session
+  } catch (error) {
+    codexMonitor.release(task.id)
+    pendingTemplates.delete(task.id)
+    throw error
   }
-  if (discoveringCodexSession) {
-    const startedAfter = new Date(Date.now() - 1_000).toISOString()
-    void saveNewCodexSession(task.id, plan.cwd, startedAfter, options.templateId, plan)
-  }
-  return session
 }
 
 function buildPlan(): OrchestrationPlan {
@@ -345,7 +343,7 @@ export function registerIpcHandlers(): void {
           session: launchSessionForTask(task.id, {
             withPrompt: true,
             fresh: lane === 'review',
-            provider: loadSettings().providerRouting[lane]
+            provider: providerForLane(loadSettings(), lane)
           })
         }))
     )
@@ -398,12 +396,13 @@ export function registerIpcHandlers(): void {
       launchSessionForTask(taskId, { templateId, provider })
   )
 
-  ipcMain.handle('terminal:resumeSession', (_event, taskId: string, sessionId: string) => {
+  ipcMain.handle('terminal:resumeSession', async (_event, taskId: string, sessionId: string) => {
     const task = findTask(taskId)
     if (!task) throw new Error(`Task ${taskId} not found`)
     const settings = loadSettings()
     const entry = task.sessions.find((item) => item.id === sessionId)
     const plan = planLaunch(settings, task, { resume: sessionId, provider: entry?.provider })
+    if (plan.provider === 'codex') await prepareCodex(settings.codexCommand)
     return createSession({
       cwd: plan.cwd,
       shell: settings.shell,
@@ -417,7 +416,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('tasks:forgetSession', (_event, taskId: string) => {
-    const task = updateTask(taskId, { claudeSessionId: undefined, agentSession: undefined })
+    const task = updateTask(taskId, { agentSession: undefined })
     notifyTasksChanged()
     return task
   })

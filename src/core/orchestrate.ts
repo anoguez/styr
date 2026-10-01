@@ -7,6 +7,7 @@ import type {
 } from './types.js'
 import { ORCHESTRATION_LANES } from './types.js'
 import type { AgentState } from './agentState.js'
+import type { AgentProviderId } from './providers/types.js'
 
 export interface OrchestrationPlan {
   dispatch: { task: Task; lane: OrchestrationLane }[]
@@ -29,6 +30,14 @@ export function laneFor(task: Task): OrchestrationLane {
   if (task.readiness === 'needs_spec') return 'spec'
   if (task.status === 'in_review') return 'review'
   return 'implement'
+}
+
+/** Which agent CLI a lane runs on. The settings schema defaults every lane to Claude. */
+export function providerForLane(
+  settings: Pick<Settings, 'providerRouting'>,
+  lane: OrchestrationLane
+): AgentProviderId {
+  return settings.providerRouting[lane]
 }
 
 /**

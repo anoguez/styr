@@ -358,7 +358,7 @@ export function TaskDialog({
                 </li>
               ))}
             </ul>
-            {task.agentSession || task.claudeSessionId ? (
+            {task.agentSession ? (
               <Button
                 className="mt-2 self-start"
                 onClick={() => {

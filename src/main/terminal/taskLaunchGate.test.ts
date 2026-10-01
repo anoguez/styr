@@ -30,4 +30,32 @@ describe('TaskLaunchGate', () => {
 
     expect(launch).toHaveBeenCalledTimes(2)
   })
+
+  it('hands back the live session instead of starting a second agent', async () => {
+    const gate = new TaskLaunchGate()
+    const start = vi.fn().mockResolvedValue('new')
+
+    await expect(gate.startOrReuse('TASK-1', () => 'live-claude', start)).resolves.toBe(
+      'live-claude'
+    )
+    expect(start).not.toHaveBeenCalled()
+  })
+
+  it('lets only one of two simultaneous requests start, whatever the provider', async () => {
+    const gate = new TaskLaunchGate()
+    let live: string | undefined
+    const start = vi.fn(async () => {
+      await Promise.resolve()
+      live = 'codex-session'
+      return live
+    })
+
+    const results = await Promise.all([
+      gate.startOrReuse('TASK-1', () => live, start),
+      gate.startOrReuse('TASK-1', () => live, start)
+    ])
+
+    expect(results).toEqual(['codex-session', 'codex-session'])
+    expect(start).toHaveBeenCalledOnce()
+  })
 })

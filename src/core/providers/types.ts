@@ -9,6 +9,8 @@ export interface ProviderCommandInput {
   sessionId: string
   /** Continue `sessionId` rather than start it. Only set once `sessionExists` has confirmed it. */
   resume: boolean
+  /** Where the agent will run. Providers whose CLI cannot infer it from the shell need it. */
+  cwd: string
   /** A shell expression that expands to the prompt, or undefined to submit nothing. */
   prompt?: string
 }

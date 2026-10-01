@@ -8,6 +8,7 @@ import {
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, extname, join } from 'node:path'
+import { migrateProviderFields } from './migrateTask.js'
 import { jsonTaskSchema } from './taskSchema.js'
 import { hasFrontmatter, parseTaskMarkdown, serialiseTask } from './markdown.js'
 import { tasksDir } from './config.js'
@@ -79,7 +80,9 @@ export function readTaskAtPath(filePath: string, fallbackIndex = 1): Task | null
   const isJson = extname(filePath).toLowerCase() === '.json'
   try {
     if (isJson) {
-      const parsed = jsonTaskSchema.parse(JSON.parse(raw))
+      const parsed = jsonTaskSchema.parse(
+        migrateProviderFields(JSON.parse(raw) as Record<string, unknown>)
+      )
       brokenFiles.delete(filePath)
       return { ...parsed, filePath, format: 'json' }
     }
@@ -182,7 +185,6 @@ export function createTask(draft: TaskDraft): Task {
     contextFiles: draft.contextFiles ?? [],
     promptTemplateId: draft.promptTemplateId,
     provider: draft.provider,
-    claudeSessionId: draft.claudeSessionId,
     sessions: draft.sessions ?? [],
     externalRef: draft.externalRef,
     order: draft.order ?? existing.filter((task) => task.status === status).length,

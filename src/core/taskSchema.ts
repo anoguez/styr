@@ -21,7 +21,7 @@ export const externalRefSchema = z.object({
 
 export const taskSessionRefSchema = z.object({
   id: z.string(),
-  provider: z.enum(['claude', 'codex']).optional(),
+  provider: z.enum(['claude', 'codex']).default('claude'),
   startedAt: z.string(),
   label: z.string()
 })
@@ -47,7 +47,6 @@ export const taskFrontmatterSchema = z.object({
   contextFiles: z.array(z.string()).default([]),
   promptTemplateId: z.string().optional(),
   provider: z.enum(['claude', 'codex']).optional(),
-  claudeSessionId: z.string().optional(),
   agentSession: z.object({ provider: z.enum(['claude', 'codex']), id: z.string() }).optional(),
   sessions: z.array(taskSessionRefSchema).default([]),
   externalRef: externalRefSchema.optional(),
@@ -76,7 +75,6 @@ export const taskDraftSchema = z.object({
   contextFiles: z.array(z.string()).optional(),
   promptTemplateId: z.string().optional(),
   provider: z.enum(['claude', 'codex']).optional(),
-  claudeSessionId: z.string().optional(),
   sessions: z.array(taskSessionRefSchema).optional(),
   externalRef: externalRefSchema.optional(),
   order: z.number().optional()

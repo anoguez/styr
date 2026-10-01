@@ -129,7 +129,6 @@ export interface Task {
   contextFiles: string[]
   promptTemplateId?: string
   provider?: 'claude' | 'codex'
-  claudeSessionId?: string
   agentSession?: { provider: 'claude' | 'codex'; id: string }
   sessions: TaskSessionRef[]
   externalRef?: ExternalRef
@@ -143,7 +142,7 @@ export interface Task {
 /** One Claude conversation started for a task, kept so past runs stay reachable. */
 export interface TaskSessionRef {
   id: string
-  provider?: 'claude' | 'codex'
+  provider: 'claude' | 'codex'
   startedAt: string
   label: string
 }

@@ -25,8 +25,10 @@ const task: Task = {
   contextFiles: ['README.md'],
   promptTemplateId: 'code-review',
   provider: 'codex',
-  claudeSessionId: 'session-42',
-  sessions: [{ id: 'session-42', startedAt: '2026-10-01T08:00:00.000Z', label: 'Review' }],
+  agentSession: { provider: 'codex', id: 'session-42' },
+  sessions: [
+    { id: 'session-42', provider: 'codex', startedAt: '2026-10-01T08:00:00.000Z', label: 'Review' }
+  ],
   externalRef: { provider: 'github', id: '42', url: 'https://github.com/anoguez/styr/issues/42' },
   order: 3,
   createdAt: '2026-10-01T07:00:00.000Z',
