@@ -419,6 +419,7 @@ export default function App(): ReactNode {
         <span className="font-wordmark -ml-1 text-[13.5px] font-semibold tracking-[0.02em] text-ink">
           Styr
         </span>
+        {appInfo ? <span className="text-[11px] text-faint">v{appInfo.version}</span> : null}
         {appInfo && !appInfo.isPackaged ? (
           <Chip tone="warn" title={`Running from source · v${appInfo.version}`}>
             DEV
