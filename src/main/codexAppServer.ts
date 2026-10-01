@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 
 interface RpcMessage {
@@ -21,6 +21,33 @@ const EVENT_BY_NOTIFICATION: Record<string, CodexLifecycleEvent> = {
   'item/commandExecution/requestApproval': 'Notification',
   'item/fileChange/requestApproval': 'Notification',
   'item/permissions/requestApproval': 'Notification'
+}
+
+const MINIMUM_CODEX_VERSION = [0, 159, 3] as const
+
+function assertCompatibleCodex(command: string): void {
+  let output: string
+  try {
+    output = execFileSync(command, ['--version'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+  } catch {
+    throw new Error(
+      `Could not run ${command}. Install Codex CLI ${MINIMUM_CODEX_VERSION.join('.')} or later.`
+    )
+  }
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(output)
+  if (!match) throw new Error(`Could not determine the Codex CLI version from: ${output.trim()}`)
+  const version = match.slice(1).map(Number)
+  const older = version.findIndex((part, index) => part !== MINIMUM_CODEX_VERSION[index])
+  const actual = older === -1 ? undefined : version[older]
+  const required = older === -1 ? undefined : MINIMUM_CODEX_VERSION[older]
+  if (actual !== undefined && required !== undefined && actual < required) {
+    throw new Error(
+      `Codex CLI ${MINIMUM_CODEX_VERSION.join('.')} or later is required for live status.`
+    )
+  }
 }
 
 /** Minimal JSON-RPC client for Codex's documented local app-server protocol. */
@@ -61,6 +88,7 @@ export class CodexAppServer {
 
   private ensureStarted(): void {
     if (this.process) return
+    assertCompatibleCodex(this.command)
     const child = spawn(this.command, ['app-server', '--stdio'], { stdio: 'pipe' })
     this.process = child
     createInterface({ input: child.stdout }).on('line', (line) => this.onLine(line))
