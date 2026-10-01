@@ -240,8 +240,9 @@ Core is compiled without the DOM lib, so `ShortcutKeyEvent` is spelled out rathe
 `SHORTCUT_SCOPES` says where each binding applies. A `terminal` command answers only while an
 embedded terminal has focus (⌘T, New terminal tab), so its key stays free elsewhere. `commandForEvent`
 takes a required `ShortcutContext` for this — required so no caller can forget scope exists. `App`
-derives it with `isTerminalTarget` (xterm types into a hidden textarea inside `.xterm`), and
-`isAppShortcut` always passes `terminalFocused: true`. Scope gates only the key; the palette runs
+derives it with `isTerminalTarget`: inside `.xterm` (xterm types into a hidden textarea there) or
+anywhere in the terminal panel, whose root is focusable (`tabIndex={-1}`, `data-terminal-panel`) so
+the empty state counts — without that, ⌘T could not open the first tab. `isAppShortcut` always passes `terminalFocused: true`. Scope gates only the key; the palette runs
 every command from anywhere.
 
 A binding is a list, not a string, because the terminal panel answers to both ``⌃` `` and ``⌘` ``,
