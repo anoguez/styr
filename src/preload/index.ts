@@ -10,7 +10,8 @@ import type {
   TaskPatch,
   TaskStatus,
   TerminalSessionInfo,
-  UpdateState
+  UpdateState,
+  WorkspaceOverview
 } from '../core/types.js'
 
 export interface TerminalSpawnRequest {
@@ -74,6 +75,16 @@ const api = {
     list: (): Promise<AgentStatus[]> => ipcRenderer.invoke('agents:list'),
     onChanged: (handler: (statuses: AgentStatus[]) => void): (() => void) =>
       subscribe('agents:changed', handler as (...args: never[]) => void)
+  },
+  workspaces: {
+    list: (): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:list'),
+    switch: (id: string): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:switch', id),
+    create: (name: string): Promise<WorkspaceOverview> =>
+      ipcRenderer.invoke('workspaces:create', name),
+    rename: (id: string, name: string): Promise<WorkspaceOverview> =>
+      ipcRenderer.invoke('workspaces:rename', id, name),
+    remove: (id: string): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:delete', id),
+    onChanged: (handler: () => void): (() => void) => subscribe('workspaces:changed', handler)
   },
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),

@@ -1,8 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
+import { pinWorkspace } from '@core/config.js'
 import { addNote, createTask, deleteTask, getTask, listTasks, updateTask } from '@core/taskStore.js'
 import { TASK_PRIORITIES, TASK_READINESS, TASK_STATUSES, type Task } from '@core/types.js'
+
+// Registered once for every agent, so the workspace comes from the agent that launched us.
+pinWorkspace(process.env.STYR_WORKSPACE_ID)
 
 const AUTHOR = process.env.STYR_MCP_AUTHOR ?? 'claude'
 

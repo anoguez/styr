@@ -40,6 +40,7 @@ import {
   Select,
   inputClass
 } from './ui.js'
+import { WorkspacesPane } from './WorkspacesPane.js'
 import { useUpdates } from '../hooks/useUpdates.js'
 import { ansiLabel, TERMINAL_FONTS, TERMINAL_PALETTES, UI_FONTS } from '../hooks/useTheme.js'
 import { terminalTheme } from '../lib/palette.js'
@@ -113,9 +114,14 @@ export const SECTIONS = [
     blurb: 'Defaults for new tasks. Existing tasks keep their own settings.'
   },
   {
-    id: 'workspace',
-    label: 'Workspace',
-    blurb: 'Where the board keeps its data and where work runs.'
+    id: 'workspaces',
+    label: 'Workspaces',
+    blurb: 'Separate boards, each with its own tasks and agents.'
+  },
+  {
+    id: 'storage',
+    label: 'Storage',
+    blurb: 'Where the app keeps its data and where work runs.'
   },
   { id: 'terminal', label: 'Terminal', blurb: 'How sessions are started.' },
   {
@@ -466,21 +472,23 @@ export function SettingsDialog({
             </div>
           ) : null}
 
-          {section === 'workspace' ? (
+          {section === 'workspaces' ? <WorkspacesPane /> : null}
+
+          {section === 'storage' ? (
             <div className="flex flex-col gap-4">
               <Field
-                label="Board storage folder"
-                hint="Where the app keeps your tasks (./tasks/*.md) and its index. This is the board's own data, not your code — point it at a git repo if you want versioned tasks."
+                label="Storage folder"
+                hint="Where the app keeps your workspaces: tasks (./tasks/*.md) and the index. This is the app's own data, not your code — point it at a git repo if you want versioned tasks. The Default workspace lives in this folder itself; others are under ./workspaces."
               >
                 <DirectoryInput
-                  value={draft.workspaceDir}
-                  onChange={(workspaceDir) => patch({ workspaceDir })}
+                  value={draft.storageDir}
+                  onChange={(storageDir) => patch({ storageDir })}
                 />
               </Field>
 
               <Field
                 label="Default working directory"
-                hint="Pre-fills Working directory on new tasks, and is where + Shell opens. Leave blank to fall back to the board storage folder."
+                hint="Pre-fills Working directory on new tasks, and is where + Shell opens. Leave blank to fall back to the storage folder."
               >
                 <DirectoryInput
                   value={draft.defaultRepoPath}

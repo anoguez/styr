@@ -30,6 +30,12 @@ import { useSettings } from './hooks/useSettings.js'
 import { useTheme } from './hooks/useTheme.js'
 import { useTasks } from './hooks/useTasks.js'
 import { useAgents } from './hooks/useAgents.js'
+import { useWorkspaces } from './hooks/useWorkspaces.js'
+import {
+  NewWorkspaceDialog,
+  WorkspaceSwitcher,
+  ipcMessage
+} from './components/WorkspaceSwitcher.js'
 
 const MIN_TERMINAL_HEIGHT = 140
 const MIN_BOARD_HEIGHT = 220
@@ -44,6 +50,11 @@ export default function App(): ReactNode {
   const { board, problems, loading } = useTasks(query)
   const { settings, save } = useSettings()
   const agents = useAgents()
+  const { overview, names: workspaceNames, apply: applyWorkspaces } = useWorkspaces()
+  const activeWorkspaceId = settings?.activeWorkspaceId ?? overview.activeId
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false)
+  const [pendingActivation, setPendingActivation] = useState<string | null>(null)
   const bindings = settings?.shortcuts ?? DEFAULT_SHORTCUTS
   const [previewTheme, setPreviewTheme] = useState<ThemeSettings | null>(null)
   const activeTheme = previewTheme ?? settings?.theme ?? DEFAULT_THEME
@@ -88,10 +99,12 @@ export default function App(): ReactNode {
         .map((task) => ({
           task,
           agent: agents.get(task.id),
-          session: sessions.find((session) => session.taskId === task.id)
+          session: sessions.find(
+            (session) => session.taskId === task.id && session.workspaceId === activeWorkspaceId
+          )
         }))
     )
-  }, [board, agents, sessions])
+  }, [board, agents, sessions, activeWorkspaceId])
 
   const counts = useMemo(
     () => ({
@@ -131,7 +144,7 @@ export default function App(): ReactNode {
   const newShell = useCallback(async () => {
     adoptSession(
       await window.api.terminal.create({
-        cwd: settings?.defaultRepoPath || settings?.workspaceDir,
+        cwd: settings?.defaultRepoPath || settings?.storageDir,
         title: 'shell'
       })
     )
@@ -152,7 +165,9 @@ export default function App(): ReactNode {
 
   const activateTask = useCallback(
     (taskId: string) => {
-      const session = sessions.find((current) => current.taskId === taskId)
+      const session = sessions.find(
+        (current) => current.taskId === taskId && current.workspaceId === activeWorkspaceId
+      )
       if (session) {
         setActiveSession(session.id)
         setTerminalOpen(true)
@@ -160,10 +175,48 @@ export default function App(): ReactNode {
       }
       void launchAgent(taskId)
     },
-    [sessions, launchAgent]
+    [sessions, launchAgent, activeWorkspaceId]
   )
 
-  useEffect(() => window.api.tasks.onActivateRequested(activateTask), [activateTask])
+  // A request can name a task of a workspace that is still loading (the menu bar switches first),
+  // so it waits for the board to hold the task. If it never does — a search can hide it — it runs
+  // anyway, because the main process finds tasks in the index, not on the board.
+  useEffect(() => window.api.tasks.onActivateRequested(setPendingActivation), [])
+  useEffect(() => {
+    if (!pendingActivation) return
+    const onBoard = Object.values(board)
+      .flat()
+      .some((task) => task.id === pendingActivation)
+    const run = (): void => {
+      setPendingActivation(null)
+      activateTask(pendingActivation)
+    }
+    if (onBoard) return run()
+    const timer = setTimeout(run, 1500)
+    return () => clearTimeout(timer)
+  }, [pendingActivation, board, activateTask])
+
+  const switchWorkspace = useCallback(
+    async (id: string) => {
+      if (id === activeWorkspaceId) return
+      if ((creating || editing) && !window.confirm('Discard the open task and switch workspace?')) {
+        return
+      }
+      try {
+        applyWorkspaces(await window.api.workspaces.switch(id))
+      } catch (error) {
+        window.alert(ipcMessage(error))
+      }
+    },
+    [activeWorkspaceId, applyWorkspaces, creating, editing]
+  )
+
+  // Nothing carries over from one workspace to the next: not an open task, not a search.
+  useEffect(() => {
+    setEditing(null)
+    setCreating(false)
+    setQuery('')
+  }, [activeWorkspaceId])
 
   const refreshOrchestration = useCallback(() => {
     void window.api.orchestrate.plan().then(setOrchestration)
@@ -234,6 +287,10 @@ export default function App(): ReactNode {
           return void newShell()
         case 'closeShell':
           return activeSession ? void closeSession(activeSession) : undefined
+        case 'switchWorkspace':
+          return setSwitcherOpen(true)
+        case 'newWorkspace':
+          return setCreatingWorkspace(true)
       }
     },
     [openSettings, newShell, closeSession, activeSession]
@@ -261,6 +318,18 @@ export default function App(): ReactNode {
       run: () => runCommand(command)
     }))
 
+    for (const workspace of overview.workspaces) {
+      if (workspace.id === activeWorkspaceId) continue
+      entries.push({
+        id: `workspace:${workspace.id}`,
+        label: `Switch to ${workspace.name}`,
+        group: 'Workspaces',
+        hint: `${workspace.taskCount} task${workspace.taskCount === 1 ? '' : 's'}`,
+        keywords: 'workspace board switch',
+        run: () => void switchWorkspace(workspace.id)
+      })
+    }
+
     for (const task of tasks) {
       entries.push({
         id: `task:${task.id}`,
@@ -287,7 +356,10 @@ export default function App(): ReactNode {
     }
 
     for (const session of sessions) {
-      const { name, detail } = sessionLabel(session, taskTitles)
+      const { name, detail } = sessionLabel(session, taskTitles, {
+        activeId: activeWorkspaceId,
+        names: workspaceNames
+      })
       entries.push({
         id: `term:${session.id}`,
         label: name,
@@ -323,7 +395,11 @@ export default function App(): ReactNode {
     runCommand,
     launchAgent,
     activateTask,
-    openSettings
+    openSettings,
+    overview,
+    activeWorkspaceId,
+    workspaceNames,
+    switchWorkspace
   ])
 
   const queued = useMemo(
@@ -354,6 +430,8 @@ export default function App(): ReactNode {
         setShowSettings(false)
         setConfirmingOrchestrate(false)
         setPaletteOpen(false)
+        setSwitcherOpen(false)
+        setCreatingWorkspace(false)
         return
       }
       const command = commandForEvent(bindings, event, {
@@ -428,6 +506,15 @@ export default function App(): ReactNode {
             DEV
           </Chip>
         ) : null}
+
+        <WorkspaceSwitcher
+          overview={overview}
+          open={switcherOpen}
+          onOpenChange={setSwitcherOpen}
+          onSwitch={(id) => void switchWorkspace(id)}
+          onNew={() => setCreatingWorkspace(true)}
+          onManage={() => openSettings('workspaces')}
+        />
 
         <div className="flex flex-1 justify-center">
           <div className="relative w-full max-w-md [-webkit-app-region:no-drag]">
@@ -533,6 +620,7 @@ export default function App(): ReactNode {
                   theme={activeTheme}
                   bindings={bindings}
                   taskTitles={taskTitles}
+                  workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
                   onToggleExpand={() => setTerminalExpanded((open) => !open)}
                   onSelect={setActiveSession}
                   onReorder={reorderSessions}
@@ -572,6 +660,13 @@ export default function App(): ReactNode {
         onOpenSettings={() => openSettings()}
         onInstallUpdate={() => void window.api.updates.install()}
       />
+
+      {creatingWorkspace ? (
+        <NewWorkspaceDialog
+          onCreate={async (name) => applyWorkspaces(await window.api.workspaces.create(name))}
+          onClose={() => setCreatingWorkspace(false)}
+        />
+      ) : null}
 
       {paletteOpen ? (
         <CommandPalette entries={commandEntries} onClose={() => setPaletteOpen(false)} />

@@ -10,6 +10,7 @@ export interface SpawnOptions {
   shell?: string
   title?: string
   taskId?: string
+  workspaceId?: string
   provider?: 'claude' | 'codex'
   replay?: boolean
   command?: string
@@ -28,7 +29,7 @@ type ExitListener = (id: string, exitCode: number) => void
 
 const BACKLOG_LIMIT = 200_000
 const sessions = new Map<string, Session>()
-const exitedTaskIds = new Map<string, string>()
+const exitedTaskIds = new Map<string, { taskId: string; workspaceId?: string }>()
 const dataListeners = new Set<DataListener>()
 const exitListeners = new Set<ExitListener>()
 
@@ -76,6 +77,7 @@ export function createSession(options: SpawnOptions): TerminalSessionInfo {
     title: options.title ?? 'Terminal',
     cwd,
     ...(options.taskId ? { taskId: options.taskId } : {}),
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
     ...(options.provider ? { provider: options.provider } : {}),
     ...(options.replay ? { replay: true } : {})
   }
@@ -88,7 +90,7 @@ export function createSession(options: SpawnOptions): TerminalSessionInfo {
     for (const listener of dataListeners) listener(id, data, session.sequence)
   })
   child.onExit(({ exitCode }) => {
-    if (info.taskId) exitedTaskIds.set(id, info.taskId)
+    if (info.taskId) exitedTaskIds.set(id, { taskId: info.taskId, workspaceId: info.workspaceId })
     sessions.delete(id)
     for (const listener of exitListeners) listener(id, exitCode)
   })
@@ -117,12 +119,21 @@ export function sessionBacklog(id: string): { data: string; sequence: number } {
   return { data: session?.backlog ?? '', sequence: session?.sequence ?? 0 }
 }
 
-export function sessionTaskId(id: string): string | undefined {
-  return sessions.get(id)?.info.taskId ?? exitedTaskIds.get(id)
+/** The task a session belongs to, with its workspace — ids repeat across workspaces. */
+export function sessionTask(id: string): { taskId: string; workspaceId?: string } | undefined {
+  const info = sessions.get(id)?.info
+  return info?.taskId
+    ? { taskId: info.taskId, workspaceId: info.workspaceId }
+    : exitedTaskIds.get(id)
 }
 
-export function findSessionByTask(taskId: string): TerminalSessionInfo | undefined {
-  return [...sessions.values()].find((session) => session.info.taskId === taskId)?.info
+export function findSessionByTask(
+  taskId: string,
+  workspaceId?: string
+): TerminalSessionInfo | undefined {
+  return [...sessions.values()].find(
+    (session) => session.info.taskId === taskId && session.info.workspaceId === workspaceId
+  )?.info
 }
 
 export function listSessions(): TerminalSessionInfo[] {

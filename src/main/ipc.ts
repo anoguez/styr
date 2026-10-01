@@ -1,8 +1,15 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron'
-import { loadSettings, saveSettings, tasksDir } from '@core/config.js'
+import {
+  inWorkspace,
+  loadSettings,
+  saveSettings,
+  tasksDir,
+  pinWorkspace,
+  workspaceDir
+} from '@core/config.js'
 import { readAllAgentStatuses, recordAgentEvent } from '@core/agentStore.js'
-import { isAgentArchived } from '@core/agentState.js'
+import { agentKey, isAgentArchived } from '@core/agentState.js'
 import type { AgentStatus } from '@core/agentState.js'
 import {
   planLaunch,
@@ -14,13 +21,26 @@ import {
 import { providerFor } from '@core/providers/index.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { readGitBranch, removeWorktree } from '@core/worktree.js'
+import {
+  createWorkspace,
+  listWorkspaces,
+  readBackgroundAgents,
+  renameWorkspace,
+  workspaceTaskCount
+} from '@core/workspaces.js'
 import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
-import type { OrchestrationSummary } from '@core/types.js'
+import {
+  DEFAULT_WORKSPACE_ID,
+  worktreeKey,
+  type OrchestrationSummary,
+  type WorkspaceOverview
+} from '@core/types.js'
 import {
   addNote,
   brokenTaskFiles,
   createTask,
   deleteTask,
+  getTask,
   reorderTasks,
   updateTask
 } from '@core/taskStore.js'
@@ -38,7 +58,8 @@ import {
   type TaskStatus,
   type TerminalSessionInfo
 } from '@core/types.js'
-import { findTask, queryTasks, syncIndex } from './taskIndex.js'
+import { closeIndex, findTask, queryTasks, syncIndex } from './taskIndex.js'
+import { startWatching, startWatchingAgents } from './watcher.js'
 import { updateTray } from './tray.js'
 import {
   createSession,
@@ -79,27 +100,75 @@ export function agentStatuses(): AgentStatus[] {
 /** The template a fresh Codex launch used, for labelling its history entry once the id arrives. */
 const pendingTemplates = new Map<string, string | undefined>()
 
+/**
+ * The monitor is keyed by one string, and task ids repeat across workspaces — so it is handed
+ * `<workspace>:<task>` and the pair is recovered from its updates. Workspace ids never contain a
+ * colon, so the first one splits it.
+ */
+function monitorKey(workspaceId: string, taskId: string): string {
+  return `${workspaceId}:${taskId}`
+}
+
+function splitMonitorKey(key: string): { workspaceId: string; taskId: string } {
+  const at = key.indexOf(':')
+  return { workspaceId: key.slice(0, at), taskId: key.slice(at + 1) }
+}
+
+/**
+ * Runs `work` with every task path resolved inside another workspace. Synchronous on purpose:
+ * nothing else can observe the override while it is set.
+ */
+function inOtherWorkspace<T>(workspaceId: string, work: () => T): T {
+  pinWorkspace(workspaceId)
+  try {
+    return work()
+  } finally {
+    pinWorkspace(undefined)
+  }
+}
+
 const codexMonitor = new CodexMonitor((update) => {
+  const { workspaceId, taskId } = splitMonitorKey(update.taskId)
   const settings = loadSettings()
-  recordAgentEvent(settings, update.taskId, update.event)
+  recordAgentEvent(inWorkspace(settings, workspaceId), taskId, update.event)
   if (update.boundSessionId) {
-    const task = findTask(update.taskId)
-    if (task) {
-      saveLaunchMetadata(
-        task,
-        { provider: 'codex' },
-        pendingTemplates.get(task.id),
-        update.boundSessionId
-      )
+    const key = monitorKey(workspaceId, taskId)
+    if (workspaceId === settings.activeWorkspaceId) {
+      const task = findTask(taskId)
+      if (task) {
+        saveLaunchMetadata(
+          task,
+          { provider: 'codex' },
+          pendingTemplates.get(key),
+          update.boundSessionId
+        )
+      }
+    } else {
+      // The board shows another workspace now; write the thread id into the file it belongs to.
+      // The index catches up when that workspace is next opened.
+      inOtherWorkspace(workspaceId, () => {
+        const task = getTask(taskId)
+        if (!task) return
+        const patch = launchPatch(
+          task,
+          { provider: 'codex' },
+          pendingTemplates.get(key),
+          update.boundSessionId
+        )
+        if (Object.keys(patch).length > 0) updateTask(taskId, patch)
+      })
     }
-    pendingTemplates.delete(update.taskId)
+    pendingTemplates.delete(key)
   }
   notifyAgentsChanged()
 })
 
-export function markAgentExited(taskId: string): void {
-  codexMonitor.release(taskId)
-  recordAgentEvent(loadSettings(), taskId, 'TerminalExit')
+export function markAgentExited(
+  taskId: string,
+  workspaceId = loadSettings().activeWorkspaceId
+): void {
+  codexMonitor.release(monitorKey(workspaceId, taskId))
+  recordAgentEvent(inWorkspace(loadSettings(), workspaceId), taskId, 'TerminalExit')
   notifyAgentsChanged()
 }
 
@@ -107,12 +176,29 @@ export function notifyAgentsChanged(): void {
   const statuses = agentStatuses()
   broadcast('agents:changed', statuses)
 
+  const settings = loadSettings()
+  const workspaces = listWorkspaces(settings)
+  const active = workspaces.find((workspace) => workspace.id === settings.activeWorkspaceId)
+  // Always tagged, so a key never changes when another workspace appears; named only when there
+  // is more than one, because a lone "Default" in every menu entry is noise.
+  const label = workspaces.length > 1 ? active?.name : undefined
   const tasks = new Map(queryTasks().map((task) => [task.id, task]))
-  const listed = statuses.filter((status) => {
-    const task = tasks.get(status.taskId)
-    return task ? !isAgentArchived(task.status) : false
-  })
-  updateTray(listed, new Map([...tasks].map(([id, task]) => [id, task.title])))
+  const background = readBackgroundAgents(settings, settings.activeWorkspaceId)
+  const listed = statuses
+    .filter((status) => {
+      const task = tasks.get(status.taskId)
+      return task ? !isAgentArchived(task.status) : false
+    })
+    .map((status) => ({
+      ...status,
+      workspaceId: settings.activeWorkspaceId,
+      ...(label ? { workspaceName: label } : {})
+    }))
+  const titles = new Map(
+    listed.map((status) => [agentKey(status), tasks.get(status.taskId)?.title ?? status.taskId])
+  )
+  for (const [key, title] of background.titles) titles.set(key, title)
+  updateTray([...listed, ...background.statuses], titles)
 }
 
 export function notifyTasksChanged(): void {
@@ -173,9 +259,11 @@ async function launchSessionForTask(
   taskId: string,
   options: LaunchOptions = {}
 ): Promise<TerminalSessionInfo> {
+  // Task ids repeat across workspaces, so "one live session per task" is per workspace too.
+  const workspaceId = loadSettings().activeWorkspaceId
   return taskLaunches.startOrReuse(
-    taskId,
-    () => findSessionByTask(taskId),
+    monitorKey(workspaceId, taskId),
+    () => findSessionByTask(taskId, workspaceId),
     () => startSessionForTask(taskId, options)
   )
 }
@@ -188,6 +276,8 @@ async function startSessionForTask(
   if (!task) throw new Error(`Task ${taskId} not found`)
 
   const settings = loadSettings()
+  const workspaceId = settings.activeWorkspaceId
+  const key = monitorKey(workspaceId, task.id)
   const requestedProvider =
     options.provider ?? task.agentSession?.provider ?? task.provider ?? settings.defaultProvider
   if (!settings.enabledProviders.includes(requestedProvider)) {
@@ -199,6 +289,11 @@ async function startSessionForTask(
   // than an error that says what to fix. Nothing has been written yet, so a refusal leaves no trace.
   const socketPath =
     requestedProvider === 'codex' ? await prepareCodex(settings.codexCommand) : undefined
+  // The board may have switched while Codex was being checked; everything below writes to the
+  // active workspace's files, so it must still be the one this launch was planned in.
+  if (loadSettings().activeWorkspaceId !== workspaceId) {
+    throw new Error('The workspace changed while the agent was starting. Try again.')
+  }
 
   const plan = planLaunch(settings, task, options)
   // A fresh Codex thread is created by the TUI, so its id is only known once the daemon announces
@@ -208,9 +303,9 @@ async function startSessionForTask(
 
   if (socketPath) {
     if (awaitingThreadId) {
-      pendingTemplates.set(task.id, options.templateId)
-      await codexMonitor.expect(socketPath, task.id, plan.cwd)
-    } else await codexMonitor.watch(socketPath, task.id, plan.sessionId)
+      pendingTemplates.set(key, options.templateId)
+      await codexMonitor.expect(socketPath, key, plan.cwd)
+    } else await codexMonitor.watch(socketPath, key, plan.sessionId)
   }
   try {
     const session = createSession({
@@ -218,10 +313,12 @@ async function startSessionForTask(
       shell: settings.shell,
       title: task.title,
       taskId: task.id,
+      workspaceId,
       provider: plan.provider,
       command: plan.command,
       env: {
         STYR_TASK_ID: task.id,
+        STYR_WORKSPACE_ID: workspaceId,
         ...(awaitingThreadId ? {} : { STYR_SESSION_ID: plan.sessionId })
       }
     })
@@ -231,15 +328,17 @@ async function startSessionForTask(
     }
     return session
   } catch (error) {
-    codexMonitor.release(task.id)
-    pendingTemplates.delete(task.id)
+    codexMonitor.release(key)
+    pendingTemplates.delete(key)
     throw error
   }
 }
 
 function buildPlan(): OrchestrationPlan {
+  const active = loadSettings().activeWorkspaceId
   const liveTaskIds = new Set(
     listSessions()
+      .filter((session) => session.workspaceId === active)
       .map((session) => session.taskId)
       .filter(Boolean) as string[]
   )
@@ -266,6 +365,65 @@ function summarisePlan(): OrchestrationSummary {
   }
 }
 
+/**
+ * Opens the index and watchers on the active workspace's folders. They are created once at start,
+ * so a switch has to close them and begin again — the watchers' own `close` clears its handle
+ * before awaiting, which is what makes restarting them here safe.
+ */
+function repoint(): void {
+  closeIndex()
+  startWatching(() => notifyTasksChanged())
+  startWatchingAgents(() => notifyAgentsChanged())
+  notifyTasksChanged()
+  notifyAgentsChanged()
+}
+
+function workspaceOverview(): WorkspaceOverview {
+  const settings = loadSettings()
+  const sessions = listSessions()
+  return {
+    activeId: settings.activeWorkspaceId,
+    workspaces: listWorkspaces(settings).map((workspace) => ({
+      ...workspace,
+      taskCount: workspaceTaskCount(settings, workspace.id),
+      liveSessions: sessions.filter((session) => session.workspaceId === workspace.id).length
+    }))
+  }
+}
+
+/**
+ * Makes another workspace the one the board shows. Runs to completion synchronously, so two quick
+ * switches are applied in order and a stale one cannot overwrite a newer.
+ */
+export function switchWorkspace(id: string): void {
+  const settings = loadSettings()
+  if (!listWorkspaces(settings).some((workspace) => workspace.id === id)) {
+    throw new Error('That workspace no longer exists.')
+  }
+  if (settings.activeWorkspaceId === id) return
+  saveSettings({ ...settings, activeWorkspaceId: id })
+  repoint()
+  broadcast('settings:changed', loadSettings())
+  broadcast('workspaces:changed')
+}
+
+/** Removes the folder to the Trash — recoverable — and refuses while an agent is running in it. */
+async function deleteWorkspace(id: string): Promise<void> {
+  const settings = loadSettings()
+  if (id === DEFAULT_WORKSPACE_ID) throw new Error('The Default workspace cannot be deleted.')
+  if (!listWorkspaces(settings).some((workspace) => workspace.id === id)) {
+    throw new Error('That workspace no longer exists.')
+  }
+  if (listSessions().some((session) => session.workspaceId === id)) {
+    throw new Error('Close this workspace’s terminal tabs before deleting it.')
+  }
+  if (settings.activeWorkspaceId === id) switchWorkspace(DEFAULT_WORKSPACE_ID)
+  await shell.trashItem(workspaceDir(settings, id))
+  startWatchingAgents(() => notifyAgentsChanged())
+  notifyAgentsChanged()
+  broadcast('workspaces:changed')
+}
+
 export function registerIpcHandlers(): void {
   ipcMain.handle('tasks:list', (_event, filter: unknown) =>
     queryTasks(taskFilterSchema.parse(filter ?? {}))
@@ -276,7 +434,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('tasks:removeWorktree', (_event, taskId: string) => {
     const task = findTask(taskId)
     if (!task?.repoPath) return null
-    removeWorktree(task.repoPath, task.id)
+    removeWorktree(task.repoPath, worktreeKey(loadSettings().activeWorkspaceId, task.id))
     const updated = updateTask(task.id, { worktreePath: undefined })
     notifyTasksChanged()
     return updated
@@ -358,11 +516,42 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('settings:get', () => loadSettings())
   ipcMain.handle('settings:save', (_event, settings: unknown) => {
-    const saved = saveSettings(settingsSchema.parse(settings))
+    const before = workspaceDir(loadSettings())
+    // Which workspace is active is changed only by switching: a dialog opened earlier would
+    // otherwise save its stale choice over a workspace created or deleted since.
+    const current = loadSettings()
+    const saved = saveSettings({
+      ...settingsSchema.parse(settings),
+      activeWorkspaceId: current.activeWorkspaceId
+    })
     tasksDir(saved)
-    notifyTasksChanged()
-    broadcast('settings:changed', saved)
-    return saved
+    // A new storage folder (or workspace) means a different index and different folders to watch;
+    // the index and watchers are opened once, so they have to be pointed at it again.
+    if (workspaceDir(loadSettings()) !== before) repoint()
+    else notifyTasksChanged()
+    broadcast('settings:changed', loadSettings())
+    return loadSettings()
+  })
+
+  ipcMain.handle('workspaces:list', () => workspaceOverview())
+  ipcMain.handle('workspaces:switch', (_event, id: string) => {
+    switchWorkspace(id)
+    return workspaceOverview()
+  })
+  ipcMain.handle('workspaces:create', (_event, name: string) => {
+    const created = createWorkspace(loadSettings(), String(name))
+    switchWorkspace(created.id)
+    return workspaceOverview()
+  })
+  ipcMain.handle('workspaces:rename', (_event, id: string, name: string) => {
+    renameWorkspace(loadSettings(), id, String(name))
+    notifyAgentsChanged()
+    broadcast('workspaces:changed')
+    return workspaceOverview()
+  })
+  ipcMain.handle('workspaces:delete', async (_event, id: string) => {
+    await deleteWorkspace(id)
+    return workspaceOverview()
   })
 
   ipcMain.handle('settings:pickDirectory', async (event, current?: string) => {
@@ -415,10 +604,15 @@ export function registerIpcHandlers(): void {
       shell: settings.shell,
       title: task.title,
       taskId: task.id,
+      workspaceId: settings.activeWorkspaceId,
       provider: plan.provider,
       replay: true,
       command: plan.command,
-      env: { STYR_TASK_ID: task.id, STYR_SESSION_ID: plan.sessionId }
+      env: {
+        STYR_TASK_ID: task.id,
+        STYR_WORKSPACE_ID: settings.activeWorkspaceId,
+        STYR_SESSION_ID: plan.sessionId
+      }
     })
   })
 

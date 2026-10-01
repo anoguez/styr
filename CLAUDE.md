@@ -7,7 +7,7 @@ Electron + React kanban board. See README.md for what it does and how to run it.
 - `src/core/` is the shared, Electron-free layer: types, zod schemas, config, markdown
   serialisation, the filesystem task store and the prompt builder. Both the main process and the MCP
   server import it. **Never import `electron` from `src/core/`** — it would break the MCP server.
-- Markdown files under `<workspace>/tasks/` are the only source of truth. All writes go through
+- Markdown files under `<workspace folder>/tasks/` are the only source of truth. All writes go through
   `src/core/taskStore.ts`.
 - `src/main/taskIndex.ts` is a derived SQLite cache, written only by the main process. It must stay
   reconstructible from the markdown alone — never store anything there that is not in a file. When
@@ -18,13 +18,53 @@ Electron + React kanban board. See README.md for what it does and how to run it.
 - External writes (the MCP server, an editor, a `git pull`) are picked up by the chokidar watcher in
   `src/main/watcher.ts`, which runs the same `notifyTasksChanged()`.
 
+## Workspaces
+
+A **workspace** is an isolated board (tasks, ids, agents, index). It is _not_ `Settings.storageDir`,
+the folder that holds them — that setting was `workspaceDir` before this concept existed, and
+`config.ts` migrates the old key on read. Keep the two words apart in code and UI.
+
+Default is the storage root itself, so a pre-workspaces install needed no file moves; others are
+`<storageDir>/workspaces/<id>/` with `tasks/`, `.styr/` and `workspace.json` (`{name}`).
+`listWorkspaces` in `core/workspaces.ts` reads the folders — there is no registry to drift from the
+disk. Ids never change after creation; rename edits the name only. `Settings.activeWorkspaceId` is
+a local preference, and `loadSettings` falls back to Default when it dangles.
+
+`workspaceDir(settings, id?)` in `config.ts` is the only place these paths are built. To act on a
+background workspace use `inWorkspace(settings, id)` — a settings copy that resolves paths there —
+rather than a new parameter on every function. `pinWorkspace` is a process-wide override used only
+by the MCP server (from `STYR_WORKSPACE_ID`, set on every launched agent) and by `inOtherWorkspace`
+in `ipc.ts`, which wraps a _synchronous_ write; never leave it set across an `await`. The main
+process must not read `STYR_WORKSPACE_ID` from its own environment: `yarn dev` inside an agent
+terminal would inherit it.
+
+Sessions carry `workspaceId`; anything that finds "the session of task X" must match both, since
+`TASK-0001` exists in every workspace (`findSessionByTask`, the launch gate, the Codex monitor key
+`<workspace>:<task>`). The renderer's board, titles and agent map describe only the active
+workspace, so `sessionLabel` and the tab dots check the session's workspace before using them.
+
+`switchWorkspace` (`ipc.ts`) saves the preference and `repoint()`s: close the index, restart both
+watchers, re-sync. It is synchronous so quick switches apply in order. `settings:save` ignores the
+`activeWorkspaceId` a Settings draft carries — only a switch changes it, or a stale dialog would
+undo a workspace created or deleted since. The agents watcher covers every workspace's `agents/`
+because the tray and notifications span all of them (`readBackgroundAgents`); the tasks watcher,
+index, landing and Orchestrate cover the active one only.
+
+`worktreeKey(workspaceId, taskId)` (in `types.ts`, because `prompt.ts` needs it) names a task's
+worktree and branch: bare id for Default so old worktrees still resolve, `<workspace>-<id>` for the
+rest. Pass the key wherever `worktree.ts` takes an id.
+
+Codex starts MCP servers with a filtered environment, so a Codex agent's MCP calls follow the
+_active_ workspace unless its MCP entry forwards `STYR_WORKSPACE_ID`. Not solved; Claude Code passes
+its environment through.
+
 ## Worktrees
 
 `src/core/worktree.ts` wraps git. `ensureWorktree` is idempotent so a resume lands in the same
 checkout. Worktrees are created beside the repo (`<repo>.worktrees/<taskId>`) — inside it they would
 show as untracked files in the user's project.
 
-Worktree failure is never fatal: `workspaceFor` in `launch.ts` falls back to the plain repository
+Worktree failure is never fatal: `checkoutFor` in `launch.ts` falls back to the plain repository
 and returns a `warning`, which `ipc.ts` writes to the task activity log. A blocked launch would be
 worse than a shared working directory.
 

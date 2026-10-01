@@ -1,5 +1,6 @@
 import { addNote, updateTask } from '@core/taskStore.js'
-import type { Task } from '@core/types.js'
+import { loadSettings } from '@core/config.js'
+import { worktreeKey, type Task } from '@core/types.js'
 import { branchLanding, cleanupLandedTask } from '@core/worktree.js'
 import { queryTasks } from './taskIndex.js'
 
@@ -16,10 +17,11 @@ const reported = new Set<string>()
  */
 export function settleLandedTasks(): boolean {
   let wrote = false
+  const workspaceId = loadSettings().activeWorkspaceId
   for (const task of queryTasks()) {
     if (!task.useWorktree || !task.repoPath) continue
     try {
-      wrote = settle(task, task.repoPath) || wrote
+      wrote = settle(task, task.repoPath, worktreeKey(workspaceId, task.id)) || wrote
     } catch {
       // a git failure must never break a refresh
     }
@@ -27,29 +29,29 @@ export function settleLandedTasks(): boolean {
   return wrote
 }
 
-function settle(task: Task, repoPath: string): boolean {
+function settle(task: Task, repoPath: string, key: string): boolean {
   if (task.status === 'in_review') {
-    const landing = branchLanding(repoPath, task.id)
+    const landing = branchLanding(repoPath, key)
     if (!landing?.landed) return false
     updateTask(task.id, { status: 'done' })
     addNote(task.id, 'styr', `Work landed on ${landing.base}; moved to done.`)
-    cleanup(task, repoPath)
+    cleanup(task, repoPath, key)
     return true
   }
-  if (task.status === 'done' && task.worktreePath) return cleanup(task, repoPath)
+  if (task.status === 'done' && task.worktreePath) return cleanup(task, repoPath, key)
   return false
 }
 
-function cleanup(task: Task, repoPath: string): boolean {
-  const result = cleanupLandedTask(repoPath, task.id)
-  const key = `${task.id}:${result.notes.join('|')}`
+function cleanup(task: Task, repoPath: string, key: string): boolean {
+  const result = cleanupLandedTask(repoPath, key)
+  const noteKey = `${key}:${result.notes.join('|')}`
   let wrote = false
   if (result.worktreeRemoved && task.worktreePath) {
     updateTask(task.id, { worktreePath: undefined })
     wrote = true
   }
-  if (result.notes.length > 0 && !reported.has(key)) {
-    reported.add(key)
+  if (result.notes.length > 0 && !reported.has(noteKey)) {
+    reported.add(noteKey)
     addNote(task.id, 'styr', result.notes.join(' '))
     wrote = true
   }

@@ -1,6 +1,7 @@
 import chokidar, { type FSWatcher } from 'chokidar'
-import { loadSettings, tasksDir } from '@core/config.js'
+import { inWorkspace, loadSettings, tasksDir } from '@core/config.js'
 import { agentsDir } from '@core/agentStore.js'
+import { listWorkspaces } from '@core/workspaces.js'
 
 interface Watched {
   watcher: FSWatcher | null
@@ -22,7 +23,12 @@ function close(entry: Watched): Promise<void> {
   return watcher ? watcher.close() : Promise.resolve()
 }
 
-function start(entry: Watched, dir: string, debounceMs: number, onChange: () => void): void {
+function start(
+  entry: Watched,
+  dir: string | string[],
+  debounceMs: number,
+  onChange: () => void
+): void {
   void close(entry)
   const watcher = chokidar.watch(dir, {
     ignoreInitial: true,
@@ -43,8 +49,15 @@ export function startWatching(onChange: () => void): void {
   start(tasks, tasksDir(), 150, onChange)
 }
 
+/**
+ * Every workspace's agents, not just the active one: the menu bar reports a waiting agent in a
+ * background workspace, so its status files have to wake the app too. Restart it when a workspace
+ * is created or removed.
+ */
 export function startWatchingAgents(onChange: () => void): void {
-  start(agents, agentsDir(loadSettings()), 60, onChange)
+  const settings = loadSettings()
+  const dirs = listWorkspaces(settings).map(({ id }) => agentsDir(inWorkspace(settings, id)))
+  start(agents, dirs, 60, onChange)
 }
 
 export async function stopWatching(): Promise<void> {

@@ -100,6 +100,7 @@ export function TerminalPanel({
   theme,
   bindings,
   taskTitles,
+  workspaces,
   onToggleExpand,
   onSelect,
   onReorder,
@@ -113,6 +114,7 @@ export function TerminalPanel({
   theme: ThemeSettings
   bindings: ShortcutBindings
   taskTitles: ReadonlyMap<string, string>
+  workspaces: { activeId: string; names: ReadonlyMap<string, string> }
   onToggleExpand: () => void
   onSelect: (id: string) => void
   onReorder: (orderedIds: string[]) => void
@@ -154,8 +156,12 @@ export function TerminalPanel({
                 <TerminalTab
                   key={session.id}
                   session={session}
-                  label={sessionLabel(session, taskTitles)}
-                  agent={session.taskId ? agents.get(session.taskId) : undefined}
+                  label={sessionLabel(session, taskTitles, workspaces)}
+                  agent={
+                    session.taskId && session.workspaceId === workspaces.activeId
+                      ? agents.get(session.taskId)
+                      : undefined
+                  }
                   active={session.id === activeId}
                   onSelect={onSelect}
                   onClose={onCloseSession}
