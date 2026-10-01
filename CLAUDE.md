@@ -116,7 +116,7 @@ The tab strip is a `SortableContext` using the same dnd-kit setup as the board. 
 keyed by session id — remounting would destroy the xterm instance and its scrollback.
 
 Tab labels come from `sessionLabel` in `renderer/src/lib/sessionLabel.ts`, shared with the command
-palette's Terminals group. A task tab shows the task's *current* title from the board, so a rename
+palette's Terminals group. A task tab shows the task's _current_ title from the board, so a rename
 (a spec run often retitles a task) updates the tab, with the task id as a secondary label. The board
 is filtered by search, so the title recorded on the session at launch is the fallback — never print
 `session.title` directly for a task session. `replay` marks a read-back of a past chat so it can be
@@ -216,7 +216,7 @@ latches on the first drag so a user's chosen height is never reset by a later to
 `src/core/shortcuts.ts` is the single source of truth for what key does what. Before it, the same
 knowledge lived in four places that had to agree by hand — the keydown chain in `App`, the list in
 `isAppShortcut`, the `⌘N`-style labels in the UI, and the README table. Binding a key and forgetting
-`isAppShortcut` produced a shortcut that worked everywhere *except* when the terminal had focus,
+`isAppShortcut` produced a shortcut that worked everywhere _except_ when the terminal had focus,
 while also leaking a byte to the shell. Nothing may reintroduce a second list:
 
 - `SHORTCUT_COMMANDS` in `types.ts` is the command set. `App.runCommand` switches on it exhaustively,
@@ -266,7 +266,7 @@ a blank window rather than a build error. `scripts/build.mjs` wraps the build an
 "has been externalized for browser compatibility" warning; `yarn build` runs it.
 
 Launches register Claude Code hooks via `--settings` (documented as
-loading *additional* settings, so the user's own hooks survive). Hooks write
+loading _additional_ settings, so the user's own hooks survive). Hooks write
 `<workspace>/.styr/agents/<taskId>.json`; a chokidar watcher re-reads and broadcasts.
 
 `SessionStart` maps to `ready`, never `working` — a resume fires it with no turn in flight, and
@@ -291,14 +291,14 @@ watcher while leaving the tasks watcher running.
 
 `isAgentArchived` in `core/agentState.ts` decides what drops out of the agent lists: Done, full
 stop. It deliberately ignores agent state — a finished session leaves a `Notification` behind while
-it idles at a prompt, so a state-aware rule leaves completed work reading *Waiting on you*. The
+it idles at a prompt, so a state-aware rule leaves completed work reading _Waiting on you_. The
 sidebar, the tray and the status-bar counts all derive from the same filtered rows; counting from
 the raw agent map instead is how the badge kept showing archived agents.
 
 Terminal exits are written to the agent file (`TerminalExit`) rather than held in memory, so a dead
 session does not come back as whatever it was doing when the app last closed.
 
-`AgentsSidebar` lists any task that has an agent status *or* a `claudeSessionId`, so a chat you can
+`AgentsSidebar` lists any task that has an agent status _or_ a `claudeSessionId`, so a chat you can
 resume is visible even before its first hook fires. `sortAgentRows` ranks waiting first.
 
 `markAgentExited` in `ipc.ts` records a locally observed terminal exit, and only wins over a hook
@@ -423,7 +423,7 @@ renderer, preload, IPC layer and MCP server all share them.
   the keychain locally or decodes `CSC_LINK` on CI, and notarises whenever the `APPLE_*` variables
   are set. `yarn package:adhoc` (`mac.identity` `"-"`) is the fallback without a certificate. Never
   set `mac.identity` to `null`: that skips signing entirely, leaving the bundle's resources unsealed,
-  and macOS then reports the app as *damaged* with no right-click-to-open escape.
+  and macOS then reports the app as _damaged_ with no right-click-to-open escape.
 - The entitlements file is mandatory: the hardened runtime enforces library validation, which
   blocks `node-pty` and `better-sqlite3` under an ad-hoc signature.
 

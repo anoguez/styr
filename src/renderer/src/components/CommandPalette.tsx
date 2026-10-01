@@ -121,7 +121,9 @@ export function CommandPalette({
                   >
                     <span className="min-w-0 flex-1 truncate text-[12.5px]">{entry.label}</span>
                     {entry.hint ? (
-                      <span className="shrink-0 font-mono text-[10px] text-faint">{entry.hint}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-faint">
+                        {entry.hint}
+                      </span>
                     ) : null}
                     {selected && entry.altLabel ? (
                       <span className="shrink-0 rounded bg-chrome px-1.5 py-[1px] text-[10px] text-faint">

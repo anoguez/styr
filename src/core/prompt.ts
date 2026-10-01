@@ -43,9 +43,11 @@ export function resolveTemplateFor(
 
 function contextBlock(files: string[]): string {
   if (files.length === 0) return ''
-  return ['## Context files', 'Read these before you start:', ...files.map((file) => `- ${file}`)].join(
-    '\n'
-  )
+  return [
+    '## Context files',
+    'Read these before you start:',
+    ...files.map((file) => `- ${file}`)
+  ].join('\n')
 }
 
 /**

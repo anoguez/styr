@@ -104,9 +104,17 @@ const LANE_HINTS: Record<OrchestrationLane, string> = {
 }
 
 export const SECTIONS = [
-  { id: 'workspace', label: 'Workspace', blurb: 'Where the board keeps its data and where work runs.' },
+  {
+    id: 'workspace',
+    label: 'Workspace',
+    blurb: 'Where the board keeps its data and where work runs.'
+  },
   { id: 'terminal', label: 'Terminal', blurb: 'How sessions are started.' },
-  { id: 'routing', label: 'Prompt routing', blurb: 'Which template runs for a task, based on where it sits.' },
+  {
+    id: 'routing',
+    label: 'Prompt routing',
+    blurb: 'Which template runs for a task, based on where it sits.'
+  },
   { id: 'templates', label: 'Templates', blurb: 'The prompts themselves.' },
   {
     id: 'orchestration',
@@ -163,8 +171,7 @@ function ShortcutRow({
     setRejected('')
   }
 
-  const isDefault =
-    bindings.join(' ') === DEFAULT_SHORTCUTS[command].join(' ')
+  const isDefault = bindings.join(' ') === DEFAULT_SHORTCUTS[command].join(' ')
 
   return (
     <div className="flex items-center gap-3 border-b border-edge/60 py-2 last:border-b-0">
@@ -178,7 +185,9 @@ function ShortcutRow({
             <kbd
               key={accelerator}
               className={`rounded border px-1.5 py-[2px] font-mono text-[11px] ${
-                conflicted ? 'border-col-review text-col-review-text' : 'border-edge-strong text-dim'
+                conflicted
+                  ? 'border-col-review text-col-review-text'
+                  : 'border-edge-strong text-dim'
               }`}
             >
               {formatAccelerator(accelerator)}
@@ -230,7 +239,12 @@ function ShortcutRow({
 }
 
 function slugId(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'template'
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'template'
+  )
 }
 
 function TemplatePicker({
@@ -552,21 +566,21 @@ export function SettingsDialog({
                         {ORCHESTRATION_LANE_LABELS[lane]}
                       </span>
                       <div className="w-20 shrink-0">
-                      <input
-                        type="number"
-                        min={0}
-                        max={20}
-                        className={inputClass}
-                        value={draft.orchestration[lane]}
-                        onChange={(event) =>
-                          patch({
-                            orchestration: {
-                              ...draft.orchestration,
-                              [lane]: Math.max(0, Math.min(20, Number(event.target.value) || 0))
-                            }
-                          })
-                        }
-                      />
+                        <input
+                          type="number"
+                          min={0}
+                          max={20}
+                          className={inputClass}
+                          value={draft.orchestration[lane]}
+                          onChange={(event) =>
+                            patch({
+                              orchestration: {
+                                ...draft.orchestration,
+                                [lane]: Math.max(0, Math.min(20, Number(event.target.value) || 0))
+                              }
+                            })
+                          }
+                        />
                       </div>
                       <span className="text-[11px] text-faint">{LANE_HINTS[lane]}</span>
                     </label>
@@ -596,18 +610,21 @@ export function SettingsDialog({
 
               {conflicts.size > 0 ? (
                 <p className="text-[11.5px] text-col-review-text">
-                  {[...conflicts].map(([accelerator, commands]) =>
-                    `${formatAccelerator(accelerator)} is bound to ${commands
-                      .map((command) => SHORTCUT_LABELS[command])
-                      .join(' and ')}`
-                  ).join('; ')}
+                  {[...conflicts]
+                    .map(
+                      ([accelerator, commands]) =>
+                        `${formatAccelerator(accelerator)} is bound to ${commands
+                          .map((command) => SHORTCUT_LABELS[command])
+                          .join(' and ')}`
+                    )
+                    .join('; ')}
                   . The first in the list wins.
                 </p>
               ) : null}
 
               <p className="text-[11.5px] text-faint">
-                Esc closes a dialog and ⌘↵ saves one; both are fixed. Ctrl+C, Ctrl+D, Ctrl+L, Ctrl+Z,
-                Esc, Enter and Tab cannot be bound — the terminal needs them.
+                Esc closes a dialog and ⌘↵ saves one; both are fixed. Ctrl+C, Ctrl+D, Ctrl+L,
+                Ctrl+Z, Esc, Enter and Tab cannot be bound — the terminal needs them.
               </p>
             </div>
           ) : null}
@@ -707,7 +724,9 @@ export function SettingsDialog({
               <Field label="Interface font">
                 <Select
                   value={draft.theme.uiFont}
-                  onChange={(event) => patch({ theme: { ...draft.theme, uiFont: event.target.value } })}
+                  onChange={(event) =>
+                    patch({ theme: { ...draft.theme, uiFont: event.target.value } })
+                  }
                 >
                   {UI_FONTS.map((font) => (
                     <option key={font.id} value={font.id}>
@@ -743,7 +762,10 @@ export function SettingsDialog({
                       patch({
                         theme: {
                           ...draft.theme,
-                          terminalFontSize: Math.max(9, Math.min(24, Number(event.target.value) || 12))
+                          terminalFontSize: Math.max(
+                            9,
+                            Math.min(24, Number(event.target.value) || 12)
+                          )
                         }
                       })
                     }
@@ -795,7 +817,9 @@ export function SettingsDialog({
                         onClick={() => setAnsiSlot(slot)}
                         style={{ backgroundColor: draft.theme.terminalPalette[slot] }}
                         className={`h-6 rounded-md border transition-colors ${
-                          slot === ansiSlot ? 'border-accent' : 'border-edge-strong hover:border-faint'
+                          slot === ansiSlot
+                            ? 'border-accent'
+                            : 'border-edge-strong hover:border-faint'
                         }`}
                       />
                     ))}
@@ -842,7 +866,6 @@ export function SettingsDialog({
                   {' '}
                 </span>
               </div>
-
             </div>
           ) : null}
 

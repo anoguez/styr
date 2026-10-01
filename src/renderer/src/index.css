@@ -83,12 +83,19 @@ body {
 }
 
 @keyframes wd-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 .wd-pulse {
   animation: wd-pulse 1.4s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .wd-pulse { animation: none; }
+  .wd-pulse {
+    animation: none;
+  }
 }

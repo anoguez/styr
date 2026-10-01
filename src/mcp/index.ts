@@ -66,7 +66,8 @@ server.registerTool(
   'create_task',
   {
     title: 'Create task',
-    description: 'Create a task in the backlog (or another status) as a markdown file on the board.',
+    description:
+      'Create a task in the backlog (or another status) as a markdown file on the board.',
     inputSchema: {
       title: z.string(),
       description: z.string().optional(),

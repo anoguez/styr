@@ -4,7 +4,7 @@
 one in its own terminal tab, often in its own git worktree, and watches them work. Agents move
 their own cards as they go: spec, build, review, done.
 
-> *Styr* (Old Norse, *stýra*): to steer. You set the course; the agents row.
+> _Styr_ (Old Norse, _stýra_): to steer. You set the course; the agents row.
 
 <!-- TODO: screenshot or short GIF of the board, terminal and agents sidebar -->
 
@@ -36,12 +36,12 @@ a board you can see, and in plain files you can read.
 
 Styr talks to agent CLIs through a small provider interface (`src/core/providers/`).
 
-| Agent | Status |
-| --- | --- |
+| Agent                                                      | Status                                                   |
+| ---------------------------------------------------------- | -------------------------------------------------------- |
 | [Claude Code](https://docs.claude.com/en/docs/claude-code) | Supported: launch, resume, live state through hooks, MCP |
-| Codex CLI | Planned |
-| Gemini CLI | Planned |
-| Local models (Ollama, through an agent CLI) | Planned |
+| Codex CLI                                                  | Planned                                                  |
+| Gemini CLI                                                 | Planned                                                  |
+| Local models (Ollama, through an agent CLI)                | Planned                                                  |
 
 Any agent can already move its task. The board protocol is just editing the task file, and the
 path is in every prompt.

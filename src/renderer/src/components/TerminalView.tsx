@@ -71,7 +71,8 @@ export function TerminalView({
       if (id === sessionId) terminal.write(data)
     })
     const offExit = window.api.terminal.onExit(({ id, exitCode }) => {
-      if (id === sessionId) terminal.write(`\r\n\x1b[90m[process exited with code ${exitCode}]\x1b[0m\r\n`)
+      if (id === sessionId)
+        terminal.write(`\r\n\x1b[90m[process exited with code ${exitCode}]\x1b[0m\r\n`)
     })
     const input = terminal.onData((data) => window.api.terminal.write(sessionId, data))
     const observer = new ResizeObserver(pushSize)

@@ -135,24 +135,28 @@ export function TerminalPanel({
     <section className="flex h-full min-h-0 flex-col border-t border-edge-strong bg-chrome">
       <header className="flex items-stretch border-b border-edge">
         <div className="flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto px-2">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext
-            items={sessions.map((session) => session.id)}
-            strategy={horizontalListSortingStrategy}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
           >
-            {sessions.map((session) => (
-              <TerminalTab
-                key={session.id}
-                session={session}
-                label={sessionLabel(session, taskTitles)}
-                agent={session.taskId ? agents.get(session.taskId) : undefined}
-                active={session.id === activeId}
-                onSelect={onSelect}
-                onClose={onCloseSession}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
+            <SortableContext
+              items={sessions.map((session) => session.id)}
+              strategy={horizontalListSortingStrategy}
+            >
+              {sessions.map((session) => (
+                <TerminalTab
+                  key={session.id}
+                  session={session}
+                  label={sessionLabel(session, taskTitles)}
+                  agent={session.taskId ? agents.get(session.taskId) : undefined}
+                  active={session.id === activeId}
+                  onSelect={onSelect}
+                  onClose={onCloseSession}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
         </div>
 
         <div className="flex shrink-0 items-center gap-2 border-l border-edge px-2 py-1.5">

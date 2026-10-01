@@ -73,7 +73,8 @@ export function TaskDialog({
   const [preview, setPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const patch = (changes: Partial<FormState>): void => setForm((current) => ({ ...current, ...changes }))
+  const patch = (changes: Partial<FormState>): void =>
+    setForm((current) => ({ ...current, ...changes }))
 
   const routedName = resolveTemplateFor(settings, {
     status: form.status,
@@ -102,7 +103,9 @@ export function TaskDialog({
     if (!payload.title) return null
     setSaving(true)
     try {
-      return task ? await window.api.tasks.update(task.id, payload) : await window.api.tasks.create(payload)
+      return task
+        ? await window.api.tasks.update(task.id, payload)
+        : await window.api.tasks.create(payload)
     } finally {
       setSaving(false)
     }
@@ -128,7 +131,9 @@ export function TaskDialog({
   async function showPreview(): Promise<void> {
     const saved = await save()
     if (saved)
-      setPreview(await window.api.terminal.previewPrompt(saved.id, form.promptTemplateId || undefined))
+      setPreview(
+        await window.api.terminal.previewPrompt(saved.id, form.promptTemplateId || undefined)
+      )
   }
 
   return (
@@ -228,10 +233,7 @@ export function TaskDialog({
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field
-            label="Working directory"
-            hint="Where Claude runs for this task."
-          >
+          <Field label="Working directory" hint="Where Claude runs for this task.">
             <DirectoryInput
               value={form.repoPath}
               placeholder="/Users/you/Workspace/project"

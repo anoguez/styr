@@ -26,9 +26,9 @@ directory** is the separate setting for where agents and new shells actually run
 ---
 id: TASK-0001
 title: Fix login redirect
-status: in_progress      # backlog | in_progress | in_review | done
-priority: medium         # low | medium | high | urgent
-readiness: ready         # ready | needs_spec
+status: in_progress # backlog | in_progress | in_review | done
+priority: medium # low | medium | high | urgent
+readiness: ready # ready | needs_spec
 project: acme
 tags: [bug]
 repoPath: /Users/you/Workspace/acme
@@ -41,9 +41,11 @@ updatedAt: '2026-09-30T01:05:00.000Z'
 ---
 
 ## Context
+
 The redirect loops after SSO.
 
 <!-- styr:activity -->
+
 ## Activity
 
 - `2026-09-30T01:05:00.000Z` **claude** — Reproduced it; the state cookie is dropped.
@@ -78,17 +80,17 @@ The board shows live agent state per task — **Ready**, **Working**, **Waiting 
 or **Stopped** — so you can see at a glance which sessions need you.
 
 This does not scrape the terminal. Each launch writes a small settings file registering Claude Code
-lifecycle hooks, passed with `--settings`, which *adds* to your own settings rather than replacing
+lifecycle hooks, passed with `--settings`, which _adds_ to your own settings rather than replacing
 them (your global hooks keep working). The hooks write one JSON file per task into
 `<workspace>/.styr/agents/`, the app watches that directory, and the board updates.
 
-| Hook event | State |
-| --- | --- |
-| `SessionStart` | **Ready** — session open, nothing in flight (this is what a resume gives you) |
-| `UserPromptSubmit`, `PreToolUse` | Working |
-| `Notification` | **Waiting on you** — Claude needs input or a permission |
-| `Stop` | Finished (captures Claude's last message) |
-| terminal exits | Stopped |
+| Hook event                       | State                                                                         |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `SessionStart`                   | **Ready** — session open, nothing in flight (this is what a resume gives you) |
+| `UserPromptSubmit`, `PreToolUse` | Working                                                                       |
+| `Notification`                   | **Waiting on you** — Claude needs input or a permission                       |
+| `Stop`                           | Finished (captures Claude's last message)                                     |
+| terminal exits                   | Stopped                                                                       |
 
 A resumed session sits at **Ready** until you actually send something — opening a session is not
 work. `PreToolUse` is what flips it back to Working once you answer a permission prompt, which
@@ -149,7 +151,7 @@ when anything is waiting, so you see it with the sidebar closed.
 
 A task that reaches **Done** drops out of the list, whatever its agent was last doing. A finished
 session usually leaves behind a `Notification` event while it sits at an idle prompt, so without
-this a completed task would read *Waiting on you* forever. The same rule applies to the menu bar and
+this a completed task would read _Waiting on you_ forever. The same rule applies to the menu bar and
 to the waiting count in the status bar. A follow-up run on a Done task is still visible through its
 terminal tab, whose dot shows live state.
 
@@ -265,12 +267,12 @@ Position it with `{{board}}` if you want it somewhere specific; otherwise it is 
 A task in **In Review** does not need implementing — it needs reviewing. So the template is chosen
 from where the task sits, not from a single global default:
 
-| Task state | Template that runs |
-| --- | --- |
+| Task state                           | Template that runs                                                            |
+| ------------------------------------ | ----------------------------------------------------------------------------- |
 | `readiness: needs_spec` (any column) | **Spec the task** — wayfinder, or grilling you until the scope is pinned down |
-| Backlog / In Progress | **Implement the task** |
-| In Review | **Review the work** — check the diff or PR against the acceptance criteria |
-| Done | **Follow up** — confirm it landed, capture leftovers as new tasks |
+| Backlog / In Progress                | **Implement the task**                                                        |
+| In Review                            | **Review the work** — check the diff or PR against the acceptance criteria    |
+| Done                                 | **Follow up** — confirm it landed, capture leftovers as new tasks             |
 
 Starting Claude on a **Backlog** task moves it to **In Progress** — including when it only needs a
 spec, because writing the spec is work and the board should say so. Status and readiness are
@@ -281,7 +283,7 @@ leaves the column alone, since those are a review and a follow-up rather than ne
 Mark a task **Needs spec** in the task dialog and it shows an amber `needs spec` badge on the board.
 
 Remap any of this under **Which prompt runs where** in Settings. A task can also pin one template
-for good — set **Prompt template** on the task to anything other than *Auto*, and it ignores the
+for good — set **Prompt template** on the task to anything other than _Auto_, and it ignores the
 column. Hovering ▶ Claude names the template that will actually run.
 
 Templates support `{{id}}`, `{{title}}`, `{{description}}`, `{{status}}`, `{{priority}}`,
@@ -297,7 +299,7 @@ knows which task it is on.
 The markdown file is the board. Claude moves a task by editing one line of its frontmatter:
 
 ```yaml
-status: in_review    # backlog | in_progress | in_review | done
+status: in_review # backlog | in_progress | in_review | done
 ```
 
 The file watcher picks it up and the column changes. This needs no setup at all — the task's path is
@@ -313,7 +315,7 @@ Notes work the same way — append a bullet under `## Activity` at the end of th
 without the canonical `` `timestamp` **author** — `` prefix are kept verbatim and survive later
 writes.
 
-[The MCP server](#the-mcp-server) does all of this too, with validation. Use it when you want Claude to *query*
+[The MCP server](#the-mcp-server) does all of this too, with validation. Use it when you want Claude to _query_
 the board (what is in review? what needs a spec?) rather than just update the task in front of it.
 
 ## The MCP server
@@ -336,14 +338,14 @@ workspace you have configured.
 ## Orchestrate
 
 **Orchestrate** in the header starts work on everything that is waiting, up to the capacity you set.
-It does not decide *what* an agent does — prompt routing already does that — it only decides *which*
+It does not decide _what_ an agent does — prompt routing already does that — it only decides _which_
 tasks to start:
 
-| Lane | Picks up |
-| --- | --- |
-| **Specifying** | Backlog tasks flagged `needs_spec` |
-| **Implementing** | Ready tasks in Backlog |
-| **Reviewing** | Tasks sitting in In Review |
+| Lane             | Picks up                           |
+| ---------------- | ---------------------------------- |
+| **Specifying**   | Backlog tasks flagged `needs_spec` |
+| **Implementing** | Ready tasks in Backlog             |
+| **Reviewing**    | Tasks sitting in In Review         |
 
 Each lane has its own slot count under **Settings → Orchestrate**; a slot is taken while a task has
 a live session. Set a lane to `0` to have Orchestrate skip it. The button shows how many it would
@@ -366,7 +368,7 @@ Every Orchestrate launch sends its prompt, including when it resumes. A bare `--
 nothing, so a dispatched agent would otherwise sit at a prompt with no instruction. The manual
 **⏵ Resume** button still resumes bare, because there you just want to carry on talking.
 
-**Every task is orchestrated by default.** Untick *Let Orchestrate start this task* on a task to keep
+**Every task is orchestrated by default.** Untick _Let Orchestrate start this task_ on a task to keep
 its hands off; you can still start that one yourself.
 
 Two things Orchestrate deliberately will not do:
@@ -380,15 +382,15 @@ Two things Orchestrate deliberately will not do:
 
 Grouped into sections down the left of the dialog:
 
-| Section | What's in it |
-| --- | --- |
-| **Workspace** | Board storage folder, default working directory |
-| **Terminal** | Shell, Claude command |
-| **Prompt routing** | Which template runs for each column, and the fallback |
-| **Orchestrate** | Slots per lane |
-| **Templates** | Editing the prompts themselves, with the placeholder list |
-| **Theme** | Colours and fonts |
-| **Integrations** | The `claude mcp add` command, with a copy button |
+| Section            | What's in it                                              |
+| ------------------ | --------------------------------------------------------- |
+| **Workspace**      | Board storage folder, default working directory           |
+| **Terminal**       | Shell, Claude command                                     |
+| **Prompt routing** | Which template runs for each column, and the fallback     |
+| **Orchestrate**    | Slots per lane                                            |
+| **Templates**      | Editing the prompts themselves, with the placeholder list |
+| **Theme**          | Colours and fonts                                         |
+| **Integrations**   | The `claude mcp add` command, with a copy button          |
 
 ## Theme
 
@@ -401,15 +403,15 @@ sampling any pixel on screen — handy for matching a brand colour. It is delibe
 browser's `<input type="color">`, which opens the native macOS colour panel: that floats above the
 app and cannot be dismissed by clicking away from it.
 
-| Setting | What it affects |
-| --- | --- |
-| **Base** | Every surface and text colour in the app |
-| **Gradient background** | Washes the base with a hint of the accent |
-| **Accent** | Buttons, active states, search focus, queue badges, project chips |
-| **Backlog / In Progress / In Review / Done** | Column dots and rules, card borders, **and the matching agent states** — In Progress tints *Working*, In Review tints *Waiting on you*, Done tints *Finished* |
-| **Interface font** | The whole UI |
-| **Terminal font / size** | The embedded terminal, applied to open sessions without restarting them |
-| **Terminal colours** | The 16 ANSI colours programs draw with, plus a preset to start from |
+| Setting                                      | What it affects                                                                                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Base**                                     | Every surface and text colour in the app                                                                                                                      |
+| **Gradient background**                      | Washes the base with a hint of the accent                                                                                                                     |
+| **Accent**                                   | Buttons, active states, search focus, queue badges, project chips                                                                                             |
+| **Backlog / In Progress / In Review / Done** | Column dots and rules, card borders, **and the matching agent states** — In Progress tints _Working_, In Review tints _Waiting on you_, Done tints _Finished_ |
+| **Interface font**                           | The whole UI                                                                                                                                                  |
+| **Terminal font / size**                     | The embedded terminal, applied to open sessions without restarting them                                                                                       |
+| **Terminal colours**                         | The 16 ANSI colours programs draw with, plus a preset to start from                                                                                           |
 
 **Base** is one colour, not ten. The interface derives its whole ramp from it — chrome, panels,
 cards, borders and the three text weights — at fixed lightness steps, so contrast holds whatever you
@@ -456,13 +458,13 @@ height sticks and later toggles stop resetting it.
 
 `⌘P` (or `⌘K`) opens a fuzzy finder over everything the app can reach:
 
-| Group | What it does |
-| --- | --- |
-| **Actions** | New task, Orchestrate, new shell, toggle the terminal, toggle the Agents sidebar |
-| **Tasks** | `↵` opens the task, `⌘↵` starts Claude on it |
-| **Agents** | Focus the running session, or resume it if the tab was closed |
-| **Terminals** | Switch to that tab |
-| **Settings** | Jump straight to a section — Theme, Templates, Orchestrate, … |
+| Group         | What it does                                                                     |
+| ------------- | -------------------------------------------------------------------------------- |
+| **Actions**   | New task, Orchestrate, new shell, toggle the terminal, toggle the Agents sidebar |
+| **Tasks**     | `↵` opens the task, `⌘↵` starts Claude on it                                     |
+| **Agents**    | Focus the running session, or resume it if the tab was closed                    |
+| **Terminals** | Switch to that tab                                                               |
+| **Settings**  | Jump straight to a section — Theme, Templates, Orchestrate, …                    |
 
 Matching is subsequence-based with a bias toward prefixes and word boundaries, so `tmpl` finds
 Templates and `0004` finds `TASK-0004`. `↑`/`↓` (or `⌃p`/`⌃n`) move, `↵` runs, `Esc` closes.
@@ -472,12 +474,12 @@ Templates and `0004` finds `TASK-0004`. `↑`/`↓` (or `⌃p`/`⌃n`) move, `�
 Every one of these is rebindable in **Settings → Shortcuts** — click **Change** on a row and press
 the combination you want. These are the defaults:
 
-| Key | Action |
-| --- | --- |
-| `⌘P` or `⌘K` | Command palette |
-| `⌘N` | New task |
-| `⌘F` | Focus search |
-| `⌘,` | Open Settings |
+| Key                | Action                    |
+| ------------------ | ------------------------- |
+| `⌘P` or `⌘K`       | Command palette           |
+| `⌘N`               | New task                  |
+| `⌘F`               | Focus search              |
+| `⌘,`               | Open Settings             |
 | ``⌃` `` or ``⌘` `` | Toggle the terminal panel |
 
 Toggle the agents sidebar, Orchestrate and New shell are commands too, but ship unbound — give them
@@ -485,9 +487,9 @@ a key if you use them often. **Clear** unbinds a command; **Reset** puts its def
 
 Two keys are fixed because they are dialog behaviour rather than commands:
 
-| Key | Action |
-| --- | --- |
-| `⌘↵` | Save the open dialog |
+| Key   | Action                |
+| ----- | --------------------- |
+| `⌘↵`  | Save the open dialog  |
 | `Esc` | Close the open dialog |
 
 Bound keys work with focus in the terminal too — the embedded terminal hands them to the app instead
@@ -496,9 +498,9 @@ all, since they belong to whatever is running in there.
 
 Mouse and terminal:
 
-| Action | What it does |
-| --- | --- |
-| Double-click a card | Edit the task |
-| Hover a card → **Edit** | Edit the task |
-| Hover a card → **▶ Claude** | Start Claude on that task |
+| Action                                 | What it does                           |
+| -------------------------------------- | -------------------------------------- |
+| Double-click a card                    | Edit the task                          |
+| Hover a card → **Edit**                | Edit the task                          |
+| Hover a card → **▶ Claude**            | Start Claude on that task              |
 | `Shift+↵` / `Option+↵` in the terminal | Insert a newline instead of submitting |

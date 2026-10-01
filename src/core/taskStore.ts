@@ -120,7 +120,8 @@ export function listTasks(filter: TaskFilter = {}): Task[] {
       if (filter.readiness && task.readiness !== filter.readiness) return false
       if (filter.project && task.project !== filter.project) return false
       if (filter.tag && !task.tags.includes(filter.tag)) return false
-      if (needle && !`${task.title} ${task.description}`.toLowerCase().includes(needle)) return false
+      if (needle && !`${task.title} ${task.description}`.toLowerCase().includes(needle))
+        return false
       return true
     })
     .sort((a, b) => a.order - b.order || a.createdAt.localeCompare(b.createdAt))

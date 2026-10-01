@@ -67,7 +67,12 @@ export default function App(): ReactNode {
   const searchRef = useRef<HTMLInputElement>(null)
 
   const taskTitles = useMemo(
-    () => new Map(Object.values(board).flat().map((task) => [task.id, task.title])),
+    () =>
+      new Map(
+        Object.values(board)
+          .flat()
+          .map((task) => [task.id, task.title])
+      ),
     [board]
   )
 
@@ -149,10 +154,7 @@ export default function App(): ReactNode {
     [sessions, launchClaude]
   )
 
-  useEffect(
-    () => window.api.tasks.onActivateRequested(activateTask),
-    [activateTask]
-  )
+  useEffect(() => window.api.tasks.onActivateRequested(activateTask), [activateTask])
 
   const refreshOrchestration = useCallback(() => {
     void window.api.orchestrate.plan().then(setOrchestration)
@@ -176,7 +178,9 @@ export default function App(): ReactNode {
     if (dispatch.length > 0) {
       return `Start ${dispatch.length}: ${dispatch.map((d) => `${d.taskId} (${d.lane})`).join(', ')}`
     }
-    const full = ORCHESTRATION_LANES.filter((lane) => occupied[lane] >= capacity[lane] && capacity[lane] > 0)
+    const full = ORCHESTRATION_LANES.filter(
+      (lane) => occupied[lane] >= capacity[lane] && capacity[lane] > 0
+    )
     if (full.length > 0) return `No free slots in: ${full.join(', ')}`
     const notes = [
       orchestration.idleSessions > 0
@@ -330,7 +334,6 @@ export default function App(): ReactNode {
     setActiveSession((current) => (current === id ? null : current))
   }, [])
 
-
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key === 'Escape') {
@@ -442,8 +445,8 @@ export default function App(): ReactNode {
         <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2">
           <p className="text-[12px] text-amber-200">
             {problems.length} task file{problems.length === 1 ? '' : 's'} could not be read and{' '}
-            {problems.length === 1 ? 'is' : 'are'} hidden from the board. Nothing was changed on disk
-            — fix the frontmatter and {problems.length === 1 ? 'it' : 'they'} will reappear.
+            {problems.length === 1 ? 'is' : 'are'} hidden from the board. Nothing was changed on
+            disk — fix the frontmatter and {problems.length === 1 ? 'it' : 'they'} will reappear.
           </p>
           <ul className="mt-1 flex flex-col gap-0.5">
             {problems.map((problem) => (
@@ -540,9 +543,7 @@ export default function App(): ReactNode {
         <OrchestrateDialog
           summary={orchestration}
           onClose={() => setConfirmingOrchestrate(false)}
-          onConfirm={() =>
-            void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))
-          }
+          onConfirm={() => void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))}
         />
       ) : null}
 

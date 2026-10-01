@@ -232,7 +232,8 @@ export function queryTasks(filter: TaskFilter = {}): Task[] {
 }
 
 export function findTask(id: string): Task | null {
-  const row = connection().prepare('SELECT * FROM tasks WHERE id = ?').get(id) as IndexRow | undefined
+  const row = connection().prepare('SELECT * FROM tasks WHERE id = ?').get(id) as
+    IndexRow | undefined
   return row ? fromRow(row) : null
 }
 
