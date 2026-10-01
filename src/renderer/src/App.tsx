@@ -19,6 +19,7 @@ import { Board } from './components/Board.js'
 import { OrchestrateDialog } from './components/OrchestrateDialog.js'
 import { CommandPalette, type CommandEntry } from './components/CommandPalette.js'
 import { StatusBar } from './components/StatusBar.js'
+import { useUpdates } from './hooks/useUpdates.js'
 import { SECTIONS, SettingsDialog, type SectionId } from './components/SettingsDialog.js'
 import { TaskDialog } from './components/TaskDialog.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
@@ -47,6 +48,7 @@ export default function App(): ReactNode {
   const activeTheme = previewTheme ?? settings?.theme ?? DEFAULT_THEME
   useTheme(activeTheme)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
+  const update = useUpdates()
   const [orchestration, setOrchestration] = useState<OrchestrationSummary | null>(null)
   const [confirmingOrchestrate, setConfirmingOrchestrate] = useState(false)
 
@@ -548,9 +550,11 @@ export default function App(): ReactNode {
             : ''
         }${counts.working > 0 ? ` · ${counts.working} running` : ''}`}
         bindings={bindings}
+        readyUpdate={update?.kind === 'ready' ? update.version : undefined}
         onToggleAgents={() => runCommand('toggleAgents')}
         onToggleTerminal={() => runCommand('toggleTerminal')}
         onOpenSettings={() => openSettings()}
+        onInstallUpdate={() => void window.api.updates.install()}
       />
 
       {paletteOpen ? (

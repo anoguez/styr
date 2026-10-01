@@ -127,16 +127,20 @@ jobs:
             xcrun stapler validate "$dmg"
           done
 
-      - name: Keep the DMG as a workflow artifact
+      - name: Keep the build as a workflow artifact
         if: ${{ env.TAG == '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: styr-macos
-          path: dist/*.dmg
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/latest-mac.yml
 
       - name: Upload to release
         if: ${{ env.TAG != '' }}
-        run: gh release upload "$TAG" dist/*.dmg --clobber
+        # The zip, its blockmap and latest-mac.yml are the update feed installed copies read.
+        run: gh release upload "$TAG" dist/*.dmg dist/*.zip dist/*.zip.blockmap dist/latest-mac.yml --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

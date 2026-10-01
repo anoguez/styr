@@ -62,6 +62,12 @@ conventional commits:
 3. A macOS runner then builds, signs, notarises and verifies the app, and attaches the DMG to that
    release.
 
+Each release carries the DMG for people installing by hand, plus `Styr-x.y.z-arm64-mac.zip`, its
+`.blockmap` and `latest-mac.yml`: the update feed installed copies read through electron-updater.
+The feed location comes from the `publish` block in `electron-builder.yml`. For a few minutes after
+release-please publishes a release, the build is still attaching those files; the app treats a
+missing `latest-mac.yml` as "up to date" rather than an error.
+
 The workflow needs these repository secrets. First export the certificate from **Keychain Access →
 My Certificates → Developer ID Application: … → Export…** as a `.p12` with a password, then run:
 

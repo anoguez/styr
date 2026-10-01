@@ -17,6 +17,7 @@ import {
 } from './terminal/ptyManager.js'
 import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
 import { createTray, destroyTray } from './tray.js'
+import { initUpdater } from './updater.js'
 
 function showWindow(): void {
   const [existing] = BrowserWindow.getAllWindows()
@@ -85,6 +86,7 @@ app.whenReady().then(() => {
   notifyAgentsChanged()
 
   createWindow()
+  initUpdater()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

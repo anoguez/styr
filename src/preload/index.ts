@@ -9,7 +9,8 @@ import type {
   TaskFilter,
   TaskPatch,
   TaskStatus,
-  TerminalSessionInfo
+  TerminalSessionInfo,
+  UpdateState
 } from '../core/types.js'
 
 export interface TerminalSpawnRequest {
@@ -52,6 +53,14 @@ const api = {
   app: {
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
     mcpCommand: (): Promise<string> => ipcRenderer.invoke('app:mcpCommand')
+  },
+  updates: {
+    state: (): Promise<UpdateState> => ipcRenderer.invoke('updates:state'),
+    check: (): Promise<UpdateState> => ipcRenderer.invoke('updates:check'),
+    /** Resolves false when the user chose to wait for the next quit instead. */
+    install: (): Promise<boolean> => ipcRenderer.invoke('updates:install'),
+    onState: (handler: (state: UpdateState) => void): (() => void) =>
+      subscribe('updates:state', handler as (...args: never[]) => void)
   },
   orchestrate: {
     plan: (): Promise<OrchestrationSummary> => ipcRenderer.invoke('orchestrate:plan'),

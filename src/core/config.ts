@@ -99,6 +99,7 @@ function defaults(): Settings {
       { id: 'followup', name: 'Follow up', template: FOLLOWUP_TEMPLATE }
     ],
     orchestration: { spec: 1, implement: 2, review: 1 },
+    updates: { checkAutomatically: true },
     theme: DEFAULT_THEME,
     shortcuts: DEFAULT_SHORTCUTS,
     promptRouting: {

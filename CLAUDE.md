@@ -434,6 +434,20 @@ renderer, preload, IPC layer and MCP server all share them.
 - The entitlements file is mandatory: the hardened runtime enforces library validation, which
   blocks `node-pty` and `better-sqlite3` under an ad-hoc signature.
 
+## Updates
+
+`src/main/updater.ts` wraps electron-updater against this repo's GitHub Releases and mirrors its
+`UpdateState` to the renderer (`updates:*` IPC, `useUpdates`). It downloads automatically but never
+installs on its own: `autoInstallOnAppQuit` applies it at the next quit, and `updates:install`
+relaunches only after asking whenever a terminal is open, because a relaunch kills every agent
+running in the app. Keep it that way — an app that restarts itself mid-turn loses work.
+
+A dev build reports `unsupported` and never checks. A release without `latest-mac.yml` (the build
+attaches it minutes after release-please publishes) is reported as current, not as an error.
+
+electron-updater defines `autoUpdater` through a getter, which Node's ESM loader cannot see as a
+named export, so it is imported as the default export.
+
 ## Releases
 
 `.github/workflows/release.yml` runs release-please on every push to `main`. It keeps a release PR

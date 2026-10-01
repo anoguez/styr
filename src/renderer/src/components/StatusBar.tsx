@@ -33,6 +33,13 @@ const ICONS = {
       <path d="M8.5 11.5H13" />
     </Glyph>
   ),
+  update: (
+    <Glyph>
+      <path d="M8 2.5v7.5" />
+      <path d="M4.8 7 8 10.2 11.2 7" />
+      <path d="M3 13h10" />
+    </Glyph>
+  ),
   settings: (
     <Glyph>
       <circle cx="8" cy="8" r="2.5" />
@@ -92,9 +99,11 @@ export function StatusBar({
   sessionCount,
   summary,
   bindings,
+  readyUpdate,
   onToggleAgents,
   onToggleTerminal,
-  onOpenSettings
+  onOpenSettings,
+  onInstallUpdate
 }: {
   agentsOpen: boolean
   terminalOpen: boolean
@@ -103,9 +112,12 @@ export function StatusBar({
   sessionCount: number
   summary: string
   bindings: ShortcutBindings
+  /** The version downloaded and waiting to install, if any. */
+  readyUpdate?: string
   onToggleAgents: () => void
   onToggleTerminal: () => void
   onOpenSettings: () => void
+  onInstallUpdate: () => void
 }): ReactNode {
   const withKeys = (text: string, ...commands: ShortcutCommand[]): string => {
     const hints = commands.map((command) => shortcutHint(bindings, command)).filter(Boolean)
@@ -139,6 +151,16 @@ export function StatusBar({
       <div className="flex-1" />
 
       <span className="flex items-center px-2.5 text-[11px] text-faint">{summary}</span>
+
+      {readyUpdate ? (
+        <StatusItem
+          icon={ICONS.update}
+          label={`Restart to update to ${readyUpdate}`}
+          active
+          title={`Styr ${readyUpdate} is downloaded. It installs when you quit, or restart now.`}
+          onClick={onInstallUpdate}
+        />
+      ) : null}
 
       <StatusItem
         icon={ICONS.settings}

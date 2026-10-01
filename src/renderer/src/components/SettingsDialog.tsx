@@ -19,7 +19,8 @@ import {
   type Settings,
   type ShortcutCommand,
   type TerminalPalette,
-  type ThemeSettings
+  type ThemeSettings,
+  type UpdateState
 } from '@core/types.js'
 import {
   acceleratorFor,
@@ -38,6 +39,7 @@ import {
   Select,
   inputClass
 } from './ui.js'
+import { useUpdates } from '../hooks/useUpdates.js'
 import { ansiLabel, TERMINAL_FONTS, TERMINAL_PALETTES, UI_FONTS } from '../hooks/useTheme.js'
 import { terminalTheme } from '../lib/palette.js'
 
@@ -127,8 +129,32 @@ export const SECTIONS = [
     blurb: 'Keys the app claims. Everything else is passed to the terminal.'
   },
   { id: 'theme', label: 'Theme', blurb: 'Colours and fonts. Changes apply as you make them.' },
-  { id: 'integrations', label: 'Integrations', blurb: 'Connecting the board to Claude.' }
+  { id: 'integrations', label: 'Integrations', blurb: 'Connecting the board to Claude.' },
+  { id: 'updates', label: 'Updates', blurb: 'New versions download in the background.' }
 ] as const
+
+function describeUpdate(state: UpdateState | null): string {
+  switch (state?.kind) {
+    case undefined:
+    case 'idle':
+      return 'Not checked yet.'
+    case 'unsupported':
+      return 'Updates are off when running from source. Install a release to get them.'
+    case 'checking':
+      return 'Checking for updates…'
+    case 'current':
+      return `You're up to date. Last checked ${new Date(state.checkedAt).toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit'
+      })}.`
+    case 'downloading':
+      return `Downloading ${state.version}… ${state.percent}%`
+    case 'ready':
+      return `Version ${state.version} is ready. It installs when you quit Styr, or restart now.`
+    case 'error':
+      return `Couldn't check for updates: ${state.message}`
+  }
+}
 
 const PREVIEW_SLOTS: AnsiColour[] = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan']
 
@@ -294,9 +320,12 @@ export function SettingsDialog({
   const [mcpCommand, setMcpCommand] = useState('')
   const [copied, setCopied] = useState(false)
   const [ansiSlot, setAnsiSlot] = useState<AnsiColour>('red')
+  const [version, setVersion] = useState('')
+  const update = useUpdates()
 
   useEffect(() => {
     void window.api.app.mcpCommand().then(setMcpCommand)
+    void window.api.app.info().then((info) => setVersion(info.version))
   }, [])
 
   const selected = draft.promptTemplates.find((template) => template.id === selectedId) ?? null
@@ -897,6 +926,48 @@ export function SettingsDialog({
                   </div>
                 </div>
               </Field>
+            </div>
+          ) : null}
+
+          {section === 'updates' ? (
+            <div className="flex flex-col gap-4">
+              <Field label="Current version">
+                <span className="font-mono text-[12px] text-ink">{version || '…'}</span>
+              </Field>
+              <Field label="Status">
+                <div className="flex flex-col gap-2.5">
+                  <span
+                    className={`text-[12px] ${update?.kind === 'error' ? 'text-red-300/90' : 'text-dim'}`}
+                  >
+                    {describeUpdate(update)}
+                  </span>
+                  <div className="flex items-center gap-2.5">
+                    {update?.kind === 'ready' ? (
+                      <Button variant="primary" onClick={() => void window.api.updates.install()}>
+                        Restart to update
+                      </Button>
+                    ) : (
+                      <Button
+                        disabled={
+                          !update ||
+                          update.kind === 'unsupported' ||
+                          update.kind === 'checking' ||
+                          update.kind === 'downloading'
+                        }
+                        onClick={() => void window.api.updates.check()}
+                      >
+                        Check for updates
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </Field>
+              <Checkbox
+                checked={draft.updates.checkAutomatically}
+                onChange={(checkAutomatically) => patch({ updates: { checkAutomatically } })}
+                label="Check for updates automatically"
+                hint="When Styr opens and every few hours after. An update downloads in the background and installs the next time you quit, so running agents are never interrupted."
+              />
             </div>
           ) : null}
         </div>

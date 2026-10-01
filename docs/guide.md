@@ -391,6 +391,18 @@ Grouped into sections down the left of the dialog:
 | **Templates**      | Editing the prompts themselves, with the placeholder list |
 | **Theme**          | Colours and fonts                                         |
 | **Integrations**   | The `claude mcp add` command, with a copy button          |
+| **Updates**        | Current version, Check for updates, automatic checks      |
+
+## Updates
+
+Styr checks for a new release when it opens and every six hours after. A new version downloads in
+the background and installs the next time you quit, so it never interrupts an agent mid-turn. While
+one is waiting, the status bar shows **Restart to update to x.y.z**; restarting asks first if any
+terminals are open, since agents running in them stop (their chats can be resumed afterwards).
+
+**Settings → Updates** shows the current version and the updater's status, has a **Check for
+updates** button, and turns the automatic checks off. Running from source (`yarn dev`) never
+updates itself.
 
 ## Theme
 

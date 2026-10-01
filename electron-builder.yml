@@ -12,9 +12,19 @@ asarUnpack:
   - '**/node_modules/better-sqlite3/**'
   # The MCP server is launched by plain `node`, which cannot read inside an asar archive.
   - 'out/main/**'
+# The update feed. electron-updater reads it from app-update.yml, which this block makes
+# electron-builder write into the app; releases themselves are published by the workflow.
+publish:
+  provider: github
+  owner: anoguez
+  repo: styr
 mac:
   target:
+    # The DMG is for people installing by hand. The zip is what electron-updater downloads, and
+    # latest-mac.yml (written alongside) is how an installed copy learns it exists.
     - target: dmg
+      arch: arm64
+    - target: zip
       arch: arm64
   category: public.app-category.developer-tools
   # Signed with the Developer ID found in the keychain (locally) or decoded from CSC_LINK (CI), and

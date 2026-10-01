@@ -138,5 +138,8 @@ export const settingsSchema = z.object({
   promptRouting: promptRoutingSchema,
   orchestration: orchestrationSchema,
   theme: themeSchema,
-  shortcuts: shortcutsSchema
+  shortcuts: shortcutsSchema,
+  updates: z
+    .object({ checkAutomatically: z.boolean().default(true) })
+    .default({ checkAutomatically: true })
 })

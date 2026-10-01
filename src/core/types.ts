@@ -240,7 +240,26 @@ export interface Settings {
   orchestration: OrchestrationCapacity
   theme: ThemeSettings
   shortcuts: ShortcutBindings
+  updates: UpdateSettings
 }
+
+export interface UpdateSettings {
+  /** Check when the app opens and every few hours after. A manual check works either way. */
+  checkAutomatically: boolean
+}
+
+/**
+ * What the updater is doing, mirrored from the main process to the renderer. An available update
+ * is downloaded straight away, so there is no separate "available" state: it goes to downloading.
+ */
+export type UpdateState =
+  | { kind: 'unsupported' }
+  | { kind: 'idle' }
+  | { kind: 'checking' }
+  | { kind: 'current'; checkedAt: string }
+  | { kind: 'downloading'; version: string; percent: number }
+  | { kind: 'ready'; version: string }
+  | { kind: 'error'; message: string }
 
 export interface AppInfo {
   isPackaged: boolean
