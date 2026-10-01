@@ -11,6 +11,7 @@
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && node scripts/build.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "coverage:badge": "yarn test:coverage && node scripts/update-coverage-badge.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
