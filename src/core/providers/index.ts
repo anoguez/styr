@@ -14,7 +14,7 @@ export function providerById(id: AgentProviderId): AgentProvider {
  * reads the choice from settings or the task rather than callers branching on it themselves.
  */
 export function providerFor(settings: Settings, task?: Task): AgentProvider {
-  return providerById(task?.agentSession?.provider ?? settings.defaultProvider)
+  return providerById(task?.agentSession?.provider ?? task?.provider ?? settings.defaultProvider)
 }
 
 const PROVIDERS: readonly AgentProvider[] = [claudeProvider, codexProvider]

@@ -122,7 +122,7 @@ async function launchSessionForTask(
 
   const settings = loadSettings()
   const requestedProvider =
-    options.provider ?? task.agentSession?.provider ?? settings.defaultProvider
+    options.provider ?? task.agentSession?.provider ?? task.provider ?? settings.defaultProvider
   if (!settings.enabledProviders.includes(requestedProvider)) {
     throw new Error(
       `${requestedProvider === 'codex' ? 'Codex' : 'Claude Code'} is disabled in Settings → Integrations.`

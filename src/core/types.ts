@@ -128,6 +128,7 @@ export interface Task {
   worktreePath?: string
   contextFiles: string[]
   promptTemplateId?: string
+  provider?: 'claude' | 'codex'
   claudeSessionId?: string
   agentSession?: { provider: 'claude' | 'codex'; id: string }
   sessions: TaskSessionRef[]

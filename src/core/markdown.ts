@@ -82,6 +82,7 @@ export function serialiseTask(task: Task): string {
     ...(task.worktreePath ? { worktreePath: task.worktreePath } : {}),
     ...(task.contextFiles.length > 0 ? { contextFiles: task.contextFiles } : {}),
     ...(task.promptTemplateId ? { promptTemplateId: task.promptTemplateId } : {}),
+    ...(task.provider ? { provider: task.provider } : {}),
     ...(task.claudeSessionId ? { claudeSessionId: task.claudeSessionId } : {}),
     ...(task.agentSession ? { agentSession: task.agentSession } : {}),
     ...(task.sessions.length > 0 ? { sessions: task.sessions } : {}),

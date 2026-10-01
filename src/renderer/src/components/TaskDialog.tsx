@@ -36,6 +36,7 @@ interface FormState {
   orchestrate: boolean
   contextFiles: string[]
   promptTemplateId: string
+  provider: 'claude' | 'codex'
   description: string
 }
 
@@ -52,6 +53,7 @@ function toForm(task: Task | null, settings: Settings): FormState {
     orchestrate: task?.orchestrate ?? true,
     contextFiles: task?.contextFiles ?? [],
     promptTemplateId: task?.promptTemplateId ?? '',
+    provider: task?.provider ?? settings.defaultProvider,
     description: task?.description ?? ''
   }
 }
@@ -72,7 +74,6 @@ export function TaskDialog({
   const [form, setForm] = useState<FormState>(() => toForm(task, settings))
   const [preview, setPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [provider, setProvider] = useState<'claude' | 'codex'>(settings.defaultProvider)
 
   const patch = (changes: Partial<FormState>): void =>
     setForm((current) => ({ ...current, ...changes }))
@@ -97,6 +98,7 @@ export function TaskDialog({
     orchestrate: form.orchestrate,
     contextFiles: form.contextFiles,
     promptTemplateId: form.promptTemplateId || undefined,
+    provider: form.provider,
     description: form.description
   }
 
@@ -119,7 +121,7 @@ export function TaskDialog({
   async function saveAndLaunch(provider?: 'claude' | 'codex'): Promise<void> {
     const saved = await save()
     if (!saved) return
-    onLaunch(saved.id, form.promptTemplateId || undefined, provider)
+    onLaunch(saved.id, form.promptTemplateId || undefined, form.provider)
     onClose()
   }
 
@@ -156,7 +158,7 @@ export function TaskDialog({
             </>
           ) : null}
           <Button onClick={() => void showPreview()}>Preview prompt</Button>
-          <Button variant="primary" onClick={() => void saveAndLaunch(provider)} disabled={saving}>
+          <Button variant="primary" onClick={() => void saveAndLaunch()} disabled={saving}>
             Save &amp; start
           </Button>
           <Button variant="primary" onClick={() => void saveAndClose()} disabled={saving}>
@@ -267,8 +269,8 @@ export function TaskDialog({
               hint="Choose the agent for this run. The default is configured in Integrations."
             >
               <Select
-                value={provider}
-                onChange={(event) => setProvider(event.target.value as 'claude' | 'codex')}
+                value={form.provider}
+                onChange={(event) => patch({ provider: event.target.value as 'claude' | 'codex' })}
               >
                 {settings.enabledProviders.map((item) => (
                   <option key={item} value={item}>
