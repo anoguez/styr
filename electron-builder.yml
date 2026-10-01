@@ -3,6 +3,7 @@ productName: Styr
 directories:
   buildResources: resources
   output: dist
+afterAllArtifactBuild: scripts/notarize-dmg.mjs
 files:
   - out/**
   - package.json
@@ -16,11 +17,17 @@ mac:
     - target: dmg
       arch: arm64
   category: public.app-category.developer-tools
-  # No Developer ID, so sign ad-hoc. Skipping signing altogether leaves the bundle's resources
-  # unsealed, which macOS reports as "damaged" on any machine that applies Gatekeeper.
-  identity: "-"
+  # Signed with the Developer ID found in the keychain (locally) or decoded from CSC_LINK (CI), and
+  # notarised when APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID are set. Without a
+  # Developer ID, use `yarn package:adhoc`: skipping signing altogether leaves the bundle's
+  # resources unsealed, which macOS reports as "damaged" on any machine that applies Gatekeeper.
+  hardenedRuntime: true
   gatekeeperAssess: false
-  # Ad-hoc signing plus the hardened runtime needs library validation disabled, or the bundled
-  # native modules (node-pty, better-sqlite3) fail to load at launch.
+  # The hardened runtime enforces library validation, which blocks the bundled native modules
+  # (node-pty, better-sqlite3) under an ad-hoc signature, so it stays disabled for that path.
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
+dmg:
+  # Sign the DMG itself, not just the app inside it. scripts/notarize-dmg.mjs then notarises and
+  # staples it: a signed but unnotarised DMG is rejected by Gatekeeper.
+  sign: true
