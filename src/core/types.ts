@@ -238,6 +238,7 @@ export interface Settings {
   shell: string
   claudeCommand: string
   codexCommand: string
+  codexApprovalReviewer: 'user' | 'auto_review'
   enabledProviders: ('claude' | 'codex')[]
   defaultProvider: 'claude' | 'codex'
   providerRouting: Record<OrchestrationLane, 'claude' | 'codex'>

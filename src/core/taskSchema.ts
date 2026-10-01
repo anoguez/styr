@@ -144,6 +144,7 @@ export const settingsSchema = z.object({
   shell: z.string().default(''),
   claudeCommand: z.string().default('claude'),
   codexCommand: z.string().default('codex'),
+  codexApprovalReviewer: z.enum(['user', 'auto_review']).default('user'),
   enabledProviders: z
     .array(z.enum(['claude', 'codex']))
     .min(1)

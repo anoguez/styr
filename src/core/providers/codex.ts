@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { shellQuote } from '../shell.js'
+import type { Settings } from '../types.js'
 import type { AgentProvider } from './types.js'
 
 function sessionDirectory(root: string): string {
@@ -52,16 +53,28 @@ export function newestCodexSessionFor(
   return candidates.sort((left, right) => right.startedAt - left.startedAt)[0]?.id
 }
 
+export function codexCommand(
+  settings: Pick<Settings, 'codexCommand' | 'codexApprovalReviewer'>,
+  sessionId: string,
+  resume: boolean,
+  prompt?: string
+): string {
+  const approval =
+    settings.codexApprovalReviewer === 'auto_review'
+      ? '--approve-for-me'
+      : '--ask-for-approval on-request'
+  const args = `--sandbox workspace-write ${approval}`
+  return resume
+    ? `${settings.codexCommand} resume ${args} ${sessionId}${prompt ? ` ${prompt}` : ''}`
+    : `${settings.codexCommand} ${args} ${prompt ?? `''`}`
+}
+
 export const codexProvider: AgentProvider = {
   id: 'codex',
   label: 'Codex',
   newSessionId: () => randomUUID(),
   buildCommand({ settings, sessionId, resume, prompt }) {
-    const base = settings.codexCommand
-    const args = `--sandbox workspace-write --ask-for-approval on-request`
-    return resume
-      ? `${base} resume ${args} ${sessionId}${prompt ? ` ${prompt}` : ''}`
-      : `${base} ${args} ${prompt ?? `''`}`
+    return codexCommand(settings, sessionId, resume, prompt)
   },
   sessionExists: (id, root) => transcript(id, root) !== undefined,
   sessionTime: (id, root) => {

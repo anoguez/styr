@@ -1023,13 +1023,31 @@ export function SettingsDialog({
               {draft.enabledProviders.includes('codex') ? (
                 <Field
                   label="Codex command"
-                  hint="Usually `codex`. Codex runs with workspace-write sandboxing and on-request approvals."
+                  hint="Usually `codex`. Codex always runs in the workspace-write sandbox."
                 >
                   <input
                     className={inputClass}
                     value={draft.codexCommand}
                     onChange={(event) => patch({ codexCommand: event.target.value })}
                   />
+                </Field>
+              ) : null}
+              {draft.enabledProviders.includes('codex') ? (
+                <Field
+                  label="Codex approvals"
+                  hint="Approve for me sends eligible requests to Codex’s automatic reviewer; it does not grant full access."
+                >
+                  <Select
+                    value={draft.codexApprovalReviewer}
+                    onChange={(event) =>
+                      patch({
+                        codexApprovalReviewer: event.target.value as 'user' | 'auto_review'
+                      })
+                    }
+                  >
+                    <option value="user">Ask me</option>
+                    <option value="auto_review">Approve for me</option>
+                  </Select>
                 </Field>
               ) : null}
               {draft.enabledProviders.includes('codex') ? (

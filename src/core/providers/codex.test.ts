@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { newestCodexSessionFor } from './codex.js'
+import { codexCommand, newestCodexSessionFor } from './codex.js'
 
 const directories: string[] = []
 
@@ -32,5 +32,18 @@ describe('newestCodexSessionFor', () => {
     )
 
     expect(newestCodexSessionFor(taskDirectory, '2026-10-01T12:00:30.000Z', root)).toBe('newest')
+  })
+})
+
+describe('codexCommand', () => {
+  it('uses automatic approval review without widening the workspace sandbox', () => {
+    expect(
+      codexCommand(
+        { codexCommand: 'codex', codexApprovalReviewer: 'auto_review' },
+        'session-id',
+        false,
+        'Implement the task'
+      )
+    ).toBe('codex --sandbox workspace-write --approve-for-me Implement the task')
   })
 })
