@@ -52,7 +52,8 @@ const api = {
   },
   app: {
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
-    mcpCommand: (): Promise<string> => ipcRenderer.invoke('app:mcpCommand')
+    mcpCommand: (provider?: 'claude' | 'codex'): Promise<string> =>
+      ipcRenderer.invoke('app:mcpCommand', provider)
   },
   updates: {
     state: (): Promise<UpdateState> => ipcRenderer.invoke('updates:state'),

@@ -324,13 +324,15 @@ export function SettingsDialog({
     settings.promptTemplates[0]?.id ?? settings.defaultPromptTemplateId
   )
   const [mcpCommand, setMcpCommand] = useState('')
+  const [codexMcpCommand, setCodexMcpCommand] = useState('')
   const [copied, setCopied] = useState(false)
   const [ansiSlot, setAnsiSlot] = useState<AnsiColour>('red')
   const [version, setVersion] = useState('')
   const update = useUpdates()
 
   useEffect(() => {
-    void window.api.app.mcpCommand().then(setMcpCommand)
+    void window.api.app.mcpCommand('claude').then(setMcpCommand)
+    void window.api.app.mcpCommand('codex').then(setCodexMcpCommand)
     void window.api.app.info().then((info) => setVersion(info.version))
   }, [])
 
@@ -985,6 +987,22 @@ export function SettingsDialog({
                       <span className="text-[11.5px] text-[var(--color-col-done)]">Copied</span>
                     ) : null}
                   </div>
+                </div>
+              </Field>
+              <Field
+                label="Codex MCP server"
+                hint="Run this once, then start a new Codex session to let it query and update the board."
+              >
+                <div className="flex flex-col gap-2">
+                  <pre className="overflow-x-auto rounded-lg border border-edge-strong bg-chrome p-3 font-mono text-[11px] leading-relaxed text-dim">
+                    {codexMcpCommand || 'Building command…'}
+                  </pre>
+                  <Button
+                    disabled={!codexMcpCommand}
+                    onClick={() => void navigator.clipboard.writeText(codexMcpCommand)}
+                  >
+                    Copy command
+                  </Button>
                 </div>
               </Field>
             </div>

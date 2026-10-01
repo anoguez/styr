@@ -255,12 +255,15 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('app:info', () => ({ isPackaged: app.isPackaged, version: app.getVersion() }))
 
-  ipcMain.handle('app:mcpCommand', () => {
+  ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') => {
     const root = app.isPackaged
       ? join(process.resourcesPath, 'app.asar.unpacked')
       : app.getAppPath()
     const entry = join(root, 'out', 'main', 'mcp', 'index.mjs')
-    return providerFor(loadSettings()).mcpInstallCommand(entry)
+    return providerFor({
+      ...loadSettings(),
+      defaultProvider: provider ?? 'claude'
+    }).mcpInstallCommand(entry)
   })
 
   ipcMain.handle('orchestrate:plan', () => summarisePlan())
