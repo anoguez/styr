@@ -123,9 +123,11 @@ async function launchSessionForTask(
   const settings = loadSettings()
   let plan = planLaunch(settings, task, options)
   if (plan.provider === 'codex' && !plan.resumed) {
-    const sessionId = await getCodexAppServer(settings.codexCommand).startThread(plan.cwd)
+    const server = getCodexAppServer(settings.codexCommand)
+    const sessionId = await server.startThread(plan.cwd)
     codexTasks.set(sessionId, task.id)
-    plan = planLaunch(settings, task, { ...options, sessionId })
+    await server.startTurn(sessionId, renderPrompt(settings, task, options.templateId))
+    plan = planLaunch(settings, task, { ...options, sessionId, withPrompt: false })
   }
 
   const patch: TaskPatch = {}

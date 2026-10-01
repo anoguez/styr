@@ -81,6 +81,13 @@ export class CodexAppServer {
     return id
   }
 
+  async startTurn(threadId: string, prompt: string): Promise<void> {
+    await this.request('turn/start', {
+      threadId,
+      input: [{ type: 'text', text: prompt, text_elements: [] }]
+    })
+  }
+
   close(): void {
     this.process?.kill()
     this.process = undefined
