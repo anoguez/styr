@@ -20,9 +20,10 @@ interface Session {
   info: TerminalSessionInfo
   pty: IPty
   backlog: string
+  sequence: number
 }
 
-type DataListener = (id: string, data: string) => void
+type DataListener = (id: string, data: string, sequence: number) => void
 type ExitListener = (id: string, exitCode: number) => void
 
 const BACKLOG_LIMIT = 200_000
@@ -75,12 +76,13 @@ export function createSession(options: SpawnOptions): TerminalSessionInfo {
     ...(options.provider ? { provider: options.provider } : {}),
     ...(options.replay ? { replay: true } : {})
   }
-  const session: Session = { info, pty: child, backlog: '' }
+  const session: Session = { info, pty: child, backlog: '', sequence: 0 }
   sessions.set(id, session)
 
   child.onData((data) => {
     session.backlog = (session.backlog + data).slice(-BACKLOG_LIMIT)
-    for (const listener of dataListeners) listener(id, data)
+    session.sequence += 1
+    for (const listener of dataListeners) listener(id, data, session.sequence)
   })
   child.onExit(({ exitCode }) => {
     if (info.taskId) exitedTaskIds.set(id, info.taskId)
@@ -107,8 +109,9 @@ export function killSession(id: string): void {
   sessions.delete(id)
 }
 
-export function sessionBacklog(id: string): string {
-  return sessions.get(id)?.backlog ?? ''
+export function sessionBacklog(id: string): { data: string; sequence: number } {
+  const session = sessions.get(id)
+  return { data: session?.backlog ?? '', sequence: session?.sequence ?? 0 }
 }
 
 export function sessionTaskId(id: string): string | undefined {

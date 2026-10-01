@@ -99,13 +99,15 @@ const api = {
     previewPrompt: (taskId: string, templateId?: string): Promise<string> =>
       ipcRenderer.invoke('terminal:previewPrompt', taskId, templateId),
     list: (): Promise<TerminalSessionInfo[]> => ipcRenderer.invoke('terminal:list'),
-    backlog: (id: string): Promise<string> => ipcRenderer.invoke('terminal:backlog', id),
+    backlog: (id: string): Promise<{ data: string; sequence: number }> =>
+      ipcRenderer.invoke('terminal:backlog', id),
     write: (id: string, data: string): void => ipcRenderer.send('terminal:write', id, data),
     resize: (id: string, cols: number, rows: number): void =>
       ipcRenderer.send('terminal:resize', id, cols, rows),
     kill: (id: string): Promise<void> => ipcRenderer.invoke('terminal:kill', id),
-    onData: (handler: (payload: { id: string; data: string }) => void): (() => void) =>
-      subscribe('terminal:data', handler as (...args: never[]) => void),
+    onData: (
+      handler: (payload: { id: string; data: string; sequence: number }) => void
+    ): (() => void) => subscribe('terminal:data', handler as (...args: never[]) => void),
     onExit: (handler: (payload: { id: string; exitCode: number }) => void): (() => void) =>
       subscribe('terminal:exit', handler as (...args: never[]) => void)
   }

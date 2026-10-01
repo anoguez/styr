@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import type { ShortcutBindings, ThemeSettings } from '@core/types.js'
 import { terminalTheme } from '../lib/palette.js'
 import { isAppShortcut, multilineSequence } from '../lib/terminalKeys.js'
+import { TerminalOutputSynchronizer } from '../lib/terminalOutput.js'
 
 export function TerminalView({
   sessionId,
@@ -62,13 +63,13 @@ export function TerminalView({
       window.api.terminal.resize(sessionId, terminal.cols, terminal.rows)
     }
 
-    void window.api.terminal.backlog(sessionId).then((backlog) => {
-      if (backlog) terminal.write(backlog)
-      pushSize()
+    const output = new TerminalOutputSynchronizer((data) => terminal.write(data))
+    const offData = window.api.terminal.onData(({ id, ...event }) => {
+      if (id === sessionId) output.writeLive(event)
     })
-
-    const offData = window.api.terminal.onData(({ id, data }) => {
-      if (id === sessionId) terminal.write(data)
+    void window.api.terminal.backlog(sessionId).then((backlog) => {
+      output.writeBacklog(backlog)
+      pushSize()
     })
     const offExit = window.api.terminal.onExit(({ id, exitCode }) => {
       if (id === sessionId)

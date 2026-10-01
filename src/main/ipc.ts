@@ -49,6 +49,7 @@ import {
   writeToSession,
   type SpawnOptions
 } from './terminal/ptyManager.js'
+import { TaskLaunchGate } from './terminal/taskLaunchGate.js'
 
 function broadcast(channel: string, payload?: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
@@ -96,6 +97,7 @@ export function notifyTasksChanged(): void {
  * orchestrator so both advance the board and record the session the same way.
  */
 const codexTasks = new Map<string, string>()
+const taskLaunches = new TaskLaunchGate()
 let appServer: CodexAppServer | undefined
 
 function getCodexAppServer(command: string): CodexAppServer {
@@ -111,6 +113,13 @@ function getCodexAppServer(command: string): CodexAppServer {
 }
 
 async function launchSessionForTask(
+  taskId: string,
+  options: LaunchOptions = {}
+): Promise<TerminalSessionInfo> {
+  return taskLaunches.run(taskId, () => startSessionForTask(taskId, options))
+}
+
+async function startSessionForTask(
   taskId: string,
   options: LaunchOptions = {}
 ): Promise<TerminalSessionInfo> {
