@@ -2,12 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { settingsSchema } from './taskSchema.js'
-import {
-  DEFAULT_SHORTCUTS,
-  DEFAULT_THEME,
-  type PromptTemplate,
-  type Settings
-} from './types.js'
+import { DEFAULT_SHORTCUTS, DEFAULT_THEME, type PromptTemplate, type Settings } from './types.js'
 
 const CONFIG_DIR = process.env.STYR_HOME ?? join(homedir(), '.styr')
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')

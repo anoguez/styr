@@ -42,11 +42,7 @@ export function Column({
   return (
     <section className="flex min-h-0 w-full flex-col">
       <header className="flex items-center gap-2 px-1 pb-2.5">
-        <span
-          aria-hidden
-          className="size-[7px] rounded-full"
-          style={{ backgroundColor: accent }}
-        />
+        <span aria-hidden className="size-[7px] rounded-full" style={{ backgroundColor: accent }} />
         <h2 className="text-[12px] font-semibold tracking-[-0.005em] text-ink">
           {TASK_STATUS_LABELS[status]}
         </h2>
@@ -61,12 +57,13 @@ export function Column({
           isOver ? 'border-dashed border-accent/60 bg-accent/[0.07]' : 'border-edge bg-panel/80'
         }`}
         style={
-          isOver
-            ? undefined
-            : { borderTopColor: `color-mix(in oklab, ${accent} 60%, transparent)` }
+          isOver ? undefined : { borderTopColor: `color-mix(in oklab, ${accent} 60%, transparent)` }
         }
       >
-        <SortableContext items={tasks.map((task) => task.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext
+          items={tasks.map((task) => task.id)}
+          strategy={verticalListSortingStrategy}
+        >
           {tasks.map((task) => (
             <TaskCard
               key={task.id}

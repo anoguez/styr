@@ -1,5 +1,11 @@
 {
-  "include": ["electron.vite.config.ts", "src/main/**/*", "src/preload/**/*", "src/core/**/*", "src/mcp/**/*"],
+  "include": [
+    "electron.vite.config.ts",
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/core/**/*",
+    "src/mcp/**/*"
+  ],
   "compilerOptions": {
     "composite": true,
     "target": "ES2022",

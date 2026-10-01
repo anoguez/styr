@@ -62,7 +62,11 @@ export const inputClass =
  * edge; this one sits inset and uses the theme's text colour. The control stays a real `<select>`,
  * so keyboard handling and the native option menu are unchanged.
  */
-export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>): ReactNode {
+export function Select({
+  className,
+  children,
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement>): ReactNode {
   return (
     <span className="relative block w-full">
       <select {...props} className={`${inputClass} appearance-none pr-9 ${className ?? ''}`}>
@@ -229,7 +233,10 @@ export function FileListInput({
               <span className="truncate text-[12.5px] text-ink" title={file}>
                 {file.split('/').pop()}
               </span>
-              <span className="min-w-0 flex-1 truncate text-right text-[11px] text-faint" title={file}>
+              <span
+                className="min-w-0 flex-1 truncate text-right text-[11px] text-faint"
+                title={file}
+              >
                 {file.replace(/\/[^/]+$/, '')}
               </span>
               <button

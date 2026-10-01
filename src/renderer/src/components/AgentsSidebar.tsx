@@ -144,7 +144,12 @@ export function AgentsSidebar({
             {waiting} waiting
           </span>
         ) : null}
-        <Button variant="subtle" className="ml-auto px-2" onClick={onClose} aria-label="Hide agents">
+        <Button
+          variant="subtle"
+          className="ml-auto px-2"
+          onClick={onClose}
+          aria-label="Hide agents"
+        >
           ✕
         </Button>
       </header>

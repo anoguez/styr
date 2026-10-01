@@ -1,5 +1,13 @@
 {
-  "include": ["src/renderer/src/**/*", "src/preload/*.d.ts", "src/core/types.ts", "src/core/taskSchema.ts", "src/core/prompt.ts", "src/core/agentState.ts", "src/core/shortcuts.ts"],
+  "include": [
+    "src/renderer/src/**/*",
+    "src/preload/*.d.ts",
+    "src/core/types.ts",
+    "src/core/taskSchema.ts",
+    "src/core/prompt.ts",
+    "src/core/agentState.ts",
+    "src/core/shortcuts.ts"
+  ],
   "compilerOptions": {
     "composite": true,
     "target": "ES2022",

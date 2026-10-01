@@ -22,7 +22,9 @@ export function AgentBadge({ agent }: { agent: AgentStatus }): ReactNode {
   return (
     <span
       className={`ml-auto inline-flex min-w-0 items-center gap-1 whitespace-nowrap ${AGENT_TONE[agent.state]}`}
-      title={agent.lastMessage ? `${AGENT_STATE_LABELS[agent.state]} — ${agent.lastMessage}` : undefined}
+      title={
+        agent.lastMessage ? `${AGENT_STATE_LABELS[agent.state]} — ${agent.lastMessage}` : undefined
+      }
     >
       <span
         aria-hidden

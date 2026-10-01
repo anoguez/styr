@@ -8,10 +8,10 @@ files:
   - out/**
   - package.json
 asarUnpack:
-  - "**/node_modules/node-pty/**"
-  - "**/node_modules/better-sqlite3/**"
+  - '**/node_modules/node-pty/**'
+  - '**/node_modules/better-sqlite3/**'
   # The MCP server is launched by plain `node`, which cannot read inside an asar archive.
-  - "out/main/**"
+  - 'out/main/**'
 mac:
   target:
     - target: dmg

@@ -2,17 +2,17 @@
 
 ## Scripts
 
-| Script | What it does |
-| --- | --- |
-| `yarn dev` | Run the app with hot reload — the header shows an amber `DEV` badge |
-| `yarn build` | Typecheck both projects, build `out/`, and fail if renderer code pulls in a Node builtin |
-| `yarn start` | Run the built app |
-| `yarn mcp` | Run the MCP server on stdio (for debugging) |
-| `yarn lint` | ESLint |
-| `yarn format` / `yarn format:check` | Prettier: rewrite, or only report |
-| `yarn package` | Build a signed macOS `.app` and `.dmg` into `dist/`, notarised if the `APPLE_*` variables are set |
-| `yarn package:adhoc` | The same with an ad-hoc signature, for building without a Developer ID |
-| `yarn icon` | Regenerate `resources/icon.icns` from `resources/icon.svg` |
+| Script                              | What it does                                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `yarn dev`                          | Run the app with hot reload — the header shows an amber `DEV` badge                               |
+| `yarn build`                        | Typecheck both projects, build `out/`, and fail if renderer code pulls in a Node builtin          |
+| `yarn start`                        | Run the built app                                                                                 |
+| `yarn mcp`                          | Run the MCP server on stdio (for debugging)                                                       |
+| `yarn lint`                         | ESLint                                                                                            |
+| `yarn format` / `yarn format:check` | Prettier: rewrite, or only report                                                                 |
+| `yarn package`                      | Build a signed macOS `.app` and `.dmg` into `dist/`, notarised if the `APPLE_*` variables are set |
+| `yarn package:adhoc`                | The same with an ad-hoc signature, for building without a Developer ID                            |
+| `yarn icon`                         | Regenerate `resources/icon.icns` from `resources/icon.svg`                                        |
 
 `yarn lint`, `yarn format:check` and `yarn build` are the checks; CI runs them on every pull request,
 and a pre-commit hook runs ESLint and Prettier on staged files plus the typecheck. There is no test
@@ -36,7 +36,7 @@ cp -R "dist/mac-arm64/Styr.app" /Applications/
 
 ## Signing and notarisation
 
-`yarn package` signs with the *Developer ID Application* certificate in your keychain. To notarise a
+`yarn package` signs with the _Developer ID Application_ certificate in your keychain. To notarise a
 local build as well, copy `.env.example` to `.env` and fill in `APPLE_ID`,
 `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`; `yarn package` loads it. Without them
 electron-builder skips notarisation with a warning. If you set `CSC_NAME`, leave out the
@@ -66,13 +66,13 @@ The workflow needs these repository secrets. `scripts/setup-signing-secrets.sh` 
 the certificate from your keychain and sets all five with `gh`, prompting for anything `.env`
 does not have:
 
-| Secret | What it is |
-| --- | --- |
-| `CSC_LINK` | The Developer ID certificate and key as a base64 `.p12` |
-| `CSC_KEY_PASSWORD` | The password protecting that `.p12` |
-| `APPLE_ID` | The Apple ID used to notarise |
-| `APPLE_APP_SPECIFIC_PASSWORD` | An app-specific password for that Apple ID |
-| `APPLE_TEAM_ID` | The developer team id |
+| Secret                        | What it is                                              |
+| ----------------------------- | ------------------------------------------------------- |
+| `CSC_LINK`                    | The Developer ID certificate and key as a base64 `.p12` |
+| `CSC_KEY_PASSWORD`            | The password protecting that `.p12`                     |
+| `APPLE_ID`                    | The Apple ID used to notarise                           |
+| `APPLE_APP_SPECIFIC_PASSWORD` | An app-specific password for that Apple ID              |
+| `APPLE_TEAM_ID`               | The developer team id                                   |
 
 Optionally add `RELEASE_PLEASE_TOKEN`, a fine-grained token with contents and pull-request write
 access. A release PR opened with the default token does not trigger other workflows, so CI would not
@@ -100,4 +100,3 @@ Edit the SVG, re-run it, then `yarn package`. macOS only, and it uses Google Chr
 `externalRef` (`{ provider, id, url }`) is carried through the schema, frontmatter, index and MCP
 payloads but nothing writes it yet — it is the hook for syncing tasks from Zendesk, Jira or another
 MCP source later.
-

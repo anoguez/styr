@@ -11,9 +11,7 @@ function renderActivity(activity: ActivityEntry[]): string {
   const lines = activity.map((entry) => {
     const [first = '', ...rest] = entry.message.split('\n')
     const head =
-      entry.at && entry.author
-        ? `- \`${entry.at}\` **${entry.author}** — ${first}`
-        : `- ${first}`
+      entry.at && entry.author ? `- \`${entry.at}\` **${entry.author}** — ${first}` : `- ${first}`
     return [head, ...rest.map((line) => `  ${line}`)].join('\n')
   })
   return [ACTIVITY_MARKER, '## Activity', '', ...lines, ''].join('\n')
@@ -24,7 +22,11 @@ function parseActivity(block: string): ActivityEntry[] {
   for (const line of block.split('\n')) {
     const match = ENTRY_RE.exec(line)
     if (match) {
-      entries.push({ at: match[1] as string, author: match[2] as string, message: match[3] as string })
+      entries.push({
+        at: match[1] as string,
+        author: match[2] as string,
+        message: match[3] as string
+      })
       continue
     }
     if (line.startsWith('- ')) {
@@ -42,7 +44,12 @@ export function hasFrontmatter(raw: string): boolean {
 }
 
 function normaliseToken(value: unknown): unknown {
-  return typeof value === 'string' ? value.trim().toLowerCase().replace(/[\s-]+/g, '_') : value
+  return typeof value === 'string'
+    ? value
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, '_')
+    : value
 }
 
 function tolerate(data: Record<string, unknown>): Record<string, unknown> {

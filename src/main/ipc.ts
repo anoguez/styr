@@ -24,7 +24,12 @@ import {
   reorderTasks,
   updateTask
 } from '@core/taskStore.js'
-import { taskDraftSchema, taskFilterSchema, taskPatchSchema, settingsSchema } from '@core/taskSchema.js'
+import {
+  taskDraftSchema,
+  taskFilterSchema,
+  taskPatchSchema,
+  settingsSchema
+} from '@core/taskSchema.js'
 import {
   TASK_STATUSES,
   type TaskPatch,
@@ -89,10 +94,7 @@ export function notifyTasksChanged(): void {
  * Starts (or focuses) a Claude session for a task. Shared by the per-task launch and the
  * orchestrator so both advance the board and record the session the same way.
  */
-function launchSessionForTask(
-  taskId: string,
-  options: LaunchOptions = {}
-): TerminalSessionInfo {
+function launchSessionForTask(taskId: string, options: LaunchOptions = {}): TerminalSessionInfo {
   const task = findTask(taskId)
   if (!task) throw new Error(`Task ${taskId} not found`)
 
@@ -140,7 +142,9 @@ function launchSessionForTask(
 
 function buildPlan(): OrchestrationPlan {
   const liveTaskIds = new Set(
-    listSessions().map((session) => session.taskId).filter(Boolean) as string[]
+    listSessions()
+      .map((session) => session.taskId)
+      .filter(Boolean) as string[]
   )
   const agents = new Map(agentStatuses().map((status) => [status.taskId, status.state]))
   return planOrchestration(loadSettings(), queryTasks(), { liveTaskIds, agents })
@@ -161,7 +165,9 @@ function summarisePlan(): OrchestrationSummary {
 }
 
 export function registerIpcHandlers(): void {
-  ipcMain.handle('tasks:list', (_event, filter: unknown) => queryTasks(taskFilterSchema.parse(filter ?? {})))
+  ipcMain.handle('tasks:list', (_event, filter: unknown) =>
+    queryTasks(taskFilterSchema.parse(filter ?? {}))
+  )
   ipcMain.handle('tasks:get', (_event, id: string) => findTask(id))
   ipcMain.handle('tasks:problems', () => brokenTaskFiles())
 

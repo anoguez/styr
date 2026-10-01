@@ -84,7 +84,11 @@ export interface LaunchOptions {
   resume?: string
 }
 
-export function planLaunch(settings: Settings, task: Task, options: LaunchOptions = {}): LaunchPlan {
+export function planLaunch(
+  settings: Settings,
+  task: Task,
+  options: LaunchOptions = {}
+): LaunchPlan {
   const { templateId, homeRoot, withPrompt = false, fresh = false, resume } = options
   const provider = providerFor(settings, task)
   const workspace = workspaceFor(settings, task)
@@ -101,11 +105,21 @@ export function planLaunch(settings: Settings, task: Task, options: LaunchOption
   const wanted = resume ?? existing
   const resumable = Boolean(!fresh && wanted && provider.sessionExists(wanted, homeRoot))
   const sessionId =
-    resumable && wanted ? wanted : fresh ? provider.newSessionId() : (existing ?? provider.newSessionId())
+    resumable && wanted
+      ? wanted
+      : fresh
+        ? provider.newSessionId()
+        : (existing ?? provider.newSessionId())
   const prompt = !resumable || withPrompt ? writePrompt() : undefined
 
   return {
-    command: provider.buildCommand({ settings, taskId: task.id, sessionId, resume: resumable, prompt }),
+    command: provider.buildCommand({
+      settings,
+      taskId: task.id,
+      sessionId,
+      resume: resumable,
+      prompt
+    }),
     cwd: workspace.cwd,
     sessionId,
     resumed: resumable,

@@ -95,8 +95,7 @@ export function planOrchestration(
 
   const optedOut = candidates.filter((task) => !task.orchestrate).length
   const withFlag = candidates.filter((task) => task.orchestrate)
-  const hasWorkingDir = (task: Task): boolean =>
-    Boolean(task.repoPath || settings.defaultRepoPath)
+  const hasWorkingDir = (task: Task): boolean => Boolean(task.repoPath || settings.defaultRepoPath)
   const missingWorkingDir = withFlag.filter((task) => !hasWorkingDir(task)).length
   const runnable = withFlag.filter(hasWorkingDir)
 
