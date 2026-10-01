@@ -63,6 +63,8 @@ function boardProtocol(task: Task): string {
     `- \`status:\` is one of: ${TASK_STATUSES.join(', ')}.`,
     '- Set `status: in_progress` as soon as you start working on it, writing its spec included.',
     '- Set `status: in_review` once the work is ready for me to look at.',
+    '- Set `status: done` only when the work has landed on the base branch (or I confirm it). Work',
+    '  that is merely approved or committed on a branch stays `in_review`.',
     '- If you open a pull or merge request (any host), record its URL as `prUrl:` in the frontmatter so the card links to it.',
     '- Set `readiness: ready` once the task is specified well enough to be worked on.',
     '- Append progress notes as `- ` bullets under `## Activity` at the end of the file.',

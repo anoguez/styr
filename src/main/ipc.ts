@@ -24,6 +24,7 @@ import {
   reorderTasks,
   updateTask
 } from '@core/taskStore.js'
+import { settleLandedTasks } from './landing.js'
 import {
   taskDraftSchema,
   taskFilterSchema,
@@ -116,6 +117,7 @@ export function notifyAgentsChanged(): void {
 
 export function notifyTasksChanged(): void {
   syncIndex()
+  if (settleLandedTasks()) syncIndex()
   broadcast('tasks:changed')
 }
 

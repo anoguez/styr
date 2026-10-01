@@ -163,5 +163,8 @@ export const settingsSchema = z.object({
   shortcuts: shortcutsSchema,
   updates: z
     .object({ checkAutomatically: z.boolean().default(true) })
-    .default({ checkAutomatically: true })
+    .default({ checkAutomatically: true }),
+  taskDefaults: z
+    .object({ orchestrate: z.boolean().default(true), useWorktree: z.boolean().default(false) })
+    .default({ orchestrate: true, useWorktree: false })
 })

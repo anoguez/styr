@@ -254,6 +254,15 @@ export interface Settings {
   theme: ThemeSettings
   shortcuts: ShortcutBindings
   updates: UpdateSettings
+  taskDefaults: TaskDefaults
+}
+
+/** Starting values for the new-task form. Existing tasks keep whatever they saved. */
+export interface TaskDefaults {
+  /** New tasks start with "Let Orchestrate start this task" checked. */
+  orchestrate: boolean
+  /** New tasks start with "Run in its own git worktree" checked. */
+  useWorktree: boolean
 }
 
 export interface UpdateSettings {
