@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/anoguez/styr/compare/v0.3.0...v0.4.0) (2026-10-01)
+
+
+### Features
+
+* add the Styr wordmark to the title bar ([0d47df0](https://github.com/anoguez/styr/commit/0d47df021ef95bf9bbaa7cb69969eb7c05be0818))
+
 ## [0.3.0](https://github.com/anoguez/styr/compare/v0.2.0...v0.3.0) (2026-10-01)
 
 
