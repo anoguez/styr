@@ -189,7 +189,7 @@ export function NewWorkspaceDialog({
             onChange={(event) => setName(event.target.value)}
           />
         </Field>
-        {error ? <p className="mt-3 text-[12px] text-red-300">{error}</p> : null}
+        {error ? <p className="mt-3 text-[12px] text-danger">{error}</p> : null}
       </form>
     </Modal>
   )
