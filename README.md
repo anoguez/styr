@@ -74,9 +74,10 @@ yarn dev
 
 Then:
 
-1. **Settings → Storage**: pick a folder for the app's own data (the default is `~/Styr`) and
-   a default working directory for agents, usually a folder holding your repos. Use the dropdown
-   beside the title to create **workspaces** — separate boards with their own tasks and agents.
+1. **Settings → Storage**: pick a folder for the app's own data (the default is `~/Styr`). In
+   **Settings → Preferences**, set a default working directory for agents, usually a folder holding
+   your repos. Use the dropdown beside the title to create **workspaces** — separate boards with
+   their own tasks, agents and settings.
 2. **New task** (`⌘N`): give it a title, a description and the repository it applies to.
 3. Hover the card and press **▶ Agent** (pick the provider in the task dialog). The task moves to In Progress and a terminal tab opens
    with the agent already working.

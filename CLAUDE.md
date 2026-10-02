@@ -31,8 +31,8 @@ disk. Ids never change after creation; rename edits the name only. `Settings.act
 a local preference, and `loadSettings` falls back to Default when it dangles.
 
 `workspaceDir(settings, id?)` in `config.ts` is the only place these paths are built. To act on a
-background workspace use `inWorkspace(settings, id)` — a settings copy that resolves paths there —
-rather than a new parameter on every function. `pinWorkspace` is a process-wide override used only
+background workspace use `pathsInWorkspace(settings, id)` — a settings copy that resolves paths
+there — rather than a new parameter on every function. `pinWorkspace` is a process-wide override used only
 by the MCP server (from `STYR_WORKSPACE_ID`, set on every launched agent) and by `inOtherWorkspace`
 in `ipc.ts`, which wraps a _synchronous_ write; never leave it set across an `await`. The main
 process must not read `STYR_WORKSPACE_ID` from its own environment: `yarn dev` inside an agent
@@ -49,6 +49,76 @@ watchers, re-sync. It is synchronous so quick switches apply in order. `settings
 undo a workspace created or deleted since. The agents watcher covers every workspace's `agents/`
 because the tray and notifications span all of them (`readBackgroundAgents`); the tasks watcher,
 index, landing and Orchestrate cover the active one only.
+
+### Workspace settings
+
+Every setting is in exactly one of `GLOBAL_SETTING_KEYS` (`storageDir`, `activeWorkspaceId`,
+`updates`, `shortcuts` — kept in `~/.styr/config.json`) or `WORKSPACE_SETTING_KEYS` (everything
+else — kept in `<workspaceDir>/settings.json`), both in `types.ts`. A test holds `settingsSchema`
+to the two lists, so a new key needs a deliberate choice. The file is in the workspace folder, not
+`.styr/`, because `.styr/` is a cache that must be safe to delete. `Settings` stays the merged
+shape, so consumers never see the split. The workspace keys include machine-specific paths (shell,
+CLI commands, `defaultRepoPath`) — the user chose that — so a synced or git-tracked storage folder
+carries them. The watchers ignore `settings.json`; an external edit shows on the next load.
+
+`loadSettings(id?)` lays the workspace's own file over the config, then the global keys again (no
+file can move the storage folder). The workspace is `id`, else the pinned one, else the preference
+— so the MCP server and `inOtherWorkspace` get that workspace's templates and providers with no
+other change. A workspace without a file runs on the shipped settings; there is no inheritance
+between workspaces. `activeWorkspaceId` on the result is the workspace resolved, not necessarily
+the preference. `pathsInWorkspace` is **paths only**: it keeps the caller's workspace settings, so
+use `loadSettings(id)` for anything behavioural in another workspace.
+
+`core/settingsStore.ts` reads, layers, caches and writes settings; `config.ts` keeps the shipped
+defaults and templates, `migrateConfig`, the pin and the path helpers (`tasksDir`/`indexDbPath` sit
+in the store because they default to `loadSettings()`). The store imports `config.ts`, never the
+reverse, and `settingsMigration.ts` stays apart because it needs `workspaces.ts`, which imports the
+store.
+
+`loadSettings` is hot — every agent hook event, every task write, every MCP tool call — so the
+store caches the parsed config and each `(storageDir, workspace)` layer, keyed on a
+`statSync({ bigint: true })` stamp of each file (inode, size, mtime in ns: an atomic save changes
+the inode). A hit reads and parses nothing; `resolveWorkspaceId` still runs on every call, so the
+pin and a deleted workspace folder need no key of their own. `writeJsonAtomically` clears the cache,
+so a write is visible to the next read whatever the mtime resolution. Cached values are deep-frozen
+and shared: spread before changing anything.
+
+A file that cannot be parsed or fails validation is reported by `isSettingsFileBroken` and copied to
+`settings.json.bak` before a save overwrites it — the settings form of the rule for broken task
+files. Unparseable JSON is left out of that workspace alone; a file that fails validation keeps the
+keys that validate on their own against the config (`salvagedSettings`), so one bad value does not
+cost the rest.
+
+Every `settings.json` this app writes carries `version: 1` (`WORKSPACE_SETTINGS_VERSION`); a file
+without one is version 1. Readers drop it with the other non-workspace keys.
+
+Writes: `saveGlobalSettings(GlobalSettings)` keeps any other key already in the config;
+`saveWorkspaceSettings` writes one workspace; `persistSettings(SettingsChange)` is the dialog's
+Save, ordered so a failure leaves the app on the folder it was using — target looked up in the
+folder being saved (refused before any write if missing), a new folder gets a copy of Default's
+file, then the workspace file, `config.json` last. `settings:save` zod-parses the change and
+re-points the index and watchers in a `finally`. `workspaces:create` seeds the new workspace with a
+copy of the active one's settings; `createWorkspace` requires a seed.
+
+`migrateLegacySettings` (`core/settingsMigration.ts`) runs once at main-process startup: a config
+from before the split gives its workspace values to every workspace without a file, and loses them
+only after every file is written. Only the main process runs it — it is the only writer — and until
+it completes `loadSettings` still layers the legacy values in. Any future step added to
+`migrateConfig` in `config.ts` must cover the workspace files too, keyed on their `version`; it
+currently runs on `config.json` only.
+Downgrading after the migration shows the shipped templates and routing in the older build.
+
+`SettingsDialog` tags each `SECTIONS` entry with `scope`. `useWorkspaceTarget` owns which workspace
+it edits: the dropdown swaps only the workspace keys of the draft (app-level edits survive), waits
+for Discard or Stay before throwing away unsaved changes, and hands over to the active workspace
+with a notice when the edited one is deleted. The theme is previewed by one effect, only while the
+active workspace's theme differs from its saved one. `useWorkspaces` is called once, in `App`; the
+dialog, `useWorkspaceTarget` and `WorkspacesPane` are handed its result, so opening Settings makes
+no extra call. `scopeNoteFor` is the one place a section says where it is stored.
+
+The MCP install commands are built from the _active_ workspace's CLI command, because the server is
+registered once per machine; the Integrations hints say so rather than pretending it is per
+workspace.
 
 `worktreeKey(workspaceId, taskId)` (in `types.ts`, because `prompt.ts` needs it) names a task's
 worktree and branch: bare id for Default so old worktrees still resolve, `<workspace>-<id>` for the
@@ -216,7 +286,8 @@ background image needs a hardcoded colour, which breaks theming.
 macOS colour panel, which the page cannot dismiss. Tailwind v4 compiles
 `bg-accent` to `var(--color-accent)`, so overriding the variable at runtime repaints everything that
 uses it — which is why no component should hardcode a colour literal. `Chip`'s warn tone was such a
-literal and is now `var(--color-col-review)`.
+literal and is now `var(--color-col-review)`. Error text is `text-danger` (`--color-danger` in
+`index.css`), not a Tailwind red with its own opacity in each file.
 
 `renderer/src/lib/palette.ts` derives the surface ramp from the base colour. The lightness ladder is
 fixed and measured from the original hand-picked palette — the base only supplies hue, saturation
