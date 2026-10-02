@@ -50,7 +50,8 @@ export default function App(): ReactNode {
   const { board, problems, loading } = useTasks(query)
   const { settings, save } = useSettings()
   const agents = useAgents()
-  const { overview, names: workspaceNames, apply: applyWorkspaces } = useWorkspaces()
+  const workspaces = useWorkspaces()
+  const { overview, names: workspaceNames, apply: applyWorkspaces } = workspaces
   const activeWorkspaceId = settings?.activeWorkspaceId ?? overview.activeId
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [creatingWorkspace, setCreatingWorkspace] = useState(false)
@@ -700,6 +701,7 @@ export default function App(): ReactNode {
       {showSettings ? (
         <SettingsDialog
           settings={settings}
+          workspaces={workspaces}
           initialSection={settingsSection}
           onSave={save}
           onPreviewTheme={setPreviewTheme}

@@ -2,14 +2,16 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { extname, join } from 'node:path'
 import { agentKey, isAgentArchived, type AgentStatus } from './agentState.js'
 import { readAllAgentStatuses } from './agentStore.js'
-import { inWorkspace, workspaceDir } from './config.js'
+import { pathsInWorkspace, workspaceDir } from './config.js'
+import { saveWorkspaceSettings } from './settingsStore.js'
 import { parseTaskMarkdown } from './markdown.js'
 import {
   DEFAULT_WORKSPACE_ID,
   DEFAULT_WORKSPACE_NAME,
   type Settings,
   type TaskStatus,
-  type WorkspaceInfo
+  type WorkspaceInfo,
+  type WorkspaceSettings
 } from './types.js'
 
 const MARKER = 'workspace.json'
@@ -89,11 +91,20 @@ function uniqueId(settings: Settings, name: string): string {
   return id
 }
 
-export function createWorkspace(settings: Settings, name: string): WorkspaceInfo {
+/**
+ * `seed` becomes the new workspace's own settings file, so later changes to the workspace it was
+ * copied from never leak into it.
+ */
+export function createWorkspace(
+  settings: Settings,
+  name: string,
+  seed: WorkspaceSettings
+): WorkspaceInfo {
   const validName = validateWorkspaceName(settings, name)
   const id = uniqueId(settings, validName)
   mkdirSync(join(workspaceDir(settings, id), 'tasks'), { recursive: true })
   writeMarker(settings, id, validName)
+  saveWorkspaceSettings({ ...settings, ...seed }, id)
   return { id, name: validName }
 }
 
@@ -159,7 +170,7 @@ export function readBackgroundAgents(settings: Settings, activeId: string): Back
   const titles = new Map<string, string>()
   for (const workspace of listWorkspaces(settings)) {
     if (workspace.id === activeId) continue
-    const scoped = inWorkspace(settings, workspace.id)
+    const scoped = pathsInWorkspace(settings, workspace.id)
     const found = readAllAgentStatuses(scoped)
     if (found.length === 0) continue
     const summaries = readTaskSummaries(settings, workspace.id)

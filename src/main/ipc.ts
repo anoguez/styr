@@ -1,13 +1,13 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron'
+import { pathsInWorkspace, pinWorkspace, workspaceDir } from '@core/config.js'
 import {
-  inWorkspace,
+  isSettingsFileBroken,
   loadSettings,
-  saveSettings,
-  tasksDir,
-  pinWorkspace,
-  workspaceDir
-} from '@core/config.js'
+  persistSettings,
+  saveGlobalSettings,
+  settingsFilePath
+} from '@core/settingsStore.js'
 import { readAllAgentStatuses, recordAgentEvent } from '@core/agentStore.js'
 import { agentKey, isAgentArchived } from '@core/agentState.js'
 import type { AgentStatus } from '@core/agentState.js'
@@ -31,7 +31,10 @@ import {
 import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
 import {
   DEFAULT_WORKSPACE_ID,
+  globalSettingsFor,
+  workspaceSettingsFor,
   worktreeKey,
+  type BrokenSettingsFile,
   type OrchestrationSummary,
   type WorkspaceOverview
 } from '@core/types.js'
@@ -49,7 +52,8 @@ import {
   taskDraftSchema,
   taskFilterSchema,
   taskPatchSchema,
-  settingsSchema
+  settingsChangeSchema,
+  workspaceIdSchema
 } from '@core/taskSchema.js'
 import {
   TASK_STATUSES,
@@ -130,7 +134,7 @@ function inOtherWorkspace<T>(workspaceId: string, work: () => T): T {
 const codexMonitor = new CodexMonitor((update) => {
   const { workspaceId, taskId } = splitMonitorKey(update.taskId)
   const settings = loadSettings()
-  recordAgentEvent(inWorkspace(settings, workspaceId), taskId, update.event)
+  recordAgentEvent(pathsInWorkspace(settings, workspaceId), taskId, update.event)
   if (update.boundSessionId) {
     const key = monitorKey(workspaceId, taskId)
     if (workspaceId === settings.activeWorkspaceId) {
@@ -168,7 +172,7 @@ export function markAgentExited(
   workspaceId = loadSettings().activeWorkspaceId
 ): void {
   codexMonitor.release(monitorKey(workspaceId, taskId))
-  recordAgentEvent(inWorkspace(loadSettings(), workspaceId), taskId, 'TerminalExit')
+  recordAgentEvent(pathsInWorkspace(loadSettings(), workspaceId), taskId, 'TerminalExit')
   notifyAgentsChanged()
 }
 
@@ -378,6 +382,27 @@ function repoint(): void {
   notifyAgentsChanged()
 }
 
+/**
+ * Brings the index, watchers and renderer in line with whatever reached the disk — after a save
+ * that failed partway too, so the app never reads from one storage folder while writing another.
+ */
+function refreshAfterSettingsSave(folderBefore: string, savedWorkspaceId: string): void {
+  const saved = loadSettings()
+  if (workspaceDir(saved) !== folderBefore) repoint()
+  else if (savedWorkspaceId === saved.activeWorkspaceId) notifyTasksChanged()
+  broadcast('settings:changed', saved)
+}
+
+function brokenSettingsFiles(): BrokenSettingsFile[] {
+  const settings = loadSettings()
+  return listWorkspaces(settings)
+    .filter((workspace) => isSettingsFileBroken(settings, workspace.id))
+    .map((workspace) => ({
+      workspaceId: workspace.id,
+      path: settingsFilePath(settings, workspace.id)
+    }))
+}
+
 function workspaceOverview(): WorkspaceOverview {
   const settings = loadSettings()
   const sessions = listSessions()
@@ -401,7 +426,7 @@ export function switchWorkspace(id: string): void {
     throw new Error('That workspace no longer exists.')
   }
   if (settings.activeWorkspaceId === id) return
-  saveSettings({ ...settings, activeWorkspaceId: id })
+  saveGlobalSettings({ ...globalSettingsFor(settings), activeWorkspaceId: id })
   repoint()
   broadcast('settings:changed', loadSettings())
   broadcast('workspaces:changed')
@@ -514,24 +539,20 @@ export function registerIpcHandlers(): void {
     )
   })
 
-  ipcMain.handle('settings:get', () => loadSettings())
-  ipcMain.handle('settings:save', (_event, settings: unknown) => {
-    const before = workspaceDir(loadSettings())
-    // Which workspace is active is changed only by switching: a dialog opened earlier would
-    // otherwise save its stale choice over a workspace created or deleted since.
-    const current = loadSettings()
-    const saved = saveSettings({
-      ...settingsSchema.parse(settings),
-      activeWorkspaceId: current.activeWorkspaceId
-    })
-    tasksDir(saved)
-    // A new storage folder (or workspace) means a different index and different folders to watch;
-    // the index and watchers are opened once, so they have to be pointed at it again.
-    if (workspaceDir(loadSettings()) !== before) repoint()
-    else notifyTasksChanged()
-    broadcast('settings:changed', loadSettings())
+  ipcMain.handle('settings:get', (_event, workspaceId: unknown) =>
+    loadSettings(workspaceIdSchema.optional().parse(workspaceId))
+  )
+  ipcMain.handle('settings:save', (_event, change: unknown) => {
+    const parsed = settingsChangeSchema.parse(change)
+    const folderBefore = workspaceDir(loadSettings())
+    try {
+      persistSettings(parsed)
+    } finally {
+      refreshAfterSettingsSave(folderBefore, parsed.workspaceId)
+    }
     return loadSettings()
   })
+  ipcMain.handle('settings:brokenFiles', () => brokenSettingsFiles())
 
   ipcMain.handle('workspaces:list', () => workspaceOverview())
   ipcMain.handle('workspaces:switch', (_event, id: string) => {
@@ -539,7 +560,8 @@ export function registerIpcHandlers(): void {
     return workspaceOverview()
   })
   ipcMain.handle('workspaces:create', (_event, name: string) => {
-    const created = createWorkspace(loadSettings(), String(name))
+    const settings = loadSettings()
+    const created = createWorkspace(settings, String(name), workspaceSettingsFor(settings))
     switchWorkspace(created.id)
     return workspaceOverview()
   })

@@ -1,5 +1,6 @@
 import chokidar, { type FSWatcher } from 'chokidar'
-import { inWorkspace, loadSettings, tasksDir } from '@core/config.js'
+import { pathsInWorkspace } from '@core/config.js'
+import { loadSettings, tasksDir } from '@core/settingsStore.js'
 import { agentsDir } from '@core/agentStore.js'
 import { listWorkspaces } from '@core/workspaces.js'
 
@@ -56,7 +57,7 @@ export function startWatching(onChange: () => void): void {
  */
 export function startWatchingAgents(onChange: () => void): void {
   const settings = loadSettings()
-  const dirs = listWorkspaces(settings).map(({ id }) => agentsDir(inWorkspace(settings, id)))
+  const dirs = listWorkspaces(settings).map(({ id }) => agentsDir(pathsInWorkspace(settings, id)))
   start(agents, dirs, 60, onChange)
 }
 

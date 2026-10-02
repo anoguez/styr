@@ -2,8 +2,10 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AgentStatus } from '../core/agentState.js'
 import type {
   AppInfo,
+  BrokenSettingsFile,
   OrchestrationSummary,
   Settings,
+  SettingsChange,
   Task,
   TaskDraft,
   TaskFilter,
@@ -87,8 +89,11 @@ const api = {
     onChanged: (handler: () => void): (() => void) => subscribe('workspaces:changed', handler)
   },
   settings: {
-    get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),
-    save: (settings: Settings): Promise<Settings> => ipcRenderer.invoke('settings:save', settings),
+    get: (workspaceId?: string): Promise<Settings> =>
+      ipcRenderer.invoke('settings:get', workspaceId),
+    save: (change: SettingsChange): Promise<Settings> =>
+      ipcRenderer.invoke('settings:save', change),
+    brokenFiles: (): Promise<BrokenSettingsFile[]> => ipcRenderer.invoke('settings:brokenFiles'),
     pickDirectory: (current?: string): Promise<string | null> =>
       ipcRenderer.invoke('settings:pickDirectory', current),
     pickFiles: (startIn?: string): Promise<string[]> =>

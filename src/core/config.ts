@@ -1,17 +1,16 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { settingsSchema } from './taskSchema.js'
 import {
   DEFAULT_SHORTCUTS,
   DEFAULT_THEME,
   DEFAULT_WORKSPACE_ID,
+  workspaceSettingsFor,
   type PromptTemplate,
-  type Settings
+  type Settings,
+  type WorkspaceSettings
 } from './types.js'
 
 const CONFIG_DIR = process.env.STYR_HOME ?? join(homedir(), '.styr')
-const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 
 const SPEC_TEMPLATE = [
   'Task {{id}} — "{{title}}" — is marked as needing a spec. Your job is to specify it, not to build it.',
@@ -102,7 +101,8 @@ const FOLLOWUP_TEMPLATE = [
   '- Do not reopen this task unless something is genuinely broken.'
 ].join('\n')
 
-function defaults(): Settings {
+/** Every setting as shipped, before any file is read. */
+export function shippedSettings(): Settings {
   return {
     storageDir: join(homedir(), 'Styr'),
     activeWorkspaceId: DEFAULT_WORKSPACE_ID,
@@ -142,8 +142,13 @@ export function configDir(): string {
   return CONFIG_DIR
 }
 
+/** A workspace's settings as shipped, for seeding one that has nothing else to start from. */
+export function shippedWorkspaceSettings(): WorkspaceSettings {
+  return workspaceSettingsFor(shippedSettings())
+}
+
 /** `workspaceDir` became `storageDir` once "workspace" came to mean an isolated board. */
-function renameStorageDir(raw: Record<string, unknown>): Record<string, unknown> {
+export function renameStorageDir(raw: Record<string, unknown>): Record<string, unknown> {
   if (typeof raw.workspaceDir !== 'string') return raw
   const { workspaceDir, ...rest } = raw
   return rest.storageDir === undefined ? { ...rest, storageDir: workspaceDir } : rest
@@ -155,10 +160,10 @@ function renameStorageDir(raw: Record<string, unknown>): Record<string, unknown>
  * single template for every column. Adds only the shipped templates the user does not already
  * have — their own definitions always win on an id collision.
  */
-function migrate(input: Record<string, unknown>): Record<string, unknown> {
+export function migrateConfig(input: Record<string, unknown>): Record<string, unknown> {
   const raw = renameStorageDir(input)
   if (raw.promptRouting) return raw
-  const base = defaults()
+  const base = shippedSettings()
   const existing = Array.isArray(raw.promptTemplates)
     ? (raw.promptTemplates as PromptTemplate[])
     : base.promptTemplates
@@ -185,6 +190,10 @@ export function pinWorkspace(id: string | undefined): void {
   workspaceOverride = id || undefined
 }
 
+export function pinnedWorkspaceId(): string | undefined {
+  return workspaceOverride
+}
+
 const WORKSPACE_ID = /^[a-z0-9][a-z0-9-]*$/
 
 export function isWorkspaceId(id: string): boolean {
@@ -198,49 +207,11 @@ export function workspaceDir(settings: Settings, id: string = settings.activeWor
     : join(settings.storageDir, 'workspaces', id)
 }
 
-/** A copy of the settings that resolves every path inside `id`, for work in a background workspace. */
-export function inWorkspace(settings: Settings, id: string): Settings {
-  return { ...settings, activeWorkspaceId: id }
-}
-
 /**
- * The preference as it applies now: a dangling one (the folder was removed, the config was hand
- * edited) falls back to Default rather than pointing the board at nothing.
+ * A copy of the settings that resolves every path inside `id`, for work in a background workspace.
+ * Paths only: the copy still carries the caller's workspace settings. Anything that acts on that
+ * workspace's behaviour (templates, providers, routing) must use `loadSettings(id)` instead.
  */
-function resolveActive(settings: Settings): Settings {
-  const wanted = workspaceOverride ?? settings.activeWorkspaceId
-  const usable =
-    isWorkspaceId(wanted) &&
-    (wanted === DEFAULT_WORKSPACE_ID || existsSync(workspaceDir(settings, wanted)))
-  return { ...settings, activeWorkspaceId: usable ? wanted : DEFAULT_WORKSPACE_ID }
-}
-
-export function loadSettings(): Settings {
-  if (!existsSync(CONFIG_FILE)) return resolveActive(defaults())
-  try {
-    const raw = JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) as Record<string, unknown>
-    const parsed = settingsSchema.safeParse({ ...defaults(), ...migrate(raw) })
-    return resolveActive(parsed.success ? parsed.data : defaults())
-  } catch {
-    return resolveActive(defaults())
-  }
-}
-
-export function saveSettings(settings: Settings): Settings {
-  const parsed = settingsSchema.parse(settings)
-  mkdirSync(CONFIG_DIR, { recursive: true })
-  writeFileSync(CONFIG_FILE, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8')
-  return parsed
-}
-
-export function tasksDir(settings: Settings = loadSettings()): string {
-  const dir = join(workspaceDir(settings), 'tasks')
-  mkdirSync(dir, { recursive: true })
-  return dir
-}
-
-export function indexDbPath(settings: Settings = loadSettings()): string {
-  const dir = join(workspaceDir(settings), '.styr')
-  mkdirSync(dir, { recursive: true })
-  return join(dir, 'index.db')
+export function pathsInWorkspace(settings: Settings, id: string): Settings {
+  return { ...settings, activeWorkspaceId: id }
 }

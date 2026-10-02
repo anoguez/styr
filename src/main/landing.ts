@@ -1,5 +1,5 @@
 import { addNote, updateTask } from '@core/taskStore.js'
-import { loadSettings } from '@core/config.js'
+import { loadSettings } from '@core/settingsStore.js'
 import { worktreeKey, type Task } from '@core/types.js'
 import { branchLanding, cleanupLandedTask } from '@core/worktree.js'
 import { queryTasks } from './taskIndex.js'

@@ -11,7 +11,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { migrateProviderFields } from './migrateTask.js'
 import { jsonTaskSchema } from './taskSchema.js'
 import { hasFrontmatter, parseTaskMarkdown, serialiseTask } from './markdown.js'
-import { tasksDir } from './config.js'
+import { tasksDir } from './settingsStore.js'
 import type { ActivityEntry, Task, TaskDraft, TaskFilter, TaskPatch, TaskStatus } from './types.js'
 
 const TASK_EXTENSIONS = new Set(['.md', '.markdown', '.json'])
