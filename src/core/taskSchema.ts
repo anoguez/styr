@@ -6,7 +6,8 @@ import {
   SHORTCUT_COMMANDS,
   TASK_PRIORITIES,
   TASK_READINESS,
-  TASK_STATUSES
+  TASK_STATUSES,
+  type GlobalSettingKey
 } from './types.js'
 
 export const taskStatusSchema = z.enum(TASK_STATUSES)
@@ -168,4 +169,22 @@ export const settingsSchema = z.object({
   taskDefaults: z
     .object({ orchestrate: z.boolean().default(true), useWorktree: z.boolean().default(false) })
     .default({ orchestrate: true, useWorktree: false })
+})
+
+const GLOBAL_KEY_MASK = {
+  storageDir: true,
+  activeWorkspaceId: true,
+  updates: true,
+  shortcuts: true
+} as const satisfies Record<GlobalSettingKey, true>
+
+export const globalSettingsSchema = settingsSchema.pick(GLOBAL_KEY_MASK)
+export const workspaceSettingsSchema = settingsSchema.omit(GLOBAL_KEY_MASK)
+
+export const workspaceIdSchema = z.string().min(1)
+
+export const settingsChangeSchema = z.object({
+  workspaceId: workspaceIdSchema,
+  workspace: workspaceSettingsSchema,
+  global: globalSettingsSchema
 })

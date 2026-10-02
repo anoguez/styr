@@ -1,6 +1,6 @@
 import { statSync } from 'node:fs'
 import Database from 'better-sqlite3'
-import { indexDbPath, tasksDir } from '@core/config.js'
+import { indexDbPath, tasksDir } from '@core/settingsStore.js'
 import { clearBrokenFiles, readTaskAtPath, taskFilePaths } from '@core/taskStore.js'
 import type { Task, TaskFilter, TaskStatus } from '@core/types.js'
 

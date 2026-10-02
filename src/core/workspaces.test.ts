@@ -1,16 +1,17 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { shippedWorkspaceSettings } from './config.js'
+import { importSettingsModules, writeTestConfig } from './settingsFixture.js'
 import { worktreeKey } from './types.js'
 
 let home: string
 
-/** config.ts reads STYR_HOME once at import, so each test gets a fresh module over a fresh home. */
+const SEED = shippedWorkspaceSettings()
+
 async function modules() {
-  vi.resetModules()
-  process.env.STYR_HOME = join(home, 'config')
-  const config = await import('./config.js')
+  const config = await importSettingsModules(home)
   const workspaces = await import('./workspaces.js')
   const agentStore = await import('./agentStore.js')
   return { config, workspaces, agentStore }
@@ -69,8 +70,8 @@ describe('workspace paths', () => {
   it('pins a process to one workspace, as the MCP server does for its agent', async () => {
     const { config, workspaces } = await modules()
     const storage = join(home, 'Styr')
-    const created = workspaces.createWorkspace(settingsFor(storage), 'Client A')
-    config.saveSettings({ ...config.loadSettings(), storageDir: storage })
+    writeTestConfig(home, { storageDir: storage })
+    const created = workspaces.createWorkspace(settingsFor(storage), 'Client A', SEED)
     expect(config.loadSettings().activeWorkspaceId).toBe('default')
     config.pinWorkspace(created.id)
     expect(config.loadSettings().activeWorkspaceId).toBe(created.id)
@@ -83,8 +84,8 @@ describe('workspaces', () => {
   it('lists Default first, then the rest by name, reading names from workspace.json', async () => {
     const { workspaces } = await modules()
     const settings = settingsFor(join(home, 'Styr'))
-    workspaces.createWorkspace(settings, 'Zeta')
-    workspaces.createWorkspace(settings, 'Alpha')
+    workspaces.createWorkspace(settings, 'Zeta', SEED)
+    workspaces.createWorkspace(settings, 'Alpha', SEED)
     expect(workspaces.listWorkspaces(settings).map((w) => w.name)).toEqual([
       'Default',
       'Alpha',
@@ -95,7 +96,7 @@ describe('workspaces', () => {
   it('creates a folder with its own tasks directory', async () => {
     const { workspaces } = await modules()
     const storage = join(home, 'Styr')
-    const created = workspaces.createWorkspace(settingsFor(storage), 'Client A')
+    const created = workspaces.createWorkspace(settingsFor(storage), 'Client A', SEED)
     expect(created).toEqual({ id: 'client-a', name: 'Client A' })
     expect(existsSync(join(storage, 'workspaces', 'client-a', 'tasks'))).toBe(true)
   })
@@ -103,17 +104,19 @@ describe('workspaces', () => {
   it('rejects empty and duplicate names without regard to case, Default included', async () => {
     const { workspaces } = await modules()
     const settings = settingsFor(join(home, 'Styr'))
-    workspaces.createWorkspace(settings, 'Client A')
-    expect(() => workspaces.createWorkspace(settings, '   ')).toThrow('Give the workspace a name')
-    expect(() => workspaces.createWorkspace(settings, 'client a')).toThrow('already exists')
-    expect(() => workspaces.createWorkspace(settings, 'default')).toThrow('already exists')
+    workspaces.createWorkspace(settings, 'Client A', SEED)
+    expect(() => workspaces.createWorkspace(settings, '   ', SEED)).toThrow(
+      'Give the workspace a name'
+    )
+    expect(() => workspaces.createWorkspace(settings, 'client a', SEED)).toThrow('already exists')
+    expect(() => workspaces.createWorkspace(settings, 'default', SEED)).toThrow('already exists')
   })
 
   it('gives colliding slugs distinct ids and keeps both names', async () => {
     const { workspaces } = await modules()
     const settings = settingsFor(join(home, 'Styr'))
-    const first = workspaces.createWorkspace(settings, 'A B')
-    const second = workspaces.createWorkspace(settings, 'a-b')
+    const first = workspaces.createWorkspace(settings, 'A B', SEED)
+    const second = workspaces.createWorkspace(settings, 'a-b', SEED)
     expect(second.id).not.toBe(first.id)
     expect(workspaces.listWorkspaces(settings).map((w) => w.name)).toContain('a-b')
   })
@@ -121,7 +124,7 @@ describe('workspaces', () => {
   it('renames by name only and refuses to rename Default', async () => {
     const { workspaces } = await modules()
     const settings = settingsFor(join(home, 'Styr'))
-    const created = workspaces.createWorkspace(settings, 'Client A')
+    const created = workspaces.createWorkspace(settings, 'Client A', SEED)
     workspaces.renameWorkspace(settings, created.id, 'Client B')
     expect(workspaces.listWorkspaces(settings)).toContainEqual({ id: 'client-a', name: 'Client B' })
     expect(() => workspaces.renameWorkspace(settings, 'default', 'Other')).toThrow('Default')
@@ -141,10 +144,16 @@ describe('workspaces', () => {
     const { workspaces, agentStore, config } = await modules()
     const storage = join(home, 'Styr')
     const settings = settingsFor(storage)
-    const other = workspaces.createWorkspace(settings, 'Client A')
-    agentStore.recordAgentEvent(config.inWorkspace(settings, other.id), 'TASK-0001', 'Notification')
+    const other = workspaces.createWorkspace(settings, 'Client A', SEED)
+    agentStore.recordAgentEvent(
+      config.pathsInWorkspace(settings, other.id),
+      'TASK-0001',
+      'Notification'
+    )
     expect(agentStore.readAllAgentStatuses(settings)).toEqual([])
-    expect(agentStore.readAllAgentStatuses(config.inWorkspace(settings, other.id))).toHaveLength(1)
+    expect(
+      agentStore.readAllAgentStatuses(config.pathsInWorkspace(settings, other.id))
+    ).toHaveLength(1)
   })
 })
 
@@ -153,8 +162,8 @@ describe('background agents', () => {
     const { workspaces, agentStore, config } = await modules()
     const storage = join(home, 'Styr')
     const settings = settingsFor(storage)
-    const other = workspaces.createWorkspace(settings, 'Client A')
-    const scoped = config.inWorkspace(settings, other.id)
+    const other = workspaces.createWorkspace(settings, 'Client A', SEED)
+    const scoped = config.pathsInWorkspace(settings, other.id)
     const task = (id: string, title: string, status: string) =>
       writeFileSync(
         join(config.tasksDir(scoped), `${id}.md`),

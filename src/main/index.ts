@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, shell } from 'electron'
-import { tasksDir } from '@core/config.js'
+import { tasksDir } from '@core/settingsStore.js'
+import { migrateLegacySettings } from '@core/settingsMigration.js'
 import {
   broadcast,
   markAgentExited,
@@ -78,8 +79,21 @@ function createWindow(): BrowserWindow {
   return window
 }
 
+/**
+ * A failed migration must not stop the app: the legacy values stay in the config, `loadSettings`
+ * keeps layering them in, and the next start tries again.
+ */
+function migrateSettings(): void {
+  try {
+    migrateLegacySettings()
+  } catch (error) {
+    console.error('Styr could not move settings into the workspace folders:', error)
+  }
+}
+
 app.whenReady().then(() => {
   app.setName('Styr')
+  migrateSettings()
   tasksDir()
   syncIndex()
   registerIpcHandlers()

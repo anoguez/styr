@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { DEFAULT_WORKSPACE_ID } from '@core/types.js'
-import { useWorkspaces } from '../hooks/useWorkspaces.js'
+import type { Workspaces } from '../hooks/useWorkspaces.js'
 import { Button, Chip, Field, inputClass } from './ui.js'
 import { ipcMessage } from './WorkspaceSwitcher.js'
 
@@ -8,8 +8,8 @@ import { ipcMessage } from './WorkspaceSwitcher.js'
  * Settings → Workspaces. Acts on the live workspaces rather than the settings draft: creating or
  * deleting one takes effect at once, and Save only covers the other panes.
  */
-export function WorkspacesPane(): ReactNode {
-  const { overview, apply } = useWorkspaces()
+export function WorkspacesPane({ workspaces }: { workspaces: Workspaces }): ReactNode {
+  const { overview, apply } = workspaces
   const [name, setName] = useState('')
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
   const [error, setError] = useState('')
@@ -131,7 +131,7 @@ export function WorkspacesPane(): ReactNode {
           </Button>
         </form>
       </Field>
-      {error ? <p className="text-[12px] text-red-300">{error}</p> : null}
+      {error ? <p className="text-[12px] text-danger">{error}</p> : null}
     </div>
   )
 }

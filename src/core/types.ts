@@ -292,6 +292,74 @@ export interface Settings {
   taskDefaults: TaskDefaults
 }
 
+/**
+ * The settings that belong to the app rather than to a board. They live in `~/.styr/config.json`.
+ */
+export const GLOBAL_SETTING_KEYS = [
+  'storageDir',
+  'activeWorkspaceId',
+  'updates',
+  'shortcuts'
+] as const satisfies readonly (keyof Settings)[]
+
+/**
+ * The settings each workspace keeps in its own `settings.json`. Every `Settings` key is in exactly
+ * one of the two lists, and a test holds the schema to that, so a new key needs a deliberate choice.
+ */
+export const WORKSPACE_SETTING_KEYS = [
+  'defaultRepoPath',
+  'shell',
+  'claudeCommand',
+  'codexCommand',
+  'codexApprovalReviewer',
+  'enabledProviders',
+  'defaultProvider',
+  'providerRouting',
+  'defaultPromptTemplateId',
+  'promptTemplates',
+  'promptRouting',
+  'orchestration',
+  'theme',
+  'taskDefaults'
+] as const satisfies readonly (keyof Settings)[]
+
+export type GlobalSettingKey = (typeof GLOBAL_SETTING_KEYS)[number]
+export type WorkspaceSettingKey = (typeof WORKSPACE_SETTING_KEYS)[number]
+export type GlobalSettings = Pick<Settings, GlobalSettingKey>
+export type WorkspaceSettings = Pick<Settings, WorkspaceSettingKey>
+
+export function isWorkspaceSettingKey(key: string): key is WorkspaceSettingKey {
+  return (WORKSPACE_SETTING_KEYS as readonly string[]).includes(key)
+}
+
+function pickSettings<K extends keyof Settings>(
+  settings: Settings,
+  keys: readonly K[]
+): Pick<Settings, K> {
+  return Object.fromEntries(keys.map((key) => [key, settings[key]])) as Pick<Settings, K>
+}
+
+export function globalSettingsFor(settings: Settings): GlobalSettings {
+  return pickSettings(settings, GLOBAL_SETTING_KEYS)
+}
+
+export function workspaceSettingsFor(settings: Settings): WorkspaceSettings {
+  return pickSettings(settings, WORKSPACE_SETTING_KEYS)
+}
+
+/** One Save from the Settings dialog: the app-level keys, and one workspace's own. */
+export interface SettingsChange {
+  workspaceId: string
+  workspace: WorkspaceSettings
+  global: GlobalSettings
+}
+
+/** A workspace whose `settings.json` exists but could not be read, so it is running on defaults. */
+export interface BrokenSettingsFile {
+  workspaceId: string
+  path: string
+}
+
 /** Starting values for the new-task form. Existing tasks keep whatever they saved. */
 export interface TaskDefaults {
   /** New tasks start with "Let Orchestrate start this task" checked. */
