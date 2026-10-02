@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/anoguez/styr/compare/v0.8.0...v0.9.0) (2026-10-02)
+
+
+### Features
+
+* keep settings per workspace ([#25](https://github.com/anoguez/styr/issues/25)) ([b054bb5](https://github.com/anoguez/styr/commit/b054bb5d90eed7edaf833fab6fa855cbf1c08a8c))
+
 ## [0.8.0](https://github.com/anoguez/styr/compare/v0.7.0...v0.8.0) (2026-10-01)
 
 
