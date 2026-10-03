@@ -181,6 +181,7 @@ export function createTask(draft: TaskDraft): Task {
     repoPath: draft.repoPath,
     orchestrate: draft.orchestrate ?? true,
     useWorktree: draft.useWorktree ?? false,
+    baseBranch: draft.baseBranch,
     worktreePath: draft.worktreePath,
     contextFiles: draft.contextFiles ?? [],
     promptTemplateId: draft.promptTemplateId,

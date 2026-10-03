@@ -75,6 +75,10 @@ const api = {
     onChanged: (handler: (statuses: AgentStatus[]) => void): (() => void) =>
       subscribe('agents:changed', handler as (...args: never[]) => void)
   },
+  git: {
+    branches: (repoPath: string): Promise<{ branches: string[]; current?: string }> =>
+      ipcRenderer.invoke('git:branches', repoPath)
+  },
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),
     save: (settings: Settings): Promise<Settings> => ipcRenderer.invoke('settings:save', settings),

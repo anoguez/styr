@@ -67,7 +67,11 @@ function branchExists(repoPath: string, branch: string): boolean {
  * Creates the task's worktree if it is missing, or returns the existing one. Idempotent so a
  * resumed session lands back in the same checkout.
  */
-export function ensureWorktree(repoPath: string, taskId: string): WorktreeResult {
+export function ensureWorktree(
+  repoPath: string,
+  taskId: string,
+  baseBranch?: string
+): WorktreeResult {
   if (!isGitRepo(repoPath)) {
     throw new Error(`${repoPath || '(no working directory)'} is not a git repository`)
   }
@@ -80,7 +84,7 @@ export function ensureWorktree(repoPath: string, taskId: string): WorktreeResult
 
   const args = branchExists(repoPath, branch)
     ? ['worktree', 'add', path, branch]
-    : ['worktree', 'add', '-b', branch, path, startPointFor(repoPath)]
+    : ['worktree', 'add', '-b', branch, path, startPointFor(repoPath, baseBranch)]
   git(args, repoPath)
   return { path, branch, created: true }
 }
@@ -93,12 +97,22 @@ export function ensureWorktree(repoPath: string, taskId: string): WorktreeResult
  * The remote tip is used only when HEAD is strictly behind it; if HEAD is ahead or diverged it is
  * kept, as that is the user's own state.
  */
-function startPointFor(repoPath: string): string {
+function startPointFor(repoPath: string, baseBranch?: string): string {
+  let fetched = true
   try {
     git(['fetch', '--quiet', 'origin'], repoPath, 30_000)
   } catch {
-    return 'HEAD'
+    fetched = false
   }
+  if (baseBranch) {
+    // An explicit choice wins: the fetched remote tip, else the local branch. A branch that has
+    // since vanished falls through to the automatic choice rather than failing the launch.
+    const remote = `origin/${baseBranch}`
+    if (fetched && refExists(repoPath, remote)) return remote
+    if (refExists(repoPath, baseBranch)) return baseBranch
+    if (refExists(repoPath, remote)) return remote
+  }
+  if (!fetched) return 'HEAD'
   for (const remote of remoteCandidates(repoPath)) {
     if (!refExists(repoPath, remote)) continue
     try {
@@ -127,6 +141,36 @@ function remoteCandidates(repoPath: string): string[] {
   const base = baseBranchFor(repoPath)
   if (base) candidates.push(`origin/${base}`)
   return candidates
+}
+
+/** Branches a worktree can start from: local ones plus origin's, deduplicated, current first. */
+export function listBranches(repoPath: string): { branches: string[]; current?: string } {
+  if (!isGitRepo(repoPath)) return { branches: [] }
+  const names = new Set<string>()
+  let current: string | undefined
+  try {
+    const head = git(['rev-parse', '--abbrev-ref', 'HEAD'], repoPath)
+    if (head && head !== 'HEAD') current = head
+  } catch {
+    // unborn HEAD
+  }
+  const collect = (ref: string, strip: string): void => {
+    try {
+      for (const line of git(['for-each-ref', '--format=%(refname:short)', ref], repoPath).split(
+        '\n'
+      )) {
+        const name = line.startsWith(strip) ? line.slice(strip.length) : line
+        if (name && name !== 'origin' && name !== 'HEAD') names.add(name)
+      }
+    } catch {
+      // no refs of that kind
+    }
+  }
+  collect('refs/heads', '')
+  collect('refs/remotes/origin', 'origin/')
+  const branches = [...names].filter((name) => !name.startsWith(WORKTREE_BRANCH_PREFIX)).sort()
+  if (current) branches.sort((a, b) => Number(b === current) - Number(a === current))
+  return { branches, current }
 }
 
 /**

@@ -131,6 +131,8 @@ export interface Task {
   repoPath?: string
   orchestrate: boolean
   useWorktree: boolean
+  /** Branch the worktree starts from; unset means the main checkout's current branch. */
+  baseBranch?: string
   worktreePath?: string
   contextFiles: string[]
   promptTemplateId?: string

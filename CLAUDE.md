@@ -29,6 +29,11 @@ main checkout is on (its upstream, else `origin/<current>`, else `origin/<base>`
 `release/x.y.z` checkouts both advance. The remote is used only when HEAD is strictly behind it;
 unpushed commits or divergence keep HEAD, as does a failed fetch (offline). See `startPointFor`.
 
+`Task.baseBranch` (the New task dialog's Base branch select, fed by `listBranches` over `git:branches`)
+overrides that automatic choice: the worktree starts from the fetched `origin/<baseBranch>`, else the
+local branch, and a branch that has since vanished falls back to the automatic start. Unset means
+automatic. It is fixed once `worktreePath` exists, since the branch is already cut.
+
 Worktree failure is never fatal: `workspaceFor` in `launch.ts` falls back to the plain repository
 and returns a `warning`, which `ipc.ts` writes to the task activity log. A blocked launch would be
 worse than a shared working directory.

@@ -13,7 +13,7 @@ import {
 } from '@core/launch.js'
 import { providerFor } from '@core/providers/index.js'
 import { resolveTemplateFor } from '@core/prompt.js'
-import { readGitBranch, removeWorktree } from '@core/worktree.js'
+import { listBranches, readGitBranch, removeWorktree } from '@core/worktree.js'
 import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
 import type { OrchestrationSummary } from '@core/types.js'
 import {
@@ -281,6 +281,7 @@ export function registerIpcHandlers(): void {
     notifyTasksChanged()
     return updated
   })
+  ipcMain.handle('git:branches', (_event, repoPath: string) => listBranches(repoPath))
   ipcMain.handle('agents:list', () => agentStatuses())
 
   ipcMain.handle('tasks:create', (_event, draft: unknown) => {

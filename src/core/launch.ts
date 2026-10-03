@@ -44,7 +44,7 @@ function workspaceFor(settings: Settings, task: Task): Workspace {
   const repo = workingDirFor(settings, task)
   if (!task.useWorktree) return { cwd: repo }
   try {
-    const worktree = ensureWorktree(repo, task.id)
+    const worktree = ensureWorktree(repo, task.id, task.baseBranch)
     return { cwd: worktree.path, worktreePath: worktree.path }
   } catch (error) {
     return {
