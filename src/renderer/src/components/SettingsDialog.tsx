@@ -736,7 +736,9 @@ export function SettingsDialog({
           ) : null}
 
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-5">
-            <div className="flex max-w-[640px] flex-col gap-5">
+            <div
+              className={`flex flex-col gap-5 ${section === 'templates' ? 'h-full min-h-[380px]' : 'max-w-[640px]'}`}
+            >
               {section === 'preferences' ? (
                 <>
                   <div className="flex flex-col gap-2.5">
@@ -957,7 +959,7 @@ export function SettingsDialog({
               ) : null}
 
               {section === 'templates' ? (
-                <div className="grid grid-cols-[180px_minmax(0,1fr)] gap-4">
+                <div className="grid h-full grid-cols-[180px_minmax(0,1fr)] gap-4">
                   <div className="flex flex-col gap-0.5">
                     {draft.promptTemplates.map((template) => (
                       <button
@@ -999,7 +1001,7 @@ export function SettingsDialog({
                   </div>
 
                   {selected ? (
-                    <div className="flex min-w-0 flex-col gap-2.5">
+                    <div className="flex min-h-0 min-w-0 flex-col gap-2.5">
                       <div className="flex items-center gap-2">
                         <input
                           aria-label="Template name"
@@ -1007,18 +1009,32 @@ export function SettingsDialog({
                           value={selected.name}
                           onChange={(event) => updateTemplate({ name: event.target.value })}
                         />
-                        <Button
-                          variant="danger"
-                          className="shrink-0"
+                        <button
+                          type="button"
+                          aria-label="Delete template"
+                          title="Delete template"
                           onClick={removeTemplate}
                           disabled={draft.promptTemplates.length <= 1}
+                          className="grid size-8 shrink-0 place-items-center rounded-[7px] text-danger transition-colors hover:bg-red-500/10 disabled:pointer-events-none disabled:opacity-35"
                         >
-                          Delete
-                        </Button>
+                          <svg
+                            aria-hidden
+                            viewBox="0 0 16 16"
+                            width="14"
+                            height="14"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />
+                          </svg>
+                        </button>
                       </div>
                       <textarea
                         aria-label="Template body"
-                        className={`${inputBase} min-h-60 w-full resize-y px-3.5 py-3 font-mono text-[12px] leading-[1.65]`}
+                        className={`${inputBase} min-h-40 w-full flex-1 resize-none px-3.5 py-3 font-mono text-[12px] leading-[1.65]`}
                         value={selected.template}
                         onChange={(event) => updateTemplate({ template: event.target.value })}
                       />
