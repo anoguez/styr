@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.0](https://github.com/anoguez/styr/compare/v0.11.0...v0.12.0) (2026-10-03)
+
+
+### Features
+
+* cap the Done column and add task archiving ([#38](https://github.com/anoguez/styr/issues/38)) ([60c816a](https://github.com/anoguez/styr/commit/60c816a89154f96baf401763dde974ae59d08aba))
+* order board columns by priority, then working agents ([#40](https://github.com/anoguez/styr/issues/40)) ([e064da8](https://github.com/anoguez/styr/commit/e064da8346c2ed5451a28bac0792e959c6513a4f))
+* read-only Changes (git diff) view for tasks ([#41](https://github.com/anoguez/styr/issues/41)) ([7c3c603](https://github.com/anoguez/styr/commit/7c3c60384040cd30bed96b8f904064e96216d682))
+
 ## [0.11.0](https://github.com/anoguez/styr/compare/v0.10.0...v0.11.0) (2026-10-03)
 
 
