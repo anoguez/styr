@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   ANSI_COLOURS,
+  DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_TERMINAL_PALETTE,
   SHORTCUT_COMMANDS,
@@ -54,6 +55,8 @@ export const taskFrontmatterSchema = z.object({
   externalRef: externalRefSchema.optional(),
   prUrl: z.string().optional(),
   order: z.number().default(0),
+  doneAt: z.string().optional(),
+  archivedAt: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 })
@@ -171,7 +174,13 @@ export const settingsSchema = z.object({
     .default({ checkAutomatically: true }),
   taskDefaults: z
     .object({ orchestrate: z.boolean().default(true), useWorktree: z.boolean().default(false) })
-    .default({ orchestrate: true, useWorktree: false })
+    .default({ orchestrate: true, useWorktree: false }),
+  doneCap: z
+    .object({
+      maxCount: z.number().int().min(0).max(10000).default(DEFAULT_DONE_CAP.maxCount),
+      maxAgeDays: z.number().int().min(0).max(3650).default(DEFAULT_DONE_CAP.maxAgeDays)
+    })
+    .default(DEFAULT_DONE_CAP)
 })
 
 const GLOBAL_KEY_MASK = {

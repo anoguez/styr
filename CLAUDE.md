@@ -664,3 +664,17 @@ files) and the typecheck.
 TypeScript 7 (`@typescript/native`) is the compiler; the `typescript` package name is the TS 6
 compatibility build (`@typescript/typescript6`), because typescript-eslint needs the compiler API
 that TS 7 no longer ships.
+
+## Done cap and archive
+
+`Settings.doneCap` (`maxCount`, `maxAgeDays`, 0 = off) hides old Done tasks from the board. The rule
+is `applyDoneCap` in `core/doneCap.ts` — pure, shared by the renderer, applied in `useTasks`. It only
+**hides**: nothing is written, "Show all" in the Done column brings them back. Recency decides who is
+hidden, using `Task.doneAt` (stamped by `taskStore` when a task enters Done, dropped on leaving) and
+falling back to `updatedAt` for hand-edited files.
+
+Archive is `Task.archivedAt` in the frontmatter, set only through `setArchived` (the `tasks:archive`
+IPC) — it is deliberately not in `TaskPatch`. It is orthogonal to status, drops the task from the
+board, `isAgentArchived` and Orchestrate, and keeps the file. The Archive dialog (palette: "View
+archive") lists archived tasks and unarchives them. The age cap does not auto-archive, so the board
+never rewrites files on a timer.

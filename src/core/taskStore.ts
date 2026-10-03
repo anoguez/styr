@@ -29,6 +29,19 @@ function now(): string {
   return new Date().toISOString()
 }
 
+/**
+ * Keeps `doneAt` honest across a write: stamped when a task enters Done, dropped when it leaves,
+ * left alone otherwise. A hand-edited file has no stamp, which the cap reads as `updatedAt`.
+ */
+function stampDone(before: Task | null, after: Task): Task {
+  if (after.status !== 'done') return after.doneAt ? { ...after, doneAt: undefined } : after
+  if (before?.status === 'done' && after.doneAt) return after
+  return {
+    ...after,
+    doneAt: before?.status === 'done' ? (before.doneAt ?? after.updatedAt) : now()
+  }
+}
+
 function taskFilePaths(dir: string): string[] {
   if (!existsSync(dir)) return []
   return readdirSync(dir)
@@ -190,6 +203,7 @@ export function createTask(draft: TaskDraft): Task {
     externalRef: draft.externalRef,
     prUrl: draft.prUrl,
     order: draft.order ?? existing.filter((task) => task.status === status).length,
+    doneAt: status === 'done' ? stamp : undefined,
     createdAt: stamp,
     updatedAt: stamp,
     filePath: join(tasksDir(), `${id}-${slugify(draft.title)}.md`),
@@ -201,7 +215,28 @@ export function createTask(draft: TaskDraft): Task {
 export function updateTask(id: string, patch: TaskPatch): Task {
   const task = getTask(id)
   if (!task) throw new Error(`Task ${id} not found`)
-  return writeTask({ ...task, ...patch, updatedAt: now() })
+  return writeTask(stampDone(task, { ...task, ...patch, updatedAt: now() }))
+}
+
+/**
+ * Archiving takes a task off the board without touching its status or deleting the file; the
+ * state lives in the frontmatter so it survives an index rebuild and a `git pull`.
+ */
+export function setArchived(id: string, archived: boolean): Task {
+  const task = getTask(id)
+  if (!task) throw new Error(`Task ${id} not found`)
+  const stamp = now()
+  const entry: ActivityEntry = {
+    at: stamp,
+    author: 'styr',
+    message: archived ? 'Archived.' : 'Unarchived.'
+  }
+  return writeTask({
+    ...task,
+    archivedAt: archived ? stamp : undefined,
+    activity: [...task.activity, entry],
+    updatedAt: stamp
+  })
 }
 
 export function addNote(id: string, author: string, message: string): Task {
@@ -222,6 +257,6 @@ export function reorderTasks(status: TaskStatus, orderedIds: string[]): Task[] {
   return orderedIds.map((id, index) => {
     const task = byId.get(id)
     if (!task) throw new Error(`Task ${id} not found`)
-    return writeTask({ ...task, status, order: index, updatedAt: now() })
+    return writeTask(stampDone(task, { ...task, status, order: index, updatedAt: now() }))
   })
 }

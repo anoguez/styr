@@ -904,6 +904,20 @@ export function TaskDialog({
                   <FolderIcon />
                   Reveal
                 </button>
+                <button
+                  type="button"
+                  className={`${GHOST_BTN} h-7`}
+                  title={
+                    task.archivedAt
+                      ? 'Put this task back on the board'
+                      : 'Take this task off the board; the file is kept'
+                  }
+                  onClick={() =>
+                    void window.api.tasks.archive(task.id, !task.archivedAt).then(onClose)
+                  }
+                >
+                  {task.archivedAt ? 'Unarchive' : 'Archive'}
+                </button>
                 <span className="mx-1 h-4 w-px bg-edge" />
                 <button
                   type="button"

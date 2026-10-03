@@ -107,4 +107,33 @@ describe('task store', () => {
     expect(readFileSync(created.filePath, 'utf8')).not.toBe(originalContents)
     expect(interruptedStore.getTask(created.id)).toMatchObject({ status: 'in_review' })
   })
+
+  it('stamps doneAt on entering Done and drops it on leaving', async () => {
+    const store = await taskStoreInTemporaryWorkspace()
+    const task = store.createTask({ title: 'Ship it' })
+    expect(task.doneAt).toBeUndefined()
+
+    const finished = store.updateTask(task.id, { status: 'done' })
+    expect(finished.doneAt).toBeTruthy()
+    expect(store.updateTask(task.id, { title: 'Ship it now' }).doneAt).toBe(finished.doneAt)
+    expect(store.getTask(task.id)?.doneAt).toBe(finished.doneAt)
+
+    expect(store.updateTask(task.id, { status: 'in_review' }).doneAt).toBeUndefined()
+  })
+
+  it('archives and unarchives through the file, keeping status and noting it', async () => {
+    const store = await taskStoreInTemporaryWorkspace()
+    const task = store.updateTask(store.createTask({ title: 'Old work' }).id, { status: 'done' })
+
+    const archived = store.setArchived(task.id, true)
+    expect(store.getTask(task.id)).toMatchObject({
+      status: 'done',
+      archivedAt: archived.archivedAt
+    })
+    expect(archived.archivedAt).toBeTruthy()
+
+    const restored = store.setArchived(task.id, false)
+    expect(store.getTask(task.id)?.archivedAt).toBeUndefined()
+    expect(restored.activity.map((entry) => entry.message)).toEqual(['Archived.', 'Unarchived.'])
+  })
 })

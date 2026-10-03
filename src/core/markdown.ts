@@ -5,7 +5,7 @@ import type { ActivityEntry, Task } from './types.js'
 
 const ACTIVITY_MARKER = '<!-- styr:activity -->'
 const TOKEN_FIELDS = ['status', 'priority', 'readiness'] as const
-const TIMESTAMP_FIELDS = ['createdAt', 'updatedAt'] as const
+const TIMESTAMP_FIELDS = ['createdAt', 'updatedAt', 'doneAt', 'archivedAt'] as const
 const ENTRY_RE = /^- `([^`]+)` \*\*([^*]+)\*\* — (.*)$/
 
 function renderActivity(activity: ActivityEntry[]): string {
@@ -90,6 +90,8 @@ export function serialiseTask(task: Task): string {
     ...(task.externalRef ? { externalRef: task.externalRef } : {}),
     ...(task.prUrl ? { prUrl: task.prUrl } : {}),
     order: task.order,
+    ...(task.doneAt ? { doneAt: task.doneAt } : {}),
+    ...(task.archivedAt ? { archivedAt: task.archivedAt } : {}),
     createdAt: task.createdAt,
     updatedAt: task.updatedAt
   })

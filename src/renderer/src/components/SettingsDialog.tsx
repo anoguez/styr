@@ -138,8 +138,9 @@ export const SECTIONS = [
     label: 'General',
     scope: 'workspace',
     blurb: 'Defaults for new tasks in this workspace. Existing tasks keep their own settings.',
-    keys: ['taskDefaults', 'defaultRepoPath', 'shell'],
-    words: 'worktree directory shell terminal orchestrate default preferences'
+    keys: ['taskDefaults', 'doneCap', 'defaultRepoPath', 'shell'],
+    words:
+      'done cap archive hide limit worktree directory shell terminal orchestrate default preferences'
   },
   {
     id: 'integrations',
@@ -794,6 +795,46 @@ export function SettingsDialog({
                     </Card>
                     <Hint>You can still change both on any task.</Hint>
                   </div>
+                  <Field
+                    label="Done column: most tasks shown"
+                    hint="Only the most recently finished stay on the board; the rest are hidden, not archived, and Show all brings them back. 0 shows everything."
+                  >
+                    <input
+                      type="number"
+                      min={0}
+                      max={10000}
+                      className={`${inputBase} h-8 w-24 px-2.5 text-[12.5px]`}
+                      value={draft.doneCap.maxCount}
+                      onChange={(event) =>
+                        patch({
+                          doneCap: {
+                            ...draft.doneCap,
+                            maxCount: Math.max(0, Math.floor(Number(event.target.value)) || 0)
+                          }
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label="Done column: hide after (days)"
+                    hint="Tasks finished longer ago than this are hidden from the board. 0 never hides by age."
+                  >
+                    <input
+                      type="number"
+                      min={0}
+                      max={3650}
+                      className={`${inputBase} h-8 w-24 px-2.5 text-[12.5px]`}
+                      value={draft.doneCap.maxAgeDays}
+                      onChange={(event) =>
+                        patch({
+                          doneCap: {
+                            ...draft.doneCap,
+                            maxAgeDays: Math.max(0, Math.floor(Number(event.target.value)) || 0)
+                          }
+                        })
+                      }
+                    />
+                  </Field>
                   <Field
                     label="Working directory"
                     hint="Where agents run and where + Shell opens. Blank uses the storage folder."

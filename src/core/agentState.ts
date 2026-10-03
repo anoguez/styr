@@ -33,8 +33,8 @@ export function agentKey(status: Pick<AgentStatus, 'taskId' | 'workspaceId'>): s
  * a list of things that might still need you — including when its last hook event was a
  * Notification, which a finished session leaves behind while it sits at an idle prompt.
  */
-export function isAgentArchived(taskStatus: TaskStatus): boolean {
-  return taskStatus === 'done'
+export function isAgentArchived(task: { status: TaskStatus; archivedAt?: string }): boolean {
+  return task.status === 'done' || Boolean(task.archivedAt)
 }
 
 /** Waiting first — it is the only state that costs you time if you miss it. */
