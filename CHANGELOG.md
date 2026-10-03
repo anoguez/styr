@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.11.0](https://github.com/anoguez/styr/compare/v0.10.0...v0.11.0) (2026-10-03)
+
+
+### Features
+
+* add Claude approval mode setting using --permission-mode auto ([#34](https://github.com/anoguez/styr/issues/34)) ([cf48c69](https://github.com/anoguez/styr/commit/cf48c69e28da600acee60864753faa09b6dcc50f))
+* confirm before deleting a task ([#33](https://github.com/anoguez/styr/issues/33)) ([499960f](https://github.com/anoguez/styr/commit/499960f2e0894531e2fb6ad2fc07ac2e413443c1))
+* make card priority stripe discoverable with a larger hover target and chip ([#36](https://github.com/anoguez/styr/issues/36)) ([8545ed0](https://github.com/anoguez/styr/commit/8545ed00228ab0b46c06468c6fc48cd7a2ca37be))
+* **mcp:** accept baseBranch in create_task and update_task ([#37](https://github.com/anoguez/styr/issues/37)) ([8cf1abb](https://github.com/anoguez/styr/commit/8cf1abb008b95dcbde980dd902868db472f9f829))
+* restyle the settings dialog to match the new design ([#31](https://github.com/anoguez/styr/issues/31)) ([e9b3381](https://github.com/anoguez/styr/commit/e9b338198355506bd0e78587dd9bdb5eb8c42cca))
+
+
+### Bug Fixes
+
+* start worktrees from the latest origin, with a selectable base branch ([#35](https://github.com/anoguez/styr/issues/35)) ([0d300d5](https://github.com/anoguez/styr/commit/0d300d5d6a86310d7067dddc138eb08da975110b))
+
 ## [0.10.0](https://github.com/anoguez/styr/compare/v0.9.0...v0.10.0) (2026-10-03)
 
 
