@@ -459,8 +459,8 @@ watcher while leaving the tasks watcher running.
 `PreToolUse` events. It resolves the `gitdir:` pointer file that a worktree uses instead of a
 `.git` directory.
 
-`isAgentArchived` in `core/agentState.ts` decides what drops out of the agent lists: Done, full
-stop. It deliberately ignores agent state — a finished session leaves a `Notification` behind while
+`isAgentArchived` in `core/agentState.ts` decides what drops out of the agent lists: Done or archived
+(`archivedAt`), full stop. It deliberately ignores agent state — a finished session leaves a `Notification` behind while
 it idles at a prompt, so a state-aware rule leaves completed work reading _Waiting on you_. The
 sidebar, the tray and the status-bar counts all derive from the same filtered rows; counting from
 the raw agent map instead is how the badge kept showing archived agents.
@@ -667,7 +667,7 @@ that TS 7 no longer ships.
 
 ## Done cap and archive
 
-`Settings.doneCap` (`maxCount`, `maxAgeDays`, 0 = off) hides old Done tasks from the board. The rule
+`Settings.doneCap` (`maxCount`, `maxAgeDays`, 0 = off; a workspace setting) hides old Done tasks from the board. The rule
 is `applyDoneCap` in `core/doneCap.ts` — pure, shared by the renderer, applied in `useTasks`. It only
 **hides**: nothing is written, "Show all" in the Done column brings them back. Recency decides who is
 hidden, using `Task.doneAt` (stamped by `taskStore` when a task enters Done, dropped on leaving) and
