@@ -159,6 +159,7 @@ export function TaskCardBody({
             </svg>
             <DiffCount added={diffStat.added} removed={diffStat.removed} />
           </button>
+          <div className="flex min-w-0 flex-1 justify-center">{prLink}</div>
           {status}
         </div>
       ) : null}
