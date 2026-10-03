@@ -150,6 +150,7 @@ export const SECTIONS = [
       'enabledProviders',
       'defaultProvider',
       'claudeCommand',
+      'claudeApprovalMode',
       'codexCommand',
       'codexApprovalReviewer'
     ],
@@ -1559,6 +1560,28 @@ export function SettingsDialog({
                                 }
                               />
                             </div>
+
+                            {provider.id === 'claude' ? (
+                              <div className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-2.5">
+                                <span className="pt-[5px] text-[12px] text-dim">Approvals</span>
+                                <div className="flex flex-col gap-1.5">
+                                  <Segmented
+                                    label="Claude approvals"
+                                    value={draft.claudeApprovalMode}
+                                    onChange={(claudeApprovalMode) => patch({ claudeApprovalMode })}
+                                    options={[
+                                      { value: 'user', label: 'Ask me' },
+                                      { value: 'auto', label: 'Approve for me' }
+                                    ]}
+                                  />
+                                  <Hint>
+                                    {draft.claudeApprovalMode === 'user'
+                                      ? 'Claude Code pauses and asks before risky actions.'
+                                      : 'Permission prompts go to Claude Code’s auto mode classifier; it does not grant full access. Needs a recent Claude Code.'}
+                                  </Hint>
+                                </div>
+                              </div>
+                            ) : null}
 
                             {provider.id === 'codex' ? (
                               <div className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-2.5">
