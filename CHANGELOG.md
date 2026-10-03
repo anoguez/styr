@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/anoguez/styr/compare/v0.9.0...v0.10.0) (2026-10-03)
+
+
+### Features
+
+* add ⇧⌘N quick-add overlay that files tasks as needs-spec backlog ([#29](https://github.com/anoguez/styr/issues/29)) ([32b7684](https://github.com/anoguez/styr/commit/32b7684429abba9ef416c3e5c90a2d1c0d0fcf44))
+
+
+### Bug Fixes
+
+* make the task title outline visible and flag a missing title on save ([#30](https://github.com/anoguez/styr/issues/30)) ([0527cf6](https://github.com/anoguez/styr/commit/0527cf6c50d461cad4066d5b36872375d2d624ef))
+* stop the task dialog closing when the backdrop is clicked ([#27](https://github.com/anoguez/styr/issues/27)) ([cfafe00](https://github.com/anoguez/styr/commit/cfafe002871815f2736a347547f96cdcccb0df16))
+
 ## [0.9.0](https://github.com/anoguez/styr/compare/v0.8.0...v0.9.0) (2026-10-02)
 
 
