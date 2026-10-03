@@ -496,6 +496,8 @@ export default function App(): ReactNode {
         setChangesTask(null)
         return
       }
+      // The Changes viewer is modal: its own keys (J/K, arrows) and ⌘ combos must not reach the board.
+      if (changesTask) return
       const command = commandForEvent(bindings, event, {
         terminalFocused: isTerminalTarget(event.target as Element | null)
       })
@@ -505,7 +507,7 @@ export default function App(): ReactNode {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [bindings, runCommand])
+  }, [bindings, runCommand, changesTask])
 
   useEffect(() => {
     if (terminalOpen && !manuallyResized.current) setTerminalHeight(preferredTerminalHeight())

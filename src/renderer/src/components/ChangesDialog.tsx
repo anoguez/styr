@@ -152,6 +152,11 @@ export function ChangesDialog({ task, onClose }: { task: Task; onClose: () => vo
 
   useEffect(load, [load])
 
+  // Take focus on open: the dialog's keys only work from inside it.
+  useEffect(() => {
+    rootRef.current?.focus()
+  }, [])
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(timer)
@@ -494,12 +499,15 @@ export function ChangesDialog({ task, onClose }: { task: Task; onClose: () => vo
       <div
         ref={rootRef}
         role="dialog"
+        tabIndex={-1}
         aria-label={`Changes — ${task.title}`}
-        className="relative flex min-h-0 flex-1 flex-col overflow-hidden text-[13px] text-ink"
+        className="relative flex min-h-0 flex-1 flex-col overflow-hidden text-[13px] text-ink outline-none"
         onKeyDown={(event) => {
           const tag = (event.target as HTMLElement).tagName
           if (tag === 'INPUT' || tag === 'TEXTAREA') return
-          const inList = listRef.current?.contains(event.target as Node)
+          // Arrows walk the files from the list or the bare dialog; in the diff they scroll it.
+          const inList =
+            event.target === event.currentTarget || listRef.current?.contains(event.target as Node)
           if (event.key === 'j' || (inList && event.key === 'ArrowDown')) {
             event.preventDefault()
             move(1)
