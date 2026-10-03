@@ -205,16 +205,18 @@ export function TaskCard({
             onTrigger={() => onArchive(task)}
           />
         ) : null}
-        <CardAction
-          accent
-          label={task.agentSession ? '⏵ Resume' : '▶ Agent'}
-          title={
-            task.agentSession
-              ? `Resume the existing agent chat for ${task.id}`
-              : `Start the selected agent on ${task.id} — ${templateNameFor(task)}`
-          }
-          onTrigger={() => onLaunch(task)}
-        />
+        {task.status !== 'done' ? (
+          <CardAction
+            accent
+            label={task.agentSession ? '⏵ Resume' : '▶ Agent'}
+            title={
+              task.agentSession
+                ? `Resume the existing agent chat for ${task.id}`
+                : `Start the selected agent on ${task.id} — ${templateNameFor(task)}`
+            }
+            onTrigger={() => onLaunch(task)}
+          />
+        ) : null}
       </div>
     </article>
   )

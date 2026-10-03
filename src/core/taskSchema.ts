@@ -177,8 +177,8 @@ export const settingsSchema = z.object({
     .default({ orchestrate: true, useWorktree: false }),
   doneCap: z
     .object({
-      maxCount: z.number().int().min(0).max(10000).default(DEFAULT_DONE_CAP.maxCount),
-      maxAgeDays: z.number().int().min(0).max(3650).default(DEFAULT_DONE_CAP.maxAgeDays)
+      maxCount: z.number().int().min(0).max(1000).default(DEFAULT_DONE_CAP.maxCount),
+      maxAgeDays: z.number().int().min(0).max(365).default(DEFAULT_DONE_CAP.maxAgeDays)
     })
     .default(DEFAULT_DONE_CAP)
 })

@@ -795,46 +795,50 @@ export function SettingsDialog({
                     </Card>
                     <Hint>You can still change both on any task.</Hint>
                   </div>
-                  <Field
-                    label="Done column: most tasks shown"
-                    hint="Only the most recently finished stay on the board; the rest are hidden, not archived, and Show all brings them back. 0 shows everything."
-                  >
-                    <input
-                      type="number"
-                      min={0}
-                      max={10000}
-                      className={`${inputBase} h-8 w-24 px-2.5 text-[12.5px]`}
-                      value={draft.doneCap.maxCount}
-                      onChange={(event) =>
-                        patch({
-                          doneCap: {
-                            ...draft.doneCap,
-                            maxCount: Math.max(0, Math.floor(Number(event.target.value)) || 0)
-                          }
-                        })
-                      }
-                    />
-                  </Field>
-                  <Field
-                    label="Done column: hide after (days)"
-                    hint="Tasks finished longer ago than this are hidden from the board. 0 never hides by age."
-                  >
-                    <input
-                      type="number"
-                      min={0}
-                      max={3650}
-                      className={`${inputBase} h-8 w-24 px-2.5 text-[12.5px]`}
-                      value={draft.doneCap.maxAgeDays}
-                      onChange={(event) =>
-                        patch({
-                          doneCap: {
-                            ...draft.doneCap,
-                            maxAgeDays: Math.max(0, Math.floor(Number(event.target.value)) || 0)
-                          }
-                        })
-                      }
-                    />
-                  </Field>
+                  <div className="flex flex-col gap-2.5">
+                    <span className="text-[12px] font-semibold text-dim">Done column shows</span>
+                    <Card>
+                      <CardRow>
+                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-3.5 py-3">
+                          <span className="flex flex-col gap-[3px]">
+                            <span className="text-[12.5px] text-ink">Most recent tasks</span>
+                            <Hint>
+                              How many finished tasks stay on the board. 0 shows them all.
+                            </Hint>
+                          </span>
+                          <Stepper
+                            label="Most recent tasks"
+                            value={draft.doneCap.maxCount}
+                            min={0}
+                            max={1000}
+                            onChange={(maxCount) =>
+                              patch({ doneCap: { ...draft.doneCap, maxCount } })
+                            }
+                          />
+                        </div>
+                      </CardRow>
+                      <CardRow>
+                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-3.5 py-3">
+                          <span className="flex flex-col gap-[3px]">
+                            <span className="text-[12.5px] text-ink">Finished within (days)</span>
+                            <Hint>Older tasks are hidden. 0 never hides by age.</Hint>
+                          </span>
+                          <Stepper
+                            label="Finished within (days)"
+                            value={draft.doneCap.maxAgeDays}
+                            min={0}
+                            max={365}
+                            onChange={(maxAgeDays) =>
+                              patch({ doneCap: { ...draft.doneCap, maxAgeDays } })
+                            }
+                          />
+                        </div>
+                      </CardRow>
+                    </Card>
+                    <Hint>
+                      Hidden tasks are not archived — Show all in the Done column brings them back.
+                    </Hint>
+                  </div>
                   <Field
                     label="Working directory"
                     hint="Where agents run and where + Shell opens. Blank uses the storage folder."

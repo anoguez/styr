@@ -942,17 +942,19 @@ export function TaskDialog({
               Save
               <kbd className="font-mono text-[10px] text-faint">⌘↵</kbd>
             </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => void saveAndLaunch()}
-              className="inline-flex h-[30px] items-center gap-[7px] rounded-lg border border-accent bg-accent px-3.5 text-[12.5px] font-semibold text-[var(--color-on-accent)] shadow-[0_1px_0_rgba(255,255,255,0.12)_inset] transition-colors hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-40"
-            >
-              <svg aria-hidden viewBox="0 0 16 16" width="11" height="11" fill="currentColor">
-                <path d="M5 3.5v9l7.25-4.5z" />
-              </svg>
-              Save &amp; Start
-            </button>
+            {form.status !== 'done' ? (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void saveAndLaunch()}
+                className="inline-flex h-[30px] items-center gap-[7px] rounded-lg border border-accent bg-accent px-3.5 text-[12.5px] font-semibold text-[var(--color-on-accent)] shadow-[0_1px_0_rgba(255,255,255,0.12)_inset] transition-colors hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-40"
+              >
+                <svg aria-hidden viewBox="0 0 16 16" width="11" height="11" fill="currentColor">
+                  <path d="M5 3.5v9l7.25-4.5z" />
+                </svg>
+                Save &amp; Start
+              </button>
+            ) : null}
           </footer>
         </div>
       </div>
