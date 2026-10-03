@@ -62,6 +62,7 @@ import { useUpdates } from '../hooks/useUpdates.js'
 import { useWorkspaceTarget } from '../hooks/useWorkspaceTarget.js'
 import { ansiLabel, TERMINAL_FONTS, TERMINAL_PALETTES, UI_FONTS } from '../hooks/useTheme.js'
 import { terminalTheme } from '../lib/palette.js'
+import { workspaceColor } from '../lib/workspaceColor.js'
 
 const PLACEHOLDERS = [
   '{{id}}',
@@ -637,7 +638,11 @@ export function SettingsDialog({
               </div>
               {group.picker ? (
                 <span className="relative mb-1.5 block">
-                  <span className="pointer-events-none absolute left-[9px] top-1/2 size-[7px] -translate-y-1/2 rounded-sm bg-[var(--color-accent-text)]" />
+                  <span
+                    aria-hidden
+                    style={{ backgroundColor: workspaceColor(target.editedWorkspaceId) }}
+                    className="pointer-events-none absolute left-[9px] top-1/2 size-[7px] -translate-y-1/2 rounded-[2px]"
+                  />
                   <Select
                     aria-label="Workspace these settings apply to"
                     compact

@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { DEFAULT_WORKSPACE_ID } from '@core/types.js'
 import type { Workspaces } from '../hooks/useWorkspaces.js'
 import { Button, Card, CardRow, Chip, Hint, inputBase, inputClass } from './ui.js'
+import { workspaceColor } from '../lib/workspaceColor.js'
 import { ipcMessage } from './WorkspaceSwitcher.js'
 
 /**
@@ -47,9 +48,9 @@ export function WorkspacesPane({
           return (
             <CardRow key={workspace.id} className="flex items-center gap-3 px-3.5 py-2.5">
               <span
-                className={`size-2 shrink-0 rounded-sm ${
-                  open ? 'bg-[var(--color-accent-text)]' : 'bg-edge-strong'
-                }`}
+                aria-hidden
+                style={{ backgroundColor: workspaceColor(workspace.id) }}
+                className="size-2 shrink-0 rounded-[2px]"
               />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 {editing ? (
