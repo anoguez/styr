@@ -55,6 +55,7 @@ export function TaskCardBody({
     task.contextFiles.length > 0 ? `◎ ${task.contextFiles.length}` : null,
     task.activity.length > 0 ? `✎ ${task.activity.length}` : null
   ].filter(Boolean)
+  const loud = task.priority === 'high' || task.priority === 'urgent'
 
   return (
     <>
@@ -70,8 +71,13 @@ export function TaskCardBody({
         {task.title}
       </p>
 
-      {task.project || task.tags.length > 0 || task.readiness === 'needs_spec' ? (
+      {task.project || task.tags.length > 0 || task.readiness === 'needs_spec' || loud ? (
         <div className="mt-2.5 flex flex-wrap items-center gap-1">
+          {loud ? (
+            <Chip tone="warn" title={`${task.priority} priority`}>
+              {task.priority}
+            </Chip>
+          ) : null}
           {task.readiness === 'needs_spec' ? (
             <Chip tone="warn" title="Needs a spec before it can be worked on">
               needs spec
@@ -167,10 +173,13 @@ export function TaskCard({
       {...listeners}
     >
       <span
-        aria-hidden
-        className={`absolute inset-y-0 left-0 w-[3px] ${PRIORITY_BAR[task.priority]}`}
+        role="img"
+        aria-label={`${task.priority} priority`}
         title={`${task.priority} priority`}
-      />
+        className="absolute inset-y-0 left-0 w-3"
+      >
+        <span className={`absolute inset-y-0 left-0 w-[3px] ${PRIORITY_BAR[task.priority]}`} />
+      </span>
       <TaskCardBody task={task} agent={agent} queued={queued} />
       <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <CardAction label="Edit" title={`Edit ${task.id}`} onTrigger={() => onOpen(task)} />
