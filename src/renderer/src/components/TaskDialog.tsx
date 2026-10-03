@@ -409,7 +409,7 @@ export function TaskDialog({
 
   const taskId = task?.id ?? 'TASK-…'
   const inputText = 'rounded-lg border bg-transparent text-ink outline-none placeholder:text-faint'
-
+  return (
     <>
       {/* The backdrop deliberately does not close the dialog: a stray click would discard the draft. */}
       <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/65 px-8 py-[6vh] backdrop-blur-[2px]">
