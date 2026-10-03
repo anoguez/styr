@@ -48,12 +48,14 @@ export function TaskCardBody({
   task,
   agent,
   queued,
-  diffStat
+  diffStat,
+  onShowChanges
 }: {
   task: Task
   agent?: AgentStatus
   queued?: QueuedForOrchestration
   diffStat?: DiffStat
+  onShowChanges?: () => void
 }): ReactNode {
   const meta = [
     task.contextFiles.length > 0 ? `◎ ${task.contextFiles.length}` : null,
@@ -102,28 +104,6 @@ export function TaskCardBody({
             {item}
           </span>
         ))}
-        {diffStat ? (
-          <span
-            title={`${diffStat.files} ${diffStat.files === 1 ? 'file' : 'files'} changed · +${diffStat.added} −${diffStat.removed}`}
-            className="inline-flex shrink-0 items-center gap-1"
-          >
-            <svg
-              aria-hidden
-              viewBox="0 0 16 16"
-              width="12"
-              height="12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M4 2.5h5l3 3v8H4z" />
-              <path d="M6.25 7h3.5M8 5.25v3.5M6.25 11h3.5" />
-            </svg>
-            <DiffCount added={diffStat.added} removed={diffStat.removed} />
-          </span>
-        ) : null}
         {task.prUrl ? (
           <a
             href={task.prUrl}
@@ -145,6 +125,37 @@ export function TaskCardBody({
           </span>
         ) : null}
       </div>
+
+      {diffStat ? (
+        <button
+          type="button"
+          title={`${diffStat.files} ${diffStat.files === 1 ? 'file' : 'files'} changed · +${diffStat.added} −${diffStat.removed} — view changes`}
+          aria-label={`View changes: ${diffStat.files} files, +${diffStat.added} −${diffStat.removed}`}
+          className="-ml-1 mt-1.5 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[10.5px] text-faint transition-colors hover:bg-raised hover:text-ink"
+          onPointerDown={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            onShowChanges?.()
+          }}
+        >
+          <svg
+            aria-hidden
+            viewBox="0 0 16 16"
+            width="12"
+            height="12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M4 2.5h5l3 3v8H4z" />
+            <path d="M6.25 7h3.5M8 5.25v3.5M6.25 11h3.5" />
+          </svg>
+          <DiffCount added={diffStat.added} removed={diffStat.removed} />
+        </button>
+      ) : null}
     </>
   )
 }
@@ -232,7 +243,13 @@ export function TaskCard({
       >
         <span className={`absolute inset-y-0 left-0 w-[3px] ${PRIORITY_BAR[task.priority]}`} />
       </span>
-      <TaskCardBody task={task} agent={agent} queued={queued} diffStat={diffStat} />
+      <TaskCardBody
+        task={task}
+        agent={agent}
+        queued={queued}
+        diffStat={diffStat}
+        onShowChanges={() => onShowChanges(task)}
+      />
       <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <CardAction label="Edit" title={`Edit ${task.id}`} onTrigger={() => onOpen(task)} />
         {task.status === 'done' ? (
