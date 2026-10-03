@@ -24,6 +24,7 @@ const RESERVED = new Set(['ctrl+c', 'ctrl+d', 'ctrl+l', 'ctrl+z', 'escape', 'ent
 
 export const SHORTCUT_LABELS: Record<ShortcutCommand, string> = {
   newTask: 'New task',
+  quickTask: 'Quick add task',
   commandPalette: 'Command palette',
   focusSearch: 'Focus search',
   settings: 'Open Settings',
@@ -31,7 +32,9 @@ export const SHORTCUT_LABELS: Record<ShortcutCommand, string> = {
   toggleAgents: 'Toggle the agents sidebar',
   orchestrate: 'Orchestrate',
   newShell: 'New terminal tab',
-  closeShell: 'Close terminal tab'
+  closeShell: 'Close terminal tab',
+  switchWorkspace: 'Switch workspace',
+  newWorkspace: 'New workspace'
 }
 
 /**
@@ -43,6 +46,7 @@ export type ShortcutScope = 'window' | 'terminal'
 
 export const SHORTCUT_SCOPES: Record<ShortcutCommand, ShortcutScope> = {
   newTask: 'window',
+  quickTask: 'window',
   commandPalette: 'window',
   focusSearch: 'window',
   settings: 'window',
@@ -50,7 +54,9 @@ export const SHORTCUT_SCOPES: Record<ShortcutCommand, ShortcutScope> = {
   toggleAgents: 'window',
   orchestrate: 'window',
   newShell: 'terminal',
-  closeShell: 'terminal'
+  closeShell: 'terminal',
+  switchWorkspace: 'window',
+  newWorkspace: 'window'
 }
 
 /** What a key event happened in. Required, so no caller can forget that scope exists. */

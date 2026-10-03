@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 // electron-updater defines `autoUpdater` with a getter, which Node's ESM loader cannot see as a
 // named export of a CommonJS module, so it has to come off the default export.
 import electronUpdater from 'electron-updater'
-import { loadSettings } from '@core/config.js'
+import { loadSettings } from '@core/settingsStore.js'
 import type { UpdateState } from '@core/types.js'
 import { listSessions } from './terminal/ptyManager.js'
 

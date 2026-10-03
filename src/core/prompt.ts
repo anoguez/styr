@@ -1,6 +1,7 @@
 import {
   TASK_STATUSES,
   WORKTREE_BRANCH_PREFIX,
+  worktreeKey,
   type PromptTemplate,
   type Settings,
   type Task
@@ -54,7 +55,7 @@ function contextBlock(files: string[]): string {
  * How to move the task on the board. Rendered into every prompt rather than written into each
  * template, so a custom or older template cannot leave an agent with no way to report progress.
  */
-function boardProtocol(task: Task): string {
+function boardProtocol(task: Task, workspaceId?: string): string {
   return [
     '## Board protocol',
     `This task is the file ${task.filePath}. The board reads it from there, so you move it by`,
@@ -65,6 +66,7 @@ function boardProtocol(task: Task): string {
     '- Set `status: in_review` once the work is ready for me to look at.',
     '- Set `status: done` only when the work has landed on the base branch (or I confirm it). Work',
     '  that is merely approved or committed on a branch stays `in_review`.',
+    '- If you open a pull or merge request (any host), record its URL as `prUrl:` in the frontmatter so the card links to it.',
     '- Set `readiness: ready` once the task is specified well enough to be worked on.',
     '- Append progress notes as `- ` bullets under `## Activity` at the end of the file.',
     '- Change only those lines; leave the rest of the frontmatter as it is.',
@@ -75,7 +77,7 @@ function boardProtocol(task: Task): string {
       ? [
           '',
           `You are in a dedicated git worktree at ${task.repoPath} on branch`,
-          `\`${WORKTREE_BRANCH_PREFIX}${task.id}\`. Commit there. Do not switch branches and do not`,
+          `\`${WORKTREE_BRANCH_PREFIX}${worktreeKey(workspaceId, task.id)}\`. Commit there. Do not switch branches and do not`,
           'touch the main checkout — another agent may be working in it.'
         ]
       : [])
@@ -86,10 +88,10 @@ function placeholder(key: string): RegExp {
   return new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`)
 }
 
-export function buildPrompt(template: string, task: Task): string {
+export function buildPrompt(template: string, task: Task, workspaceId?: string): string {
   const sections: Record<string, string> = {
     contextFiles: contextBlock(task.contextFiles),
-    board: boardProtocol(task)
+    board: boardProtocol(task, workspaceId)
   }
   const values: Record<string, string> = {
     id: task.id,

@@ -34,6 +34,9 @@
   --color-pri-high: #e0a458;
   --color-pri-urgent: #e57a7a;
 
+  /* Feedback — Tailwind's red-300, so error text reads the same on every surface */
+  --color-danger: oklch(80.8% 0.114 19.571);
+
   --radius-card: 10px;
 
   --font-ui: ui-sans-serif, -apple-system, 'SF Pro Text', system-ui, sans-serif;

@@ -2,15 +2,18 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AgentStatus } from '../core/agentState.js'
 import type {
   AppInfo,
+  BrokenSettingsFile,
   OrchestrationSummary,
   Settings,
+  SettingsChange,
   Task,
   TaskDraft,
   TaskFilter,
   TaskPatch,
   TaskStatus,
   TerminalSessionInfo,
-  UpdateState
+  UpdateState,
+  WorkspaceOverview
 } from '../core/types.js'
 
 export interface TerminalSpawnRequest {
@@ -79,9 +82,22 @@ const api = {
     branches: (repoPath: string): Promise<{ branches: string[]; current?: string }> =>
       ipcRenderer.invoke('git:branches', repoPath)
   },
+  workspaces: {
+    list: (): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:list'),
+    switch: (id: string): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:switch', id),
+    create: (name: string): Promise<WorkspaceOverview> =>
+      ipcRenderer.invoke('workspaces:create', name),
+    rename: (id: string, name: string): Promise<WorkspaceOverview> =>
+      ipcRenderer.invoke('workspaces:rename', id, name),
+    remove: (id: string): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:delete', id),
+    onChanged: (handler: () => void): (() => void) => subscribe('workspaces:changed', handler)
+  },
   settings: {
-    get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),
-    save: (settings: Settings): Promise<Settings> => ipcRenderer.invoke('settings:save', settings),
+    get: (workspaceId?: string): Promise<Settings> =>
+      ipcRenderer.invoke('settings:get', workspaceId),
+    save: (change: SettingsChange): Promise<Settings> =>
+      ipcRenderer.invoke('settings:save', change),
+    brokenFiles: (): Promise<BrokenSettingsFile[]> => ipcRenderer.invoke('settings:brokenFiles'),
     pickDirectory: (current?: string): Promise<string | null> =>
       ipcRenderer.invoke('settings:pickDirectory', current),
     pickFiles: (startIn?: string): Promise<string[]> =>

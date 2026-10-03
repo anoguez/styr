@@ -71,6 +71,7 @@ export interface ThemeSettings {
 
 export const SHORTCUT_COMMANDS = [
   'newTask',
+  'quickTask',
   'commandPalette',
   'focusSearch',
   'settings',
@@ -78,7 +79,9 @@ export const SHORTCUT_COMMANDS = [
   'toggleAgents',
   'orchestrate',
   'newShell',
-  'closeShell'
+  'closeShell',
+  'switchWorkspace',
+  'newWorkspace'
 ] as const
 
 export type ShortcutCommand = (typeof SHORTCUT_COMMANDS)[number]
@@ -107,6 +110,32 @@ export interface OrchestrationSummary {
 }
 
 export const WORKTREE_BRANCH_PREFIX = 'styr/'
+
+/** The workspace every install has. Its folder is the storage root itself, as before workspaces. */
+export const DEFAULT_WORKSPACE_ID = 'default'
+export const DEFAULT_WORKSPACE_NAME = 'Default'
+
+/** An isolated board: its own tasks, agents and ids. Not to be confused with `storageDir`. */
+export interface WorkspaceInfo {
+  id: string
+  name: string
+}
+
+/** The workspaces as the UI lists them, with what it needs to warn before a delete. */
+export interface WorkspaceOverview {
+  activeId: string
+  workspaces: (WorkspaceInfo & { taskCount: number; liveSessions: number })[]
+}
+
+/**
+ * What names a task's worktree and branch. Task ids are per workspace, so two workspaces can both
+ * hold TASK-0001 on one repo; every non-default workspace therefore prefixes its id. Default keeps
+ * the bare id so worktrees made before workspaces existed still resolve. Pure, because the prompt
+ * (shared with the renderer) needs the branch name too.
+ */
+export function worktreeKey(workspaceId: string | undefined, taskId: string): string {
+  return !workspaceId || workspaceId === DEFAULT_WORKSPACE_ID ? taskId : `${workspaceId}-${taskId}`
+}
 
 export const TASK_READINESS = ['ready', 'needs_spec'] as const
 export type TaskReadiness = (typeof TASK_READINESS)[number]
@@ -140,6 +169,7 @@ export interface Task {
   agentSession?: { provider: 'claude' | 'codex'; id: string }
   sessions: TaskSessionRef[]
   externalRef?: ExternalRef
+  prUrl?: string
   order: number
   createdAt: string
   updatedAt: string
@@ -230,6 +260,7 @@ export const DEFAULT_THEME: ThemeSettings = {
 
 export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   newTask: ['mod+n'],
+  quickTask: ['mod+shift+n'],
   commandPalette: ['mod+p', 'mod+k'],
   focusSearch: ['mod+f'],
   settings: ['mod+,'],
@@ -237,11 +268,16 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   toggleAgents: [],
   orchestrate: [],
   newShell: ['mod+t'],
-  closeShell: ['mod+w']
+  closeShell: ['mod+w'],
+  switchWorkspace: [],
+  newWorkspace: []
 }
 
 export interface Settings {
-  workspaceDir: string
+  /** Where the app keeps its own data. Workspaces live inside it; the default one is its root. */
+  storageDir: string
+  /** Which workspace the board shows. A local preference, never stored in the task files. */
+  activeWorkspaceId: string
   defaultRepoPath: string
   shell: string
   claudeCommand: string
@@ -258,6 +294,74 @@ export interface Settings {
   shortcuts: ShortcutBindings
   updates: UpdateSettings
   taskDefaults: TaskDefaults
+}
+
+/**
+ * The settings that belong to the app rather than to a board. They live in `~/.styr/config.json`.
+ */
+export const GLOBAL_SETTING_KEYS = [
+  'storageDir',
+  'activeWorkspaceId',
+  'updates',
+  'shortcuts'
+] as const satisfies readonly (keyof Settings)[]
+
+/**
+ * The settings each workspace keeps in its own `settings.json`. Every `Settings` key is in exactly
+ * one of the two lists, and a test holds the schema to that, so a new key needs a deliberate choice.
+ */
+export const WORKSPACE_SETTING_KEYS = [
+  'defaultRepoPath',
+  'shell',
+  'claudeCommand',
+  'codexCommand',
+  'codexApprovalReviewer',
+  'enabledProviders',
+  'defaultProvider',
+  'providerRouting',
+  'defaultPromptTemplateId',
+  'promptTemplates',
+  'promptRouting',
+  'orchestration',
+  'theme',
+  'taskDefaults'
+] as const satisfies readonly (keyof Settings)[]
+
+export type GlobalSettingKey = (typeof GLOBAL_SETTING_KEYS)[number]
+export type WorkspaceSettingKey = (typeof WORKSPACE_SETTING_KEYS)[number]
+export type GlobalSettings = Pick<Settings, GlobalSettingKey>
+export type WorkspaceSettings = Pick<Settings, WorkspaceSettingKey>
+
+export function isWorkspaceSettingKey(key: string): key is WorkspaceSettingKey {
+  return (WORKSPACE_SETTING_KEYS as readonly string[]).includes(key)
+}
+
+function pickSettings<K extends keyof Settings>(
+  settings: Settings,
+  keys: readonly K[]
+): Pick<Settings, K> {
+  return Object.fromEntries(keys.map((key) => [key, settings[key]])) as Pick<Settings, K>
+}
+
+export function globalSettingsFor(settings: Settings): GlobalSettings {
+  return pickSettings(settings, GLOBAL_SETTING_KEYS)
+}
+
+export function workspaceSettingsFor(settings: Settings): WorkspaceSettings {
+  return pickSettings(settings, WORKSPACE_SETTING_KEYS)
+}
+
+/** One Save from the Settings dialog: the app-level keys, and one workspace's own. */
+export interface SettingsChange {
+  workspaceId: string
+  workspace: WorkspaceSettings
+  global: GlobalSettings
+}
+
+/** A workspace whose `settings.json` exists but could not be read, so it is running on defaults. */
+export interface BrokenSettingsFile {
+  workspaceId: string
+  path: string
 }
 
 /** Starting values for the new-task form. Existing tasks keep whatever they saved. */
@@ -297,6 +401,8 @@ export interface TerminalSessionInfo {
   title: string
   cwd: string
   taskId?: string
+  /** The workspace the task belongs to; task ids are only unique within one. */
+  workspaceId?: string
   provider?: 'claude' | 'codex'
   /** A read-back of a past chat rather than the task's live session. */
   replay?: boolean

@@ -88,6 +88,7 @@ export function serialiseTask(task: Task): string {
     ...(task.agentSession ? { agentSession: task.agentSession } : {}),
     ...(task.sessions.length > 0 ? { sessions: task.sessions } : {}),
     ...(task.externalRef ? { externalRef: task.externalRef } : {}),
+    ...(task.prUrl ? { prUrl: task.prUrl } : {}),
     order: task.order,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt

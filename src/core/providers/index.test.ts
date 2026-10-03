@@ -20,7 +20,8 @@ describe('provider routing', () => {
 
   it('resumes each provider through its own command', () => {
     const settings = {
-      workspaceDir: workspace,
+      storageDir: workspace,
+      activeWorkspaceId: 'default',
       claudeCommand: 'claude',
       codexCommand: 'codex',
       codexApprovalReviewer: 'user'

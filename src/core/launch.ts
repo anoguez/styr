@@ -5,7 +5,7 @@ import { ensureWorktree, worktreePathFor } from './worktree.js'
 import { buildPrompt, resolveTemplateFor } from './prompt.js'
 import { providerById, providerFor } from './providers/index.js'
 import { shellQuote } from './shell.js'
-import type { Settings, Task } from './types.js'
+import { worktreeKey, type Settings, type Task } from './types.js'
 
 export { shellQuote }
 
@@ -20,16 +20,18 @@ export interface LaunchPlan {
 }
 
 export function workingDirFor(settings: Settings, task: Task): string {
-  return task.repoPath || settings.defaultRepoPath || settings.workspaceDir
+  return task.repoPath || settings.defaultRepoPath || settings.storageDir
 }
 
 /** Where the session will run, without creating anything — safe to call when previewing a prompt. */
 export function plannedCwd(settings: Settings, task: Task): string {
   const repo = workingDirFor(settings, task)
-  return task.useWorktree ? worktreePathFor(repo, task.id) : repo
+  return task.useWorktree
+    ? worktreePathFor(repo, worktreeKey(settings.activeWorkspaceId, task.id))
+    : repo
 }
 
-interface Workspace {
+interface Checkout {
   cwd: string
   worktreePath?: string
   warning?: string
@@ -40,11 +42,15 @@ interface Workspace {
  * agents never share one working directory; if that cannot be done the session still starts in the
  * plain repository rather than failing, and says why.
  */
-function workspaceFor(settings: Settings, task: Task): Workspace {
+function checkoutFor(settings: Settings, task: Task): Checkout {
   const repo = workingDirFor(settings, task)
   if (!task.useWorktree) return { cwd: repo }
   try {
-    const worktree = ensureWorktree(repo, task.id, task.baseBranch)
+    const worktree = ensureWorktree(
+      repo,
+      worktreeKey(settings.activeWorkspaceId, task.id),
+      task.baseBranch
+    )
     return { cwd: worktree.path, worktreePath: worktree.path }
   } catch (error) {
     return {
@@ -58,7 +64,11 @@ function workspaceFor(settings: Settings, task: Task): Workspace {
 
 export function renderPrompt(settings: Settings, task: Task, templateId?: string): string {
   const template = resolveTemplateFor(settings, task, templateId)
-  return buildPrompt(template.template, { ...task, repoPath: plannedCwd(settings, task) })
+  return buildPrompt(
+    template.template,
+    { ...task, repoPath: plannedCwd(settings, task) },
+    settings.activeWorkspaceId
+  )
 }
 
 /** When a past conversation was last written, for dating a chat we only learned about later. */
@@ -95,7 +105,7 @@ export function planLaunch(
 ): LaunchPlan {
   const { templateId, homeRoot, withPrompt = false, fresh = false, resume } = options
   const provider = options.provider ? providerById(options.provider) : providerFor(settings, task)
-  const workspace = workspaceFor(settings, task)
+  const checkout = checkoutFor(settings, task)
   const existing = task.agentSession?.provider === provider.id ? task.agentSession.id : undefined
 
   clearAgentStatus(settings, task.id)
@@ -125,13 +135,13 @@ export function planLaunch(
       taskId: task.id,
       sessionId,
       resume: resumable,
-      cwd: workspace.cwd,
+      cwd: checkout.cwd,
       prompt
     }),
-    cwd: workspace.cwd,
+    cwd: checkout.cwd,
     sessionId,
     resumed: resumable,
-    worktreePath: workspace.worktreePath,
-    warning: workspace.warning
+    worktreePath: checkout.worktreePath,
+    warning: checkout.warning
   }
 }

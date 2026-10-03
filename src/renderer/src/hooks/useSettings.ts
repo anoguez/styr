@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Settings } from '@core/types.js'
+import type { Settings, SettingsChange } from '@core/types.js'
 
 export function useSettings(): {
   settings: Settings | null
-  save: (next: Settings) => Promise<void>
+  /** Saves the app-level keys and one workspace's own. The result is the active workspace's. */
+  save: (change: SettingsChange) => Promise<void>
 } {
   const [settings, setSettings] = useState<Settings | null>(null)
 
@@ -12,8 +13,8 @@ export function useSettings(): {
     return window.api.settings.onChanged(setSettings)
   }, [])
 
-  const save = useCallback(async (next: Settings) => {
-    setSettings(await window.api.settings.save(next))
+  const save = useCallback(async (change: SettingsChange) => {
+    setSettings(await window.api.settings.save(change))
   }, [])
 
   return { settings, save }
