@@ -21,6 +21,7 @@ function summarise(task: Task): Record<string, unknown> {
     tags: task.tags,
     repoPath: task.repoPath,
     useWorktree: task.useWorktree,
+    baseBranch: task.baseBranch,
     worktreePath: task.worktreePath,
     prUrl: task.prUrl,
     contextFiles: task.contextFiles,
@@ -72,7 +73,9 @@ server.registerTool(
   {
     title: 'Create task',
     description:
-      'Create a task in the backlog (or another status) as a markdown file on the board.',
+      'Create a task in the backlog (or another status) as a markdown file on the board. ' +
+      'baseBranch picks the branch the task worktree starts from when useWorktree is set; unset ' +
+      "means the repository checkout's current branch.",
     inputSchema: {
       title: z.string(),
       description: z.string().optional(),
@@ -83,6 +86,7 @@ server.registerTool(
       tags: z.array(z.string()).optional(),
       repoPath: z.string().optional(),
       useWorktree: z.boolean().optional(),
+      baseBranch: z.string().optional(),
       contextFiles: z.array(z.string()).optional()
     }
   },
@@ -97,7 +101,9 @@ server.registerTool(
       'Update any field of a task, including moving it to another board column. Set readiness to ' +
       '"ready" once a task is specified well enough to be worked on, or "needs_spec" when it is not. ' +
       'contextFiles replaces the task attachment list — absolute paths to files worth reading for ' +
-      'this task. prUrl is the link to the pull/merge request opened for the task, on any host.',
+      'this task. prUrl is the link to the pull/merge request opened for the task, on any host. ' +
+      'baseBranch is the branch the task worktree starts from; it can only be changed before the ' +
+      "worktree exists, and unset means the repository checkout's current branch.",
     inputSchema: {
       id: z.string(),
       title: z.string().optional(),
@@ -108,11 +114,22 @@ server.registerTool(
       project: z.string().optional(),
       tags: z.array(z.string()).optional(),
       repoPath: z.string().optional(),
+      baseBranch: z.string().optional(),
       contextFiles: z.array(z.string()).optional(),
       prUrl: z.string().optional()
     }
   },
-  async ({ id, ...patch }) => json(summarise(updateTask(id, patch)))
+  async ({ id, ...patch }) => {
+    const existing = getTask(id)
+    if (
+      existing?.worktreePath &&
+      patch.baseBranch !== undefined &&
+      patch.baseBranch !== existing.baseBranch
+    ) {
+      throw new Error(`${id} already has a worktree, so its base branch can no longer change`)
+    }
+    return json(summarise(updateTask(id, patch)))
+  }
 )
 
 server.registerTool(
