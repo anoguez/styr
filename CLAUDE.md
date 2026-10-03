@@ -24,6 +24,10 @@ Electron + React kanban board. See README.md for what it does and how to run it.
 checkout. Worktrees are created beside the repo (`<repo>.worktrees/<taskId>`) — inside it they would
 show as untracked files in the user's project.
 
+A new worktree branch starts from `origin/<base>` after a best-effort `git fetch`, but only when the
+main checkout's HEAD is an ancestor of it (strictly behind). Local unpushed commits or a feature
+branch keep HEAD, and a failed fetch (offline) falls back to HEAD — see `startPointFor`.
+
 Worktree failure is never fatal: `workspaceFor` in `launch.ts` falls back to the plain repository
 and returns a `warning`, which `ipc.ts` writes to the task activity log. A blocked launch would be
 worse than a shared working directory.

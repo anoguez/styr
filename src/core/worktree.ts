@@ -80,9 +80,32 @@ export function ensureWorktree(repoPath: string, taskId: string): WorktreeResult
 
   const args = branchExists(repoPath, branch)
     ? ['worktree', 'add', path, branch]
-    : ['worktree', 'add', '-b', branch, path, 'HEAD']
+    : ['worktree', 'add', '-b', branch, path, startPointFor(repoPath)]
   git(args, repoPath)
   return { path, branch, created: true }
+}
+
+/**
+ * Where a new task branch starts. The main checkout's HEAD is only as fresh as the user's last
+ * pull, so work started from it lands on an old version of the app. Fetch first (best effort —
+ * offline must not block a launch), then start from `origin/<base>` when HEAD is strictly behind
+ * it. If HEAD is ahead, diverged, or on another branch, it is kept: that is the user's own state.
+ */
+function startPointFor(repoPath: string): string {
+  try {
+    git(['fetch', '--quiet', 'origin'], repoPath, 30_000)
+  } catch {
+    return 'HEAD'
+  }
+  const base = baseBranchFor(repoPath)
+  const remote = base ? `origin/${base}` : undefined
+  if (!remote || !refExists(repoPath, remote)) return 'HEAD'
+  try {
+    git(['merge-base', '--is-ancestor', 'HEAD', remote], repoPath)
+    return remote
+  } catch {
+    return 'HEAD'
+  }
 }
 
 /**

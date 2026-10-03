@@ -50,6 +50,44 @@ afterEach(() => {
 })
 
 describe('worktree management', () => {
+  describe('start point', () => {
+    function cloneWithOrigin(): { origin: string; clone: string } {
+      const origin = temporaryRepository()
+      const clone = mkdtempSync(join(tmpdir(), 'styr-worktree-clone-'))
+      temporaryDirectories.push(clone)
+      runGit(['clone', origin, clone], tmpdir())
+      runGit(['config', 'user.name', 'Styr test'], clone)
+      runGit(['config', 'user.email', 'test@example.com'], clone)
+      return { origin, clone }
+    }
+
+    function commit(repository: string, file: string): string {
+      writeFileSync(join(repository, file), file)
+      runGit(['add', file], repository)
+      runGit(['commit', '-m', file], repository)
+      return runGit(['rev-parse', 'HEAD'], repository).trim()
+    }
+
+    it('branches from the fetched origin tip when the checkout is behind', () => {
+      const { origin, clone } = cloneWithOrigin()
+      const upstream = commit(origin, 'new.txt')
+
+      const { path } = ensureWorktree(clone, 'TASK-0001')
+
+      expect(runGit(['rev-parse', 'HEAD'], path).trim()).toBe(upstream)
+    })
+
+    it('keeps local commits that origin does not have', () => {
+      const { origin, clone } = cloneWithOrigin()
+      commit(origin, 'new.txt')
+      const local = commit(clone, 'local.txt')
+
+      const { path } = ensureWorktree(clone, 'TASK-0002')
+
+      expect(runGit(['rev-parse', 'HEAD'], path).trim()).toBe(local)
+    })
+  })
+
   it('creates a task branch beside the repository and reuses it on resume', () => {
     const repository = temporaryRepository()
     const taskId = 'TASK-0042'
