@@ -94,17 +94,17 @@ function ThemeSlider({
   onChange: (value: number) => void
 }): ReactNode {
   return (
-    <label className="flex items-center gap-3">
-      <span className="w-20 shrink-0 text-[12.5px] text-ink">{label}</span>
+    <label className="grid grid-cols-[72px_minmax(0,1fr)_40px] items-center gap-2.5">
+      <span className="text-[12px] text-dim">{label}</span>
       <input
         type="range"
         min={min}
         max={max}
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-raised [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent"
+        className="w-full cursor-pointer accent-[var(--color-accent)]"
       />
-      <span className="w-10 shrink-0 text-right font-mono text-[11px] text-faint">{readout}</span>
+      <span className="text-right font-mono text-[11px] text-faint">{readout}</span>
     </label>
   )
 }
