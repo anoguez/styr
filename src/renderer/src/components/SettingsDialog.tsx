@@ -900,6 +900,48 @@ export function SettingsDialog({
                     The Needs spec tag wins over the column, so unspecified work is always specced
                     first. A template pinned on a task overrides all of this.
                   </Hint>
+                  <div className="flex flex-col gap-2.5">
+                    <Eyebrow>Agent for each lane</Eyebrow>
+                    <Card>
+                      {ORCHESTRATION_LANES.map((lane) => (
+                        <CardRow
+                          key={lane}
+                          className="grid grid-cols-[minmax(0,1fr)_200px] items-center gap-2.5 px-3.5 py-2"
+                        >
+                          <span className="flex min-w-0 flex-col gap-0.5">
+                            <span className="text-[12.5px] text-ink">
+                              {ORCHESTRATION_LANE_LABELS[lane]}
+                            </span>
+                            <span className="text-[11px] text-faint">{LANE_HINTS[lane]}</span>
+                          </span>
+                          <Select
+                            compact
+                            aria-label={`Agent for ${ORCHESTRATION_LANE_LABELS[lane]}`}
+                            value={draft.providerRouting[lane]}
+                            onChange={(event) =>
+                              patch({
+                                providerRouting: {
+                                  ...draft.providerRouting,
+                                  [lane]: event.target.value as 'claude' | 'codex'
+                                }
+                              })
+                            }
+                          >
+                            {draft.enabledProviders.includes('claude') ? (
+                              <option value="claude">Claude Code</option>
+                            ) : null}
+                            {draft.enabledProviders.includes('codex') ? (
+                              <option value="codex">Codex</option>
+                            ) : null}
+                          </Select>
+                        </CardRow>
+                      ))}
+                    </Card>
+                    <Hint>
+                      Orchestrate uses these providers. Claude remains the default until you opt a
+                      lane into Codex. The same choice is in the Orchestrate section.
+                    </Hint>
+                  </div>
                   <Field
                     label="Fallback template"
                     hint="Used only if a routing entry above points at a template that no longer exists."
