@@ -63,7 +63,9 @@ export const claudeProvider: AgentProvider = {
     const hookArg = `--settings '${shellQuote(writeHookSettings(settings, taskId))}'`
     const sessionArg = resume ? `--resume ${sessionId}` : `--session-id ${sessionId}`
     const promptArg = prompt ? ` ${prompt}` : ''
-    return `${settings.claudeCommand} ${hookArg} ${sessionArg}${promptArg}`
+    // Auto mode hands permission prompts to Claude Code's classifier; it is not bypassPermissions.
+    const modeArg = settings.claudeApprovalMode === 'auto' ? ' --permission-mode auto' : ''
+    return `${settings.claudeCommand} ${hookArg}${modeArg} ${sessionArg}${promptArg}`
   },
 
   newSessionId: () => randomUUID(),

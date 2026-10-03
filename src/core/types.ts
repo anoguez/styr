@@ -243,6 +243,7 @@ export interface Settings {
   defaultRepoPath: string
   shell: string
   claudeCommand: string
+  claudeApprovalMode: 'user' | 'auto'
   codexCommand: string
   codexApprovalReviewer: 'user' | 'auto_review'
   enabledProviders: ('claude' | 'codex')[]

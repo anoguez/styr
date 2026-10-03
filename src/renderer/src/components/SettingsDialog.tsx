@@ -1020,6 +1020,22 @@ export function SettingsDialog({
               ) : null}
               {draft.enabledProviders.includes('claude') ? (
                 <Field
+                  label="Claude approvals"
+                  hint="Approve for me sends permission prompts to Claude Code's auto mode classifier; it does not grant full access. Needs a recent Claude Code."
+                >
+                  <Select
+                    value={draft.claudeApprovalMode}
+                    onChange={(event) =>
+                      patch({ claudeApprovalMode: event.target.value as 'user' | 'auto' })
+                    }
+                  >
+                    <option value="user">Ask me</option>
+                    <option value="auto">Approve for me</option>
+                  </Select>
+                </Field>
+              ) : null}
+              {draft.enabledProviders.includes('claude') ? (
+                <Field
                   label="Claude MCP server"
                   hint="Run this once in a terminal, then start a new Claude session. It lets Claude query the board — what is in review, what needs a spec — from anywhere."
                 >

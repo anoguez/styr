@@ -102,6 +102,7 @@ function defaults(): Settings {
     defaultRepoPath: '',
     shell: process.env.SHELL ?? '/bin/zsh',
     claudeCommand: 'claude',
+    claudeApprovalMode: 'user',
     codexCommand: 'codex',
     codexApprovalReviewer: 'user',
     enabledProviders: ['claude'],

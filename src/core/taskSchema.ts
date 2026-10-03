@@ -141,6 +141,7 @@ export const settingsSchema = z.object({
   defaultRepoPath: z.string().default(''),
   shell: z.string().default(''),
   claudeCommand: z.string().default('claude'),
+  claudeApprovalMode: z.enum(['user', 'auto']).default('user'),
   codexCommand: z.string().default('codex'),
   codexApprovalReviewer: z.enum(['user', 'auto_review']).default('user'),
   enabledProviders: z
