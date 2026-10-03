@@ -298,73 +298,59 @@ function ShortcutRow({
   }
 
   const isDefault = bindings.join(' ') === DEFAULT_SHORTCUTS[command].join(' ')
+  const keys = bindings.length === 0 ? 'Not bound' : bindings.map(formatAccelerator).join(' ')
 
   return (
-    <div className="flex items-center gap-3 border-b border-edge/60 py-2 last:border-b-0">
+    <div className="flex items-center gap-3 border-t border-edge py-2 pl-3.5 pr-2.5 first:border-t-0">
       <span className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span className="truncate text-[12.5px]">{SHORTCUT_LABELS[command]}</span>
+        <span className="truncate text-[12.5px] text-ink">{SHORTCUT_LABELS[command]}</span>
         {SHORTCUT_SCOPES[command] === 'terminal' ? (
           <span className="shrink-0 text-[11px] text-faint">in the terminal</span>
         ) : null}
       </span>
 
-      <div className="flex shrink-0 items-center gap-1">
-        {bindings.length === 0 ? (
-          <span className="text-[11px] text-faint">Not bound</span>
-        ) : (
-          bindings.map((accelerator) => (
-            <kbd
-              key={accelerator}
-              className={`rounded border px-1.5 py-[2px] font-mono text-[11px] ${
-                conflicted
-                  ? 'border-col-review text-col-review-text'
-                  : 'border-edge-strong text-dim'
-              }`}
-            >
-              {formatAccelerator(accelerator)}
-            </kbd>
-          ))
-        )}
-      </div>
+      {rejected ? (
+        <span className="shrink-0 text-[11px] text-col-review-text">{rejected}</span>
+      ) : null}
+
+      {bindings.length > 0 ? (
+        <button
+          type="button"
+          className="h-6 rounded-md px-1.5 text-[11.5px] text-faint transition-colors hover:text-ink"
+          onClick={() => onChange([])}
+        >
+          Clear
+        </button>
+      ) : null}
+      {!isDefault || bindings.length === 0 ? (
+        <button
+          type="button"
+          className="h-6 rounded-md px-1.5 text-[11.5px] text-faint transition-colors hover:text-ink"
+          onClick={() => onChange([...DEFAULT_SHORTCUTS[command]])}
+        >
+          Reset
+        </button>
+      ) : null}
 
       <button
         type="button"
+        title="Click, then press the new keys"
         onKeyDown={recording ? capture : undefined}
         onBlur={() => setRecording(false)}
         onClick={() => {
           setRecording((on) => !on)
           setRejected('')
         }}
-        className={`w-[108px] shrink-0 rounded-lg border px-2 py-1 text-[11.5px] transition-colors ${
+        className={`inline-flex h-[26px] min-w-24 items-center justify-center rounded-[7px] border px-2 font-mono text-[11.5px] transition-colors ${
           recording
-            ? 'border-accent bg-accent/15 text-accent-text'
-            : 'border-edge-strong text-dim hover:text-ink'
+            ? 'border-accent bg-accent/15 text-[var(--color-accent-text)]'
+            : conflicted
+              ? 'border-col-review bg-panel text-col-review-text'
+              : 'border-edge-strong bg-panel text-ink hover:border-faint'
         }`}
       >
-        {recording ? 'Press keys…' : 'Change'}
+        {recording ? 'Press keys…' : keys}
       </button>
-
-      <button
-        type="button"
-        disabled={isDefault && bindings.length > 0}
-        className="w-14 shrink-0 text-[11px] text-faint underline-offset-2 hover:text-ink disabled:opacity-30 disabled:hover:text-faint"
-        onClick={() => onChange([...DEFAULT_SHORTCUTS[command]])}
-      >
-        Reset
-      </button>
-
-      <button
-        type="button"
-        disabled={bindings.length === 0}
-        className="w-12 shrink-0 text-[11px] text-faint hover:text-ink disabled:opacity-30 disabled:hover:text-faint"
-        onClick={() => onChange([])}
-      >
-        Clear
-      </button>
-
-      {rejected ? (
-        <span className="shrink-0 text-[11px] text-col-review-text">{rejected}</span>
-      ) : null}
     </div>
   )
 }
@@ -385,6 +371,25 @@ function routedTo(settings: Settings, id: string): string {
     )
   ].filter((label): label is string => label !== null)
   return used.length > 0 ? used.join(', ') : 'Not routed'
+}
+
+function RouteArrow(): ReactNode {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 16 16"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="text-faint"
+    >
+      <path d="M3 8h9.5M9 4.5 12.5 8 9 11.5" />
+    </svg>
+  )
 }
 
 function slugId(name: string): string {
@@ -823,101 +828,78 @@ export function SettingsDialog({
 
               {section === 'routing' ? (
                 <>
-                  <div className="flex flex-col gap-2.5">
-                    <Eyebrow>Agent for each lane</Eyebrow>
-                    <Card>
-                      {ORCHESTRATION_LANES.map((lane) => (
-                        <CardRow
-                          key={lane}
-                          className="grid grid-cols-[minmax(0,1fr)_200px] items-center gap-3 px-3.5 py-2.5"
-                        >
-                          <span className="flex flex-col gap-0.5">
-                            <span className="text-[12.5px] text-ink">
-                              {ORCHESTRATION_LANE_LABELS[lane]}
-                            </span>
-                            <span className="text-[11px] text-faint">{LANE_HINTS[lane]}</span>
-                          </span>
-                          <Select
-                            compact
-                            aria-label={`Agent for ${ORCHESTRATION_LANE_LABELS[lane]}`}
-                            value={draft.providerRouting[lane]}
-                            onChange={(event) =>
-                              patch({
-                                providerRouting: {
-                                  ...draft.providerRouting,
-                                  [lane]: event.target.value as 'claude' | 'codex'
-                                }
-                              })
-                            }
-                          >
-                            {draft.enabledProviders.includes('claude') ? (
-                              <option value="claude">Claude Code</option>
-                            ) : null}
-                            {draft.enabledProviders.includes('codex') ? (
-                              <option value="codex">Codex</option>
-                            ) : null}
-                          </Select>
-                        </CardRow>
-                      ))}
-                    </Card>
-                    <Hint>Claude remains the default until you opt a lane into Codex.</Hint>
-                  </div>
-
-                  <div className="flex flex-col gap-2.5">
-                    <Eyebrow>Which prompt runs where</Eyebrow>
-                    <Card>
-                      <CardRow className="grid grid-cols-[minmax(0,1fr)_200px] items-center gap-3 px-3.5 py-2.5">
-                        <span className="flex flex-col gap-0.5">
-                          <span>
-                            <Chip tone="warn">Needs spec</Chip>
-                          </span>
-                          <span className="text-[11px] text-faint">Any column</span>
+                  <Card>
+                    <div className="grid grid-cols-[minmax(0,1fr)_24px_200px] items-center gap-2.5 border-b border-edge px-3.5 py-2">
+                      <Eyebrow>When a task is</Eyebrow>
+                      <span />
+                      <Eyebrow>Run this template</Eyebrow>
+                    </div>
+                    <CardRow className="grid grid-cols-[minmax(0,1fr)_24px_200px] items-center gap-2.5 px-3.5 py-2">
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span>
+                          <Chip tone="warn">
+                            <svg
+                              aria-hidden
+                              viewBox="0 0 16 16"
+                              width="10"
+                              height="10"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeLinejoin="round"
+                              className="mr-1"
+                            >
+                              <path d="M2.5 3.5v4l6 6 5-5-6-6h-4a1 1 0 0 0-1 1z" />
+                              <circle cx="5.5" cy="5.5" r="0.9" fill="currentColor" />
+                            </svg>
+                            Needs spec
+                          </Chip>
                         </span>
+                        <span className="text-[11px] text-faint">Any column</span>
+                      </span>
+                      <RouteArrow />
+                      <TemplateSelect
+                        label="Template for Needs spec"
+                        templates={draft.promptTemplates}
+                        value={draft.promptRouting.needsSpec}
+                        onChange={(needsSpec) =>
+                          patch({ promptRouting: { ...draft.promptRouting, needsSpec } })
+                        }
+                      />
+                    </CardRow>
+                    {TASK_STATUSES.map((status) => (
+                      <CardRow
+                        key={status}
+                        className="grid grid-cols-[minmax(0,1fr)_24px_200px] items-center gap-2.5 px-3.5 py-2"
+                      >
+                        <span className="flex items-center gap-2 text-[12.5px] text-ink">
+                          <span
+                            className="size-[7px] rounded-full"
+                            style={{ backgroundColor: `var(--color-col-${COLUMN_TOKENS[status]})` }}
+                          />
+                          {TASK_STATUS_LABELS[status]}
+                        </span>
+                        <RouteArrow />
                         <TemplateSelect
-                          label="Template for Needs spec"
+                          label={`Template for ${TASK_STATUS_LABELS[status]}`}
                           templates={draft.promptTemplates}
-                          value={draft.promptRouting.needsSpec}
-                          onChange={(needsSpec) =>
-                            patch({ promptRouting: { ...draft.promptRouting, needsSpec } })
+                          value={draft.promptRouting.byStatus[status]}
+                          onChange={(id) =>
+                            patch({
+                              promptRouting: {
+                                ...draft.promptRouting,
+                                byStatus: { ...draft.promptRouting.byStatus, [status]: id }
+                              }
+                            })
                           }
                         />
                       </CardRow>
-                      {TASK_STATUSES.map((status) => (
-                        <CardRow
-                          key={status}
-                          className="grid grid-cols-[minmax(0,1fr)_200px] items-center gap-3 px-3.5 py-2.5"
-                        >
-                          <span className="flex items-center gap-2 text-[12.5px] text-ink">
-                            <span
-                              className="size-[7px] rounded-full"
-                              style={{
-                                backgroundColor: `var(--color-col-${COLUMN_TOKENS[status]})`
-                              }}
-                            />
-                            {TASK_STATUS_LABELS[status]}
-                          </span>
-                          <TemplateSelect
-                            label={`Template for ${TASK_STATUS_LABELS[status]}`}
-                            templates={draft.promptTemplates}
-                            value={draft.promptRouting.byStatus[status]}
-                            onChange={(id) =>
-                              patch({
-                                promptRouting: {
-                                  ...draft.promptRouting,
-                                  byStatus: { ...draft.promptRouting.byStatus, [status]: id }
-                                }
-                              })
-                            }
-                          />
-                        </CardRow>
-                      ))}
-                    </Card>
-                    <Hint>
-                      Needs spec wins over the column, so unspecified work is always specced first.
-                      A template pinned on a task overrides all of this.
-                    </Hint>
-                  </div>
-
+                    ))}
+                  </Card>
+                  <Hint>
+                    The Needs spec tag wins over the column, so unspecified work is always specced
+                    first. A template pinned on a task overrides all of this.
+                  </Hint>
                   <Field
                     label="Fallback template"
                     hint="Used only if a routing entry above points at a template that no longer exists."
@@ -1031,20 +1013,21 @@ export function SettingsDialog({
               {section === 'orchestration' ? (
                 <>
                   <Card>
-                    <CardRow className="grid grid-cols-[minmax(0,1fr)_104px] items-center gap-3 border-b border-edge px-3.5 py-2">
+                    <div className="grid grid-cols-[minmax(0,1fr)_150px_104px] items-center gap-3 border-b border-edge px-3.5 py-2">
                       <Eyebrow>Lane</Eyebrow>
+                      <Eyebrow>Agent</Eyebrow>
                       <span className="text-center">
                         <Eyebrow>At once</Eyebrow>
                       </span>
-                    </CardRow>
+                    </div>
                     {ORCHESTRATION_LANES.map((lane) => (
                       <CardRow
                         key={lane}
-                        className={`grid grid-cols-[minmax(0,1fr)_104px] items-center gap-3 px-3.5 py-2.5 ${
+                        className={`grid grid-cols-[minmax(0,1fr)_150px_104px] items-center gap-3 px-3.5 py-2.5 ${
                           draft.orchestration[lane] === 0 ? 'opacity-60' : ''
                         }`}
                       >
-                        <span className="flex flex-col gap-0.5">
+                        <span className="flex min-w-0 flex-col gap-0.5">
                           <span className="text-[12.5px] font-medium text-ink">
                             {ORCHESTRATION_LANE_LABELS[lane]}
                           </span>
@@ -1054,6 +1037,26 @@ export function SettingsDialog({
                               : LANE_HINTS[lane]}
                           </span>
                         </span>
+                        <Select
+                          compact
+                          aria-label={`Agent for ${ORCHESTRATION_LANE_LABELS[lane]}`}
+                          value={draft.providerRouting[lane]}
+                          onChange={(event) =>
+                            patch({
+                              providerRouting: {
+                                ...draft.providerRouting,
+                                [lane]: event.target.value as 'claude' | 'codex'
+                              }
+                            })
+                          }
+                        >
+                          {draft.enabledProviders.includes('claude') ? (
+                            <option value="claude">Claude Code</option>
+                          ) : null}
+                          {draft.enabledProviders.includes('codex') ? (
+                            <option value="codex">Codex</option>
+                          ) : null}
+                        </Select>
                         <Stepper
                           label={ORCHESTRATION_LANE_LABELS[lane]}
                           value={draft.orchestration[lane]}
@@ -1077,7 +1080,7 @@ export function SettingsDialog({
 
               {section === 'shortcuts' ? (
                 <>
-                  <Card className="px-3.5 py-1">
+                  <Card>
                     {SHORTCUT_COMMANDS.map((command) => (
                       <ShortcutRow
                         key={command}
