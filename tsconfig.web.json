@@ -9,7 +9,8 @@
     "src/core/shortcuts.ts",
     "src/core/doneCap.ts",
     "src/core/boardOrder.ts",
-    "src/core/diff.ts"
+    "src/core/diff.ts",
+    "src/core/diffView.ts"
   ],
   "compilerOptions": {
     "composite": true,

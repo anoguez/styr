@@ -85,8 +85,8 @@ const api = {
     branches: (repoPath: string): Promise<{ branches: string[]; current?: string }> =>
       ipcRenderer.invoke('git:branches', repoPath),
     taskDiff: (taskId: string): Promise<DiffResult> => ipcRenderer.invoke('git:taskDiff', taskId),
-    filePatch: (taskId: string, path: string): Promise<PatchResult> =>
-      ipcRenderer.invoke('git:filePatch', taskId, path)
+    filePatch: (taskId: string, path: string, full = false): Promise<PatchResult> =>
+      ipcRenderer.invoke('git:filePatch', taskId, path, full)
   },
   workspaces: {
     list: (): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:list'),

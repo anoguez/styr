@@ -8,6 +8,7 @@ import {
   parseNameStatus,
   parseNumstat,
   untrackedFiles,
+  emptyDiff,
   MAX_DIFF_FILES,
   type DiffResult,
   type PatchResult
@@ -435,24 +436,39 @@ function diffBaseFor(dir: string, repoPath: string, baseBranch?: string): string
   }
 }
 
-function diffTarget(
-  repoPath: string,
-  key: string,
-  worktree: boolean,
+type DiffTarget =
+  | {
+      dir: string
+      base: string
+      mergeBase?: string
+      branch?: string
+      note?: string
+      repo?: boolean
+    }
+  | { gone: true; branch: string; branchKept: boolean }
+  | { error: string }
+
+export interface DiffOptions {
+  /** True when the task is meant to have a worktree; false diffs the repository itself. */
+  worktree: boolean
   baseBranch?: string
-): { dir: string; base: string; branch?: string; note?: string } | { error: string } {
-  if (!isGitRepo(repoPath))
+}
+
+function diffTarget(repoPath: string, key: string, opts: DiffOptions): DiffTarget {
+  if (!isGitRepo(repoPath)) {
     return { error: `${repoPath || '(no repository)'} is not a git repository` }
-  if (!worktree) {
+  }
+  if (!opts.worktree) {
     return {
       dir: repoPath,
       base: 'HEAD',
-      note: 'No worktree — showing uncommitted changes in the repository.'
+      repo: true,
+      note: 'No worktree for this task — showing uncommitted changes in the repository.'
     }
   }
-  const dir = worktreePathFor(repoPath, key)
-  if (!existsSync(dir)) return { error: 'Worktree no longer exists' }
   const branch = branchNameFor(key)
+  const dir = worktreePathFor(repoPath, key)
+  if (!existsSync(dir)) return { gone: true, branch, branchKept: branchExists(repoPath, branch) }
   let onBranch = false
   try {
     onBranch = git(['rev-parse', '--abbrev-ref', 'HEAD'], dir) === branch
@@ -463,26 +479,34 @@ function diffTarget(
     return {
       dir,
       base: 'HEAD',
-      note: 'Branch is missing or detached — showing uncommitted changes only.'
+      note: 'The task branch is missing or detached — showing uncommitted changes only.'
     }
   }
-  const base = diffBaseFor(dir, repoPath, baseBranch)
+  const base = diffBaseFor(dir, repoPath, opts.baseBranch)
   if (!base) return { error: 'Could not find a base branch to compare against' }
-  return { dir, base, branch }
+  return {
+    dir,
+    base,
+    mergeBase: base,
+    branch
+  }
+}
+
+function pathSet(raw: string): Set<string> {
+  return new Set(raw.split('\0').filter(Boolean))
 }
 
 /**
  * Everything a task changed: commits since the merge-base with the base branch, plus staged,
  * unstaged and untracked work in the worktree. Patches are fetched lazily by `taskFilePatch`.
  */
-export function taskDiff(
-  repoPath: string,
-  key: string,
-  opts: { worktree: boolean; baseBranch?: string }
-): DiffResult {
+export function taskDiff(repoPath: string, key: string, opts: DiffOptions): DiffResult {
   try {
-    const target = diffTarget(repoPath, key, opts.worktree, opts.baseBranch)
+    const target = diffTarget(repoPath, key, opts)
     if ('error' in target) return target
+    if ('gone' in target) {
+      return { ...emptyDiff('gone'), branch: target.branch, branchKept: target.branchKept }
+    }
     const { dir, base } = target
     const statuses = parseNameStatus(gitRaw(['diff', '--name-status', '-z', '-M', base], dir))
     const files = parseNumstat(gitRaw(['diff', '--numstat', '-z', '-M', base], dir), statuses)
@@ -495,16 +519,54 @@ export function taskDiff(
       if (patch === 'binary') file.binary = true
       else if (patch !== 'too-large') Object.assign(file, countPatchLines(patch))
     }
+    // Which files are not committed yet: dirty against HEAD, or untracked.
+    const dirty = pathSet(gitRaw(['diff', '--name-only', '-z', 'HEAD'], dir))
+    const committed =
+      base === 'HEAD'
+        ? new Set<string>()
+        : pathSet(gitRaw(['diff', '--name-only', '-z', base, 'HEAD'], dir))
+    const untrackedPaths = new Set(untracked.map((file) => file.path))
     const all = [...files, ...untracked].sort((a, b) => a.path.localeCompare(b.path))
+    for (const file of all) {
+      const isDirty = dirty.has(file.path) || untrackedPaths.has(file.path)
+      file.uncommitted = isDirty
+      file.origin = untrackedPaths.has(file.path)
+        ? 'untracked'
+        : isDirty && committed.has(file.path)
+          ? 'both'
+          : isDirty
+            ? 'uncommitted'
+            : 'committed'
+    }
+    const kind = target.repo
+      ? 'repo'
+      : all.length > 0
+        ? 'changes'
+        : branchIsLanded(repoPath, key)
+          ? 'landed'
+          : 'empty'
     return {
-      base: target.base,
+      kind,
+      baseName: target.repo ? 'HEAD' : (opts.baseBranch ?? baseBranchFor(repoPath) ?? 'HEAD'),
+      mergeBase: target.mergeBase ? target.mergeBase.slice(0, 7) : undefined,
       branch: target.branch,
       note: target.note,
       files: all.slice(0, MAX_DIFF_FILES),
-      omitted: Math.max(0, all.length - MAX_DIFF_FILES)
+      omitted: Math.max(0, all.length - MAX_DIFF_FILES),
+      totalFiles: all.length,
+      totalAdditions: all.reduce((sum, file) => sum + file.additions, 0),
+      totalDeletions: all.reduce((sum, file) => sum + file.deletions, 0)
     }
   } catch (error) {
     return { error: firstLine(error) }
+  }
+}
+
+function branchIsLanded(repoPath: string, key: string): boolean {
+  try {
+    return branchLanding(repoPath, key)?.landed === true
+  } catch {
+    return false
   }
 }
 
@@ -518,29 +580,52 @@ function untrackedPatch(dir: string, path: string): string | 'binary' | 'too-lar
   }
 }
 
-/** One file's unified patch. The path must be in the current file list — no arbitrary reads. */
+function fileBytes(dir: string, path: string): number | undefined {
+  try {
+    return statSync(join(dir, path)).size
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * One file's unified patch. The path must be in the current file list — no arbitrary reads.
+ * `full` asks for the whole file as context so folded unchanged lines can be shown.
+ */
 export function taskFilePatch(
   repoPath: string,
   key: string,
-  opts: { worktree: boolean; baseBranch?: string },
-  path: string
+  opts: DiffOptions,
+  path: string,
+  full = false
 ): PatchResult {
   try {
-    const target = diffTarget(repoPath, key, opts.worktree, opts.baseBranch)
+    const target = diffTarget(repoPath, key, opts)
     if ('error' in target) return target
+    if ('gone' in target) return { error: 'Worktree no longer exists' }
     const diff = taskDiff(repoPath, key, opts)
     if ('error' in diff) return diff
     const file = diff.files.find((candidate) => candidate.path === path)
     if (!file) return { placeholder: 'unchanged' }
-    if (file.binary) return { placeholder: 'binary' }
     const { dir, base } = target
+    if (file.binary) return { placeholder: 'binary', bytes: fileBytes(dir, path) }
+    const context = full ? ['-U1000000'] : []
     const tracked = file.status !== 'added' || refHasPath(dir, base, path)
     const raw = tracked
-      ? gitRaw(['diff', '-M', base, '--', ...(file.oldPath ? [file.oldPath] : []), path], dir)
-      : gitRaw(['diff', '--no-index', '--', '/dev/null', path], dir, [0, 1])
-    if (/^Binary files /m.test(raw)) return { placeholder: 'binary' }
-    if (/^Subproject commit /m.test(raw)) return { placeholder: 'submodule' }
-    if (Buffer.byteLength(raw) > MAX_PATCH_BYTES) return { placeholder: 'too-large' }
+      ? gitRaw(
+          ['diff', '-M', ...context, base, '--', ...(file.oldPath ? [file.oldPath] : []), path],
+          dir
+        )
+      : gitRaw(['diff', '--no-index', ...context, '--', '/dev/null', path], dir, [0, 1])
+    if (/^Binary files /m.test(raw)) return { placeholder: 'binary', bytes: fileBytes(dir, path) }
+    if (/^[-+]Subproject commit /m.test(raw)) {
+      const from = /^-Subproject commit (\w+)/m.exec(raw)?.[1]
+      const to = /^\+Subproject commit (\w+)/m.exec(raw)?.[1]
+      return { placeholder: 'submodule', from: from?.slice(0, 7), to: to?.slice(0, 7) }
+    }
+    if (Buffer.byteLength(raw) > MAX_PATCH_BYTES) {
+      return { placeholder: 'too-large', bytes: fileBytes(dir, path) ?? Buffer.byteLength(raw) }
+    }
     return { patch: cleanPatch(raw) }
   } catch (error) {
     const failure = error as { code?: string }

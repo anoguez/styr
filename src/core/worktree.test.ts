@@ -249,7 +249,13 @@ describe('taskDiff', () => {
     const byPath = Object.fromEntries(diff.files.map((file) => [file.path, file]))
     expect(byPath['committed.txt']).toMatchObject({ status: 'added', additions: 2 })
     expect(byPath['READ ME.md']).toMatchObject({ status: 'renamed', oldPath: 'README.md' })
-    expect(byPath['new file.txt']).toMatchObject({ status: 'added', additions: 1 })
+    expect(byPath['new file.txt']).toMatchObject({
+      status: 'added',
+      additions: 1,
+      origin: 'untracked'
+    })
+    expect(byPath['committed.txt']).toMatchObject({ origin: 'both', uncommitted: true })
+    expect(diff).toMatchObject({ kind: 'changes', baseName: 'main', totalFiles: 3 })
 
     const patch = taskFilePatch(repository, 'TASK-0001', { worktree: true }, 'new file.txt')
     expect(patch).toHaveProperty('patch')
@@ -261,9 +267,10 @@ describe('taskDiff', () => {
   it('is empty for a branch with no changes and errors without a worktree', () => {
     const repository = temporaryRepository()
     ensureWorktree(repository, 'TASK-0002')
-    expect(taskDiff(repository, 'TASK-0002', { worktree: true })).toMatchObject({ files: [] })
-    expect(taskDiff(repository, 'TASK-0003', { worktree: true })).toEqual({
-      error: 'Worktree no longer exists'
+    expect(taskDiff(repository, 'TASK-0002', { worktree: true })).toMatchObject({
+      kind: 'empty',
+      files: []
     })
+    expect(taskDiff(repository, 'TASK-0003', { worktree: true })).toMatchObject({ kind: 'gone' })
   })
 })

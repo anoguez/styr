@@ -1,5 +1,7 @@
 export type DiffStatus = 'added' | 'modified' | 'deleted' | 'renamed'
 
+export type DiffOrigin = 'committed' | 'uncommitted' | 'untracked' | 'both'
+
 export interface DiffFile {
   path: string
   oldPath?: string
@@ -7,24 +9,51 @@ export interface DiffFile {
   additions: number
   deletions: number
   binary: boolean
+  /** Not committed yet: staged, unstaged or untracked. */
+  uncommitted: boolean
+  origin: DiffOrigin
 }
 
+export type DiffKind = 'changes' | 'empty' | 'landed' | 'repo' | 'gone'
+
 export interface TaskDiff {
-  /** Ref the diff is measured from (a merge-base), or `HEAD` for a working-tree-only diff. */
-  base: string
+  kind: DiffKind
+  /** What the diff is measured against, as shown to the user (`main`, or `HEAD` for the repo). */
+  baseName: string
+  /** Short merge-base sha when diffing a branch. */
+  mergeBase?: string
   branch?: string
+  /** For `gone`: the branch survived the worktree's removal. */
+  branchKept?: boolean
   /** Why the diff is not the usual branch-versus-base one, shown as a note. */
   note?: string
   files: DiffFile[]
   /** Files beyond `MAX_DIFF_FILES` that were left out. */
   omitted: number
+  totalFiles: number
+  totalAdditions: number
+  totalDeletions: number
+}
+
+export function emptyDiff(kind: DiffKind): TaskDiff {
+  return {
+    kind,
+    baseName: 'HEAD',
+    files: [],
+    omitted: 0,
+    totalFiles: 0,
+    totalAdditions: 0,
+    totalDeletions: 0
+  }
 }
 
 export type DiffResult = TaskDiff | { error: string }
 
 export type PatchResult =
   | { patch: string }
-  | { placeholder: 'binary' | 'too-large' | 'submodule' | 'unchanged' }
+  | { placeholder: 'binary' | 'too-large'; bytes?: number }
+  | { placeholder: 'submodule'; from?: string; to?: string }
+  | { placeholder: 'unchanged' }
   | { error: string }
 
 export const MAX_DIFF_FILES = 1000
@@ -92,7 +121,9 @@ export function parseNumstat(
       status: known?.status ?? (oldPath ? 'renamed' : 'modified'),
       additions: binary ? 0 : Number(match[1]),
       deletions: binary ? 0 : Number(match[2]),
-      binary
+      binary,
+      uncommitted: false,
+      origin: 'committed'
     })
   }
   return files
@@ -108,7 +139,9 @@ export function untrackedFiles(raw: string, known: Set<string>): DiffFile[] {
       status: 'added' as const,
       additions: 0,
       deletions: 0,
-      binary: false
+      binary: false,
+      uncommitted: true,
+      origin: 'untracked' as const
     }))
 }
 

@@ -488,22 +488,25 @@ export function registerIpcHandlers(): void {
     const task = diffTask(taskId)
     if ('error' in task) return task
     return taskDiff(task.repoPath, worktreeKey(loadSettings().activeWorkspaceId, task.id), {
-      worktree: Boolean(task.worktreePath),
+      worktree: task.useWorktree !== false,
       baseBranch: task.baseBranch
     })
   })
-  ipcMain.handle('git:filePatch', (_event, taskId: unknown, path: unknown): PatchResult => {
-    const task = diffTask(taskId)
-    if ('error' in task) return task
-    const file = z.string().min(1).safeParse(path)
-    if (!file.success) return { error: 'Invalid path' }
-    return taskFilePatch(
-      task.repoPath,
-      worktreeKey(loadSettings().activeWorkspaceId, task.id),
-      { worktree: Boolean(task.worktreePath), baseBranch: task.baseBranch },
-      file.data
-    )
-  })
+  ipcMain.handle(
+    'git:filePatch',
+    (_event, taskId: unknown, path: unknown, full?: unknown): PatchResult => {
+      const task = diffTask(taskId)
+      if ('error' in task) return task
+      const file = z.string().min(1).safeParse(path)
+      if (!file.success) return { error: 'Invalid path' }
+      return taskFilePatch(
+        task.repoPath,
+        worktreeKey(loadSettings().activeWorkspaceId, task.id),
+        { worktree: task.useWorktree !== false, baseBranch: task.baseBranch },
+        file.data
+      )
+    }
+  )
   ipcMain.handle('agents:list', () => agentStatuses())
 
   ipcMain.handle('tasks:create', (_event, draft: unknown) => {

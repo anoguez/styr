@@ -23,7 +23,9 @@ describe('diff parsers', () => {
         status: 'modified',
         additions: 3,
         deletions: 1,
-        binary: false
+        binary: false,
+        uncommitted: false,
+        origin: 'committed'
       },
       {
         path: 'new é.ts',
@@ -31,7 +33,9 @@ describe('diff parsers', () => {
         status: 'renamed',
         additions: 0,
         deletions: 0,
-        binary: false
+        binary: false,
+        uncommitted: false,
+        origin: 'committed'
       },
       {
         path: 'gone.ts',
@@ -39,7 +43,9 @@ describe('diff parsers', () => {
         status: 'deleted',
         additions: 0,
         deletions: 5,
-        binary: false
+        binary: false,
+        uncommitted: false,
+        origin: 'committed'
       },
       {
         path: 'img.png',
@@ -47,7 +53,9 @@ describe('diff parsers', () => {
         status: 'added',
         additions: 0,
         deletions: 0,
-        binary: true
+        binary: true,
+        uncommitted: false,
+        origin: 'committed'
       }
     ])
   })
