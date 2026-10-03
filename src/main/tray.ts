@@ -1,6 +1,7 @@
 import { Menu, Notification, Tray, app, nativeImage } from 'electron'
 import {
   AGENT_STATE_LABELS,
+  agentKey,
   compareAgentStatus,
   type AgentState,
   type AgentStatus
@@ -9,7 +10,7 @@ import { TRAY_ICON_1X, TRAY_ICON_2X } from './trayIcon.js'
 
 export interface TrayHandlers {
   onShowWindow: () => void
-  onActivateTask: (taskId: string) => void
+  onActivateTask: (taskId: string, workspaceId?: string) => void
   onQuit: () => void
 }
 
@@ -36,9 +37,10 @@ function icon(): Electron.NativeImage {
 }
 
 function labelFor(status: AgentStatus, titles: Map<string, string>): string {
-  const title = titles.get(status.taskId) ?? status.taskId
+  const title = titles.get(agentKey(status)) ?? status.taskId
   const trimmed = title.length > 46 ? `${title.slice(0, 45)}…` : title
-  return `${STATE_MARK[status.state]}  ${trimmed} — ${AGENT_STATE_LABELS[status.state]}`
+  const where = status.workspaceName ? `${status.workspaceName} · ` : ''
+  return `${STATE_MARK[status.state]}  ${where}${trimmed} — ${AGENT_STATE_LABELS[status.state]}`
 }
 
 /**
@@ -50,23 +52,23 @@ export function newlyWaiting(
   statuses: AgentStatus[]
 ): AgentStatus[] {
   return statuses.filter(
-    (status) => status.state === 'waiting' && previous.get(status.taskId) !== 'waiting'
+    (status) => status.state === 'waiting' && previous.get(agentKey(status)) !== 'waiting'
   )
 }
 
 function notifyNewlyWaiting(statuses: AgentStatus[], titles: Map<string, string>): void {
   const fresh = newlyWaiting(lastState, statuses)
   lastState.clear()
-  for (const status of statuses) lastState.set(status.taskId, status.state)
+  for (const status of statuses) lastState.set(agentKey(status), status.state)
   if (!Notification.isSupported()) return
 
   for (const status of fresh) {
     const notification = new Notification({
       title: 'Claude needs you',
-      body: titles.get(status.taskId) ?? status.taskId,
+      body: `${status.workspaceName ? `${status.workspaceName} · ` : ''}${titles.get(agentKey(status)) ?? status.taskId}`,
       silent: false
     })
-    notification.on('click', () => handlers?.onActivateTask(status.taskId))
+    notification.on('click', () => handlers?.onActivateTask(status.taskId, status.workspaceId))
     notification.show()
   }
 }
@@ -102,7 +104,7 @@ export function updateTray(statuses: AgentStatus[], titles: Map<string, string>)
       ? [
           ...shown.map((status) => ({
             label: labelFor(status, titles),
-            click: () => handlers?.onActivateTask(status.taskId)
+            click: () => handlers?.onActivateTask(status.taskId, status.workspaceId)
           })),
           ...(hidden > 0
             ? [
