@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { EVENT_STATE, type AgentStatus } from './agentState.js'
+import { workspaceDir } from './config.js'
 import type { Settings } from './types.js'
 
 interface HookRecord {
@@ -12,7 +13,7 @@ interface HookRecord {
 
 /** A folder of the app's own state inside the workspace, created on first use. */
 export function supportDir(settings: Settings, name: string): string {
-  const dir = join(settings.workspaceDir, '.styr', name)
+  const dir = join(workspaceDir(settings), '.styr', name)
   mkdirSync(dir, { recursive: true })
   return dir
 }

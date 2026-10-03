@@ -58,7 +58,7 @@ The redirect loops after SSO.
 scan: it gets an id, the title comes from the first `# heading`, and the frontmatter is written back
 into the file in place.
 
-The app keeps its own state in `<workspace>/.styr/`: the SQLite index, rendered prompts, hook
+The app keeps its own state in `<workspace folder>/.styr/`: the SQLite index, rendered prompts, hook
 settings and agent status files. It is all derived or temporary, and deleting it costs nothing.
 
 ## Launching an agent on a task
@@ -320,7 +320,8 @@ the board (what is in review? what needs a spec?) rather than just update the ta
 
 ## The MCP server
 
-Register the bundled MCP server once (Settings shows the exact command for your install):
+Register the bundled MCP server once (Settings shows the exact command for your install). The one
+registration serves every workspace; the command shown uses the active workspace's CLI command:
 
 ```sh
 yarn build
@@ -332,8 +333,31 @@ Tools: `list_tasks`, `get_task`, `create_task`, `update_task`, `set_task_status`
 files it finds to a task. `list_tasks` filters on `readiness`, and `update_task` sets it — that is how a
 specking session promotes a task from `needs_spec` to `ready` when it is done. Notes are attributed to `claude` unless `STYR_MCP_AUTHOR` says otherwise.
 
-The server reads the same `~/.styr/config.json` the app does, so it always targets the
-workspace you have configured.
+The server reads the same settings the app does, so it targets the active
+workspace — except for agents Styr launched, which pass `STYR_WORKSPACE_ID` so their notes and
+tasks keep landing in their own workspace after you switch away. (Codex starts MCP servers with a
+filtered environment, so a Codex agent follows the active workspace unless its MCP entry forwards
+that variable.)
+
+## Workspaces
+
+A workspace is an isolated board: its own tasks, task ids, agents and index. Use the dropdown
+beside the title to switch, or **New workspace…** to add one. The same repository can appear in
+any number of workspaces with different tasks in each.
+
+Everything lives under the storage folder. **Default** is the storage folder itself (so nothing moved
+when workspaces arrived); every other workspace is `<storage>/workspaces/<id>/`, with its own
+`tasks/`, `.styr/` and a `workspace.json` holding its name. The list is read from those folders.
+
+- Switching keeps terminal tabs open. Agents keep running and keep reporting to their own
+  workspace; a tab from another workspace is labelled with that workspace's name.
+- The menu bar, dock badge and notifications cover **every** workspace, so an agent waiting in a
+  background workspace is not missed. Choosing one switches to its workspace.
+- Worktrees of non-default workspaces are `<repo>.worktrees/<workspace>-<task id>` on branch
+  `styr/<workspace>-<task id>`, so two workspaces can both have a `TASK-0001` on one repo.
+- Deleting a workspace moves its folder to the Trash and is refused while it has terminal tabs.
+- Landing detection and Orchestrate act on the active workspace; another workspace is checked when
+  you switch to it.
 
 ## Orchestrate
 
@@ -380,18 +404,43 @@ Two things Orchestrate deliberately will not do:
 
 ## Settings
 
-Grouped into sections down the left of the dialog:
+Grouped into sections down the left of the dialog. Most settings belong to a workspace: the
+**Workspace** dropdown above the sections picks which one you are editing (it starts on the active
+one), and **Save** writes that workspace along with the app-wide settings. Launches, Orchestrate, prompt routing and the MCP
+server always use the settings of the workspace the task is in. Switching the dropdown with unsaved
+changes asks before discarding them.
 
-| Section            | What's in it                                              |
-| ------------------ | --------------------------------------------------------- |
-| **Workspace**      | Board storage folder, default working directory           |
-| **Terminal**       | Shell, Claude command                                     |
-| **Prompt routing** | Which template runs for each column, and the fallback     |
-| **Orchestrate**    | Slots per lane                                            |
-| **Templates**      | Editing the prompts themselves, with the placeholder list |
-| **Theme**          | Colours and fonts                                         |
-| **Integrations**   | The `claude mcp add` command, with a copy button          |
-| **Updates**        | Current version, Check for updates, automatic checks      |
+| Section            | What's in it                                                      | Scope     |
+| ------------------ | ----------------------------------------------------------------- | --------- |
+| **Preferences**    | Defaults for new tasks, default working directory                 | Workspace |
+| **Workspaces**     | Create, rename, open and delete workspaces                        | App       |
+| **Storage**        | Storage folder                                                    | App       |
+| **Terminal**       | Shell                                                             | Workspace |
+| **Prompt routing** | Agent per lane, which template runs for each column, the fallback | Workspace |
+| **Templates**      | Editing the prompts themselves, with the placeholder list         | Workspace |
+| **Orchestrate**    | Slots per lane                                                    | Workspace |
+| **Shortcuts**      | Key bindings                                                      | App       |
+| **Theme**          | Colours and fonts                                                 | Workspace |
+| **Integrations**   | Providers, CLI commands, the MCP install commands                 | Workspace |
+| **Updates**        | Current version, Check for updates, automatic checks              | App       |
+
+App settings live in `~/.styr/config.json`. A workspace's own settings live in `settings.json` in
+its folder (Default's in the storage folder itself), so they move with the folder and go to the
+Trash with it. A new workspace starts with a copy of the settings of the workspace you were on.
+Theme is per workspace, so the window repaints when you switch.
+
+- `settings.json` holds machine-specific values — shell, CLI commands, default working directory.
+  If you sync your storage folder or keep it in git, those travel with it.
+- Edits made to `settings.json` outside Styr show up the next time the settings are loaded.
+- If a `settings.json` cannot be read, that workspace runs on the defaults and the dialog says so.
+  If only some values are invalid, the valid ones are kept and only the rest fall back. Either way,
+  saving keeps the old file as `settings.json.bak`.
+- Changing the storage folder and a workspace's settings in one Save writes those settings into the
+  new folder. A workspace that does not exist there is refused before anything is written.
+
+**Upgrading from 0.8 or earlier:** on first start, every existing workspace is given the settings
+you had, and `~/.styr/config.json` keeps only the app-wide ones. An older version started
+afterwards shows the shipped templates and routing.
 
 ## Updates
 

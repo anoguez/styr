@@ -8,7 +8,12 @@ import { claudeProvider } from './claude.js'
 const workspace = mkdtempSync(join(tmpdir(), 'styr-claude-'))
 const build = (claudeApprovalMode: 'user' | 'auto', resume: boolean) =>
   claudeProvider.buildCommand({
-    settings: { workspaceDir: workspace, claudeCommand: 'claude', claudeApprovalMode } as never,
+    settings: {
+      storageDir: workspace,
+      activeWorkspaceId: 'default',
+      claudeCommand: 'claude',
+      claudeApprovalMode
+    } as never,
     taskId: 'T',
     sessionId: 'sid',
     resume,

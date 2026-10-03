@@ -1,19 +1,21 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, shell } from 'electron'
-import { tasksDir } from '@core/config.js'
+import { tasksDir } from '@core/settingsStore.js'
+import { migrateLegacySettings } from '@core/settingsMigration.js'
 import {
   broadcast,
   markAgentExited,
   notifyAgentsChanged,
   notifyTasksChanged,
-  registerIpcHandlers
+  registerIpcHandlers,
+  switchWorkspace
 } from './ipc.js'
 import { closeIndex, syncIndex } from './taskIndex.js'
 import {
   killAllSessions,
   onTerminalData,
   onTerminalExit,
-  sessionTaskId
+  sessionTask
 } from './terminal/ptyManager.js'
 import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
 import { createTray, destroyTray } from './tray.js'
@@ -77,8 +79,21 @@ function createWindow(): BrowserWindow {
   return window
 }
 
+/**
+ * A failed migration must not stop the app: the legacy values stay in the config, `loadSettings`
+ * keeps layering them in, and the next start tries again.
+ */
+function migrateSettings(): void {
+  try {
+    migrateLegacySettings()
+  } catch (error) {
+    console.error('Styr could not move settings into the workspace folders:', error)
+  }
+}
+
 app.whenReady().then(() => {
   app.setName('Styr')
+  migrateSettings()
   tasksDir()
   syncIndex()
   registerIpcHandlers()
@@ -86,14 +101,23 @@ app.whenReady().then(() => {
 
   onTerminalData((id, data, sequence) => broadcast('terminal:data', { id, data, sequence }))
   onTerminalExit((id, exitCode) => {
-    const taskId = sessionTaskId(id)
+    const task = sessionTask(id)
     broadcast('terminal:exit', { id, exitCode })
-    if (taskId) markAgentExited(taskId)
+    if (task) markAgentExited(task.taskId, task.workspaceId)
   })
   createTray({
     onShowWindow: showWindow,
-    onActivateTask: (taskId) => {
+    onActivateTask: (taskId, workspaceId) => {
       showWindow()
+      // An agent from another workspace is activated by opening that workspace first; the
+      // renderer holds the request until the board it names has loaded.
+      if (workspaceId) {
+        try {
+          switchWorkspace(workspaceId)
+        } catch {
+          return
+        }
+      }
       broadcast('tasks:activate', taskId)
     },
     onQuit: () => app.quit()
