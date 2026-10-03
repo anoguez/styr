@@ -22,6 +22,7 @@ import { StatusBar } from './components/StatusBar.js'
 import { useUpdates } from './hooks/useUpdates.js'
 import { isTerminalTarget } from './lib/terminalKeys.js'
 import { SECTIONS, SettingsDialog, type SectionId } from './components/SettingsDialog.js'
+import { QuickTaskDialog } from './components/QuickTaskDialog.js'
 import { TaskDialog } from './components/TaskDialog.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
 import { sessionLabel } from './lib/sessionLabel.js'
@@ -67,6 +68,7 @@ export default function App(): ReactNode {
 
   const [editing, setEditing] = useState<Task | null>(null)
   const [creating, setCreating] = useState(false)
+  const [quickAdding, setQuickAdding] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -271,6 +273,8 @@ export default function App(): ReactNode {
       switch (command) {
         case 'newTask':
           return setCreating(true)
+        case 'quickTask':
+          return setQuickAdding(true)
         case 'commandPalette':
           return setPaletteOpen((open) => !open)
         case 'focusSearch':
@@ -308,7 +312,8 @@ export default function App(): ReactNode {
       orchestrate: 'dispatch run agents',
       newShell: 'terminal session',
       closeShell: 'terminal session kill',
-      settings: 'preferences options'
+      settings: 'preferences options',
+      quickTask: 'new capture backlog idea'
     }
     const entries: CommandEntry[] = SHORTCUT_COMMANDS.map((command) => ({
       id: `cmd:${command}`,
@@ -679,6 +684,10 @@ export default function App(): ReactNode {
           onClose={() => setConfirmingOrchestrate(false)}
           onConfirm={() => void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))}
         />
+      ) : null}
+
+      {quickAdding && settings ? (
+        <QuickTaskDialog settings={settings} onClose={() => setQuickAdding(false)} />
       ) : null}
 
       {creating || editing ? (

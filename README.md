@@ -78,7 +78,8 @@ Then:
    **Settings → Preferences**, set a default working directory for agents, usually a folder holding
    your repos. Use the dropdown beside the title to create **workspaces** — separate boards with
    their own tasks, agents and settings.
-2. **New task** (`⌘N`): give it a title, a description and the repository it applies to.
+2. **New task** (`⌘N`): give it a title, a description and the repository it applies to. `⇧⌘N` opens
+   a single-line quick add that drops the task in Backlog as _Needs spec_.
 3. Hover the card and press **▶ Agent** (pick the provider in the task dialog). The task moves to In Progress and a terminal tab opens
    with the agent already working.
 4. **Settings → Integrations**: copy the `claude mcp add styr …` or `codex mcp add styr …` command for your provider and run it once, so agents
