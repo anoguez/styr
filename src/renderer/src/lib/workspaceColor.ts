@@ -20,5 +20,5 @@ export function workspaceColor(id: string): string {
   if (id === DEFAULT_WORKSPACE_ID) return WORKSPACE_COLOURS[0]
   let hash = 0
   for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return WORKSPACE_COLOURS[1 + (hash % (WORKSPACE_COLOURS.length - 1))]
+  return WORKSPACE_COLOURS[1 + (hash % (WORKSPACE_COLOURS.length - 1))]!
 }
