@@ -402,15 +402,12 @@ export function TaskDialog({
     'rounded-lg border border-transparent bg-transparent text-ink outline-none placeholder:text-faint'
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/65 px-8 py-[6vh] backdrop-blur-[2px]"
-      onMouseDown={onClose}
-    >
+    // The backdrop deliberately does not close the dialog: a stray click would discard the draft.
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/65 px-8 py-[6vh] backdrop-blur-[2px]">
       <div
         role="dialog"
         aria-label={task ? task.title : 'New task'}
         className="flex h-[min(720px,88vh)] w-full max-w-[1000px] flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]"
-        onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="flex items-start gap-4 border-b border-edge py-4 pl-5 pr-4">
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
