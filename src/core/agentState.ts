@@ -18,6 +18,14 @@ export interface AgentStatus {
   sessionId?: string
   lastMessage?: string
   branch?: string
+  /** Set for agents of other workspaces (tray, notifications); task ids repeat across them. */
+  workspaceId?: string
+  workspaceName?: string
+}
+
+/** Task ids are only unique within a workspace, so anything keyed across workspaces needs both. */
+export function agentKey(status: Pick<AgentStatus, 'taskId' | 'workspaceId'>): string {
+  return status.workspaceId ? `${status.workspaceId}:${status.taskId}` : status.taskId
 }
 
 /**

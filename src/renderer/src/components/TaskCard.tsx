@@ -92,6 +92,19 @@ export function TaskCardBody({
             {item}
           </span>
         ))}
+        {task.prUrl ? (
+          <a
+            href={task.prUrl}
+            target="_blank"
+            rel="noreferrer"
+            title={task.prUrl}
+            className="shrink-0 whitespace-nowrap text-[var(--color-accent-text)] hover:underline"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            ⑂ PR
+          </a>
+        ) : null}
         {agent ? (
           <AgentBadge agent={agent} />
         ) : task.agentSession ? (

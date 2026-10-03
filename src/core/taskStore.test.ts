@@ -9,7 +9,7 @@ async function taskStoreInTemporaryWorkspace() {
   const directory = mkdtempSync(join(tmpdir(), 'styr-task-store-test-'))
   temporaryDirectories.push(directory)
   vi.resetModules()
-  vi.doMock('./config.js', () => ({
+  vi.doMock('./settingsStore.js', () => ({
     tasksDir: () => {
       const directoryPath = join(directory, 'tasks')
       mkdirSync(directoryPath, { recursive: true })
@@ -20,7 +20,7 @@ async function taskStoreInTemporaryWorkspace() {
 }
 
 afterEach(() => {
-  vi.doUnmock('./config.js')
+  vi.doUnmock('./settingsStore.js')
   vi.doUnmock('node:fs')
 
   for (const directory of temporaryDirectories.splice(0)) {
@@ -83,7 +83,7 @@ describe('task store', () => {
     const originalContents = readFileSync(created.filePath, 'utf8')
 
     vi.resetModules()
-    vi.doMock('./config.js', () => ({
+    vi.doMock('./settingsStore.js', () => ({
       tasksDir: () => join(created.filePath, '..')
     }))
     vi.doMock('node:fs', async () => {
