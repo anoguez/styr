@@ -88,8 +88,10 @@ export function ensureWorktree(repoPath: string, taskId: string): WorktreeResult
 /**
  * Where a new task branch starts. The main checkout's HEAD is only as fresh as the user's last
  * pull, so work started from it lands on an old version of the app. Fetch first (best effort —
- * offline must not block a launch), then start from `origin/<base>` when HEAD is strictly behind
- * it. If HEAD is ahead, diverged, or on another branch, it is kept: that is the user's own state.
+ * offline must not block a launch), then start from the remote tip of the branch the checkout is
+ * on (its upstream, or `origin/<name>`), so `main` and `release/x.y.z` checkouts both advance.
+ * The remote tip is used only when HEAD is strictly behind it; if HEAD is ahead or diverged it is
+ * kept, as that is the user's own state.
  */
 function startPointFor(repoPath: string): string {
   try {
@@ -97,15 +99,34 @@ function startPointFor(repoPath: string): string {
   } catch {
     return 'HEAD'
   }
-  const base = baseBranchFor(repoPath)
-  const remote = base ? `origin/${base}` : undefined
-  if (!remote || !refExists(repoPath, remote)) return 'HEAD'
-  try {
-    git(['merge-base', '--is-ancestor', 'HEAD', remote], repoPath)
-    return remote
-  } catch {
-    return 'HEAD'
+  for (const remote of remoteCandidates(repoPath)) {
+    if (!refExists(repoPath, remote)) continue
+    try {
+      git(['merge-base', '--is-ancestor', 'HEAD', remote], repoPath)
+      return remote
+    } catch {
+      return 'HEAD'
+    }
   }
+  return 'HEAD'
+}
+
+function remoteCandidates(repoPath: string): string[] {
+  const candidates: string[] = []
+  try {
+    candidates.push(git(['rev-parse', '--abbrev-ref', '@{upstream}'], repoPath))
+  } catch {
+    // no upstream configured
+  }
+  try {
+    const current = git(['rev-parse', '--abbrev-ref', 'HEAD'], repoPath)
+    if (current && current !== 'HEAD') candidates.push(`origin/${current}`)
+  } catch {
+    // unborn HEAD
+  }
+  const base = baseBranchFor(repoPath)
+  if (base) candidates.push(`origin/${base}`)
+  return candidates
 }
 
 /**

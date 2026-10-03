@@ -77,6 +77,19 @@ describe('worktree management', () => {
       expect(runGit(['rev-parse', 'HEAD'], path).trim()).toBe(upstream)
     })
 
+    it('follows the checked-out release branch rather than the default branch', () => {
+      const { origin, clone } = cloneWithOrigin()
+      runGit(['checkout', '-b', 'release/1.2.0'], origin)
+      commit(origin, 'release.txt')
+      runGit(['fetch', 'origin'], clone)
+      runGit(['checkout', 'release/1.2.0'], clone)
+      const upstream = commit(origin, 'release-next.txt')
+
+      const { path } = ensureWorktree(clone, 'TASK-0003')
+
+      expect(runGit(['rev-parse', 'HEAD'], path).trim()).toBe(upstream)
+    })
+
     it('keeps local commits that origin does not have', () => {
       const { origin, clone } = cloneWithOrigin()
       commit(origin, 'new.txt')
