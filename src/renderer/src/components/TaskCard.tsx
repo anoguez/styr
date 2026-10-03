@@ -62,7 +62,20 @@ export function TaskCardBody({
     task.activity.length > 0 ? `✎ ${task.activity.length}` : null
   ].filter(Boolean)
   const loud = task.priority === 'high' || task.priority === 'urgent'
-  // The agent state sits bottom right: on the meta row, or on the diff row when there is one.
+  // With a diff count the PR link and agent state move to its row: PR centred, state bottom right.
+  const prLink = task.prUrl ? (
+    <a
+      href={task.prUrl}
+      target="_blank"
+      rel="noreferrer"
+      title={task.prUrl}
+      className="shrink-0 whitespace-nowrap text-[var(--color-accent-text)] hover:underline"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      ⑂ PR
+    </a>
+  ) : null
   const status = agent ? (
     <AgentBadge agent={agent} />
   ) : task.agentSession ? (
@@ -112,19 +125,7 @@ export function TaskCardBody({
             {item}
           </span>
         ))}
-        {task.prUrl ? (
-          <a
-            href={task.prUrl}
-            target="_blank"
-            rel="noreferrer"
-            title={task.prUrl}
-            className="shrink-0 whitespace-nowrap text-[var(--color-accent-text)] hover:underline"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-          >
-            ⑂ PR
-          </a>
-        ) : null}
+        {diffStat ? null : prLink}
         {diffStat ? null : status}
       </div>
 
