@@ -129,6 +129,7 @@ export function workspaceTaskCount(settings: Settings, id: string): number {
 export interface TaskSummary {
   title: string
   status: TaskStatus
+  archivedAt?: string
 }
 
 /**
@@ -145,7 +146,11 @@ export function readTaskSummaries(settings: Settings, id: string): Map<string, T
     try {
       const filePath = join(dir, name)
       const task = parseTaskMarkdown(readFileSync(filePath, 'utf8'), filePath)
-      summaries.set(task.id, { title: task.title, status: task.status })
+      summaries.set(task.id, {
+        title: task.title,
+        status: task.status,
+        archivedAt: task.archivedAt
+      })
     } catch {
       // a half-edited file simply has no title in the menu
     }
@@ -176,7 +181,7 @@ export function readBackgroundAgents(settings: Settings, activeId: string): Back
     const summaries = readTaskSummaries(settings, workspace.id)
     for (const status of found) {
       const summary = summaries.get(status.taskId)
-      if (summary && isAgentArchived(summary.status)) continue
+      if (summary && isAgentArchived(summary)) continue
       const tagged = { ...status, workspaceId: workspace.id, workspaceName: workspace.name }
       statuses.push(tagged)
       if (summary) titles.set(agentKey(tagged), summary.title)
