@@ -161,6 +161,7 @@ export function TaskCard({
   queued,
   onOpen,
   onLaunch,
+  onArchive,
   templateNameFor
 }: {
   task: Task
@@ -168,6 +169,7 @@ export function TaskCard({
   queued?: QueuedForOrchestration
   onOpen: (task: Task) => void
   onLaunch: (task: Task) => void
+  onArchive: (task: Task) => void
   templateNameFor: (task: Task) => string
 }): ReactNode {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -196,16 +198,25 @@ export function TaskCard({
       <TaskCardBody task={task} agent={agent} queued={queued} />
       <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <CardAction label="Edit" title={`Edit ${task.id}`} onTrigger={() => onOpen(task)} />
-        <CardAction
-          accent
-          label={task.agentSession ? '⏵ Resume' : '▶ Agent'}
-          title={
-            task.agentSession
-              ? `Resume the existing agent chat for ${task.id}`
-              : `Start the selected agent on ${task.id} — ${templateNameFor(task)}`
-          }
-          onTrigger={() => onLaunch(task)}
-        />
+        {task.status === 'done' ? (
+          <CardAction
+            label="Archive"
+            title={`Archive ${task.id} — off the board, file kept`}
+            onTrigger={() => onArchive(task)}
+          />
+        ) : null}
+        {task.status !== 'done' ? (
+          <CardAction
+            accent
+            label={task.agentSession ? '⏵ Resume' : '▶ Agent'}
+            title={
+              task.agentSession
+                ? `Resume the existing agent chat for ${task.id}`
+                : `Start the selected agent on ${task.id} — ${templateNameFor(task)}`
+            }
+            onTrigger={() => onLaunch(task)}
+          />
+        ) : null}
       </div>
     </article>
   )

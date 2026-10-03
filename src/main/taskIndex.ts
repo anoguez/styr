@@ -4,7 +4,7 @@ import { indexDbPath, tasksDir } from '@core/settingsStore.js'
 import { clearBrokenFiles, readTaskAtPath, taskFilePaths } from '@core/taskStore.js'
 import type { Task, TaskFilter, TaskStatus } from '@core/types.js'
 
-const SCHEMA_VERSION = 12
+const SCHEMA_VERSION = 13
 
 interface IndexRow {
   id: string
@@ -29,6 +29,8 @@ interface IndexRow {
   description: string
   activity: string
   sort_order: number
+  doneAt: string | null
+  archivedAt: string | null
   createdAt: string
   updatedAt: string
   filePath: string
@@ -72,6 +74,8 @@ function connection(): Database.Database {
       description TEXT NOT NULL,
       activity TEXT NOT NULL,
       sort_order INTEGER NOT NULL,
+      doneAt TEXT,
+      archivedAt TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
       filePath TEXT NOT NULL UNIQUE,
@@ -111,6 +115,8 @@ function toRow(task: Task): IndexRow {
     description: task.description,
     activity: JSON.stringify(task.activity),
     sort_order: task.order,
+    doneAt: task.doneAt ?? null,
+    archivedAt: task.archivedAt ?? null,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     filePath: task.filePath,
@@ -144,6 +150,8 @@ function fromRow(row: IndexRow): Task {
     description: row.description,
     activity: JSON.parse(row.activity) as Task['activity'],
     order: row.sort_order,
+    doneAt: row.doneAt ?? undefined,
+    archivedAt: row.archivedAt ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     filePath: row.filePath,
@@ -154,10 +162,10 @@ function fromRow(row: IndexRow): Task {
 const UPSERT = `
   INSERT INTO tasks (id, title, status, priority, readiness, project, tags, repoPath, orchestrate,
                      useWorktree, baseBranch, worktreePath, contextFiles, promptTemplateId, provider, agentSession, sessions, externalRef, prUrl,
-                     description, activity, sort_order, createdAt, updatedAt, filePath, format)
+                     description, activity, sort_order, doneAt, archivedAt, createdAt, updatedAt, filePath, format)
   VALUES (@id, @title, @status, @priority, @readiness, @project, @tags, @repoPath, @orchestrate,
           @useWorktree, @baseBranch, @worktreePath, @contextFiles, @promptTemplateId, @provider, @agentSession, @sessions, @externalRef, @prUrl,
-          @description, @activity, @sort_order, @createdAt, @updatedAt, @filePath, @format)
+          @description, @activity, @sort_order, @doneAt, @archivedAt, @createdAt, @updatedAt, @filePath, @format)
   ON CONFLICT(id) DO UPDATE SET
     title=excluded.title, status=excluded.status, priority=excluded.priority,
     readiness=excluded.readiness, project=excluded.project,
@@ -165,7 +173,7 @@ const UPSERT = `
     worktreePath=excluded.worktreePath, contextFiles=excluded.contextFiles,
     promptTemplateId=excluded.promptTemplateId, provider=excluded.provider, agentSession=excluded.agentSession, sessions=excluded.sessions,
     externalRef=excluded.externalRef, prUrl=excluded.prUrl, description=excluded.description, activity=excluded.activity,
-    sort_order=excluded.sort_order, createdAt=excluded.createdAt, updatedAt=excluded.updatedAt,
+    sort_order=excluded.sort_order, doneAt=excluded.doneAt, archivedAt=excluded.archivedAt, createdAt=excluded.createdAt, updatedAt=excluded.updatedAt,
     filePath=excluded.filePath, format=excluded.format
 `
 

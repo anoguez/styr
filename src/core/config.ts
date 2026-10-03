@@ -1,6 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
+  DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_THEME,
   DEFAULT_WORKSPACE_ID,
@@ -125,6 +126,7 @@ export function shippedSettings(): Settings {
     orchestration: { spec: 1, implement: 2, review: 1 },
     updates: { checkAutomatically: true },
     taskDefaults: { orchestrate: true, useWorktree: false },
+    doneCap: DEFAULT_DONE_CAP,
     theme: DEFAULT_THEME,
     shortcuts: DEFAULT_SHORTCUTS,
     promptRouting: {

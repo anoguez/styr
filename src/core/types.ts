@@ -171,6 +171,10 @@ export interface Task {
   externalRef?: ExternalRef
   prUrl?: string
   order: number
+  /** When the task last entered Done. Falls back to `updatedAt` for files edited by hand. */
+  doneAt?: string
+  /** Set while the task is archived: off the board, still on disk. Independent of status. */
+  archivedAt?: string
   createdAt: string
   updatedAt: string
   filePath: string
@@ -200,7 +204,9 @@ export interface ActivityEntry {
 export type TaskDraft = Partial<Omit<Task, 'filePath' | 'format' | 'activity'>> &
   Pick<Task, 'title'>
 
-export type TaskPatch = Partial<Omit<Task, 'id' | 'filePath' | 'format' | 'activity' | 'createdAt'>>
+export type TaskPatch = Partial<
+  Omit<Task, 'id' | 'filePath' | 'format' | 'activity' | 'createdAt' | 'archivedAt'>
+>
 
 export interface TaskFilter {
   status?: TaskStatus | TaskStatus[]
@@ -295,6 +301,7 @@ export interface Settings {
   shortcuts: ShortcutBindings
   updates: UpdateSettings
   taskDefaults: TaskDefaults
+  doneCap: DoneCap
 }
 
 /**
@@ -326,7 +333,8 @@ export const WORKSPACE_SETTING_KEYS = [
   'promptRouting',
   'orchestration',
   'theme',
-  'taskDefaults'
+  'taskDefaults',
+  'doneCap'
 ] as const satisfies readonly (keyof Settings)[]
 
 export type GlobalSettingKey = (typeof GLOBAL_SETTING_KEYS)[number]
@@ -365,6 +373,20 @@ export interface BrokenSettingsFile {
   workspaceId: string
   path: string
 }
+
+/**
+ * How much of the Done column stays on the board. Tasks over either limit are hidden, not
+ * archived: they stay one click away ("Show all") and nothing is written to their files.
+ * 0 disables a limit.
+ */
+export interface DoneCap {
+  /** Show at most this many of the most recently finished tasks. */
+  maxCount: number
+  /** Hide tasks that finished more than this many days ago. */
+  maxAgeDays: number
+}
+
+export const DEFAULT_DONE_CAP: DoneCap = { maxCount: 20, maxAgeDays: 14 }
 
 /** Starting values for the new-task form. Existing tasks keep whatever they saved. */
 export interface TaskDefaults {

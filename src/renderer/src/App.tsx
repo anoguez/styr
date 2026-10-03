@@ -3,6 +3,7 @@ import { AGENT_STATE_LABELS, isAgentArchived } from '@core/agentState.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { commandForEvent, SHORTCUT_LABELS, shortcutHint } from '@core/shortcuts.js'
 import {
+  DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_THEME,
   ORCHESTRATION_LANES,
@@ -15,6 +16,7 @@ import {
   type ThemeSettings
 } from '@core/types.js'
 import { AgentsSidebar, sortAgentRows, type AgentRow } from './components/AgentsSidebar.js'
+import { ArchiveDialog } from './components/ArchiveDialog.js'
 import { Board } from './components/Board.js'
 import { OrchestrateDialog } from './components/OrchestrateDialog.js'
 import { CommandPalette, type CommandEntry } from './components/CommandPalette.js'
@@ -48,8 +50,13 @@ function preferredTerminalHeight(): number {
 
 export default function App(): ReactNode {
   const [query, setQuery] = useState('')
-  const { board, problems, loading } = useTasks(query)
+  const [showAllDone, setShowAllDone] = useState(false)
   const { settings, save } = useSettings()
+  const { board, hiddenDone, archived, problems, loading } = useTasks(
+    query,
+    settings?.doneCap ?? DEFAULT_DONE_CAP,
+    showAllDone
+  )
   const agents = useAgents()
   const workspaces = useWorkspaces()
   const { overview, names: workspaceNames, apply: applyWorkspaces } = workspaces
@@ -72,6 +79,7 @@ export default function App(): ReactNode {
   const [showSettings, setShowSettings] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
 
   const [sessions, setSessions] = useState<TerminalSessionInfo[]>([])
   const [activeSession, setActiveSession] = useState<string | null>(null)
@@ -98,7 +106,7 @@ export default function App(): ReactNode {
     return sortAgentRows(
       tasks
         .filter((task) => agents.has(task.id) || task.agentSession)
-        .filter((task) => !isAgentArchived(task.status))
+        .filter((task) => !isAgentArchived(task))
         .map((task) => ({
           task,
           agent: agents.get(task.id),
@@ -335,8 +343,25 @@ export default function App(): ReactNode {
         run: () => void switchWorkspace(workspace.id)
       })
     }
+    entries.push({
+      id: 'view:archive',
+      label: `View archive (${archived.length})`,
+      group: 'Actions',
+      keywords: 'archived unarchive restore',
+      run: () => setArchiveOpen(true)
+    })
 
     for (const task of tasks) {
+      if (task.status === 'done') {
+        entries.push({
+          id: `archive:${task.id}`,
+          label: `Archive — ${task.title}`,
+          group: 'Tasks',
+          hint: task.id,
+          keywords: 'archive hide done',
+          run: () => void window.api.tasks.archive(task.id, true)
+        })
+      }
       entries.push({
         id: `task:${task.id}`,
         label: task.title,
@@ -392,6 +417,7 @@ export default function App(): ReactNode {
     return entries
   }, [
     board,
+    archived.length,
     agentRows,
     sessions,
     taskTitles,
@@ -438,6 +464,7 @@ export default function App(): ReactNode {
         setPaletteOpen(false)
         setSwitcherOpen(false)
         setCreatingWorkspace(false)
+        setArchiveOpen(false)
         return
       }
       const command = commandForEvent(bindings, event, {
@@ -599,6 +626,31 @@ export default function App(): ReactNode {
                 queued={queued}
                 onOpen={setEditing}
                 onLaunch={(task) => void launchAgent(task.id)}
+                onArchive={(task) => void window.api.tasks.archive(task.id, true)}
+                doneFooter={
+                  hiddenDone > 0 || showAllDone || archived.length > 0 ? (
+                    <div className="mt-auto flex shrink-0 flex-col items-center gap-1 pt-1 text-[11px] text-faint">
+                      {hiddenDone > 0 || showAllDone ? (
+                        <button
+                          type="button"
+                          className="hover:text-ink"
+                          onClick={() => setShowAllDone((open) => !open)}
+                        >
+                          {showAllDone ? 'Show fewer' : `${hiddenDone} older hidden — Show all`}
+                        </button>
+                      ) : null}
+                      {archived.length > 0 ? (
+                        <button
+                          type="button"
+                          className="hover:text-ink"
+                          onClick={() => setArchiveOpen(true)}
+                        >
+                          {archived.length} archived — View
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : undefined
+                }
                 templateNameFor={(task) => resolveTemplateFor(settings, task).name}
               />
             )}
@@ -676,6 +728,17 @@ export default function App(): ReactNode {
 
       {paletteOpen ? (
         <CommandPalette entries={commandEntries} onClose={() => setPaletteOpen(false)} />
+      ) : null}
+
+      {archiveOpen ? (
+        <ArchiveDialog
+          tasks={archived}
+          onOpen={(task) => {
+            setArchiveOpen(false)
+            setEditing(task)
+          }}
+          onClose={() => setArchiveOpen(false)}
+        />
       ) : null}
 
       {confirmingOrchestrate && orchestration && orchestration.dispatch.length > 0 ? (

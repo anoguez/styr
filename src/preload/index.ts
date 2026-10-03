@@ -43,6 +43,8 @@ const api = {
       ipcRenderer.invoke('tasks:note', id, author, message),
     reorder: (status: TaskStatus, orderedIds: string[]): Promise<Task[]> =>
       ipcRenderer.invoke('tasks:reorder', status, orderedIds),
+    archive: (id: string, archived: boolean): Promise<Task> =>
+      ipcRenderer.invoke('tasks:archive', id, archived),
     remove: (id: string): Promise<void> => ipcRenderer.invoke('tasks:delete', id),
     forgetSession: (id: string): Promise<Task> => ipcRenderer.invoke('tasks:forgetSession', id),
     removeWorktree: (id: string): Promise<Task | null> =>

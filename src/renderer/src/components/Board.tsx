@@ -27,6 +27,8 @@ export function Board({
   queued,
   onOpen,
   onLaunch,
+  onArchive,
+  doneFooter,
   templateNameFor
 }: {
   board: TaskBoard
@@ -34,6 +36,9 @@ export function Board({
   queued: Map<string, QueuedForOrchestration>
   onOpen: (task: Task) => void
   onLaunch: (task: Task) => void
+  onArchive: (task: Task) => void
+  /** Rendered at the foot of the Done column: the hidden count and its controls. */
+  doneFooter?: ReactNode
   templateNameFor: (task: Task) => string
 }): ReactNode {
   const [dragging, setDragging] = useState<Task | null>(null)
@@ -94,6 +99,8 @@ export function Board({
             queued={queued}
             onOpen={onOpen}
             onLaunch={onLaunch}
+            onArchive={onArchive}
+            footer={status === 'done' ? doneFooter : undefined}
             templateNameFor={templateNameFor}
           />
         ))}

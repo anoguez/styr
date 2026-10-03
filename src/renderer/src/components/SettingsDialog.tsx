@@ -138,8 +138,9 @@ export const SECTIONS = [
     label: 'General',
     scope: 'workspace',
     blurb: 'Defaults for new tasks in this workspace. Existing tasks keep their own settings.',
-    keys: ['taskDefaults', 'defaultRepoPath', 'shell'],
-    words: 'worktree directory shell terminal orchestrate default preferences'
+    keys: ['taskDefaults', 'doneCap', 'defaultRepoPath', 'shell'],
+    words:
+      'done cap archive hide limit worktree directory shell terminal orchestrate default preferences'
   },
   {
     id: 'integrations',
@@ -793,6 +794,50 @@ export function SettingsDialog({
                       </CardRow>
                     </Card>
                     <Hint>You can still change both on any task.</Hint>
+                  </div>
+                  <div className="flex flex-col gap-2.5">
+                    <span className="text-[12px] font-semibold text-dim">Done column shows</span>
+                    <Card>
+                      <CardRow>
+                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-3.5 py-3">
+                          <span className="flex flex-col gap-[3px]">
+                            <span className="text-[12.5px] text-ink">Most recent tasks</span>
+                            <Hint>
+                              How many finished tasks stay on the board. 0 shows them all.
+                            </Hint>
+                          </span>
+                          <Stepper
+                            label="Most recent tasks"
+                            value={draft.doneCap.maxCount}
+                            min={0}
+                            max={1000}
+                            onChange={(maxCount) =>
+                              patch({ doneCap: { ...draft.doneCap, maxCount } })
+                            }
+                          />
+                        </div>
+                      </CardRow>
+                      <CardRow>
+                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-3.5 py-3">
+                          <span className="flex flex-col gap-[3px]">
+                            <span className="text-[12.5px] text-ink">Finished within (days)</span>
+                            <Hint>Older tasks are hidden. 0 never hides by age.</Hint>
+                          </span>
+                          <Stepper
+                            label="Finished within (days)"
+                            value={draft.doneCap.maxAgeDays}
+                            min={0}
+                            max={365}
+                            onChange={(maxAgeDays) =>
+                              patch({ doneCap: { ...draft.doneCap, maxAgeDays } })
+                            }
+                          />
+                        </div>
+                      </CardRow>
+                    </Card>
+                    <Hint>
+                      Hidden tasks are not archived — Show all in the Done column brings them back.
+                    </Hint>
                   </div>
                   <Field
                     label="Working directory"

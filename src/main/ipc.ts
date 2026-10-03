@@ -45,6 +45,7 @@ import {
   deleteTask,
   getTask,
   reorderTasks,
+  setArchived,
   updateTask
 } from '@core/taskStore.js'
 import { settleLandedTasks } from './landing.js'
@@ -191,7 +192,7 @@ export function notifyAgentsChanged(): void {
   const listed = statuses
     .filter((status) => {
       const task = tasks.get(status.taskId)
-      return task ? !isAgentArchived(task.status) : false
+      return task ? !isAgentArchived(task) : false
     })
     .map((status) => ({
       ...status,
@@ -490,6 +491,13 @@ export function registerIpcHandlers(): void {
     const tasks = reorderTasks(status, orderedIds)
     notifyTasksChanged()
     return tasks
+  })
+
+  ipcMain.handle('tasks:archive', (_event, id: string, archived: boolean) => {
+    const task = setArchived(id, archived)
+    notifyTasksChanged()
+    notifyAgentsChanged()
+    return task
   })
 
   ipcMain.handle('tasks:delete', (_event, id: string) => {

@@ -6,7 +6,8 @@
     "src/core/taskSchema.ts",
     "src/core/prompt.ts",
     "src/core/agentState.ts",
-    "src/core/shortcuts.ts"
+    "src/core/shortcuts.ts",
+    "src/core/doneCap.ts"
   ],
   "compilerOptions": {
     "composite": true,

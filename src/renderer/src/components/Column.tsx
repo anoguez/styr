@@ -26,6 +26,8 @@ export function Column({
   queued,
   onOpen,
   onLaunch,
+  onArchive,
+  footer,
   templateNameFor
 }: {
   status: TaskStatus
@@ -34,6 +36,8 @@ export function Column({
   queued: Map<string, QueuedForOrchestration>
   onOpen: (task: Task) => void
   onLaunch: (task: Task) => void
+  onArchive: (task: Task) => void
+  footer?: ReactNode
   templateNameFor: (task: Task) => string
 }): ReactNode {
   const { setNodeRef, isOver } = useDroppable({ id: `column:${status}` })
@@ -72,12 +76,15 @@ export function Column({
               queued={queued.get(task.id)}
               onOpen={onOpen}
               onLaunch={onLaunch}
+              onArchive={onArchive}
               templateNameFor={templateNameFor}
             />
           ))}
         </SortableContext>
 
-        {tasks.length === 0 ? (
+        {footer}
+
+        {tasks.length === 0 && !footer ? (
           <p className="m-auto select-none px-2 text-center text-[11.5px] text-faint/70">
             {EMPTY_HINT[status]}
           </p>

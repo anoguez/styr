@@ -46,7 +46,7 @@ export function providerForLane(
  * grabbing it would quietly restart work someone may be part-way through.
  */
 function isDispatchable(task: Task): boolean {
-  return task.status === 'backlog' || task.status === 'in_review'
+  return !task.archivedAt && (task.status === 'backlog' || task.status === 'in_review')
 }
 
 function byPriorityThenBoardOrder(a: Task, b: Task): number {
