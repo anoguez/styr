@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AGENT_STATE_LABELS, isAgentArchived } from '@core/agentState.js'
+import { AGENT_STATE_LABELS, isAgentArchived, type AgentState } from '@core/agentState.js'
+import { sortColumn } from '@core/boardOrder.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { commandForEvent, SHORTCUT_LABELS, shortcutHint } from '@core/shortcuts.js'
 import {
@@ -52,12 +53,24 @@ export default function App(): ReactNode {
   const [query, setQuery] = useState('')
   const [showAllDone, setShowAllDone] = useState(false)
   const { settings, save } = useSettings()
-  const { board, hiddenDone, archived, problems, loading } = useTasks(
-    query,
-    settings?.doneCap ?? DEFAULT_DONE_CAP,
-    showAllDone
-  )
+  const {
+    board: rawBoard,
+    hiddenDone,
+    archived,
+    problems,
+    loading
+  } = useTasks(query, settings?.doneCap ?? DEFAULT_DONE_CAP, showAllDone)
   const agents = useAgents()
+  // Done keeps its recency order; the other columns sort by priority, then working agents.
+  const board = useMemo(() => {
+    const state = (id: string): AgentState | undefined => agents.get(id)?.state
+    return {
+      ...rawBoard,
+      backlog: sortColumn(rawBoard.backlog, state),
+      in_progress: sortColumn(rawBoard.in_progress, state),
+      in_review: sortColumn(rawBoard.in_review, state)
+    }
+  }, [rawBoard, agents])
   const workspaces = useWorkspaces()
   const { overview, names: workspaceNames, apply: applyWorkspaces } = workspaces
   const activeWorkspaceId = settings?.activeWorkspaceId ?? overview.activeId
