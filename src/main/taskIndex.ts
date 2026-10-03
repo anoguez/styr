@@ -4,7 +4,7 @@ import { indexDbPath, tasksDir } from '@core/settingsStore.js'
 import { clearBrokenFiles, readTaskAtPath, taskFilePaths } from '@core/taskStore.js'
 import type { Task, TaskFilter, TaskStatus } from '@core/types.js'
 
-const SCHEMA_VERSION = 11
+const SCHEMA_VERSION = 12
 
 interface IndexRow {
   id: string
@@ -17,6 +17,7 @@ interface IndexRow {
   repoPath: string | null
   orchestrate: number
   useWorktree: number
+  baseBranch: string | null
   worktreePath: string | null
   contextFiles: string
   promptTemplateId: string | null
@@ -59,6 +60,7 @@ function connection(): Database.Database {
       repoPath TEXT,
       orchestrate INTEGER NOT NULL,
       useWorktree INTEGER NOT NULL,
+      baseBranch TEXT,
       worktreePath TEXT,
       contextFiles TEXT NOT NULL,
       promptTemplateId TEXT,
@@ -97,6 +99,7 @@ function toRow(task: Task): IndexRow {
     repoPath: task.repoPath ?? null,
     orchestrate: task.orchestrate ? 1 : 0,
     useWorktree: task.useWorktree ? 1 : 0,
+    baseBranch: task.baseBranch ?? null,
     worktreePath: task.worktreePath ?? null,
     contextFiles: JSON.stringify(task.contextFiles),
     promptTemplateId: task.promptTemplateId ?? null,
@@ -127,6 +130,7 @@ function fromRow(row: IndexRow): Task {
     repoPath: row.repoPath ?? undefined,
     orchestrate: row.orchestrate === 1,
     useWorktree: row.useWorktree === 1,
+    baseBranch: row.baseBranch ?? undefined,
     worktreePath: row.worktreePath ?? undefined,
     contextFiles: JSON.parse(row.contextFiles) as string[],
     promptTemplateId: row.promptTemplateId ?? undefined,
@@ -149,15 +153,15 @@ function fromRow(row: IndexRow): Task {
 
 const UPSERT = `
   INSERT INTO tasks (id, title, status, priority, readiness, project, tags, repoPath, orchestrate,
-                     useWorktree, worktreePath, contextFiles, promptTemplateId, provider, agentSession, sessions, externalRef, prUrl,
+                     useWorktree, baseBranch, worktreePath, contextFiles, promptTemplateId, provider, agentSession, sessions, externalRef, prUrl,
                      description, activity, sort_order, createdAt, updatedAt, filePath, format)
   VALUES (@id, @title, @status, @priority, @readiness, @project, @tags, @repoPath, @orchestrate,
-          @useWorktree, @worktreePath, @contextFiles, @promptTemplateId, @provider, @agentSession, @sessions, @externalRef, @prUrl,
+          @useWorktree, @baseBranch, @worktreePath, @contextFiles, @promptTemplateId, @provider, @agentSession, @sessions, @externalRef, @prUrl,
           @description, @activity, @sort_order, @createdAt, @updatedAt, @filePath, @format)
   ON CONFLICT(id) DO UPDATE SET
     title=excluded.title, status=excluded.status, priority=excluded.priority,
     readiness=excluded.readiness, project=excluded.project,
-    tags=excluded.tags, repoPath=excluded.repoPath, orchestrate=excluded.orchestrate, useWorktree=excluded.useWorktree,
+    tags=excluded.tags, repoPath=excluded.repoPath, orchestrate=excluded.orchestrate, useWorktree=excluded.useWorktree, baseBranch=excluded.baseBranch,
     worktreePath=excluded.worktreePath, contextFiles=excluded.contextFiles,
     promptTemplateId=excluded.promptTemplateId, provider=excluded.provider, agentSession=excluded.agentSession, sessions=excluded.sessions,
     externalRef=excluded.externalRef, prUrl=excluded.prUrl, description=excluded.description, activity=excluded.activity,

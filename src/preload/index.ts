@@ -78,6 +78,10 @@ const api = {
     onChanged: (handler: (statuses: AgentStatus[]) => void): (() => void) =>
       subscribe('agents:changed', handler as (...args: never[]) => void)
   },
+  git: {
+    branches: (repoPath: string): Promise<{ branches: string[]; current?: string }> =>
+      ipcRenderer.invoke('git:branches', repoPath)
+  },
   workspaces: {
     list: (): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:list'),
     switch: (id: string): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:switch', id),

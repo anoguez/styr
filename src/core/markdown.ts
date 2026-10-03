@@ -80,6 +80,7 @@ export function serialiseTask(task: Task): string {
     ...(task.repoPath ? { repoPath: task.repoPath } : {}),
     ...(task.orchestrate ? {} : { orchestrate: false }),
     ...(task.useWorktree ? { useWorktree: true } : {}),
+    ...(task.baseBranch ? { baseBranch: task.baseBranch } : {}),
     ...(task.worktreePath ? { worktreePath: task.worktreePath } : {}),
     ...(task.contextFiles.length > 0 ? { contextFiles: task.contextFiles } : {}),
     ...(task.promptTemplateId ? { promptTemplateId: task.promptTemplateId } : {}),

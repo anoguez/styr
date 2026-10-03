@@ -25,6 +25,7 @@ interface FormState {
   repoPath: string
   prUrl: string
   useWorktree: boolean
+  baseBranch: string
   orchestrate: boolean
   contextFiles: string[]
   promptTemplateId: string
@@ -45,6 +46,7 @@ function toForm(task: Task | null, settings: Settings): FormState {
     repoPath: task?.repoPath ?? settings.defaultRepoPath,
     prUrl: task?.prUrl ?? '',
     useWorktree: task?.useWorktree ?? settings.taskDefaults.useWorktree,
+    baseBranch: task?.baseBranch ?? '',
     orchestrate: task?.orchestrate ?? settings.taskDefaults.orchestrate,
     contextFiles: task?.contextFiles ?? [],
     promptTemplateId: task?.promptTemplateId ?? '',
@@ -292,6 +294,19 @@ export function TaskDialog({
 }): ReactNode {
   const [form, setForm] = useState<FormState>(() => toForm(task, settings))
   const [tab, setTab] = useState<TabKey>('brief')
+  const [branchInfo, setBranchInfo] = useState<{ branches: string[]; current?: string }>({
+    branches: []
+  })
+  useEffect(() => {
+    if (!form.useWorktree || !form.repoPath.trim()) return
+    let cancelled = false
+    void window.api.git.branches(form.repoPath.trim()).then((info) => {
+      if (!cancelled) setBranchInfo(info)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [form.useWorktree, form.repoPath])
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState(false)
@@ -324,6 +339,7 @@ export function TaskDialog({
     repoPath: form.repoPath.trim() || undefined,
     prUrl: form.prUrl.trim() || undefined,
     useWorktree: form.useWorktree,
+    baseBranch: form.baseBranch || undefined,
     orchestrate: form.orchestrate,
     contextFiles: form.contextFiles,
     promptTemplateId: form.promptTemplateId || undefined,
@@ -806,6 +822,32 @@ export function TaskDialog({
                         : 'Set a working directory first — the worktree is created from that repository.'
                   }
                 />
+                {form.useWorktree && form.repoPath ? (
+                  <div className="flex flex-col gap-1">
+                    <Select
+                      aria-label="Base branch"
+                      value={form.baseBranch}
+                      disabled={Boolean(task?.worktreePath)}
+                      onChange={(event) => patch({ baseBranch: event.target.value })}
+                    >
+                      <option value="">
+                        {branchInfo.current
+                          ? `Current branch (${branchInfo.current})`
+                          : 'Current branch'}
+                      </option>
+                      {branchInfo.branches.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </Select>
+                    <span className="text-[11px] text-dim">
+                      {task?.worktreePath
+                        ? 'Fixed once the worktree exists.'
+                        : 'The worktree branches from the latest origin tip of this branch.'}
+                    </span>
+                  </div>
+                ) : null}
                 <Toggle
                   checked={form.orchestrate}
                   onChange={(orchestrate) => patch({ orchestrate })}

@@ -46,7 +46,11 @@ function checkoutFor(settings: Settings, task: Task): Checkout {
   const repo = workingDirFor(settings, task)
   if (!task.useWorktree) return { cwd: repo }
   try {
-    const worktree = ensureWorktree(repo, worktreeKey(settings.activeWorkspaceId, task.id))
+    const worktree = ensureWorktree(
+      repo,
+      worktreeKey(settings.activeWorkspaceId, task.id),
+      task.baseBranch
+    )
     return { cwd: worktree.path, worktreePath: worktree.path }
   } catch (error) {
     return {
