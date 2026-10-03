@@ -239,7 +239,16 @@ survive when the label does not.
 there and to the `section === '…'` blocks rather than lengthening a single scroll. `Modal` takes
 `flush` to hand its padding and scrolling to a child that manages its own panes.
 
-The pane height is fixed (`h-[min(560px,68vh)]`) so switching sections does not resize the dialog.
+The dialog is a `Modal` with `bare`: it draws no header or footer of its own, and `SettingsDialog`
+supplies the nav (a "Workspace" group headed by the workspace picker, an "All workspaces" group
+below it, filtered by each section's `words` from the search box), a header with the section blurb
+and a scope chip, and a footer carrying the dirty status, Discard and Save (⌘↵). Dirty state is
+derived by comparing `draft` to the saved settings over each section's `keys`, so a new section must
+list the `Settings` keys it edits. The dialog height is fixed so switching sections does not resize
+it. This layout follows the Claude Design file; change the design first, then the dialog.
+
+Reusable form pieces live in `ui.tsx`: `Card`/`CardRow`, `Eyebrow`, `Hint`, `Switch`/`SwitchRow`,
+`Stepper`, `Segmented`. Reach for these before writing a new control.
 
 ## Terminal tabs
 
