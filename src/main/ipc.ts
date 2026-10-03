@@ -21,7 +21,7 @@ import {
 import { providerFor } from '@core/providers/index.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { z } from 'zod'
-import type { DiffResult, PatchResult } from '@core/diff.js'
+import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
 import {
   listBranches,
   readGitBranch,
@@ -508,6 +508,26 @@ export function registerIpcHandlers(): void {
       )
     }
   )
+  ipcMain.handle('git:diffStats', (): Record<string, DiffStat> => {
+    const workspaceId = loadSettings().activeWorkspaceId
+    const stats: Record<string, DiffStat> = {}
+    for (const task of queryTasks()) {
+      // Done work has landed (or is being cleaned up); a count there is noise.
+      if (!task.worktreePath || !task.repoPath || task.status === 'done' || task.archivedAt)
+        continue
+      const diff = taskDiff(task.repoPath, worktreeKey(workspaceId, task.id), {
+        worktree: task.useWorktree !== false,
+        baseBranch: task.baseBranch
+      })
+      if ('error' in diff || diff.kind !== 'changes') continue
+      stats[task.id] = {
+        added: diff.totalAdditions,
+        removed: diff.totalDeletions,
+        files: diff.totalFiles
+      }
+    }
+    return stats
+  })
   ipcMain.handle('agents:list', () => agentStatuses())
 
   ipcMain.handle('tasks:create', (_event, draft: unknown) => {

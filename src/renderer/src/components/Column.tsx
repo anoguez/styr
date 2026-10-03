@@ -3,6 +3,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import type { AgentStatus } from '@core/agentState.js'
 import { TASK_STATUS_LABELS, type Task, type TaskStatus } from '@core/types.js'
+import type { DiffStat } from '@core/diff.js'
 import { TaskCard, type QueuedForOrchestration } from './TaskCard.js'
 
 const COLUMN_ACCENT: Record<TaskStatus, string> = {
@@ -27,6 +28,9 @@ export function Column({
   onOpen,
   onLaunch,
   onArchive,
+  onShowChanges,
+  onOpenTerminal,
+  diffStats,
   footer,
   templateNameFor
 }: {
@@ -37,6 +41,9 @@ export function Column({
   onOpen: (task: Task) => void
   onLaunch: (task: Task) => void
   onArchive: (task: Task) => void
+  onShowChanges: (task: Task) => void
+  onOpenTerminal: (task: Task) => void
+  diffStats: Map<string, DiffStat>
   footer?: ReactNode
   templateNameFor: (task: Task) => string
 }): ReactNode {
@@ -77,6 +84,9 @@ export function Column({
               onOpen={onOpen}
               onLaunch={onLaunch}
               onArchive={onArchive}
+              onShowChanges={onShowChanges}
+              onOpenTerminal={onOpenTerminal}
+              diffStat={diffStats.get(task.id)}
               templateNameFor={templateNameFor}
             />
           ))}

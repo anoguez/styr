@@ -47,6 +47,13 @@ export function emptyDiff(kind: DiffKind): TaskDiff {
   }
 }
 
+/** What a card shows: totals for a task's branch against its base. */
+export interface DiffStat {
+  added: number
+  removed: number
+  files: number
+}
+
 export type DiffResult = TaskDiff | { error: string }
 
 export type PatchResult =
