@@ -641,7 +641,7 @@ export function SettingsDialog({
                   <span
                     aria-hidden
                     style={{ backgroundColor: workspaceColor(target.editedWorkspaceId) }}
-                    className="pointer-events-none absolute left-[9px] top-1/2 size-[7px] -translate-y-1/2 rounded-[2px]"
+                    className="pointer-events-none absolute left-[9px] top-1/2 z-10 size-[7px] -translate-y-1/2 rounded-[2px]"
                   />
                   <Select
                     aria-label="Workspace these settings apply to"
