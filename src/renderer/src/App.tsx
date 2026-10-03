@@ -18,6 +18,7 @@ import {
 } from '@core/types.js'
 import { AgentsSidebar, sortAgentRows, type AgentRow } from './components/AgentsSidebar.js'
 import { ArchiveDialog } from './components/ArchiveDialog.js'
+import { ChangesDialog } from './components/ChangesDialog.js'
 import { Board } from './components/Board.js'
 import { OrchestrateDialog } from './components/OrchestrateDialog.js'
 import { CommandPalette, type CommandEntry } from './components/CommandPalette.js'
@@ -93,6 +94,7 @@ export default function App(): ReactNode {
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
+  const [changesTask, setChangesTask] = useState<Task | null>(null)
 
   const [sessions, setSessions] = useState<TerminalSessionInfo[]>([])
   const [activeSession, setActiveSession] = useState<string | null>(null)
@@ -375,6 +377,16 @@ export default function App(): ReactNode {
           run: () => void window.api.tasks.archive(task.id, true)
         })
       }
+      if (task.worktreePath) {
+        entries.push({
+          id: `changes:${task.id}`,
+          label: `View changes — ${task.title}`,
+          group: 'Tasks',
+          hint: task.id,
+          keywords: 'diff changes git files review',
+          run: () => setChangesTask(task)
+        })
+      }
       entries.push({
         id: `task:${task.id}`,
         label: task.title,
@@ -478,6 +490,7 @@ export default function App(): ReactNode {
         setSwitcherOpen(false)
         setCreatingWorkspace(false)
         setArchiveOpen(false)
+        setChangesTask(null)
         return
       }
       const command = commandForEvent(bindings, event, {
@@ -780,7 +793,12 @@ export default function App(): ReactNode {
           onResumeSession={(taskId, sessionId) => {
             void window.api.terminal.resumeSession(taskId, sessionId).then(adoptSession)
           }}
+          onShowChanges={setChangesTask}
         />
+      ) : null}
+
+      {changesTask ? (
+        <ChangesDialog task={changesTask} onClose={() => setChangesTask(null)} />
       ) : null}
 
       {showSettings ? (

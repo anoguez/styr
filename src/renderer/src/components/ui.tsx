@@ -135,6 +135,56 @@ export function Chip({
   )
 }
 
+export type FileStatusLetter = 'A' | 'M' | 'D' | 'R'
+
+const STATUS_STYLE: Record<FileStatusLetter, { tone: string; text: string; label: string }> = {
+  A: { tone: '--color-col-done', text: '--color-col-done-text', label: 'Added' },
+  M: { tone: '--color-col-progress', text: '--color-col-progress-text', label: 'Modified' },
+  D: { tone: '--color-danger', text: '--color-danger', label: 'Deleted' },
+  R: { tone: '--color-col-review', text: '--color-col-review-text', label: 'Renamed' }
+}
+
+/** The A / M / D / R square beside a changed file. The letter carries the meaning; colour repeats it. */
+export function StatusBadge({ status }: { status: FileStatusLetter }): ReactNode {
+  const style = STATUS_STYLE[status]
+  return (
+    <span
+      aria-label={style.label}
+      title={style.label}
+      className="grid size-4 shrink-0 place-items-center rounded font-mono text-[10px] font-bold"
+      style={{
+        background: `color-mix(in oklab, var(${style.tone}) 16%, transparent)`,
+        color: `var(${style.text})`
+      }}
+    >
+      {status}
+    </span>
+  )
+}
+
+/** `+N −M`, with an optional file count. One component so the numbers read the same everywhere. */
+export function DiffCount({
+  added,
+  removed,
+  files
+}: {
+  added: number
+  removed: number
+  files?: number
+}): ReactNode {
+  return (
+    <span className="inline-flex items-center gap-[5px] font-mono text-[10.5px]">
+      <span className="text-[var(--color-col-done-text)]">+{added}</span>
+      <span className="text-danger">−{removed}</span>
+      {files === undefined ? null : (
+        <span className="inline-flex h-4 items-center rounded-[5px] bg-raised px-[5px] text-dim">
+          {files}
+        </span>
+      )}
+    </span>
+  )
+}
+
 export function Modal({
   title,
   subtitle,
@@ -145,6 +195,7 @@ export function Modal({
   wide = false,
   flush = false,
   bare = false,
+  xl = false,
   backdropCloses = true
 }: {
   title: string
@@ -158,6 +209,8 @@ export function Modal({
   flush?: boolean
   /** Draw only the overlay and panel. The child brings its own header and footer. */
   bare?: boolean
+  /** With `bare`: the large, fixed-height size for two-pane viewers. */
+  xl?: boolean
   /** Clicking the dimmed backdrop closes the dialog. Turn off where a stray click would lose edits. */
   backdropCloses?: boolean
 }): ReactNode {
@@ -180,7 +233,7 @@ export function Modal({
     >
       <div
         aria-label={bare ? title : undefined}
-        className={`flex ${bare ? 'h-[min(700px,88vh)]' : 'max-h-[88vh]'} w-full ${bare ? 'max-w-[960px]' : wide ? 'max-w-3xl' : 'max-w-xl'} flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]`}
+        className={`flex ${bare ? (xl ? 'h-[min(820px,88vh)]' : 'h-[min(700px,88vh)]') : 'max-h-[88vh]'} w-full ${bare ? (xl ? 'max-w-[1320px]' : 'max-w-[960px]') : wide ? 'max-w-3xl' : 'max-w-xl'} flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         {bare ? null : (

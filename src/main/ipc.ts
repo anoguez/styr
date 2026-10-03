@@ -503,7 +503,8 @@ export function registerIpcHandlers(): void {
         task.repoPath,
         worktreeKey(loadSettings().activeWorkspaceId, task.id),
         { worktree: task.useWorktree !== false, baseBranch: task.baseBranch },
-        file.data
+        file.data,
+        full === true
       )
     }
   )

@@ -147,5 +147,6 @@ export function useTheme(theme: ThemeSettings): void {
         : 'none'
     )
     root.style.setProperty('--font-ui', uiFontStack(theme.uiFont))
+    root.style.setProperty('--font-terminal', theme.terminalFont)
   }, [theme])
 }
