@@ -144,7 +144,8 @@ export function Modal({
   footer,
   wide = false,
   flush = false,
-  bare = false
+  bare = false,
+  backdropCloses = true
 }: {
   title: string
   subtitle?: string
@@ -157,6 +158,8 @@ export function Modal({
   flush?: boolean
   /** Draw only the overlay and panel. The child brings its own header and footer. */
   bare?: boolean
+  /** Clicking the dimmed backdrop closes the dialog. Turn off where a stray click would lose edits. */
+  backdropCloses?: boolean
 }): ReactNode {
   useEffect(() => {
     if (!onSubmit) return
@@ -173,7 +176,7 @@ export function Modal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/65 px-8 py-[6vh] backdrop-blur-[2px]"
-      onMouseDown={onClose}
+      onMouseDown={backdropCloses ? onClose : undefined}
     >
       <div
         aria-label={bare ? title : undefined}

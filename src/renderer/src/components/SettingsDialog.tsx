@@ -574,7 +574,7 @@ export function SettingsDialog({
   }
 
   return (
-    <Modal bare title="Settings" onClose={onClose} onSubmit={save}>
+    <Modal bare backdropCloses={false} title="Settings" onClose={onClose} onSubmit={save}>
       <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)]">
         <nav className="flex min-h-0 flex-col gap-2.5 overflow-y-auto border-r border-edge bg-chrome/50 px-2.5 py-3">
           <div className="px-1.5">
