@@ -51,7 +51,7 @@ import {
   Stepper,
   Switch,
   SwitchRow,
-  inputClass
+  inputBase
 } from './ui.js'
 import { WorkspacesPane } from './WorkspacesPane.js'
 import type { Workspaces } from '../hooks/useWorkspaces.js'
@@ -408,7 +408,12 @@ function TemplateSelect({
   onChange: (id: string) => void
 }): ReactNode {
   return (
-    <Select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
+    <Select
+      compact
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    >
       {templates.map((template) => (
         <option key={template.id} value={template.id}>
           {template.name}
@@ -609,7 +614,9 @@ export function SettingsDialog({
                   <span className="pointer-events-none absolute left-[9px] top-1/2 size-[7px] -translate-y-1/2 rounded-sm bg-[var(--color-accent-text)]" />
                   <Select
                     aria-label="Workspace these settings apply to"
-                    className="h-[30px] rounded-[7px] border-edge-strong py-0 pl-6 pr-7 text-[12.5px] font-medium"
+                    compact
+                    inset
+                    className="font-medium"
                     value={target.requestedWorkspaceId ?? target.editedWorkspaceId}
                     onChange={(event) => target.choose(event.target.value)}
                   >
@@ -765,7 +772,7 @@ export function SettingsDialog({
                   </Field>
                   <Field label="Shell" hint="Every terminal session starts in this shell.">
                     <input
-                      className={`${inputClass} w-60 font-mono text-[11.5px]`}
+                      className={`${inputBase} h-8 w-60 px-2.5 font-mono text-[11.5px]`}
                       value={draft.shell}
                       onChange={(event) => patch({ shell: event.target.value })}
                     />
@@ -831,6 +838,7 @@ export function SettingsDialog({
                             <span className="text-[11px] text-faint">{LANE_HINTS[lane]}</span>
                           </span>
                           <Select
+                            compact
                             aria-label={`Agent for ${ORCHESTRATION_LANE_LABELS[lane]}`}
                             value={draft.providerRouting[lane]}
                             onChange={(event) =>
@@ -971,7 +979,7 @@ export function SettingsDialog({
                       <div className="flex items-center gap-2">
                         <input
                           aria-label="Template name"
-                          className={`${inputClass} flex-1 font-semibold`}
+                          className={`${inputBase} h-8 flex-1 px-2.5 text-[13px] font-semibold`}
                           value={selected.name}
                           onChange={(event) => updateTemplate({ name: event.target.value })}
                         />
@@ -986,7 +994,7 @@ export function SettingsDialog({
                       </div>
                       <textarea
                         aria-label="Template body"
-                        className={`${inputClass} min-h-60 resize-y rounded-[10px] px-3.5 py-3 font-mono text-[12px] leading-[1.65]`}
+                        className={`${inputBase} min-h-60 w-full resize-y px-3.5 py-3 font-mono text-[12px] leading-[1.65]`}
                         value={selected.template}
                         onChange={(event) => updateTemplate({ template: event.target.value })}
                       />
@@ -1417,7 +1425,7 @@ export function SettingsDialog({
                               <span className="text-[12px] text-dim">Command</span>
                               <input
                                 aria-label={`${provider.label} command`}
-                                className={`${inputClass} max-w-[260px] bg-panel font-mono text-[11.5px]`}
+                                className={`${inputBase} h-7 w-full max-w-[260px] px-2.5 font-mono text-[11.5px]`}
                                 value={provider.command}
                                 onChange={(event) =>
                                   patch(

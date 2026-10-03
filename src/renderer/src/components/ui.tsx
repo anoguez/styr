@@ -54,8 +54,15 @@ export function Field({
   )
 }
 
-export const inputClass =
-  'w-full rounded-lg border border-edge-strong bg-chrome px-3 py-2 text-[13px] text-ink outline-none transition-colors placeholder:text-faint hover:border-faint/60 focus:border-accent focus:ring-1 focus:ring-accent/40'
+/**
+ * Everything about a text control except its size. Compose it with your own padding and font size
+ * rather than appending to `inputClass`: two conflicting utilities are resolved by stylesheet
+ * order, not by which comes last, so an override can silently lose (or clip the text).
+ */
+export const inputBase =
+  'rounded-lg border border-edge-strong bg-chrome text-ink outline-none transition-colors placeholder:text-faint hover:border-faint/60 focus:border-accent focus:ring-1 focus:ring-accent/40'
+
+export const inputClass = `${inputBase} w-full px-3 py-2 text-[13px]`
 
 /**
  * A native select with the chevron drawn by the app. macOS paints its own flush against the right
@@ -63,13 +70,26 @@ export const inputClass =
  * so keyboard handling and the native option menu are unchanged.
  */
 export function Select({
+  compact = false,
+  inset = false,
   className,
   children,
   ...props
-}: SelectHTMLAttributes<HTMLSelectElement>): ReactNode {
+}: SelectHTMLAttributes<HTMLSelectElement> & {
+  /** A shorter control, for tight lists and nav. */
+  compact?: boolean
+  /** Leave room on the left for a marker the caller draws over the control. */
+  inset?: boolean
+}): ReactNode {
+  const size = compact
+    ? `h-[30px] ${inset ? 'pl-6' : 'pl-2.5'} pr-7 text-[12.5px]`
+    : 'px-3 py-2 pr-9 text-[13px]'
   return (
     <span className="relative block w-full">
-      <select {...props} className={`${inputClass} appearance-none pr-9 ${className ?? ''}`}>
+      <select
+        {...props}
+        className={`${inputBase} w-full appearance-none ${size} ${className ?? ''}`}
+      >
         {children}
       </select>
       <svg

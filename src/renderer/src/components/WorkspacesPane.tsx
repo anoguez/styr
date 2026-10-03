@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { DEFAULT_WORKSPACE_ID } from '@core/types.js'
 import type { Workspaces } from '../hooks/useWorkspaces.js'
-import { Button, Card, CardRow, Chip, Hint, inputClass } from './ui.js'
+import { Button, Card, CardRow, Chip, Hint, inputBase, inputClass } from './ui.js'
 import { ipcMessage } from './WorkspaceSwitcher.js'
 
 /**
@@ -56,7 +56,7 @@ export function WorkspacesPane({
                   <input
                     autoFocus
                     aria-label={`Rename ${workspace.name}`}
-                    className={`${inputClass} h-7 py-0`}
+                    className={`${inputBase} h-7 w-full px-2.5 text-[13px]`}
                     value={renaming.name}
                     maxLength={40}
                     onChange={(event) =>
