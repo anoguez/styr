@@ -13,7 +13,7 @@ import {
   type TaskStatus
 } from '@core/types.js'
 import { resolveTemplateFor } from '@core/prompt.js'
-import { Chip, Select } from './ui.js'
+import { Button, Chip, Modal, Select } from './ui.js'
 
 interface FormState {
   title: string
@@ -292,6 +292,7 @@ export function TaskDialog({
 }): ReactNode {
   const [form, setForm] = useState<FormState>(() => toForm(task, settings))
   const [tab, setTab] = useState<TabKey>('brief')
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -387,7 +388,7 @@ export function TaskDialog({
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
-        void saveAndClose()
+        if (!confirmingDelete) void saveAndClose()
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -408,494 +409,516 @@ export function TaskDialog({
 
   const taskId = task?.id ?? 'TASK-…'
   const inputText = 'rounded-lg border bg-transparent text-ink outline-none placeholder:text-faint'
-
   return (
-    // The backdrop deliberately does not close the dialog: a stray click would discard the draft.
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/65 px-8 py-[6vh] backdrop-blur-[2px]">
-      <div
-        role="dialog"
-        aria-label={task ? task.title : 'New task'}
-        className="flex h-[min(720px,88vh)] w-full max-w-[1000px] flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]"
-      >
-        <header className="flex items-start gap-4 border-b border-edge py-4 pl-5 pr-4">
-          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <div className="flex h-[18px] min-w-0 items-center gap-2.5 font-mono text-[10.5px] text-faint">
-              {task ? (
-                <>
-                  <span className="text-dim">{task.id}</span>
-                  <span className="truncate">{task.filePath}</span>
-                </>
-              ) : (
-                <span className="font-[family-name:var(--font-ui)] text-[11.5px]">
-                  New task · saved to the board as a markdown file
-                </span>
-              )}
-              {form.useWorktree ? (
-                <span className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded-md bg-accent/15 px-1.5 text-[var(--color-accent-text)]">
-                  <Icon size={11}>
-                    <circle cx="4.5" cy="3.5" r="1.8" />
-                    <circle cx="4.5" cy="12.5" r="1.8" />
-                    <circle cx="11.5" cy="3.5" r="1.8" />
-                    <path d="M4.5 5.3v5.4M11.5 5.3c0 3-2.8 3.4-5.2 4" />
-                  </Icon>
-                  {`styr/${taskId}`}
+    <>
+      {/* The backdrop deliberately does not close the dialog: a stray click would discard the draft. */}
+      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/65 px-8 py-[6vh] backdrop-blur-[2px]">
+        <div
+          role="dialog"
+          aria-label={task ? task.title : 'New task'}
+          className="flex h-[min(720px,88vh)] w-full max-w-[1000px] flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]"
+        >
+          <header className="flex items-start gap-4 border-b border-edge py-4 pl-5 pr-4">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <div className="flex h-[18px] min-w-0 items-center gap-2.5 font-mono text-[10.5px] text-faint">
+                {task ? (
+                  <>
+                    <span className="text-dim">{task.id}</span>
+                    <span className="truncate">{task.filePath}</span>
+                  </>
+                ) : (
+                  <span className="font-[family-name:var(--font-ui)] text-[11.5px]">
+                    New task · saved to the board as a markdown file
+                  </span>
+                )}
+                {form.useWorktree ? (
+                  <span className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded-md bg-accent/15 px-1.5 text-[var(--color-accent-text)]">
+                    <Icon size={11}>
+                      <circle cx="4.5" cy="3.5" r="1.8" />
+                      <circle cx="4.5" cy="12.5" r="1.8" />
+                      <circle cx="11.5" cy="3.5" r="1.8" />
+                      <path d="M4.5 5.3v5.4M11.5 5.3c0 3-2.8 3.4-5.2 4" />
+                    </Icon>
+                    {`styr/${taskId}`}
+                  </span>
+                ) : null}
+              </div>
+              <input
+                ref={titleRef}
+                autoFocus
+                aria-label="Title"
+                aria-required
+                aria-invalid={titleMissing}
+                value={form.title}
+                placeholder="What needs doing?"
+                onChange={(event) => {
+                  setTitleMissing(false)
+                  patch({ title: event.target.value })
+                }}
+                className={`-ml-2 h-[34px] w-full px-2 text-[17px] font-semibold tracking-[-0.01em] focus:bg-chrome ${inputText} ${titleMissing ? 'border-[var(--color-pri-urgent)] focus:border-[var(--color-pri-urgent)]' : 'border-edge-strong hover:border-faint/60 focus:border-accent'}`}
+              />
+              {titleMissing ? (
+                <span role="alert" className="text-[11.5px] text-[var(--color-pri-urgent)]">
+                  A title is required.
                 </span>
               ) : null}
             </div>
-            <input
-              ref={titleRef}
-              autoFocus
-              aria-label="Title"
-              aria-required
-              aria-invalid={titleMissing}
-              value={form.title}
-              placeholder="What needs doing?"
-              onChange={(event) => {
-                setTitleMissing(false)
-                patch({ title: event.target.value })
-              }}
-              className={`-ml-2 h-[34px] w-full px-2 text-[17px] font-semibold tracking-[-0.01em] focus:bg-chrome ${inputText} ${titleMissing ? 'border-[var(--color-pri-urgent)] focus:border-[var(--color-pri-urgent)]' : 'border-edge-strong hover:border-faint/60 focus:border-accent'}`}
-            />
-            {titleMissing ? (
-              <span role="alert" className="text-[11.5px] text-[var(--color-pri-urgent)]">
-                A title is required.
-              </span>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-            className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg text-dim transition-colors hover:bg-raised/70 hover:text-ink"
-          >
-            <CloseIcon size={14} />
-          </button>
-        </header>
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={onClose}
+              className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg text-dim transition-colors hover:bg-raised/70 hover:text-ink"
+            >
+              <CloseIcon size={14} />
+            </button>
+          </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_292px]">
-          <section className="flex min-h-0 min-w-0 flex-col">
-            <nav className="flex h-[38px] shrink-0 items-stretch gap-0.5 border-b border-edge px-3">
-              {tabs.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => selectTab(item.key)}
-                  className={`flex items-center gap-1.5 border-b-2 px-2.5 text-[12.5px] font-medium transition-colors hover:text-ink ${tab === item.key ? 'border-accent text-ink' : 'border-transparent text-faint'}`}
-                >
-                  {item.label}
-                  {item.count ? (
-                    <span className="inline-flex h-4 items-center rounded-[5px] bg-raised px-[5px] font-mono text-[10px] text-dim">
-                      {item.count}
-                    </span>
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_292px]">
+            <section className="flex min-h-0 min-w-0 flex-col">
+              <nav className="flex h-[38px] shrink-0 items-stretch gap-0.5 border-b border-edge px-3">
+                {tabs.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => selectTab(item.key)}
+                    className={`flex items-center gap-1.5 border-b-2 px-2.5 text-[12.5px] font-medium transition-colors hover:text-ink ${tab === item.key ? 'border-accent text-ink' : 'border-transparent text-faint'}`}
+                  >
+                    {item.label}
+                    {item.count ? (
+                      <span className="inline-flex h-4 items-center rounded-[5px] bg-raised px-[5px] font-mono text-[10px] text-dim">
+                        {item.count}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </nav>
+
+              {tab === 'brief' ? (
+                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5 pt-4">
+                  <textarea
+                    aria-label="Description (markdown)"
+                    value={form.description}
+                    placeholder="Paste a wayfinder spec here, or write the brief yourself."
+                    onChange={(event) => patch({ description: event.target.value })}
+                    className="min-h-60 w-full flex-1 resize-none rounded-[10px] border border-edge bg-chrome px-3.5 py-3 font-mono text-[12px] leading-[1.65] text-ink outline-none placeholder:text-faint focus:border-accent"
+                  />
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] font-semibold text-dim">Context files</span>
+                      <span className="text-[11.5px] text-faint">
+                        Paths go into the prompt. Nothing is copied.
+                      </span>
+                      <button
+                        type="button"
+                        className={`${GHOST_BTN} ml-auto h-6`}
+                        onClick={() => {
+                          void window.api.settings
+                            .pickFiles(form.repoPath || undefined)
+                            .then((picked) =>
+                              patch({
+                                contextFiles: [
+                                  ...form.contextFiles,
+                                  ...picked.filter((file) => !form.contextFiles.includes(file))
+                                ]
+                              })
+                            )
+                        }}
+                      >
+                        <PlusIcon size={12} />
+                        Add
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {form.contextFiles.map((file) => (
+                        <span
+                          key={file}
+                          title={file}
+                          className="inline-flex h-[26px] max-w-full items-center gap-1.5 rounded-[7px] border border-edge bg-card pl-2 pr-1 text-[12px] text-ink"
+                        >
+                          <Icon size={12}>
+                            <path d="M4 2.5h5l3 3v8H4z" />
+                            <path d="M9 2.5v3h3" />
+                          </Icon>
+                          <span className="whitespace-nowrap">{file.split('/').pop()}</span>
+                          <span className="truncate font-mono text-[10.5px] text-faint">
+                            {file.replace(/\/[^/]+$/, '')}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${file}`}
+                            className="inline-flex size-[18px] shrink-0 items-center justify-center rounded text-faint hover:bg-red-400/10 hover:text-red-300"
+                            onClick={() =>
+                              patch({
+                                contextFiles: form.contextFiles.filter(
+                                  (current) => current !== file
+                                )
+                              })
+                            }
+                          >
+                            <CloseIcon size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {tab === 'chats' && task ? (
+                <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-5 pt-4">
+                  <p className="m-0 text-[12px] leading-normal text-faint">
+                    Every run on this task, newest first. Opening one resumes it with its original
+                    provider.
+                  </p>
+                  {sessions.length > 0 ? (
+                    <ul className="m-0 flex list-none flex-col divide-y divide-edge overflow-hidden rounded-[10px] border border-edge bg-chrome p-0">
+                      {sessions.map((entry) => (
+                        <li key={entry.id} className="flex items-center gap-3 px-3 py-2.5">
+                          <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                            <span className="flex items-center gap-1.5 text-[12.5px] text-ink">
+                              <span className="truncate">{entry.label}</span>
+                              <Chip>{entry.provider === 'codex' ? 'Codex' : 'Claude'}</Chip>
+                              {entry.id === task.agentSession?.id ? (
+                                <Chip tone="accent">continues next</Chip>
+                              ) : null}
+                            </span>
+                            <span className="font-mono text-[10.5px] text-faint" title={entry.id}>
+                              {new Date(entry.startedAt).toLocaleString()} · {entry.id.slice(0, 8)}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            className="inline-flex h-[26px] shrink-0 items-center rounded-[7px] border border-edge-strong bg-raised/70 px-2.5 text-[12px] font-medium text-dim hover:bg-raised hover:text-ink"
+                            onClick={() => {
+                              onResumeSession(task.id, entry.id)
+                              onClose()
+                            }}
+                          >
+                            Open
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="m-0 text-[12px] text-faint">No agent has run on this task yet.</p>
+                  )}
+                  {task.agentSession ? (
+                    <button
+                      type="button"
+                      className={`${GHOST_BTN} -ml-2 h-[26px] self-start`}
+                      onClick={() => {
+                        void window.api.tasks.forgetSession(task.id).then(onClose)
+                      }}
+                    >
+                      Forget current chat — next run starts fresh
+                    </button>
                   ) : null}
-                </button>
-              ))}
-            </nav>
+                </div>
+              ) : null}
 
-            {tab === 'brief' ? (
-              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5 pt-4">
-                <textarea
-                  aria-label="Description (markdown)"
-                  value={form.description}
-                  placeholder="Paste a wayfinder spec here, or write the brief yourself."
-                  onChange={(event) => patch({ description: event.target.value })}
-                  className="min-h-60 w-full flex-1 resize-none rounded-[10px] border border-edge bg-chrome px-3.5 py-3 font-mono text-[12px] leading-[1.65] text-ink outline-none placeholder:text-faint focus:border-accent"
+              {tab === 'activity' && task ? (
+                <ol className="m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto px-5 pb-5 pt-4">
+                  {task.activity.length === 0 ? (
+                    <li className="text-[12px] text-faint">No activity yet.</li>
+                  ) : null}
+                  {task.activity.map((entry, index) => (
+                    <li
+                      key={`${index}-${entry.at}`}
+                      className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-3"
+                    >
+                      <span className="flex flex-col items-center">
+                        <span
+                          className={`mt-[5px] size-[7px] shrink-0 rounded-full ${entry.author === 'you' || !entry.author ? 'bg-dim' : 'bg-col-progress'}`}
+                        />
+                        {index < task.activity.length - 1 ? (
+                          <span className="w-px flex-1 bg-edge" />
+                        ) : null}
+                      </span>
+                      <div className="flex flex-col gap-[3px] pb-4">
+                        {entry.at ? (
+                          <span className="font-mono text-[10.5px] text-faint">
+                            {new Date(entry.at).toLocaleString()}
+                            {entry.author ? ` · ${entry.author}` : ''}
+                          </span>
+                        ) : null}
+                        <p className="m-0 whitespace-pre-wrap text-[12.5px] leading-normal text-ink">
+                          {entry.message}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+
+              {tab === 'prompt' ? (
+                <div className="flex min-h-0 flex-1 flex-col gap-2.5 px-5 pb-5 pt-4">
+                  <div className="flex items-center gap-2 text-[12px] text-faint">
+                    <span>
+                      Exactly what {form.provider === 'codex' ? 'Codex' : 'Claude'} receives, using
+                    </span>
+                    <Chip>{templateName}</Chip>
+                  </div>
+                  <pre className="m-0 min-h-0 flex-1 overflow-auto whitespace-pre-wrap rounded-[10px] border border-edge bg-chrome px-3.5 py-3 font-mono text-[11.5px] leading-[1.65] text-dim">
+                    {previewError
+                      ? 'Give the task a title first — the preview is built from the saved task.'
+                      : (preview ?? 'Building preview…')}
+                  </pre>
+                </div>
+              ) : null}
+            </section>
+
+            <aside className="flex min-h-0 flex-col gap-5 overflow-y-auto border-l border-edge bg-chrome/50 p-4">
+              <div className="flex flex-col gap-0.5">
+                <span className={`${SECTION_LABEL} pb-1.5`}>Details</span>
+                <PropertySelect
+                  label="Status"
+                  value={form.status}
+                  dots={STATUS_DOT}
+                  options={TASK_STATUSES.map((value) => ({
+                    value,
+                    label: TASK_STATUS_LABELS[value]
+                  }))}
+                  onChange={(status) => patch({ status })}
                 />
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[12px] font-semibold text-dim">Context files</span>
-                    <span className="text-[11.5px] text-faint">
-                      Paths go into the prompt. Nothing is copied.
+                <PropertySelect
+                  label="Priority"
+                  value={form.priority}
+                  dots={PRIORITY_DOT}
+                  options={TASK_PRIORITIES.map((value) => ({
+                    value,
+                    label: TASK_PRIORITY_LABELS[value]
+                  }))}
+                  onChange={(priority) => patch({ priority })}
+                />
+                <PropertySelect
+                  label="Readiness"
+                  value={form.readiness}
+                  dots={READINESS_DOT}
+                  options={TASK_READINESS.map((value) => ({
+                    value,
+                    label: TASK_READINESS_LABELS[value]
+                  }))}
+                  onChange={(readiness) => patch({ readiness })}
+                />
+                <div className="grid h-8 grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
+                  <span className="text-[12px] text-dim">Project</span>
+                  <input
+                    aria-label="Project"
+                    value={form.project}
+                    placeholder="None"
+                    onChange={(event) => patch({ project: event.target.value })}
+                    className={`h-7 w-full rounded-[7px] border-transparent px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
+                  />
+                </div>
+                <div className="grid h-8 grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
+                  <span className="text-[12px] text-dim">PR link</span>
+                  <input
+                    aria-label="Pull request URL"
+                    type="url"
+                    value={form.prUrl}
+                    placeholder="None"
+                    title="Optional link to the pull or merge request, on any host"
+                    onChange={(event) => patch({ prUrl: event.target.value })}
+                    className={`h-7 w-full rounded-[7px] px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
+                  />
+                </div>
+                <TagsEditor tags={form.tags} onChange={(tags) => patch({ tags })} />
+              </div>
+
+              <div className="h-px shrink-0 bg-edge" />
+
+              <div className="flex flex-col gap-3">
+                <span className={SECTION_LABEL}>Agent run</span>
+                <div className="flex flex-col gap-[5px]">
+                  <span className="text-[12px] text-dim">Provider</span>
+                  <Select
+                    aria-label="Provider"
+                    className={`${BOXED_CONTROL} !h-[30px] !py-0 !text-[12.5px]`}
+                    value={form.provider}
+                    onChange={(event) =>
+                      patch({ provider: event.target.value as 'claude' | 'codex' })
+                    }
+                  >
+                    {settings.enabledProviders.map((item) => (
+                      <option key={item} value={item}>
+                        {providerLabel(item)}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-[5px]">
+                  <span className="text-[12px] text-dim">Prompt template</span>
+                  <Select
+                    aria-label="Prompt template"
+                    className={`${BOXED_CONTROL} !h-[30px] !py-0 !text-[12.5px]`}
+                    value={form.promptTemplateId}
+                    onChange={(event) => patch({ promptTemplateId: event.target.value })}
+                  >
+                    <option value="">Auto — {routedName}</option>
+                    {settings.promptTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <span className="text-[11px] leading-[1.4] text-faint">
+                    {form.promptTemplateId
+                      ? 'Pinned — used whatever column the task is in.'
+                      : `Follows the column. Currently runs ${routedName}.`}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-[5px]">
+                  <span className="text-[12px] text-dim">Working directory</span>
+                  <div className="flex h-[30px] items-center gap-1.5 rounded-[7px] border border-edge-strong bg-chrome pl-2.5 pr-1 focus-within:border-accent">
+                    <input
+                      aria-label="Working directory"
+                      value={form.repoPath}
+                      placeholder="/Users/you/Workspace/project"
+                      title={form.repoPath}
+                      onChange={(event) => patch({ repoPath: event.target.value })}
+                      className="min-w-0 flex-1 bg-transparent font-mono text-[11.5px] text-ink outline-none placeholder:text-faint"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Browse"
+                      onClick={() => {
+                        void window.api.settings
+                          .pickDirectory(form.repoPath || undefined)
+                          .then((picked) => {
+                            if (picked) patch({ repoPath: picked })
+                          })
+                      }}
+                      className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-[5px] text-dim hover:bg-raised hover:text-ink"
+                    >
+                      <FolderIcon />
+                    </button>
+                  </div>
+                </div>
+                <Toggle
+                  checked={form.useWorktree}
+                  onChange={(useWorktree) => patch({ useWorktree })}
+                  label="Own git worktree"
+                  hint={
+                    !form.useWorktree
+                      ? 'Runs directly in the working directory.'
+                      : form.repoPath
+                        ? `Runs on branch styr/${taskId} so parallel agents never share a checkout.`
+                        : 'Set a working directory first — the worktree is created from that repository.'
+                  }
+                />
+                <Toggle
+                  checked={form.orchestrate}
+                  onChange={(orchestrate) => patch({ orchestrate })}
+                  label="Orchestrate can start it"
+                  hint={
+                    form.orchestrate
+                      ? 'You can still start it yourself.'
+                      : 'Only you can start this task.'
+                  }
+                />
+                {task?.worktreePath && form.useWorktree ? (
+                  <div className="-mt-1 flex items-center gap-1.5 rounded-[7px] border border-edge bg-chrome py-1.5 pl-2.5 pr-1.5">
+                    <span
+                      title={task.worktreePath}
+                      className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-dim"
+                    >
+                      {task.worktreePath}
                     </span>
                     <button
                       type="button"
-                      className={`${GHOST_BTN} ml-auto h-6`}
+                      title="Deletes the checkout and uncommitted work. The branch is kept."
+                      className="h-5 shrink-0 rounded-[5px] px-1.5 text-[11px] font-medium text-red-300 hover:bg-red-400/10"
                       onClick={() => {
-                        void window.api.settings
-                          .pickFiles(form.repoPath || undefined)
-                          .then((picked) =>
-                            patch({
-                              contextFiles: [
-                                ...form.contextFiles,
-                                ...picked.filter((file) => !form.contextFiles.includes(file))
-                              ]
-                            })
-                          )
+                        void window.api.tasks.removeWorktree(task.id).then(onClose)
                       }}
                     >
-                      <PlusIcon size={12} />
-                      Add
+                      Remove
                     </button>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {form.contextFiles.map((file) => (
-                      <span
-                        key={file}
-                        title={file}
-                        className="inline-flex h-[26px] max-w-full items-center gap-1.5 rounded-[7px] border border-edge bg-card pl-2 pr-1 text-[12px] text-ink"
-                      >
-                        <Icon size={12}>
-                          <path d="M4 2.5h5l3 3v8H4z" />
-                          <path d="M9 2.5v3h3" />
-                        </Icon>
-                        <span className="whitespace-nowrap">{file.split('/').pop()}</span>
-                        <span className="truncate font-mono text-[10.5px] text-faint">
-                          {file.replace(/\/[^/]+$/, '')}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${file}`}
-                          className="inline-flex size-[18px] shrink-0 items-center justify-center rounded text-faint hover:bg-red-400/10 hover:text-red-300"
-                          onClick={() =>
-                            patch({
-                              contextFiles: form.contextFiles.filter((current) => current !== file)
-                            })
-                          }
-                        >
-                          <CloseIcon size={10} />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {tab === 'chats' && task ? (
-              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-5 pt-4">
-                <p className="m-0 text-[12px] leading-normal text-faint">
-                  Every run on this task, newest first. Opening one resumes it with its original
-                  provider.
-                </p>
-                {sessions.length > 0 ? (
-                  <ul className="m-0 flex list-none flex-col divide-y divide-edge overflow-hidden rounded-[10px] border border-edge bg-chrome p-0">
-                    {sessions.map((entry) => (
-                      <li key={entry.id} className="flex items-center gap-3 px-3 py-2.5">
-                        <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                          <span className="flex items-center gap-1.5 text-[12.5px] text-ink">
-                            <span className="truncate">{entry.label}</span>
-                            <Chip>{entry.provider === 'codex' ? 'Codex' : 'Claude'}</Chip>
-                            {entry.id === task.agentSession?.id ? (
-                              <Chip tone="accent">continues next</Chip>
-                            ) : null}
-                          </span>
-                          <span className="font-mono text-[10.5px] text-faint" title={entry.id}>
-                            {new Date(entry.startedAt).toLocaleString()} · {entry.id.slice(0, 8)}
-                          </span>
-                        </span>
-                        <button
-                          type="button"
-                          className="inline-flex h-[26px] shrink-0 items-center rounded-[7px] border border-edge-strong bg-raised/70 px-2.5 text-[12px] font-medium text-dim hover:bg-raised hover:text-ink"
-                          onClick={() => {
-                            onResumeSession(task.id, entry.id)
-                            onClose()
-                          }}
-                        >
-                          Open
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="m-0 text-[12px] text-faint">No agent has run on this task yet.</p>
-                )}
-                {task.agentSession ? (
-                  <button
-                    type="button"
-                    className={`${GHOST_BTN} -ml-2 h-[26px] self-start`}
-                    onClick={() => {
-                      void window.api.tasks.forgetSession(task.id).then(onClose)
-                    }}
-                  >
-                    Forget current chat — next run starts fresh
-                  </button>
                 ) : null}
               </div>
-            ) : null}
+            </aside>
+          </div>
 
-            {tab === 'activity' && task ? (
-              <ol className="m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto px-5 pb-5 pt-4">
-                {task.activity.length === 0 ? (
-                  <li className="text-[12px] text-faint">No activity yet.</li>
-                ) : null}
-                {task.activity.map((entry, index) => (
-                  <li
-                    key={`${index}-${entry.at}`}
-                    className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-3"
-                  >
-                    <span className="flex flex-col items-center">
-                      <span
-                        className={`mt-[5px] size-[7px] shrink-0 rounded-full ${entry.author === 'you' || !entry.author ? 'bg-dim' : 'bg-col-progress'}`}
-                      />
-                      {index < task.activity.length - 1 ? (
-                        <span className="w-px flex-1 bg-edge" />
-                      ) : null}
-                    </span>
-                    <div className="flex flex-col gap-[3px] pb-4">
-                      {entry.at ? (
-                        <span className="font-mono text-[10.5px] text-faint">
-                          {new Date(entry.at).toLocaleString()}
-                          {entry.author ? ` · ${entry.author}` : ''}
-                        </span>
-                      ) : null}
-                      <p className="m-0 whitespace-pre-wrap text-[12.5px] leading-normal text-ink">
-                        {entry.message}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            ) : null}
-
-            {tab === 'prompt' ? (
-              <div className="flex min-h-0 flex-1 flex-col gap-2.5 px-5 pb-5 pt-4">
-                <div className="flex items-center gap-2 text-[12px] text-faint">
-                  <span>
-                    Exactly what {form.provider === 'codex' ? 'Codex' : 'Claude'} receives, using
-                  </span>
-                  <Chip>{templateName}</Chip>
-                </div>
-                <pre className="m-0 min-h-0 flex-1 overflow-auto whitespace-pre-wrap rounded-[10px] border border-edge bg-chrome px-3.5 py-3 font-mono text-[11.5px] leading-[1.65] text-dim">
-                  {previewError
-                    ? 'Give the task a title first — the preview is built from the saved task.'
-                    : (preview ?? 'Building preview…')}
-                </pre>
-              </div>
-            ) : null}
-          </section>
-
-          <aside className="flex min-h-0 flex-col gap-5 overflow-y-auto border-l border-edge bg-chrome/50 p-4">
-            <div className="flex flex-col gap-0.5">
-              <span className={`${SECTION_LABEL} pb-1.5`}>Details</span>
-              <PropertySelect
-                label="Status"
-                value={form.status}
-                dots={STATUS_DOT}
-                options={TASK_STATUSES.map((value) => ({
-                  value,
-                  label: TASK_STATUS_LABELS[value]
-                }))}
-                onChange={(status) => patch({ status })}
-              />
-              <PropertySelect
-                label="Priority"
-                value={form.priority}
-                dots={PRIORITY_DOT}
-                options={TASK_PRIORITIES.map((value) => ({
-                  value,
-                  label: TASK_PRIORITY_LABELS[value]
-                }))}
-                onChange={(priority) => patch({ priority })}
-              />
-              <PropertySelect
-                label="Readiness"
-                value={form.readiness}
-                dots={READINESS_DOT}
-                options={TASK_READINESS.map((value) => ({
-                  value,
-                  label: TASK_READINESS_LABELS[value]
-                }))}
-                onChange={(readiness) => patch({ readiness })}
-              />
-              <div className="grid h-8 grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
-                <span className="text-[12px] text-dim">Project</span>
-                <input
-                  aria-label="Project"
-                  value={form.project}
-                  placeholder="None"
-                  onChange={(event) => patch({ project: event.target.value })}
-                  className={`h-7 w-full rounded-[7px] border-transparent px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
-                />
-              </div>
-              <div className="grid h-8 grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
-                <span className="text-[12px] text-dim">PR link</span>
-                <input
-                  aria-label="Pull request URL"
-                  type="url"
-                  value={form.prUrl}
-                  placeholder="None"
-                  title="Optional link to the pull or merge request, on any host"
-                  onChange={(event) => patch({ prUrl: event.target.value })}
-                  className={`h-7 w-full rounded-[7px] px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
-                />
-              </div>
-              <TagsEditor tags={form.tags} onChange={(tags) => patch({ tags })} />
-            </div>
-
-            <div className="h-px shrink-0 bg-edge" />
-
-            <div className="flex flex-col gap-3">
-              <span className={SECTION_LABEL}>Agent run</span>
-              <div className="flex flex-col gap-[5px]">
-                <span className="text-[12px] text-dim">Provider</span>
-                <Select
-                  aria-label="Provider"
-                  className={`${BOXED_CONTROL} !h-[30px] !py-0 !text-[12.5px]`}
-                  value={form.provider}
-                  onChange={(event) =>
-                    patch({ provider: event.target.value as 'claude' | 'codex' })
-                  }
+          <footer className="flex shrink-0 items-center gap-2 border-t border-edge bg-chrome/40 py-3 pl-3 pr-4">
+            {task ? (
+              <div className="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  className={`${GHOST_BTN} h-7`}
+                  onClick={() => void window.api.tasks.openInEditor(task.id)}
                 >
-                  {settings.enabledProviders.map((item) => (
-                    <option key={item} value={item}>
-                      {providerLabel(item)}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="flex flex-col gap-[5px]">
-                <span className="text-[12px] text-dim">Prompt template</span>
-                <Select
-                  aria-label="Prompt template"
-                  className={`${BOXED_CONTROL} !h-[30px] !py-0 !text-[12.5px]`}
-                  value={form.promptTemplateId}
-                  onChange={(event) => patch({ promptTemplateId: event.target.value })}
+                  <Icon>
+                    <path d="M9 3h4v4M13 3 7.5 8.5" />
+                    <path d="M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3" />
+                  </Icon>
+                  Open file
+                </button>
+                <button
+                  type="button"
+                  className={`${GHOST_BTN} h-7`}
+                  onClick={() => void window.api.tasks.reveal(task.id)}
                 >
-                  <option value="">Auto — {routedName}</option>
-                  {settings.promptTemplates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                    </option>
-                  ))}
-                </Select>
-                <span className="text-[11px] leading-[1.4] text-faint">
-                  {form.promptTemplateId
-                    ? 'Pinned — used whatever column the task is in.'
-                    : `Follows the column. Currently runs ${routedName}.`}
-                </span>
+                  <FolderIcon />
+                  Reveal
+                </button>
+                <span className="mx-1 h-4 w-px bg-edge" />
+                <button
+                  type="button"
+                  aria-label="Delete task"
+                  title="Delete task"
+                  className="inline-flex size-7 items-center justify-center rounded-[7px] text-dim transition-colors hover:bg-red-400/10 hover:text-red-300"
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  <Icon size={14}>
+                    <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />
+                  </Icon>
+                </button>
               </div>
-              <div className="flex flex-col gap-[5px]">
-                <span className="text-[12px] text-dim">Working directory</span>
-                <div className="flex h-[30px] items-center gap-1.5 rounded-[7px] border border-edge-strong bg-chrome pl-2.5 pr-1 focus-within:border-accent">
-                  <input
-                    aria-label="Working directory"
-                    value={form.repoPath}
-                    placeholder="/Users/you/Workspace/project"
-                    title={form.repoPath}
-                    onChange={(event) => patch({ repoPath: event.target.value })}
-                    className="min-w-0 flex-1 bg-transparent font-mono text-[11.5px] text-ink outline-none placeholder:text-faint"
-                  />
-                  <button
-                    type="button"
-                    aria-label="Browse"
-                    onClick={() => {
-                      void window.api.settings
-                        .pickDirectory(form.repoPath || undefined)
-                        .then((picked) => {
-                          if (picked) patch({ repoPath: picked })
-                        })
-                    }}
-                    className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-[5px] text-dim hover:bg-raised hover:text-ink"
-                  >
-                    <FolderIcon />
-                  </button>
-                </div>
-              </div>
-              <Toggle
-                checked={form.useWorktree}
-                onChange={(useWorktree) => patch({ useWorktree })}
-                label="Own git worktree"
-                hint={
-                  !form.useWorktree
-                    ? 'Runs directly in the working directory.'
-                    : form.repoPath
-                      ? `Runs on branch styr/${taskId} so parallel agents never share a checkout.`
-                      : 'Set a working directory first — the worktree is created from that repository.'
-                }
-              />
-              <Toggle
-                checked={form.orchestrate}
-                onChange={(orchestrate) => patch({ orchestrate })}
-                label="Orchestrate can start it"
-                hint={
-                  form.orchestrate
-                    ? 'You can still start it yourself.'
-                    : 'Only you can start this task.'
-                }
-              />
-              {task?.worktreePath && form.useWorktree ? (
-                <div className="-mt-1 flex items-center gap-1.5 rounded-[7px] border border-edge bg-chrome py-1.5 pl-2.5 pr-1.5">
-                  <span
-                    title={task.worktreePath}
-                    className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-dim"
-                  >
-                    {task.worktreePath}
-                  </span>
-                  <button
-                    type="button"
-                    title="Deletes the checkout and uncommitted work. The branch is kept."
-                    className="h-5 shrink-0 rounded-[5px] px-1.5 text-[11px] font-medium text-red-300 hover:bg-red-400/10"
-                    onClick={() => {
-                      void window.api.tasks.removeWorktree(task.id).then(onClose)
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </aside>
+            ) : null}
+            <div className="flex-1" />
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void saveAndClose()}
+              className="inline-flex h-[30px] items-center gap-2 rounded-lg border border-edge-strong bg-raised/70 px-3 text-[12.5px] font-medium text-dim transition-colors hover:bg-raised hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+            >
+              Save
+              <kbd className="font-mono text-[10px] text-faint">⌘↵</kbd>
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void saveAndLaunch()}
+              className="inline-flex h-[30px] items-center gap-[7px] rounded-lg border border-accent bg-accent px-3.5 text-[12.5px] font-semibold text-[var(--color-on-accent)] shadow-[0_1px_0_rgba(255,255,255,0.12)_inset] transition-colors hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-40"
+            >
+              <svg aria-hidden viewBox="0 0 16 16" width="11" height="11" fill="currentColor">
+                <path d="M5 3.5v9l7.25-4.5z" />
+              </svg>
+              Save &amp; Start
+            </button>
+          </footer>
         </div>
-
-        <footer className="flex shrink-0 items-center gap-2 border-t border-edge bg-chrome/40 py-3 pl-3 pr-4">
-          {task ? (
-            <div className="flex items-center gap-0.5">
-              <button
-                type="button"
-                className={`${GHOST_BTN} h-7`}
-                onClick={() => void window.api.tasks.openInEditor(task.id)}
-              >
-                <Icon>
-                  <path d="M9 3h4v4M13 3 7.5 8.5" />
-                  <path d="M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3" />
-                </Icon>
-                Open file
-              </button>
-              <button
-                type="button"
-                className={`${GHOST_BTN} h-7`}
-                onClick={() => void window.api.tasks.reveal(task.id)}
-              >
-                <FolderIcon />
-                Reveal
-              </button>
-              <span className="mx-1 h-4 w-px bg-edge" />
-              <button
-                type="button"
-                aria-label="Delete task"
-                title="Delete task"
-                className="inline-flex size-7 items-center justify-center rounded-[7px] text-dim transition-colors hover:bg-red-400/10 hover:text-red-300"
-                onClick={() => void remove()}
-              >
-                <Icon size={14}>
-                  <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />
-                </Icon>
-              </button>
-            </div>
-          ) : null}
-          <div className="flex-1" />
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => void saveAndClose()}
-            className="inline-flex h-[30px] items-center gap-2 rounded-lg border border-edge-strong bg-raised/70 px-3 text-[12.5px] font-medium text-dim transition-colors hover:bg-raised hover:text-ink disabled:pointer-events-none disabled:opacity-40"
-          >
-            Save
-            <kbd className="font-mono text-[10px] text-faint">⌘↵</kbd>
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => void saveAndLaunch()}
-            className="inline-flex h-[30px] items-center gap-[7px] rounded-lg border border-accent bg-accent px-3.5 text-[12.5px] font-semibold text-[var(--color-on-accent)] shadow-[0_1px_0_rgba(255,255,255,0.12)_inset] transition-colors hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-40"
-          >
-            <svg aria-hidden viewBox="0 0 16 16" width="11" height="11" fill="currentColor">
-              <path d="M5 3.5v9l7.25-4.5z" />
-            </svg>
-            Save &amp; Start
-          </button>
-        </footer>
       </div>
-    </div>
+      {confirmingDelete && task ? (
+        <Modal
+          title="Delete this task?"
+          subtitle={`${task.id} · ${task.title}`}
+          onClose={() => setConfirmingDelete(false)}
+          footer={
+            <>
+              <Button onClick={() => setConfirmingDelete(false)}>Cancel</Button>
+              <Button variant="danger" onClick={() => void remove()}>
+                Delete
+              </Button>
+            </>
+          }
+        >
+          <p className="text-[12.5px] text-dim">
+            The task file is removed from the board. This cannot be undone.
+          </p>
+        </Modal>
+      ) : null}
+    </>
   )
 }
