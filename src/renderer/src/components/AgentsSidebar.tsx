@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { AGENT_STATE_LABELS, compareAgentStatus, type AgentStatus } from '@core/agentState.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
 import type { Task, TerminalSessionInfo } from '@core/types.js'
-import { Button } from './ui.js'
+import type { DiffStat } from '@core/diff.js'
+import { Button, DiffStatButton } from './ui.js'
 
 export interface AgentRow {
   task: Task
@@ -50,10 +51,14 @@ function BranchGlyph(): ReactNode {
 
 function AgentRowItem({
   row,
+  diffStat,
   onActivate,
-  onOpenTask
+  onOpenTask,
+  onShowChanges
 }: {
   row: AgentRow
+  diffStat?: DiffStat
+  onShowChanges: (task: Task) => void
   onActivate: (row: AgentRow) => void
   onOpenTask: (task: Task) => void
 }): ReactNode {
@@ -67,7 +72,7 @@ function AgentRowItem({
         type="button"
         onClick={() => onActivate(row)}
         title={session ? 'Focus this terminal tab' : 'Resume this agent chat'}
-        className="flex w-full flex-col gap-1.5 rounded-lg border border-transparent px-2.5 py-2.5 text-left transition-colors hover:border-edge-strong hover:bg-raised"
+        className={`flex w-full flex-col gap-1.5 rounded-lg border border-transparent px-2.5 pt-2.5 text-left transition-colors hover:border-edge-strong hover:bg-raised ${diffStat ? 'pb-8' : 'pb-2.5'}`}
       >
         <span className="flex items-center gap-1.5">
           <span
@@ -106,6 +111,12 @@ function AgentRowItem({
         ) : null}
       </button>
 
+      {diffStat ? (
+        <div className="absolute bottom-2 left-2.5">
+          <DiffStatButton stat={diffStat} onClick={() => onShowChanges(task)} />
+        </div>
+      ) : null}
+
       <button
         type="button"
         aria-label={`Open ${task.id}`}
@@ -121,11 +132,15 @@ function AgentRowItem({
 
 export function AgentsSidebar({
   rows,
+  diffStats,
   onActivate,
   onOpenTask,
+  onShowChanges,
   onClose
 }: {
   rows: AgentRow[]
+  diffStats: Map<string, DiffStat>
+  onShowChanges: (task: Task) => void
   onActivate: (row: AgentRow) => void
   onOpenTask: (task: Task) => void
   onClose: () => void
@@ -167,6 +182,8 @@ export function AgentsSidebar({
             <AgentRowItem
               key={row.task.id}
               row={row}
+              diffStat={diffStats.get(row.task.id)}
+              onShowChanges={onShowChanges}
               onActivate={onActivate}
               onOpenTask={onOpenTask}
             />

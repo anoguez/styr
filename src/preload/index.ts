@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AgentStatus } from '../core/agentState.js'
+import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
   AppInfo,
   BrokenSettingsFile,
@@ -82,7 +83,11 @@ const api = {
   },
   git: {
     branches: (repoPath: string): Promise<{ branches: string[]; current?: string }> =>
-      ipcRenderer.invoke('git:branches', repoPath)
+      ipcRenderer.invoke('git:branches', repoPath),
+    diffStats: (): Promise<Record<string, DiffStat>> => ipcRenderer.invoke('git:diffStats'),
+    taskDiff: (taskId: string): Promise<DiffResult> => ipcRenderer.invoke('git:taskDiff', taskId),
+    filePatch: (taskId: string, path: string, full = false): Promise<PatchResult> =>
+      ipcRenderer.invoke('git:filePatch', taskId, path, full)
   },
   workspaces: {
     list: (): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:list'),

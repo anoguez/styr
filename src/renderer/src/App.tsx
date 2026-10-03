@@ -18,6 +18,7 @@ import {
 } from '@core/types.js'
 import { AgentsSidebar, sortAgentRows, type AgentRow } from './components/AgentsSidebar.js'
 import { ArchiveDialog } from './components/ArchiveDialog.js'
+import { ChangesDialog } from './components/ChangesDialog.js'
 import { Board } from './components/Board.js'
 import { OrchestrateDialog } from './components/OrchestrateDialog.js'
 import { CommandPalette, type CommandEntry } from './components/CommandPalette.js'
@@ -32,6 +33,7 @@ import { sessionLabel } from './lib/sessionLabel.js'
 import { Button, Chip, inputClass } from './components/ui.js'
 import { useSettings } from './hooks/useSettings.js'
 import { useTheme } from './hooks/useTheme.js'
+import { useDiffStats } from './hooks/useDiffStats.js'
 import { useTasks } from './hooks/useTasks.js'
 import { useAgents } from './hooks/useAgents.js'
 import { useWorkspaces } from './hooks/useWorkspaces.js'
@@ -74,6 +76,7 @@ export default function App(): ReactNode {
   const workspaces = useWorkspaces()
   const { overview, names: workspaceNames, apply: applyWorkspaces } = workspaces
   const activeWorkspaceId = settings?.activeWorkspaceId ?? overview.activeId
+  const diffStats = useDiffStats(activeWorkspaceId)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [creatingWorkspace, setCreatingWorkspace] = useState(false)
   const [pendingActivation, setPendingActivation] = useState<string | null>(null)
@@ -93,6 +96,7 @@ export default function App(): ReactNode {
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
+  const [changesTask, setChangesTask] = useState<Task | null>(null)
 
   const [sessions, setSessions] = useState<TerminalSessionInfo[]>([])
   const [activeSession, setActiveSession] = useState<string | null>(null)
@@ -375,6 +379,16 @@ export default function App(): ReactNode {
           run: () => void window.api.tasks.archive(task.id, true)
         })
       }
+      if (diffStats.has(task.id)) {
+        entries.push({
+          id: `changes:${task.id}`,
+          label: `View changes — ${task.title}`,
+          group: 'Tasks',
+          hint: task.id,
+          keywords: 'diff changes git files review',
+          run: () => setChangesTask(task)
+        })
+      }
       entries.push({
         id: `task:${task.id}`,
         label: task.title,
@@ -431,6 +445,7 @@ export default function App(): ReactNode {
   }, [
     board,
     archived.length,
+    diffStats,
     agentRows,
     sessions,
     taskTitles,
@@ -478,8 +493,11 @@ export default function App(): ReactNode {
         setSwitcherOpen(false)
         setCreatingWorkspace(false)
         setArchiveOpen(false)
+        setChangesTask(null)
         return
       }
+      // The Changes viewer is modal: its own keys (J/K, arrows) and ⌘ combos must not reach the board.
+      if (changesTask) return
       const command = commandForEvent(bindings, event, {
         terminalFocused: isTerminalTarget(event.target as Element | null)
       })
@@ -489,7 +507,7 @@ export default function App(): ReactNode {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [bindings, runCommand])
+  }, [bindings, runCommand, changesTask])
 
   useEffect(() => {
     if (terminalOpen && !manuallyResized.current) setTerminalHeight(preferredTerminalHeight())
@@ -639,7 +657,14 @@ export default function App(): ReactNode {
                 queued={queued}
                 onOpen={setEditing}
                 onLaunch={(task) => void launchAgent(task.id)}
-                onArchive={(task) => void window.api.tasks.archive(task.id, true)}
+                onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
+                onShowChanges={setChangesTask}
+                onOpenTerminal={(task) =>
+                  void window.api.terminal
+                    .create({ cwd: task.worktreePath || task.repoPath, title: task.id })
+                    .then(adoptSession)
+                }
+                diffStats={diffStats}
                 doneFooter={
                   hiddenDone > 0 || showAllDone || archived.length > 0 ? (
                     <div className="mt-auto flex shrink-0 flex-col items-center gap-1 pt-1 text-[11px] text-faint">
@@ -706,6 +731,8 @@ export default function App(): ReactNode {
         {agentsOpen ? (
           <AgentsSidebar
             rows={agentRows}
+            diffStats={diffStats}
+            onShowChanges={setChangesTask}
             onOpenTask={setEditing}
             onClose={() => setAgentsOpen(false)}
             onActivate={(row) => activateTask(row.task.id)}
@@ -780,7 +807,12 @@ export default function App(): ReactNode {
           onResumeSession={(taskId, sessionId) => {
             void window.api.terminal.resumeSession(taskId, sessionId).then(adoptSession)
           }}
+          onShowChanges={setChangesTask}
         />
+      ) : null}
+
+      {changesTask ? (
+        <ChangesDialog task={changesTask} onClose={() => setChangesTask(null)} />
       ) : null}
 
       {showSettings ? (

@@ -43,6 +43,18 @@
   --font-wordmark: 'Unbounded', var(--font-ui);
 }
 
+/* Diff tints, derived from the theme so they repaint with it. useTheme sets --font-terminal. */
+:root {
+  --font-terminal: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-diff-add: color-mix(in oklab, var(--color-col-done) 10%, var(--color-chrome));
+  --color-diff-add-gutter: color-mix(in oklab, var(--color-col-done) 18%, var(--color-chrome));
+  --color-diff-add-word: color-mix(in oklab, var(--color-col-done) 34%, transparent);
+  --color-diff-del: color-mix(in oklab, var(--color-danger) 10%, var(--color-chrome));
+  --color-diff-del-gutter: color-mix(in oklab, var(--color-danger) 18%, var(--color-chrome));
+  --color-diff-del-word: color-mix(in oklab, var(--color-danger) 34%, transparent);
+  --color-diff-hunk: color-mix(in oklab, var(--color-col-progress) 8%, var(--color-chrome));
+}
+
 html,
 body,
 #root {

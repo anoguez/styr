@@ -13,6 +13,7 @@ import { arrayMove } from '@dnd-kit/sortable'
 import type { AgentStatus } from '@core/agentState.js'
 import { TASK_STATUSES, type Task, type TaskStatus } from '@core/types.js'
 import type { TaskBoard } from '../hooks/useTasks.js'
+import type { DiffStat } from '@core/diff.js'
 import { TaskCardBody, type QueuedForOrchestration } from './TaskCard.js'
 import { Column } from './Column.js'
 
@@ -28,6 +29,9 @@ export function Board({
   onOpen,
   onLaunch,
   onArchive,
+  onShowChanges,
+  onOpenTerminal,
+  diffStats,
   doneFooter,
   templateNameFor
 }: {
@@ -37,6 +41,9 @@ export function Board({
   onOpen: (task: Task) => void
   onLaunch: (task: Task) => void
   onArchive: (task: Task) => void
+  onShowChanges: (task: Task) => void
+  onOpenTerminal: (task: Task) => void
+  diffStats: Map<string, DiffStat>
   /** Rendered at the foot of the Done column: the hidden count and its controls. */
   doneFooter?: ReactNode
   templateNameFor: (task: Task) => string
@@ -100,6 +107,9 @@ export function Board({
             onOpen={onOpen}
             onLaunch={onLaunch}
             onArchive={onArchive}
+            onShowChanges={onShowChanges}
+            onOpenTerminal={onOpenTerminal}
+            diffStats={diffStats}
             footer={status === 'done' ? doneFooter : undefined}
             templateNameFor={templateNameFor}
           />
@@ -108,7 +118,7 @@ export function Board({
       <DragOverlay>
         {dragging ? (
           <article className="w-[17rem] rotate-[1.5deg] cursor-grabbing rounded-[var(--radius-card)] border border-accent/50 bg-raised py-3 pl-3.5 pr-3 shadow-[0_18px_40px_-10px_rgba(0,0,0,0.75)]">
-            <TaskCardBody task={dragging} />
+            <TaskCardBody task={dragging} diffStat={diffStats.get(dragging.id)} />
           </article>
         ) : null}
       </DragOverlay>

@@ -20,7 +20,15 @@ import {
 } from '@core/launch.js'
 import { providerFor } from '@core/providers/index.js'
 import { resolveTemplateFor } from '@core/prompt.js'
-import { listBranches, readGitBranch, removeWorktree } from '@core/worktree.js'
+import { z } from 'zod'
+import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
+import {
+  listBranches,
+  readGitBranch,
+  removeWorktree,
+  taskDiff,
+  taskFilePatch
+} from '@core/worktree.js'
 import {
   createWorkspace,
   listWorkspaces,
@@ -175,6 +183,16 @@ export function markAgentExited(
   codexMonitor.release(monitorKey(workspaceId, taskId))
   recordAgentEvent(pathsInWorkspace(loadSettings(), workspaceId), taskId, 'TerminalExit')
   notifyAgentsChanged()
+}
+
+export /** Resolves the task a diff request names; errors come back as data, not as a thrown IPC failure. */
+function diffTask(taskId: unknown): (Task & { repoPath: string }) | { error: string } {
+  const id = z.string().min(1).safeParse(taskId)
+  if (!id.success) return { error: 'Invalid task id' }
+  const task = findTask(id.data)
+  if (!task) return { error: 'Task not found' }
+  if (!task.repoPath) return { error: 'This task has no repository' }
+  return { ...task, repoPath: task.repoPath }
 }
 
 export function notifyAgentsChanged(): void {
@@ -466,6 +484,50 @@ export function registerIpcHandlers(): void {
     return updated
   })
   ipcMain.handle('git:branches', (_event, repoPath: string) => listBranches(repoPath))
+  ipcMain.handle('git:taskDiff', (_event, taskId: unknown): DiffResult => {
+    const task = diffTask(taskId)
+    if ('error' in task) return task
+    return taskDiff(task.repoPath, worktreeKey(loadSettings().activeWorkspaceId, task.id), {
+      worktree: task.useWorktree !== false,
+      baseBranch: task.baseBranch
+    })
+  })
+  ipcMain.handle(
+    'git:filePatch',
+    (_event, taskId: unknown, path: unknown, full?: unknown): PatchResult => {
+      const task = diffTask(taskId)
+      if ('error' in task) return task
+      const file = z.string().min(1).safeParse(path)
+      if (!file.success) return { error: 'Invalid path' }
+      return taskFilePatch(
+        task.repoPath,
+        worktreeKey(loadSettings().activeWorkspaceId, task.id),
+        { worktree: task.useWorktree !== false, baseBranch: task.baseBranch },
+        file.data,
+        full === true
+      )
+    }
+  )
+  ipcMain.handle('git:diffStats', (): Record<string, DiffStat> => {
+    const workspaceId = loadSettings().activeWorkspaceId
+    const stats: Record<string, DiffStat> = {}
+    for (const task of queryTasks()) {
+      // Done work has landed (or is being cleaned up); a count there is noise.
+      if (!task.worktreePath || !task.repoPath || task.status === 'done' || task.archivedAt)
+        continue
+      const diff = taskDiff(task.repoPath, worktreeKey(workspaceId, task.id), {
+        worktree: task.useWorktree !== false,
+        baseBranch: task.baseBranch
+      })
+      if ('error' in diff || diff.kind !== 'changes') continue
+      stats[task.id] = {
+        added: diff.totalAdditions,
+        removed: diff.totalDeletions,
+        files: diff.totalFiles
+      }
+    }
+    return stats
+  })
   ipcMain.handle('agents:list', () => agentStatuses())
 
   ipcMain.handle('tasks:create', (_event, draft: unknown) => {

@@ -12,8 +12,9 @@ import {
   type TaskReadiness,
   type TaskStatus
 } from '@core/types.js'
+import type { TaskDiff } from '@core/diff.js'
 import { resolveTemplateFor } from '@core/prompt.js'
-import { Button, Chip, Modal, Select } from './ui.js'
+import { Button, Chip, DiffCount, Modal, Select } from './ui.js'
 
 interface FormState {
   title: string
@@ -284,14 +285,27 @@ export function TaskDialog({
   settings,
   onClose,
   onLaunch,
-  onResumeSession
+  onResumeSession,
+  onShowChanges
 }: {
   task: Task | null
   settings: Settings
   onClose: () => void
   onLaunch: (taskId: string, templateId?: string, provider?: 'claude' | 'codex') => void
   onResumeSession: (taskId: string, sessionId: string) => void
+  onShowChanges: (task: Task) => void
 }): ReactNode {
+  const [changes, setChanges] = useState<TaskDiff | null>(null)
+  useEffect(() => {
+    if (!task) return
+    let cancelled = false
+    void window.api.git.taskDiff(task.id).then((result) => {
+      if (!cancelled) setChanges('error' in result ? null : result)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [task])
   const [form, setForm] = useState<FormState>(() => toForm(task, settings))
   const [tab, setTab] = useState<TabKey>('brief')
   const [branchInfo, setBranchInfo] = useState<{ branches: string[]; current?: string }>({
@@ -903,6 +917,44 @@ export function TaskDialog({
                 >
                   <FolderIcon />
                   Reveal
+                </button>
+                <button
+                  type="button"
+                  className={`${GHOST_BTN} h-7`}
+                  disabled={!changes || changes.files.length === 0}
+                  title={
+                    !changes
+                      ? 'Reading changes…'
+                      : changes.files.length === 0
+                        ? changes.branch
+                          ? `No changes on ${changes.branch} yet`
+                          : 'No changes to show'
+                        : 'View changes'
+                  }
+                  onClick={() => onShowChanges(task)}
+                >
+                  <svg
+                    aria-hidden
+                    viewBox="0 0 16 16"
+                    width="13"
+                    height="13"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M4 2.5h5l3 3v8H4z" />
+                    <path d="M6.25 7h3.5M8 5.25v3.5M6.25 11h3.5" />
+                  </svg>
+                  Changes
+                  {changes && changes.files.length > 0 ? (
+                    <DiffCount
+                      added={changes.totalAdditions}
+                      removed={changes.totalDeletions}
+                      files={changes.totalFiles}
+                    />
+                  ) : null}
                 </button>
                 <button
                   type="button"
