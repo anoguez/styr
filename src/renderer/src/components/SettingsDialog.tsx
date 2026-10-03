@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -17,10 +18,14 @@ import {
   type PromptTemplate,
   type AnsiColour,
   type Settings,
+  type SettingsChange,
   type ShortcutCommand,
   type TerminalPalette,
   type ThemeSettings,
-  type UpdateState
+  type UpdateState,
+  type WorkspaceSettings,
+  globalSettingsFor,
+  workspaceSettingsFor
 } from '@core/types.js'
 import {
   acceleratorFor,
@@ -48,7 +53,10 @@ import {
   SwitchRow,
   inputClass
 } from './ui.js'
+import { WorkspacesPane } from './WorkspacesPane.js'
+import type { Workspaces } from '../hooks/useWorkspaces.js'
 import { useUpdates } from '../hooks/useUpdates.js'
+import { useWorkspaceTarget } from '../hooks/useWorkspaceTarget.js'
 import { ansiLabel, TERMINAL_FONTS, TERMINAL_PALETTES, UI_FONTS } from '../hooks/useTheme.js'
 import { terminalTheme } from '../lib/palette.js'
 
@@ -114,76 +122,26 @@ const LANE_HINTS: Record<OrchestrationLane, string> = {
   review: 'tasks sitting in In Review'
 }
 
+/**
+ * `scope` says where a section's values are kept: `workspace` sections edit the workspace picked in
+ * the dialog, `app` sections are shared by every workspace. `keys` lists the `Settings` keys a
+ * section edits, which is how the nav knows which sections have unsaved changes; `words` feeds the
+ * search box.
+ */
 export const SECTIONS = [
   {
     id: 'preferences',
-    group: 'Board',
-    label: 'Preferences',
-    blurb: 'Defaults for new tasks. Existing tasks keep their own settings.',
-    keys: ['taskDefaults'],
-    words: 'worktree orchestrate new task default'
-  },
-  {
-    id: 'workspace',
-    group: 'Board',
-    label: 'Workspace',
-    blurb: 'Where the board keeps its data and where work runs.',
-    keys: ['workspaceDir', 'defaultRepoPath'],
-    words: 'storage folder directory repo git'
-  },
-  {
-    id: 'terminal',
-    group: 'Board',
-    label: 'Terminal',
-    blurb: 'How sessions are started.',
-    keys: ['shell'],
-    words: 'shell zsh bash'
-  },
-  {
-    id: 'routing',
-    group: 'Board',
-    label: 'Prompt routing',
-    blurb: 'Which template runs for a task, based on where it sits.',
-    keys: ['promptRouting', 'defaultPromptTemplateId', 'providerRouting'],
-    words: 'template column spec fallback agent lane'
-  },
-  {
-    id: 'templates',
-    group: 'Board',
-    label: 'Templates',
-    blurb: 'The prompts themselves.',
-    keys: ['promptTemplates'],
-    words: 'prompt placeholder body'
-  },
-  {
-    id: 'orchestration',
-    group: 'Board',
-    label: 'Orchestrate',
-    blurb: 'How many agents Orchestrate may run at once, per kind of work.',
-    keys: ['orchestration'],
-    words: 'slots lanes parallel concurrency'
-  },
-  {
-    id: 'shortcuts',
-    group: 'App',
-    label: 'Shortcuts',
-    blurb: 'Keys the app claims. Everything else is passed to the terminal.',
-    keys: ['shortcuts'],
-    words: 'keyboard keys bindings'
-  },
-  {
-    id: 'theme',
-    group: 'App',
-    label: 'Theme',
-    blurb: 'Colours and fonts. Changes apply as you make them.',
-    keys: ['theme'],
-    words: 'colour color font gradient terminal palette appearance'
+    label: 'General',
+    scope: 'workspace',
+    blurb: 'Defaults for new tasks in this workspace. Existing tasks keep their own settings.',
+    keys: ['taskDefaults', 'defaultRepoPath', 'shell'],
+    words: 'worktree directory shell terminal orchestrate default preferences'
   },
   {
     id: 'integrations',
-    group: 'App',
-    label: 'Integrations',
-    blurb: 'Connecting the board to Claude Code and Codex.',
+    label: 'Agents',
+    scope: 'workspace',
+    blurb: 'The coding CLIs Styr can launch, and how to reach them.',
     keys: [
       'enabledProviders',
       'defaultProvider',
@@ -191,24 +149,89 @@ export const SECTIONS = [
       'codexCommand',
       'codexApprovalReviewer'
     ],
-    words: 'claude codex provider mcp command approvals'
+    words: 'claude codex provider mcp command approvals integrations'
+  },
+  {
+    id: 'routing',
+    label: 'Prompt routing',
+    scope: 'workspace',
+    blurb: 'Which template runs when you press Start, based on where the task sits.',
+    keys: ['promptRouting', 'defaultPromptTemplateId', 'providerRouting'],
+    words: 'template column spec fallback agent lane'
+  },
+  {
+    id: 'templates',
+    label: 'Templates',
+    scope: 'workspace',
+    blurb: 'The prompts agents receive. Placeholders are filled from the task.',
+    keys: ['promptTemplates'],
+    words: 'prompt placeholder body'
+  },
+  {
+    id: 'orchestration',
+    label: 'Orchestrate',
+    scope: 'workspace',
+    blurb: 'Which agent picks up each kind of work, and how many run at once.',
+    keys: ['orchestration'],
+    words: 'slots lanes parallel concurrency'
+  },
+  {
+    id: 'theme',
+    label: 'Theme',
+    scope: 'workspace',
+    blurb: 'Colours and fonts. Changes preview live while this workspace is open.',
+    keys: ['theme'],
+    words: 'colour color font gradient terminal palette appearance'
+  },
+  {
+    id: 'workspaces',
+    label: 'Workspaces',
+    scope: 'app',
+    blurb: 'Separate boards, each with its own tasks, agents and settings.',
+    keys: [],
+    words: 'board'
+  },
+  {
+    id: 'storage',
+    label: 'Storage',
+    scope: 'app',
+    blurb: 'Where Styr keeps tasks and its index.',
+    keys: ['storageDir'],
+    words: 'folder data git'
+  },
+  {
+    id: 'shortcuts',
+    label: 'Shortcuts',
+    scope: 'app',
+    blurb: 'Keys Styr claims. Everything else goes to the terminal.',
+    keys: ['shortcuts'],
+    words: 'keyboard keys bindings'
   },
   {
     id: 'updates',
-    group: 'App',
     label: 'Updates',
-    blurb: 'New versions download in the background.',
+    scope: 'app',
+    blurb: 'Keep Styr current.',
     keys: ['updates'],
     words: 'version release'
   }
 ] as const satisfies readonly {
   id: string
-  group: string
   label: string
+  scope: 'workspace' | 'app'
   blurb: string
   keys: readonly (keyof Settings)[]
   words: string
 }[]
+
+type SectionScope = (typeof SECTIONS)[number]['scope']
+
+/** Where a section's values are stored and which workspaces they reach. */
+function scopeNoteFor(scope: SectionScope, workspaceName: string): string {
+  return scope === 'app'
+    ? 'Stored in ~/.styr/config.json and shared by every workspace.'
+    : `Stored in the ${workspaceName} workspace folder and applies to it only.`
+}
 
 function describeUpdate(state: UpdateState | null): string {
   switch (state?.kind) {
@@ -397,19 +420,22 @@ function TemplateSelect({
 
 export function SettingsDialog({
   settings,
+  workspaces,
   initialSection,
   onSave,
   onPreviewTheme,
   onClose
 }: {
   settings: Settings
+  workspaces: Workspaces
   initialSection?: SectionId
-  onSave: (next: Settings) => Promise<void>
+  onSave: (change: SettingsChange) => Promise<void>
   /** Applies a draft theme to the live app so combinations can be judged before saving. */
   onPreviewTheme: (theme: ThemeSettings | null) => void
   onClose: () => void
 }): ReactNode {
   const [draft, setDraft] = useState<Settings>(settings)
+  const [saveError, setSaveError] = useState('')
   const [section, setSection] = useState<SectionId>(initialSection ?? 'preferences')
   const [selectedId, setSelectedId] = useState<string>(
     settings.promptTemplates[0]?.id ?? settings.defaultPromptTemplateId
@@ -421,6 +447,18 @@ export function SettingsDialog({
   const [version, setVersion] = useState('')
   const [search, setSearch] = useState('')
   const update = useUpdates()
+  const selectFirstTemplate = useCallback(
+    (loaded: WorkspaceSettings) =>
+      setSelectedId(loaded.promptTemplates[0]?.id ?? loaded.defaultPromptTemplateId),
+    []
+  )
+  const target = useWorkspaceTarget({
+    settings,
+    workspaces,
+    draft,
+    setDraft,
+    onLoaded: selectFirstTemplate
+  })
 
   useEffect(() => {
     void window.api.app.mcpCommand('claude').then(setMcpCommand)
@@ -432,38 +470,57 @@ export function SettingsDialog({
   const active = SECTIONS.find((item) => item.id === section) ?? SECTIONS[0]
   const conflicts = shortcutConflicts(draft.shortcuts)
   const preview = terminalTheme(draft.theme)
+  // What is on disk now: the app-level values, with the edited workspace's own laid over them.
+  const baseline: Settings = { ...settings, ...target.savedWorkspaceSettings }
   const isChanged = (key: keyof Settings): boolean =>
-    JSON.stringify(draft[key]) !== JSON.stringify(settings[key])
+    JSON.stringify(draft[key]) !== JSON.stringify(baseline[key])
   const dirtySections = new Set(
     SECTIONS.filter((item) => item.keys.some(isChanged)).map((item) => item.id)
   )
   const dirtyCount = SECTIONS.reduce((count, item) => count + item.keys.filter(isChanged).length, 0)
+  const dirtyLabel = `${dirtyCount} unsaved ${dirtyCount === 1 ? 'change' : 'changes'}`
+  const themeEdited =
+    JSON.stringify(draft.theme) !== JSON.stringify(target.savedWorkspaceSettings.theme)
+  const previewedTheme = target.editingActiveWorkspace && themeEdited ? draft.theme : null
   const query = search.trim().toLowerCase()
-  const navGroups = ['Board', 'App']
+  const matches = (item: (typeof SECTIONS)[number]): boolean =>
+    !query || `${item.label} ${item.words}`.toLowerCase().includes(query)
+  const navGroups = [
+    { label: 'Workspace', picker: true, scope: 'workspace' as const },
+    { label: 'All workspaces', picker: false, scope: 'app' as const }
+  ]
     .map((group) => ({
-      label: group,
-      items: SECTIONS.filter(
-        (item) =>
-          item.group === group &&
-          (!query || `${item.label} ${item.words}`.toLowerCase().includes(query))
-      )
+      ...group,
+      items: SECTIONS.filter((item) => item.scope === group.scope && matches(item))
     }))
     .filter((group) => group.items.length > 0)
 
-  function save(): void {
-    if (dirtyCount === 0) return
-    void onSave(draft).then(() => {
-      onPreviewTheme(null)
-      onClose()
-    })
-  }
+  useEffect(() => {
+    onPreviewTheme(previewedTheme)
+  }, [previewedTheme, onPreviewTheme])
 
   const patch = (changes: Partial<Settings>): void =>
-    setDraft((current) => {
-      const next = { ...current, ...changes }
-      if (changes.theme) onPreviewTheme(changes.theme)
-      return next
-    })
+    setDraft((current) => ({ ...current, ...changes }))
+
+  function save(): void {
+    if (dirtyCount === 0) return
+    setSaveError('')
+    onSave({
+      workspaceId: target.editedWorkspaceId,
+      workspace: workspaceSettingsFor(draft),
+      global: globalSettingsFor(draft)
+    }).then(onClose, (error: unknown) =>
+      setSaveError(error instanceof Error ? error.message : String(error))
+    )
+  }
+
+  function discard(): void {
+    setDraft((current) => ({
+      ...current,
+      ...target.savedWorkspaceSettings,
+      ...globalSettingsFor(settings)
+    }))
+  }
 
   function toggleProvider(provider: 'claude' | 'codex', enabled: boolean): void {
     const enabledProviders = enabled
@@ -547,6 +604,24 @@ export function SettingsDialog({
               <div className="px-2 pb-1">
                 <Eyebrow>{group.label}</Eyebrow>
               </div>
+              {group.picker ? (
+                <span className="relative mb-1.5 block">
+                  <span className="pointer-events-none absolute left-[9px] top-1/2 size-[7px] -translate-y-1/2 rounded-sm bg-[var(--color-accent-text)]" />
+                  <Select
+                    aria-label="Workspace these settings apply to"
+                    className="h-[30px] rounded-[7px] border-edge-strong py-0 pl-6 pr-7 text-[12.5px] font-medium"
+                    value={target.requestedWorkspaceId ?? target.editedWorkspaceId}
+                    onChange={(event) => target.choose(event.target.value)}
+                  >
+                    {target.workspaces.map((workspace) => (
+                      <option key={workspace.id} value={workspace.id}>
+                        {workspace.name}
+                        {workspace.id === settings.activeWorkspaceId ? ' (open)' : ''}
+                      </option>
+                    ))}
+                  </Select>
+                </span>
+              ) : null}
               {group.items.map((item) => (
                 <button
                   key={item.id}
@@ -578,7 +653,17 @@ export function SettingsDialog({
         <section className="flex min-h-0 min-w-0 flex-col">
           <header className="flex items-start gap-4 border-b border-edge py-4 pl-6 pr-4">
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <h2 className="text-[17px] font-semibold tracking-[-0.01em]">{active.label}</h2>
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-[17px] font-semibold tracking-[-0.01em]">{active.label}</h2>
+                <Chip
+                  tone={active.scope === 'workspace' ? 'accent' : 'neutral'}
+                  title={scopeNoteFor(active.scope, target.editedWorkspaceName)}
+                >
+                  {active.scope === 'workspace'
+                    ? `${target.editedWorkspaceName} only`
+                    : 'All workspaces'}
+                </Chip>
+              </div>
               <p className="text-[12px] leading-normal text-dim text-pretty">{active.blurb}</p>
             </div>
             <button
@@ -602,68 +687,131 @@ export function SettingsDialog({
             </button>
           </header>
 
+          {target.requestedWorkspaceId ? (
+            <div
+              role="alert"
+              className="mx-6 mt-3.5 flex shrink-0 items-center gap-2.5 rounded-[10px] border border-edge-strong bg-raised py-2.5 pl-3.5 pr-2.5"
+            >
+              <p className="min-w-0 flex-1 text-[12px] leading-[1.45] text-ink">
+                You have {dirtyLabel} in {target.editedWorkspaceName}. Switching workspace discards
+                them.
+              </p>
+              <Button autoFocus className="h-[26px] px-2.5" onClick={target.cancelSwitch}>
+                Stay
+              </Button>
+              <Button variant="danger" className="h-[26px] px-2.5" onClick={target.confirmDiscard}>
+                Discard &amp; switch
+              </Button>
+            </div>
+          ) : null}
+          {target.notice ? (
+            <p
+              role="status"
+              className="mx-6 mt-3.5 shrink-0 rounded-[10px] border border-edge bg-raised/60 px-3.5 py-2.5 text-[12px] text-dim"
+            >
+              {target.notice}
+            </p>
+          ) : null}
+          {target.editedFileBroken ? (
+            <p
+              role="status"
+              className="mx-6 mt-3.5 shrink-0 rounded-[10px] border border-edge bg-raised/60 px-3.5 py-2.5 text-[12px] text-dim"
+            >
+              Some of {target.editedWorkspaceName}&apos;s settings.json could not be used, so
+              defaults are shown in its place. Saving keeps a copy of the old file as
+              settings.json.bak.
+            </p>
+          ) : null}
+
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-5">
             <div className="flex max-w-[640px] flex-col gap-5">
               {section === 'preferences' ? (
-                <div className="flex flex-col gap-2.5">
-                  <Eyebrow>New tasks start with</Eyebrow>
-                  <Card>
-                    <CardRow>
-                      <SwitchRow
-                        checked={draft.taskDefaults.orchestrate}
-                        onChange={(orchestrate) =>
-                          patch({ taskDefaults: { ...draft.taskDefaults, orchestrate } })
-                        }
-                        label="Let Orchestrate start new tasks"
-                        hint="Ticks the Orchestrate checkbox when you create a task."
-                      />
-                    </CardRow>
-                    <CardRow>
-                      <SwitchRow
-                        checked={draft.taskDefaults.useWorktree}
-                        onChange={(useWorktree) =>
-                          patch({ taskDefaults: { ...draft.taskDefaults, useWorktree } })
-                        }
-                        label="Run new tasks in their own git worktree"
-                        hint="Each agent gets a separate checkout, so parallel runs never collide."
-                      />
-                    </CardRow>
-                  </Card>
-                  <Hint>You can still change both on any task.</Hint>
-                </div>
-              ) : null}
-
-              {section === 'workspace' ? (
                 <>
+                  <div className="flex flex-col gap-2.5">
+                    <span className="text-[12px] font-semibold text-dim">New tasks start with</span>
+                    <Card>
+                      <CardRow>
+                        <SwitchRow
+                          checked={draft.taskDefaults.useWorktree}
+                          onChange={(useWorktree) =>
+                            patch({ taskDefaults: { ...draft.taskDefaults, useWorktree } })
+                          }
+                          label="Own git worktree"
+                          hint="Each agent gets a separate checkout on a styr/TASK-… branch, so parallel runs never collide."
+                        />
+                      </CardRow>
+                      <CardRow>
+                        <SwitchRow
+                          checked={draft.taskDefaults.orchestrate}
+                          onChange={(orchestrate) =>
+                            patch({ taskDefaults: { ...draft.taskDefaults, orchestrate } })
+                          }
+                          label="Orchestrate can start it"
+                          hint="Orchestrate may pick the task up when a slot is free."
+                        />
+                      </CardRow>
+                    </Card>
+                    <Hint>You can still change both on any task.</Hint>
+                  </div>
                   <Field
-                    label="Board storage folder"
-                    hint="Where the app keeps your tasks (./tasks/*.md) and its index. This is the board's own data, not your code — point it at a git repo if you want versioned tasks."
-                  >
-                    <DirectoryInput
-                      value={draft.workspaceDir}
-                      onChange={(workspaceDir) => patch({ workspaceDir })}
-                    />
-                  </Field>
-                  <Field
-                    label="Default working directory"
-                    hint="Pre-fills Working directory on new tasks, and is where + Shell opens. Leave blank to fall back to the board storage folder."
+                    label="Working directory"
+                    hint="Where agents run and where + Shell opens. Blank uses the storage folder."
                   >
                     <DirectoryInput
                       value={draft.defaultRepoPath}
                       onChange={(defaultRepoPath) => patch({ defaultRepoPath })}
+                      placeholder="Storage folder"
+                    />
+                  </Field>
+                  <Field label="Shell" hint="Every terminal session starts in this shell.">
+                    <input
+                      className={`${inputClass} w-60 font-mono text-[11.5px]`}
+                      value={draft.shell}
+                      onChange={(event) => patch({ shell: event.target.value })}
                     />
                   </Field>
                 </>
               ) : null}
 
-              {section === 'terminal' ? (
-                <Field label="Shell" hint="The shell each embedded terminal session runs.">
-                  <input
-                    className={`${inputClass} font-mono text-[12px]`}
-                    value={draft.shell}
-                    onChange={(event) => patch({ shell: event.target.value })}
-                  />
-                </Field>
+              {section === 'workspaces' ? (
+                <WorkspacesPane
+                  workspaces={workspaces}
+                  editedWorkspaceId={target.editedWorkspaceId}
+                  onEdit={(id) => {
+                    target.choose(id)
+                    setSection('preferences')
+                  }}
+                />
+              ) : null}
+
+              {section === 'storage' ? (
+                <>
+                  <Field label="Storage folder">
+                    <DirectoryInput
+                      value={draft.storageDir}
+                      onChange={(storageDir) => patch({ storageDir })}
+                    />
+                  </Field>
+                  <Card className="gap-2 px-3.5 py-3 font-mono text-[11.5px] text-dim">
+                    <span>{draft.storageDir}/</span>
+                    <span className="pl-4">
+                      <span className="text-ink">tasks/*.md</span>
+                      <span className="font-[family-name:var(--font-ui)] text-faint">
+                        {'  '}— Default workspace
+                      </span>
+                    </span>
+                    <span className="pl-4">
+                      <span className="text-ink">workspaces/&lt;name&gt;/</span>
+                      <span className="font-[family-name:var(--font-ui)] text-faint">
+                        {'  '}— every other workspace
+                      </span>
+                    </span>
+                  </Card>
+                  <Hint>
+                    This is Styr’s own data, not your code. Point it at a git repo if you want tasks
+                    versioned.
+                  </Hint>
+                </>
               ) : null}
 
               {section === 'routing' ? (
@@ -1329,6 +1477,8 @@ export function SettingsDialog({
                                 <Hint>
                                   Run once in a terminal, then start a new {provider.label} session.
                                   It lets the agent read and move tasks on the board from anywhere.
+                                  Registered once for every workspace, built from the active
+                                  workspace’s command.
                                 </Hint>
                               </div>
                             </div>
@@ -1347,7 +1497,7 @@ export function SettingsDialog({
                         Styr {version || '…'}
                       </span>
                       <span
-                        className={`text-[12px] ${update?.kind === 'error' ? 'text-red-300/90' : 'text-dim'}`}
+                        className={`text-[12px] ${update?.kind === 'error' ? 'text-danger' : 'text-dim'}`}
                       >
                         {describeUpdate(update)}
                       </span>
@@ -1384,25 +1534,25 @@ export function SettingsDialog({
           </div>
 
           <footer className="flex shrink-0 items-center gap-2 border-t border-edge bg-chrome/40 py-3 pl-6 pr-4">
-            <span
-              className={`flex items-center gap-[7px] text-[12px] ${dirtyCount ? 'text-ink' : 'text-faint'}`}
-            >
-              {dirtyCount ? (
-                <span className="size-1.5 rounded-full bg-[var(--color-accent-text)]" />
-              ) : null}
-              {dirtyCount === 0
-                ? 'All changes saved'
-                : `${dirtyCount} unsaved ${dirtyCount === 1 ? 'section' : 'sections'}`}
-            </span>
+            {saveError ? (
+              <span role="alert" className="text-[12px] text-danger">
+                {saveError}
+              </span>
+            ) : (
+              <span
+                className={`flex items-center gap-[7px] text-[12px] ${dirtyCount ? 'text-ink' : 'text-faint'}`}
+              >
+                {dirtyCount ? (
+                  <span className="size-1.5 rounded-full bg-[var(--color-accent-text)]" />
+                ) : null}
+                {dirtyCount === 0
+                  ? 'All changes saved'
+                  : `${dirtyLabel} in ${target.editedWorkspaceName}`}
+              </span>
+            )}
             <div className="flex-1" />
             {dirtyCount ? (
-              <Button
-                variant="subtle"
-                onClick={() => {
-                  setDraft(settings)
-                  onPreviewTheme(null)
-                }}
-              >
+              <Button variant="subtle" onClick={discard}>
                 Discard
               </Button>
             ) : null}

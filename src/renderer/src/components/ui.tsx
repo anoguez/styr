@@ -96,13 +96,14 @@ export function Chip({
   title
 }: {
   children: ReactNode
-  tone?: 'neutral' | 'accent' | 'warn'
+  tone?: 'neutral' | 'accent' | 'warn' | 'done'
   title?: string
 }): ReactNode {
   const tones = {
     neutral: 'bg-raised text-dim',
     accent: 'bg-accent/12 text-[var(--color-accent-text)]',
-    warn: 'bg-[var(--color-col-review)]/15 text-[var(--color-col-review-text)]'
+    warn: 'bg-[var(--color-col-review)]/15 text-[var(--color-col-review-text)]',
+    done: 'bg-[var(--color-col-done)]/12 text-[var(--color-col-done)]'
   }
   return (
     <span
@@ -202,17 +203,35 @@ export function DirectoryInput({
   }
 
   return (
-    <div className="flex gap-2">
+    <span className="flex h-8 items-center gap-1.5 rounded-[7px] border border-edge-strong bg-chrome py-0 pl-2.5 pr-1 transition-colors focus-within:border-accent hover:border-faint/60">
       <input
-        className={inputClass}
+        aria-label={placeholder ?? 'Folder'}
+        className="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[11.5px] text-ink outline-none placeholder:text-faint"
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
       />
-      <Button className="shrink-0" onClick={() => void browse()}>
-        Browse
-      </Button>
-    </div>
+      <button
+        type="button"
+        aria-label="Browse"
+        title="Browse"
+        onClick={() => void browse()}
+        className="grid size-6 shrink-0 place-items-center rounded-[5px] text-dim transition-colors hover:bg-raised hover:text-ink"
+      >
+        <svg
+          aria-hidden
+          viewBox="0 0 16 16"
+          width="13"
+          height="13"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        >
+          <path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" />
+        </svg>
+      </button>
+    </span>
   )
 }
 

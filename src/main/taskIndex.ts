@@ -1,10 +1,10 @@
 import { statSync } from 'node:fs'
 import Database from 'better-sqlite3'
-import { indexDbPath, tasksDir } from '@core/config.js'
+import { indexDbPath, tasksDir } from '@core/settingsStore.js'
 import { clearBrokenFiles, readTaskAtPath, taskFilePaths } from '@core/taskStore.js'
 import type { Task, TaskFilter, TaskStatus } from '@core/types.js'
 
-const SCHEMA_VERSION = 10
+const SCHEMA_VERSION = 11
 
 interface IndexRow {
   id: string
@@ -24,6 +24,7 @@ interface IndexRow {
   agentSession: string | null
   sessions: string
   externalRef: string | null
+  prUrl: string | null
   description: string
   activity: string
   sort_order: number
@@ -65,6 +66,7 @@ function connection(): Database.Database {
       agentSession TEXT,
       sessions TEXT NOT NULL,
       externalRef TEXT,
+      prUrl TEXT,
       description TEXT NOT NULL,
       activity TEXT NOT NULL,
       sort_order INTEGER NOT NULL,
@@ -102,6 +104,7 @@ function toRow(task: Task): IndexRow {
     agentSession: task.agentSession ? JSON.stringify(task.agentSession) : null,
     sessions: JSON.stringify(task.sessions),
     externalRef: task.externalRef ? JSON.stringify(task.externalRef) : null,
+    prUrl: task.prUrl ?? null,
     description: task.description,
     activity: JSON.stringify(task.activity),
     sort_order: task.order,
@@ -133,6 +136,7 @@ function fromRow(row: IndexRow): Task {
       : undefined,
     sessions: JSON.parse(row.sessions) as Task['sessions'],
     externalRef: row.externalRef ? (JSON.parse(row.externalRef) as Task['externalRef']) : undefined,
+    prUrl: row.prUrl ?? undefined,
     description: row.description,
     activity: JSON.parse(row.activity) as Task['activity'],
     order: row.sort_order,
@@ -145,10 +149,10 @@ function fromRow(row: IndexRow): Task {
 
 const UPSERT = `
   INSERT INTO tasks (id, title, status, priority, readiness, project, tags, repoPath, orchestrate,
-                     useWorktree, worktreePath, contextFiles, promptTemplateId, provider, agentSession, sessions, externalRef,
+                     useWorktree, worktreePath, contextFiles, promptTemplateId, provider, agentSession, sessions, externalRef, prUrl,
                      description, activity, sort_order, createdAt, updatedAt, filePath, format)
   VALUES (@id, @title, @status, @priority, @readiness, @project, @tags, @repoPath, @orchestrate,
-          @useWorktree, @worktreePath, @contextFiles, @promptTemplateId, @provider, @agentSession, @sessions, @externalRef,
+          @useWorktree, @worktreePath, @contextFiles, @promptTemplateId, @provider, @agentSession, @sessions, @externalRef, @prUrl,
           @description, @activity, @sort_order, @createdAt, @updatedAt, @filePath, @format)
   ON CONFLICT(id) DO UPDATE SET
     title=excluded.title, status=excluded.status, priority=excluded.priority,
@@ -156,7 +160,7 @@ const UPSERT = `
     tags=excluded.tags, repoPath=excluded.repoPath, orchestrate=excluded.orchestrate, useWorktree=excluded.useWorktree,
     worktreePath=excluded.worktreePath, contextFiles=excluded.contextFiles,
     promptTemplateId=excluded.promptTemplateId, provider=excluded.provider, agentSession=excluded.agentSession, sessions=excluded.sessions,
-    externalRef=excluded.externalRef, description=excluded.description, activity=excluded.activity,
+    externalRef=excluded.externalRef, prUrl=excluded.prUrl, description=excluded.description, activity=excluded.activity,
     sort_order=excluded.sort_order, createdAt=excluded.createdAt, updatedAt=excluded.updatedAt,
     filePath=excluded.filePath, format=excluded.format
 `

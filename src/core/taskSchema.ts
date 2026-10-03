@@ -6,7 +6,8 @@ import {
   SHORTCUT_COMMANDS,
   TASK_PRIORITIES,
   TASK_READINESS,
-  TASK_STATUSES
+  TASK_STATUSES,
+  type GlobalSettingKey
 } from './types.js'
 
 export const taskStatusSchema = z.enum(TASK_STATUSES)
@@ -50,6 +51,7 @@ export const taskFrontmatterSchema = z.object({
   agentSession: z.object({ provider: z.enum(['claude', 'codex']), id: z.string() }).optional(),
   sessions: z.array(taskSessionRefSchema).default([]),
   externalRef: externalRefSchema.optional(),
+  prUrl: z.string().optional(),
   order: z.number().default(0),
   createdAt: z.string(),
   updatedAt: z.string()
@@ -77,6 +79,7 @@ export const taskDraftSchema = z.object({
   provider: z.enum(['claude', 'codex']).optional(),
   sessions: z.array(taskSessionRefSchema).optional(),
   externalRef: externalRefSchema.optional(),
+  prUrl: z.string().optional(),
   order: z.number().optional()
 })
 
@@ -137,7 +140,8 @@ export const shortcutsSchema = z
   .transform((value) => ({ ...DEFAULT_SHORTCUTS, ...value }))
 
 export const settingsSchema = z.object({
-  workspaceDir: z.string(),
+  storageDir: z.string(),
+  activeWorkspaceId: z.string().default('default'),
   defaultRepoPath: z.string().default(''),
   shell: z.string().default(''),
   claudeCommand: z.string().default('claude'),
@@ -165,4 +169,22 @@ export const settingsSchema = z.object({
   taskDefaults: z
     .object({ orchestrate: z.boolean().default(true), useWorktree: z.boolean().default(false) })
     .default({ orchestrate: true, useWorktree: false })
+})
+
+const GLOBAL_KEY_MASK = {
+  storageDir: true,
+  activeWorkspaceId: true,
+  updates: true,
+  shortcuts: true
+} as const satisfies Record<GlobalSettingKey, true>
+
+export const globalSettingsSchema = settingsSchema.pick(GLOBAL_KEY_MASK)
+export const workspaceSettingsSchema = settingsSchema.omit(GLOBAL_KEY_MASK)
+
+export const workspaceIdSchema = z.string().min(1)
+
+export const settingsChangeSchema = z.object({
+  workspaceId: workspaceIdSchema,
+  workspace: workspaceSettingsSchema,
+  global: globalSettingsSchema
 })

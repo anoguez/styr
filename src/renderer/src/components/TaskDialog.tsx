@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   TASK_PRIORITIES,
   TASK_PRIORITY_LABELS,
@@ -23,6 +23,7 @@ interface FormState {
   project: string
   tags: string[]
   repoPath: string
+  prUrl: string
   useWorktree: boolean
   orchestrate: boolean
   contextFiles: string[]
@@ -42,6 +43,7 @@ function toForm(task: Task | null, settings: Settings): FormState {
     project: task?.project ?? '',
     tags: task?.tags ?? [],
     repoPath: task?.repoPath ?? settings.defaultRepoPath,
+    prUrl: task?.prUrl ?? '',
     useWorktree: task?.useWorktree ?? settings.taskDefaults.useWorktree,
     orchestrate: task?.orchestrate ?? settings.taskDefaults.orchestrate,
     contextFiles: task?.contextFiles ?? [],
@@ -293,6 +295,8 @@ export function TaskDialog({
   const [preview, setPreview] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [titleMissing, setTitleMissing] = useState(false)
+  const titleRef = useRef<HTMLInputElement>(null)
   // A new task is created by the first save (the prompt preview needs one); later saves must
   // update that record instead of creating a duplicate.
   const [saved, setSaved] = useState<Task | null>(task)
@@ -317,6 +321,7 @@ export function TaskDialog({
     project: form.project.trim() || undefined,
     tags: form.tags,
     repoPath: form.repoPath.trim() || undefined,
+    prUrl: form.prUrl.trim() || undefined,
     useWorktree: form.useWorktree,
     orchestrate: form.orchestrate,
     contextFiles: form.contextFiles,
@@ -326,7 +331,11 @@ export function TaskDialog({
   }
 
   async function save(): Promise<Task | null> {
-    if (!payload.title) return null
+    if (!payload.title) {
+      setTitleMissing(true)
+      titleRef.current?.focus()
+      return null
+    }
     setSaving(true)
     try {
       const result = saved
@@ -398,19 +407,15 @@ export function TaskDialog({
   ]
 
   const taskId = task?.id ?? 'TASK-…'
-  const inputText =
-    'rounded-lg border border-transparent bg-transparent text-ink outline-none placeholder:text-faint'
+  const inputText = 'rounded-lg border bg-transparent text-ink outline-none placeholder:text-faint'
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/65 px-8 py-[6vh] backdrop-blur-[2px]"
-      onMouseDown={onClose}
-    >
+    // The backdrop deliberately does not close the dialog: a stray click would discard the draft.
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/65 px-8 py-[6vh] backdrop-blur-[2px]">
       <div
         role="dialog"
         aria-label={task ? task.title : 'New task'}
         className="flex h-[min(720px,88vh)] w-full max-w-[1000px] flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]"
-        onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="flex items-start gap-4 border-b border-edge py-4 pl-5 pr-4">
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -438,13 +443,24 @@ export function TaskDialog({
               ) : null}
             </div>
             <input
+              ref={titleRef}
               autoFocus
               aria-label="Title"
+              aria-required
+              aria-invalid={titleMissing}
               value={form.title}
               placeholder="What needs doing?"
-              onChange={(event) => patch({ title: event.target.value })}
-              className={`-ml-2 h-[34px] w-full px-2 text-[17px] font-semibold tracking-[-0.01em] hover:border-edge focus:border-accent focus:bg-chrome ${inputText}`}
+              onChange={(event) => {
+                setTitleMissing(false)
+                patch({ title: event.target.value })
+              }}
+              className={`-ml-2 h-[34px] w-full px-2 text-[17px] font-semibold tracking-[-0.01em] focus:bg-chrome ${inputText} ${titleMissing ? 'border-[var(--color-pri-urgent)] focus:border-[var(--color-pri-urgent)]' : 'border-edge-strong hover:border-faint/60 focus:border-accent'}`}
             />
+            {titleMissing ? (
+              <span role="alert" className="text-[11.5px] text-[var(--color-pri-urgent)]">
+                A title is required.
+              </span>
+            ) : null}
           </div>
           <button
             type="button"
@@ -688,6 +704,18 @@ export function TaskDialog({
                   value={form.project}
                   placeholder="None"
                   onChange={(event) => patch({ project: event.target.value })}
+                  className={`h-7 w-full rounded-[7px] border-transparent px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
+                />
+              </div>
+              <div className="grid h-8 grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
+                <span className="text-[12px] text-dim">PR link</span>
+                <input
+                  aria-label="Pull request URL"
+                  type="url"
+                  value={form.prUrl}
+                  placeholder="None"
+                  title="Optional link to the pull or merge request, on any host"
+                  onChange={(event) => patch({ prUrl: event.target.value })}
                   className={`h-7 w-full rounded-[7px] px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
                 />
               </div>
