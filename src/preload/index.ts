@@ -12,6 +12,7 @@ import type {
   TaskPatch,
   TaskStatus,
   TerminalSessionInfo,
+  TerminalRuntimeState,
   UpdateState,
   WorkspaceOverview
 } from '../core/types.js'
@@ -123,6 +124,8 @@ const api = {
     list: (): Promise<TerminalSessionInfo[]> => ipcRenderer.invoke('terminal:list'),
     backlog: (id: string): Promise<{ data: string; sequence: number }> =>
       ipcRenderer.invoke('terminal:backlog', id),
+    runtimeState: (id: string): Promise<TerminalRuntimeState | undefined> =>
+      ipcRenderer.invoke('terminal:runtimeState', id),
     write: (id: string, data: string): void => ipcRenderer.send('terminal:write', id, data),
     resize: (id: string, cols: number, rows: number): void =>
       ipcRenderer.send('terminal:resize', id, cols, rows),
@@ -131,7 +134,9 @@ const api = {
       handler: (payload: { id: string; data: string; sequence: number }) => void
     ): (() => void) => subscribe('terminal:data', handler as (...args: never[]) => void),
     onExit: (handler: (payload: { id: string; exitCode: number }) => void): (() => void) =>
-      subscribe('terminal:exit', handler as (...args: never[]) => void)
+      subscribe('terminal:exit', handler as (...args: never[]) => void),
+    onRuntimeState: (handler: (state: TerminalRuntimeState) => void): (() => void) =>
+      subscribe('terminal:runtimeState', handler as (...args: never[]) => void)
   }
 }
 

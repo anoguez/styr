@@ -18,7 +18,7 @@ import { AGENT_STATE_LABELS, type AgentStatus } from '@core/agentState.js'
 import type { ShortcutBindings, TerminalSessionInfo, ThemeSettings } from '@core/types.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
 import { Button } from './ui.js'
-import { TerminalView } from './TerminalView.js'
+import { TerminalSurface } from './TerminalSurface.js'
 import { sessionLabel, type SessionLabel } from '../lib/sessionLabel.js'
 
 function TerminalTab({
@@ -222,8 +222,8 @@ export function TerminalPanel({
         ) : (
           sessions.map((session) => (
             <div key={session.id} className="absolute inset-2" hidden={session.id !== activeId}>
-              <TerminalView
-                sessionId={session.id}
+              <TerminalSurface
+                session={session}
                 active={session.id === activeId}
                 theme={theme}
                 bindings={bindings}

@@ -431,3 +431,29 @@ export interface TerminalSessionInfo {
   /** A read-back of a past chat rather than the task's live session. */
   replay?: boolean
 }
+
+/** A completed shell command. Additional terminal and agent metadata can be added over time. */
+export interface TerminalCommand {
+  id: string
+  command: string
+  cwd: string
+  startedAt: number
+  endedAt?: number
+  exitCode?: number
+  /** Output is capped by the main-process terminal runtime. */
+  output?: string
+}
+
+/**
+ * Main-process owned semantic state for a terminal session. Unlike `TerminalSessionInfo.cwd`,
+ * `cwd` follows the shell as it changes directories.
+ */
+export interface TerminalRuntimeState {
+  sessionId: string
+  cwd: string
+  promptReady: boolean
+  runningCommand?: Pick<TerminalCommand, 'id' | 'command' | 'cwd' | 'startedAt'>
+  lastCommand?: TerminalCommand
+  lastExitCode?: number
+  terminated?: boolean
+}
