@@ -406,23 +406,100 @@ function ShadeField({
   )
 }
 
-/**
- * An in-app colour picker. Deliberately not `<input type="color">`: that opens the native macOS
- * colour panel, which cannot be dismissed from the page and floats over the app.
- */
-export function ColorInput({
-  label,
+/** The shade field, hue slider and screen sampler, for a value the caller owns. */
+function ColorPicker({
   value,
   onChange
 }: {
-  label: string
   value: string
   onChange: (hex: string) => void
 }): ReactNode {
-  const [open, setOpen] = useState(false)
-  const holder = useRef<HTMLDivElement>(null)
   const hsl = hexToHsl(value)
   const canSample = typeof window !== 'undefined' && Boolean(window.EyeDropper)
+
+  async function sample(): Promise<void> {
+    const Picker = window.EyeDropper
+    if (!Picker) return
+    try {
+      const result = await new Picker().open()
+      onChange(result.sRGBHex)
+    } catch {
+      return
+    }
+  }
+
+  return (
+    <div className="flex w-64 flex-col gap-2.5 rounded-xl border border-edge-strong bg-panel p-3 shadow-[0_18px_40px_-12px_rgba(0,0,0,0.75)]">
+      <ShadeField
+        hue={hsl.h}
+        saturation={hsl.s}
+        lightness={hsl.l}
+        onChange={(s, l) => onChange(hslToHex({ h: hsl.h, s, l }))}
+      />
+      <div className="flex items-center gap-2">
+        <input
+          type="range"
+          aria-label="Hue"
+          min={0}
+          max={359}
+          value={Math.round(hsl.h)}
+          onChange={(event) => onChange(hslToHex({ ...hsl, h: Number(event.target.value) }))}
+          className="h-2.5 flex-1 cursor-pointer appearance-none rounded-full border border-edge-strong [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-transparent"
+          style={{
+            background:
+              'linear-gradient(90deg, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%)'
+          }}
+        />
+        {canSample ? (
+          <button
+            type="button"
+            title="Pick a colour from anywhere on screen"
+            aria-label="Pick a colour from the screen"
+            onClick={() => void sample()}
+            className="grid size-7 shrink-0 place-items-center rounded-md border border-edge-strong text-dim hover:text-ink"
+          >
+            <svg
+              aria-hidden
+              viewBox="0 0 16 16"
+              width="13"
+              height="13"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m10.5 2.5 3 3" />
+              <path d="M12 4 6.2 9.8 3 13l3.2-.2L12 7" />
+              <path d="M9 5.5 10.5 7" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Anchors the in-app colour picker under whatever `trigger` renders. Closes on an outside click or
+ * Escape — and swallows that Escape, so it does not also close the dialog it sits in.
+ */
+export function ColorPopover({
+  value,
+  onChange,
+  trigger,
+  align = 'start',
+  className = ''
+}: {
+  value: string
+  onChange: (hex: string) => void
+  trigger: (control: { open: boolean; toggle: () => void }) => ReactNode
+  /** Which edge of the trigger the picker lines up with; `end` keeps it inside a right-hand column. */
+  align?: 'start' | 'end'
+  className?: string
+}): ReactNode {
+  const [open, setOpen] = useState(false)
+  const holder = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -443,88 +520,95 @@ export function ColorInput({
     }
   }, [open])
 
-  async function sample(): Promise<void> {
-    const Picker = window.EyeDropper
-    if (!Picker) return
-    try {
-      const result = await new Picker().open()
-      onChange(result.sRGBHex)
-    } catch {
-      return
-    }
-  }
-
   return (
-    <div className="relative flex items-center gap-2.5" ref={holder}>
-      <button
-        type="button"
-        aria-label={`${label} colour`}
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        style={{ backgroundColor: value }}
-        className="size-7 shrink-0 rounded-md border border-edge-strong transition-transform hover:scale-105"
-      />
-      <span className="w-28 shrink-0 text-[12.5px] text-ink">{label}</span>
-      <span className="w-24 shrink-0">
-        <input
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          spellCheck={false}
-          className={`${inputClass} font-mono text-[11.5px] uppercase`}
-        />
-      </span>
-
+    <div className={`relative ${className}`} ref={holder}>
+      {trigger({ open, toggle: () => setOpen((current) => !current) })}
       {open ? (
-        <div className="absolute left-0 top-9 z-10 flex w-64 flex-col gap-2.5 rounded-xl border border-edge-strong bg-panel p-3 shadow-[0_18px_40px_-12px_rgba(0,0,0,0.75)]">
-          <ShadeField
-            hue={hsl.h}
-            saturation={hsl.s}
-            lightness={hsl.l}
-            onChange={(s, l) => onChange(hslToHex({ h: hsl.h, s, l }))}
-          />
-          <div className="flex items-center gap-2">
-            <input
-              type="range"
-              aria-label="Hue"
-              min={0}
-              max={359}
-              value={Math.round(hsl.h)}
-              onChange={(event) => onChange(hslToHex({ ...hsl, h: Number(event.target.value) }))}
-              className="h-2.5 flex-1 cursor-pointer appearance-none rounded-full border border-edge-strong [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-transparent"
-              style={{
-                background:
-                  'linear-gradient(90deg, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%)'
-              }}
-            />
-            {canSample ? (
-              <button
-                type="button"
-                title="Pick a colour from anywhere on screen"
-                aria-label="Pick a colour from the screen"
-                onClick={() => void sample()}
-                className="grid size-7 shrink-0 place-items-center rounded-md border border-edge-strong text-dim hover:text-ink"
-              >
-                <svg
-                  aria-hidden
-                  viewBox="0 0 16 16"
-                  width="13"
-                  height="13"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="m10.5 2.5 3 3" />
-                  <path d="M12 4 6.2 9.8 3 13l3.2-.2L12 7" />
-                  <path d="M9 5.5 10.5 7" />
-                </svg>
-              </button>
-            ) : null}
-          </div>
+        <div className={`absolute top-full z-10 mt-1.5 ${align === 'end' ? 'right-0' : 'left-0'}`}>
+          <ColorPicker value={value} onChange={onChange} />
         </div>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * An in-app colour picker. Deliberately not `<input type="color">`: that opens the native macOS
+ * colour panel, which cannot be dismissed from the page and floats over the app.
+ */
+export function ColorInput({
+  label,
+  value,
+  onChange
+}: {
+  label: string
+  value: string
+  onChange: (hex: string) => void
+}): ReactNode {
+  return (
+    <ColorPopover
+      value={value}
+      onChange={onChange}
+      className="flex items-center gap-2.5"
+      trigger={({ open, toggle }) => (
+        <>
+          <button
+            type="button"
+            aria-label={`${label} colour`}
+            aria-expanded={open}
+            onClick={toggle}
+            style={{ backgroundColor: value }}
+            className="size-7 shrink-0 rounded-md border border-edge-strong transition-transform hover:scale-105"
+          />
+          <span className="w-28 shrink-0 text-[12.5px] text-ink">{label}</span>
+          <span className="w-24 shrink-0">
+            <input
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              spellCheck={false}
+              className={`${inputClass} font-mono text-[11.5px] uppercase`}
+            />
+          </span>
+        </>
+      )}
+    />
+  )
+}
+
+/** A colour as a card — swatch, name, hex — that opens the in-app picker. */
+export function ColorSwatch({
+  label,
+  value,
+  onChange,
+  align
+}: {
+  label: string
+  value: string
+  onChange: (hex: string) => void
+  align?: 'start' | 'end'
+}): ReactNode {
+  return (
+    <ColorPopover
+      value={value}
+      onChange={onChange}
+      align={align}
+      trigger={({ open, toggle }) => (
+        <button
+          type="button"
+          aria-label={`${label} colour`}
+          aria-expanded={open}
+          onClick={toggle}
+          className="flex w-full flex-col gap-1.5 rounded-lg border border-edge bg-chrome p-2 text-left transition-colors hover:border-edge-strong"
+        >
+          <span
+            style={{ backgroundColor: value }}
+            className="block h-[22px] rounded-[5px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+          />
+          <span className="text-[11.5px] text-ink">{label}</span>
+          <span className="font-mono text-[10px] uppercase text-faint">{value}</span>
+        </button>
+      )}
+    />
   )
 }
 

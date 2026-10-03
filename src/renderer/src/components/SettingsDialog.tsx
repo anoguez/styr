@@ -42,6 +42,8 @@ import {
   CardRow,
   Chip,
   ColorInput,
+  ColorPopover,
+  ColorSwatch,
   DirectoryInput,
   Eyebrow,
   Field,
@@ -457,6 +459,7 @@ export function SettingsDialog({
   const [ansiSlot, setAnsiSlot] = useState<AnsiColour>('red')
   const [version, setVersion] = useState('')
   const [search, setSearch] = useState('')
+  const [editingAnsi, setEditingAnsi] = useState(false)
   const bodyRef = useRef<HTMLTextAreaElement>(null)
   const update = useUpdates()
   const selectFirstTemplate = useCallback(
@@ -1201,11 +1204,6 @@ export function SettingsDialog({
                         Reset theme
                       </button>
                     </div>
-                    <ColorInput
-                      label="Base"
-                      value={draft.theme.base}
-                      onChange={(base) => patch({ theme: { ...draft.theme, base } })}
-                    />
                     <div className="flex flex-wrap gap-2">
                       {BASE_PRESETS.map((preset) => {
                         const on = draft.theme.base.toLowerCase() === preset.hex
@@ -1229,6 +1227,38 @@ export function SettingsDialog({
                           </button>
                         )
                       })}
+                      <ColorPopover
+                        value={draft.theme.base}
+                        onChange={(base) => patch({ theme: { ...draft.theme, base } })}
+                        trigger={({ open, toggle }) => {
+                          const custom = !BASE_PRESETS.some(
+                            (preset) => preset.hex === draft.theme.base.toLowerCase()
+                          )
+                          return (
+                            <button
+                              type="button"
+                              aria-label="Custom base colour"
+                              aria-expanded={open}
+                              onClick={toggle}
+                              className="flex flex-col items-center gap-[5px]"
+                            >
+                              <span
+                                style={custom ? { backgroundColor: draft.theme.base } : undefined}
+                                className={`grid h-[34px] w-[52px] place-items-center rounded-lg border-2 text-[15px] text-dim shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] ${
+                                  custom
+                                    ? 'border-[var(--color-accent-text)]'
+                                    : 'border-dashed border-edge-strong'
+                                }`}
+                              >
+                                {custom ? null : '+'}
+                              </span>
+                              <span className={`text-[11px] ${custom ? 'text-ink' : 'text-faint'}`}>
+                                Custom
+                              </span>
+                            </button>
+                          )
+                        }}
+                      />
                     </div>
                     <Hint>
                       Every surface and text colour is derived from this, so contrast holds.
@@ -1237,17 +1267,18 @@ export function SettingsDialog({
 
                   <div className="flex flex-col gap-2">
                     <span className="text-[12px] font-semibold text-dim">Accent and columns</span>
-                    <Card className="gap-2.5 p-3">
-                      <ColorInput
+                    <div className="grid grid-cols-5 gap-2">
+                      <ColorSwatch
                         label="Accent"
                         value={draft.theme.accent}
                         onChange={(accent) => patch({ theme: { ...draft.theme, accent } })}
                       />
-                      {TASK_STATUSES.map((status) => (
-                        <ColorInput
+                      {TASK_STATUSES.map((status, index) => (
+                        <ColorSwatch
                           key={status}
                           label={TASK_STATUS_LABELS[status]}
                           value={draft.theme.columns[status]}
+                          align={index >= 2 ? 'end' : 'start'}
                           onChange={(hex) =>
                             patch({
                               theme: {
@@ -1258,7 +1289,7 @@ export function SettingsDialog({
                           }
                         />
                       ))}
-                    </Card>
+                    </div>
                     <Hint>
                       Column colours also tint agent states: In Progress is Working, In Review is
                       Waiting on you, Done is Finished.
@@ -1308,6 +1339,7 @@ export function SettingsDialog({
                   <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_104px] gap-3">
                     <Field label="Interface font">
                       <Select
+                        compact
                         value={draft.theme.uiFont}
                         onChange={(event) =>
                           patch({ theme: { ...draft.theme, uiFont: event.target.value } })
@@ -1322,6 +1354,7 @@ export function SettingsDialog({
                     </Field>
                     <Field label="Terminal font">
                       <Select
+                        compact
                         value={draft.theme.terminalFont}
                         onChange={(event) =>
                           patch({ theme: { ...draft.theme, terminalFont: event.target.value } })
@@ -1337,7 +1370,7 @@ export function SettingsDialog({
                     <Field label="Size">
                       <Stepper
                         label="Terminal font size"
-                        className="h-[34px]"
+                        className="h-[30px]"
                         value={draft.theme.terminalFontSize}
                         min={9}
                         max={24}
@@ -1382,39 +1415,6 @@ export function SettingsDialog({
                       })}
                     </div>
 
-                    <Card className="gap-3 p-3">
-                      <div className="grid grid-cols-8 gap-1.5">
-                        {ANSI_COLOURS.map((slot) => (
-                          <button
-                            key={slot}
-                            type="button"
-                            title={ansiLabel(slot)}
-                            aria-label={ansiLabel(slot)}
-                            aria-pressed={slot === ansiSlot}
-                            onClick={() => setAnsiSlot(slot)}
-                            style={{ backgroundColor: draft.theme.terminalPalette[slot] }}
-                            className={`h-6 rounded-md border transition-colors ${
-                              slot === ansiSlot
-                                ? 'border-[var(--color-accent-text)]'
-                                : 'border-edge-strong hover:border-faint'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                      <ColorInput
-                        label={ansiLabel(ansiSlot)}
-                        value={draft.theme.terminalPalette[ansiSlot]}
-                        onChange={(hex) =>
-                          patch({
-                            theme: {
-                              ...draft.theme,
-                              terminalPalette: { ...draft.theme.terminalPalette, [ansiSlot]: hex }
-                            }
-                          })
-                        }
-                      />
-                    </Card>
-
                     <div
                       className="rounded-[10px] border border-edge-strong px-3.5 py-3 font-mono leading-[1.65]"
                       style={{
@@ -1442,12 +1442,56 @@ export function SettingsDialog({
                       </span>
                     </div>
                     <Hint>
-                      Background, text and cursor follow the base. These 16 are what git, agents and
-                      your prompt draw with, so they are set outright.
+                      Background, text and cursor follow the base. These are what git, agents and
+                      your prompt draw with.
                     </Hint>
+
+                    <button
+                      type="button"
+                      aria-expanded={editingAnsi}
+                      onClick={() => setEditingAnsi((current) => !current)}
+                      className="self-start text-[11.5px] text-faint transition-colors hover:text-ink"
+                    >
+                      {editingAnsi ? 'Hide individual colours' : 'Edit individual colours'}
+                    </button>
+                    {editingAnsi ? (
+                      <Card className="gap-3 p-3">
+                        <div className="grid grid-cols-8 gap-1.5">
+                          {ANSI_COLOURS.map((slot) => (
+                            <button
+                              key={slot}
+                              type="button"
+                              title={ansiLabel(slot)}
+                              aria-label={ansiLabel(slot)}
+                              aria-pressed={slot === ansiSlot}
+                              onClick={() => setAnsiSlot(slot)}
+                              style={{ backgroundColor: draft.theme.terminalPalette[slot] }}
+                              className={`h-6 rounded-md border transition-colors ${
+                                slot === ansiSlot
+                                  ? 'border-[var(--color-accent-text)]'
+                                  : 'border-edge-strong hover:border-faint'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                        <ColorInput
+                          label={ansiLabel(ansiSlot)}
+                          value={draft.theme.terminalPalette[ansiSlot]}
+                          onChange={(hex) =>
+                            patch({
+                              theme: {
+                                ...draft.theme,
+                                terminalPalette: { ...draft.theme.terminalPalette, [ansiSlot]: hex }
+                              }
+                            })
+                          }
+                        />
+                      </Card>
+                    ) : null}
                   </div>
                 </>
               ) : null}
+
               {section === 'integrations' ? (
                 <>
                   {(
