@@ -731,6 +731,8 @@ export default function App(): ReactNode {
         {agentsOpen ? (
           <AgentsSidebar
             rows={agentRows}
+            diffStats={diffStats}
+            onShowChanges={setChangesTask}
             onOpenTask={setEditing}
             onClose={() => setAgentsOpen(false)}
             onActivate={(row) => activateTask(row.task.id)}

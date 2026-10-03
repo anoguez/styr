@@ -11,7 +11,7 @@ import {
   type TaskPriority
 } from '@core/types.js'
 import type { DiffStat } from '@core/diff.js'
-import { Chip, DiffCount } from './ui.js'
+import { Chip, DiffCount, DiffStatButton } from './ui.js'
 
 const PRIORITY_BAR: Record<TaskPriority, string> = {
   low: 'bg-[var(--color-pri-low)]',
@@ -131,34 +131,7 @@ export function TaskCardBody({
 
       {diffStat ? (
         <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[10.5px]">
-          <button
-            type="button"
-            title={`${diffStat.files} ${diffStat.files === 1 ? 'file' : 'files'} changed · +${diffStat.added} −${diffStat.removed} — view changes`}
-            aria-label={`View changes: ${diffStat.files} files, +${diffStat.added} −${diffStat.removed}`}
-            className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[10.5px] text-faint transition-colors hover:bg-raised hover:text-ink"
-            onPointerDown={(event) => event.stopPropagation()}
-            onDoubleClick={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation()
-              onShowChanges?.()
-            }}
-          >
-            <svg
-              aria-hidden
-              viewBox="0 0 16 16"
-              width="12"
-              height="12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M4 2.5h5l3 3v8H4z" />
-              <path d="M6.25 7h3.5M8 5.25v3.5M6.25 11h3.5" />
-            </svg>
-            <DiffCount added={diffStat.added} removed={diffStat.removed} />
-          </button>
+          <DiffStatButton stat={diffStat} onClick={() => onShowChanges?.()} />
           <div className="flex min-w-0 flex-1 justify-center">{prLink}</div>
           {status}
         </div>

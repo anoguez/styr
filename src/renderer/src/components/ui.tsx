@@ -185,6 +185,47 @@ export function DiffCount({
   )
 }
 
+/** The clickable `+N −M` under a card or agent row; opens the Changes dialog. */
+export function DiffStatButton({
+  stat,
+  onClick
+}: {
+  stat: { added: number; removed: number; files: number }
+  onClick: () => void
+}): ReactNode {
+  const files = `${stat.files} ${stat.files === 1 ? 'file' : 'files'}`
+  return (
+    <button
+      type="button"
+      title={`${files} changed · +${stat.added} −${stat.removed} — view changes`}
+      aria-label={`View changes: ${files}, +${stat.added} −${stat.removed}`}
+      className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[10.5px] text-faint transition-colors hover:bg-raised hover:text-ink"
+      onPointerDown={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick()
+      }}
+    >
+      <svg
+        aria-hidden
+        viewBox="0 0 16 16"
+        width="12"
+        height="12"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4 2.5h5l3 3v8H4z" />
+        <path d="M6.25 7h3.5M8 5.25v3.5M6.25 11h3.5" />
+      </svg>
+      <DiffCount added={stat.added} removed={stat.removed} />
+    </button>
+  )
+}
+
 export function Modal({
   title,
   subtitle,
