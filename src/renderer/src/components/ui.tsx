@@ -122,7 +122,8 @@ export function Modal({
   children,
   footer,
   wide = false,
-  flush = false
+  flush = false,
+  bare = false
 }: {
   title: string
   subtitle?: string
@@ -133,6 +134,8 @@ export function Modal({
   wide?: boolean
   /** Hand the body's padding and scrolling to the child, for layouts with their own panes. */
   flush?: boolean
+  /** Draw only the overlay and panel. The child brings its own header and footer. */
+  bare?: boolean
 }): ReactNode {
   useEffect(() => {
     if (!onSubmit) return
@@ -152,24 +155,29 @@ export function Modal({
       onMouseDown={onClose}
     >
       <div
-        className={`flex max-h-[88vh] w-full ${wide ? 'max-w-3xl' : 'max-w-xl'} flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]`}
+        aria-label={bare ? title : undefined}
+        className={`flex ${bare ? 'h-[min(700px,88vh)]' : 'max-h-[88vh]'} w-full ${bare ? 'max-w-[960px]' : wide ? 'max-w-3xl' : 'max-w-xl'} flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]`}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="flex items-start justify-between gap-4 border-b border-edge px-5 py-4">
-          <div className="min-w-0">
-            <h2 className="truncate text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
-            {subtitle ? <p className="mt-0.5 text-[12px] text-faint">{subtitle}</p> : null}
-          </div>
-          <Button variant="subtle" className="shrink-0 px-2" onClick={onClose} aria-label="Close">
-            ✕
-          </Button>
-        </header>
-        {flush ? (
+        {bare ? null : (
+          <header className="flex items-start justify-between gap-4 border-b border-edge px-5 py-4">
+            <div className="min-w-0">
+              <h2 className="truncate text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
+              {subtitle ? <p className="mt-0.5 text-[12px] text-faint">{subtitle}</p> : null}
+            </div>
+            <Button variant="subtle" className="shrink-0 px-2" onClick={onClose} aria-label="Close">
+              ✕
+            </Button>
+          </header>
+        )}
+        {bare ? (
+          children
+        ) : flush ? (
           <div className="flex min-h-0 flex-1">{children}</div>
         ) : (
           <div className="flex-1 overflow-y-auto px-5 py-5">{children}</div>
         )}
-        {footer ? (
+        {footer && !bare ? (
           <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-edge bg-chrome/40 px-5 py-3.5">
             {footer}
           </footer>
@@ -474,6 +482,207 @@ export function ColorInput({
           </div>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/** A bordered surface for grouped controls: a list of rows, a provider, a table. */
+export function Card({
+  children,
+  className = ''
+}: {
+  children: ReactNode
+  className?: string
+}): ReactNode {
+  return (
+    <div className={`flex flex-col rounded-[10px] border border-edge bg-chrome ${className}`}>
+      {children}
+    </div>
+  )
+}
+
+/** One row of a `Card`; every row after the first draws a divider above itself. */
+export function CardRow({
+  children,
+  className = ''
+}: {
+  children: ReactNode
+  className?: string
+}): ReactNode {
+  return <div className={`border-t border-edge first:border-t-0 ${className}`}>{children}</div>
+}
+
+/** The small caps label above a table or group of rows. */
+export function Eyebrow({ children }: { children: ReactNode }): ReactNode {
+  return (
+    <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-faint">
+      {children}
+    </span>
+  )
+}
+
+/** Quiet explanatory text under a control or card. */
+export function Hint({ children }: { children: ReactNode }): ReactNode {
+  return <span className="text-[11.5px] leading-[1.5] text-faint text-pretty">{children}</span>
+}
+
+/** An on/off switch. Always give it a label, even when the visible one lives beside it. */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled = false,
+  title
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  label: string
+  disabled?: boolean
+  title?: string
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      title={title}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative block h-4 w-7 shrink-0 rounded-full transition-colors duration-150 disabled:opacity-50 ${
+        checked ? 'bg-accent' : 'bg-edge-strong'
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 size-3 rounded-full bg-ink transition-[left] duration-150 ${
+          checked ? 'left-3.5' : 'left-0.5'
+        }`}
+      />
+    </button>
+  )
+}
+
+/** A label and hint on the left, a switch on the right. The whole row toggles. */
+export function SwitchRow({
+  checked,
+  onChange,
+  label,
+  hint
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  label: string
+  hint?: string
+}): ReactNode {
+  return (
+    <div
+      role="presentation"
+      onClick={() => onChange(!checked)}
+      className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-3.5 py-3"
+    >
+      <span className="flex flex-col gap-[3px]">
+        <span className="text-[12.5px] text-ink">{label}</span>
+        {hint ? <Hint>{hint}</Hint> : null}
+      </span>
+      {/* stopPropagation: the row's own click would toggle a second time. */}
+      <span role="presentation" onClick={(event) => event.stopPropagation()}>
+        <Switch checked={checked} onChange={onChange} label={label} />
+      </span>
+    </div>
+  )
+}
+
+/** A minus / value / plus control for small bounded integers. */
+export function Stepper({
+  value,
+  min,
+  max,
+  onChange,
+  label,
+  className = ''
+}: {
+  value: number
+  min: number
+  max: number
+  onChange: (value: number) => void
+  label: string
+  className?: string
+}): ReactNode {
+  const step = 'grid size-7 place-items-center text-dim hover:text-ink disabled:opacity-40'
+  const glyph = {
+    viewBox: '0 0 16 16',
+    width: 12,
+    height: 12,
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.5,
+    strokeLinecap: 'round' as const
+  }
+  return (
+    <span
+      role="group"
+      aria-label={label}
+      className={`flex h-7 items-center rounded-[7px] border border-edge-strong bg-panel ${className}`}
+    >
+      <button
+        type="button"
+        aria-label={`Decrease ${label}`}
+        disabled={value <= min}
+        className={step}
+        onClick={() => onChange(Math.max(min, value - 1))}
+      >
+        <svg aria-hidden {...glyph}>
+          <path d="M3.5 8h9" />
+        </svg>
+      </button>
+      <span className="flex-1 text-center font-mono text-[12px] text-ink">{value}</span>
+      <button
+        type="button"
+        aria-label={`Increase ${label}`}
+        disabled={value >= max}
+        className={step}
+        onClick={() => onChange(Math.min(max, value + 1))}
+      >
+        <svg aria-hidden {...glyph}>
+          <path d="M8 3.5v9M3.5 8h9" />
+        </svg>
+      </button>
+    </span>
+  )
+}
+
+/** A short row of mutually exclusive options. */
+export function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+  label
+}: {
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (value: T) => void
+  label: string
+}): ReactNode {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="inline-flex gap-0.5 self-start rounded-lg border border-edge-strong bg-panel p-0.5"
+    >
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={option.value === value}
+          onClick={() => onChange(option.value)}
+          className={`h-6 rounded-md px-2.5 text-[12px] font-medium transition-colors ${
+            option.value === value ? 'bg-raised text-ink' : 'text-dim hover:text-ink'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   )
 }

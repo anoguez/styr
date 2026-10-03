@@ -32,12 +32,20 @@ import {
 } from '@core/shortcuts.js'
 import {
   Button,
-  Checkbox,
+  Card,
+  CardRow,
+  Chip,
   ColorInput,
   DirectoryInput,
+  Eyebrow,
   Field,
+  Hint,
   Modal,
+  Segmented,
   Select,
+  Stepper,
+  Switch,
+  SwitchRow,
   inputClass
 } from './ui.js'
 import { useUpdates } from '../hooks/useUpdates.js'
@@ -109,35 +117,98 @@ const LANE_HINTS: Record<OrchestrationLane, string> = {
 export const SECTIONS = [
   {
     id: 'preferences',
+    group: 'Board',
     label: 'Preferences',
-    blurb: 'Defaults for new tasks. Existing tasks keep their own settings.'
+    blurb: 'Defaults for new tasks. Existing tasks keep their own settings.',
+    keys: ['taskDefaults'],
+    words: 'worktree orchestrate new task default'
   },
   {
     id: 'workspace',
+    group: 'Board',
     label: 'Workspace',
-    blurb: 'Where the board keeps its data and where work runs.'
+    blurb: 'Where the board keeps its data and where work runs.',
+    keys: ['workspaceDir', 'defaultRepoPath'],
+    words: 'storage folder directory repo git'
   },
-  { id: 'terminal', label: 'Terminal', blurb: 'How sessions are started.' },
+  {
+    id: 'terminal',
+    group: 'Board',
+    label: 'Terminal',
+    blurb: 'How sessions are started.',
+    keys: ['shell'],
+    words: 'shell zsh bash'
+  },
   {
     id: 'routing',
+    group: 'Board',
     label: 'Prompt routing',
-    blurb: 'Which template runs for a task, based on where it sits.'
+    blurb: 'Which template runs for a task, based on where it sits.',
+    keys: ['promptRouting', 'defaultPromptTemplateId', 'providerRouting'],
+    words: 'template column spec fallback agent lane'
   },
-  { id: 'templates', label: 'Templates', blurb: 'The prompts themselves.' },
+  {
+    id: 'templates',
+    group: 'Board',
+    label: 'Templates',
+    blurb: 'The prompts themselves.',
+    keys: ['promptTemplates'],
+    words: 'prompt placeholder body'
+  },
   {
     id: 'orchestration',
+    group: 'Board',
     label: 'Orchestrate',
-    blurb: 'How many agents Orchestrate may run at once, per kind of work.'
+    blurb: 'How many agents Orchestrate may run at once, per kind of work.',
+    keys: ['orchestration'],
+    words: 'slots lanes parallel concurrency'
   },
   {
     id: 'shortcuts',
+    group: 'App',
     label: 'Shortcuts',
-    blurb: 'Keys the app claims. Everything else is passed to the terminal.'
+    blurb: 'Keys the app claims. Everything else is passed to the terminal.',
+    keys: ['shortcuts'],
+    words: 'keyboard keys bindings'
   },
-  { id: 'theme', label: 'Theme', blurb: 'Colours and fonts. Changes apply as you make them.' },
-  { id: 'integrations', label: 'Integrations', blurb: 'Connecting the board to Claude.' },
-  { id: 'updates', label: 'Updates', blurb: 'New versions download in the background.' }
-] as const
+  {
+    id: 'theme',
+    group: 'App',
+    label: 'Theme',
+    blurb: 'Colours and fonts. Changes apply as you make them.',
+    keys: ['theme'],
+    words: 'colour color font gradient terminal palette appearance'
+  },
+  {
+    id: 'integrations',
+    group: 'App',
+    label: 'Integrations',
+    blurb: 'Connecting the board to Claude Code and Codex.',
+    keys: [
+      'enabledProviders',
+      'defaultProvider',
+      'claudeCommand',
+      'codexCommand',
+      'codexApprovalReviewer'
+    ],
+    words: 'claude codex provider mcp command approvals'
+  },
+  {
+    id: 'updates',
+    group: 'App',
+    label: 'Updates',
+    blurb: 'New versions download in the background.',
+    keys: ['updates'],
+    words: 'version release'
+  }
+] as const satisfies readonly {
+  id: string
+  group: string
+  label: string
+  blurb: string
+  keys: readonly (keyof Settings)[]
+  words: string
+}[]
 
 function describeUpdate(state: UpdateState | null): string {
   switch (state?.kind) {
@@ -275,6 +346,24 @@ function ShortcutRow({
   )
 }
 
+const COLUMN_TOKENS = {
+  backlog: 'backlog',
+  in_progress: 'progress',
+  in_review: 'review',
+  done: 'done'
+} as const
+
+/** Which routing slots point at a template, for the template list's subtitle. */
+function routedTo(settings: Settings, id: string): string {
+  const used = [
+    settings.promptRouting.needsSpec === id ? 'Needs spec' : null,
+    ...TASK_STATUSES.map((status) =>
+      settings.promptRouting.byStatus[status] === id ? TASK_STATUS_LABELS[status] : null
+    )
+  ].filter((label): label is string => label !== null)
+  return used.length > 0 ? used.join(', ') : 'Not routed'
+}
+
 function slugId(name: string): string {
   return (
     name
@@ -284,7 +373,7 @@ function slugId(name: string): string {
   )
 }
 
-function TemplatePicker({
+function TemplateSelect({
   label,
   templates,
   value,
@@ -296,16 +385,13 @@ function TemplatePicker({
   onChange: (id: string) => void
 }): ReactNode {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[11px] text-faint">{label}</span>
-      <Select value={value} onChange={(event) => onChange(event.target.value)}>
-        {templates.map((template) => (
-          <option key={template.id} value={template.id}>
-            {template.name}
-          </option>
-        ))}
-      </Select>
-    </label>
+    <Select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
+      {templates.map((template) => (
+        <option key={template.id} value={template.id}>
+          {template.name}
+        </option>
+      ))}
+    </Select>
   )
 }
 
@@ -330,9 +416,10 @@ export function SettingsDialog({
   )
   const [mcpCommand, setMcpCommand] = useState('')
   const [codexMcpCommand, setCodexMcpCommand] = useState('')
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<'claude' | 'codex' | null>(null)
   const [ansiSlot, setAnsiSlot] = useState<AnsiColour>('red')
   const [version, setVersion] = useState('')
+  const [search, setSearch] = useState('')
   const update = useUpdates()
 
   useEffect(() => {
@@ -345,6 +432,31 @@ export function SettingsDialog({
   const active = SECTIONS.find((item) => item.id === section) ?? SECTIONS[0]
   const conflicts = shortcutConflicts(draft.shortcuts)
   const preview = terminalTheme(draft.theme)
+  const isChanged = (key: keyof Settings): boolean =>
+    JSON.stringify(draft[key]) !== JSON.stringify(settings[key])
+  const dirtySections = new Set(
+    SECTIONS.filter((item) => item.keys.some(isChanged)).map((item) => item.id)
+  )
+  const dirtyCount = SECTIONS.reduce((count, item) => count + item.keys.filter(isChanged).length, 0)
+  const query = search.trim().toLowerCase()
+  const navGroups = ['Board', 'App']
+    .map((group) => ({
+      label: group,
+      items: SECTIONS.filter(
+        (item) =>
+          item.group === group &&
+          (!query || `${item.label} ${item.words}`.toLowerCase().includes(query))
+      )
+    }))
+    .filter((group) => group.items.length > 0)
+
+  function save(): void {
+    if (dirtyCount === 0) return
+    void onSave(draft).then(() => {
+      onPreviewTheme(null)
+      onClose()
+    })
+  }
 
   const patch = (changes: Partial<Settings>): void =>
     setDraft((current) => {
@@ -400,381 +512,543 @@ export function SettingsDialog({
   }
 
   return (
-    <Modal
-      wide
-      flush
-      title="Settings"
-      subtitle="Stored in ~/.styr/config.json"
-      onClose={onClose}
-      footer={
-        <Button
-          variant="primary"
-          onClick={() => {
-            void onSave(draft).then(() => {
-              onPreviewTheme(null)
-              onClose()
-            })
-          }}
-        >
-          Save settings
-        </Button>
-      }
-    >
-      <div className="flex h-[min(560px,68vh)] min-h-0 w-full">
-        <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-edge bg-chrome/40 p-2">
-          {SECTIONS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              aria-current={item.id === section}
-              className={`rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${
-                item.id === section
-                  ? 'bg-raised font-medium text-ink'
-                  : 'text-dim hover:bg-raised/60 hover:text-ink'
-              }`}
-              onClick={() => setSection(item.id)}
+    <Modal bare title="Settings" onClose={onClose} onSubmit={save}>
+      <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)]">
+        <nav className="flex min-h-0 flex-col gap-2.5 overflow-y-auto border-r border-edge bg-chrome/50 px-2.5 py-3">
+          <div className="px-1.5">
+            <span className="text-[15px] font-semibold tracking-[-0.01em]">Settings</span>
+          </div>
+          <label className="relative block">
+            <svg
+              aria-hidden
+              viewBox="0 0 16 16"
+              width="13"
+              height="13"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              className="pointer-events-none absolute left-[9px] top-1/2 -translate-y-1/2 text-faint"
             >
-              {item.label}
-            </button>
+              <circle cx="7" cy="7" r="4.25" />
+              <path d="M10.25 10.25 13 13" />
+            </svg>
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Find a setting"
+              aria-label="Find a setting"
+              className="box-border h-7 w-full rounded-[7px] border border-edge bg-chrome pl-7 pr-2 text-[12.5px] text-ink outline-none placeholder:text-faint focus:border-accent"
+            />
+          </label>
+
+          {navGroups.map((group) => (
+            <div key={group.label} className="flex flex-col gap-0.5">
+              <div className="px-2 pb-1">
+                <Eyebrow>{group.label}</Eyebrow>
+              </div>
+              {group.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-current={item.id === section}
+                  onClick={() => setSection(item.id)}
+                  className={`flex h-[26px] items-center gap-2 rounded-[7px] px-2 text-left text-[12.5px] transition-colors ${
+                    item.id === section
+                      ? 'bg-raised font-semibold text-ink'
+                      : 'font-medium text-dim hover:bg-raised/70 hover:text-ink'
+                  }`}
+                >
+                  <span className="flex-1">{item.label}</span>
+                  {dirtySections.has(item.id) ? (
+                    <span
+                      title="Unsaved changes"
+                      className="size-1.5 rounded-full bg-[var(--color-accent-text)]"
+                    />
+                  ) : null}
+                </button>
+              ))}
+            </div>
           ))}
+          {navGroups.length === 0 ? (
+            <p className="px-2 text-[12px] text-faint">No settings match “{search}”.</p>
+          ) : null}
         </nav>
 
-        <div className="min-w-0 flex-1 overflow-y-auto px-5 py-5">
-          <header className="mb-4">
-            <h3 className="text-[13.5px] font-semibold tracking-[-0.01em]">{active.label}</h3>
-            <p className="mt-0.5 text-[11.5px] text-faint">{active.blurb}</p>
+        <section className="flex min-h-0 min-w-0 flex-col">
+          <header className="flex items-start gap-4 border-b border-edge py-4 pl-6 pr-4">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <h2 className="text-[17px] font-semibold tracking-[-0.01em]">{active.label}</h2>
+              <p className="text-[12px] leading-normal text-dim text-pretty">{active.blurb}</p>
+            </div>
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={onClose}
+              className="grid size-7 shrink-0 place-items-center rounded-lg text-dim transition-colors hover:bg-raised/70 hover:text-ink"
+            >
+              <svg
+                aria-hidden
+                viewBox="0 0 16 16"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              >
+                <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+              </svg>
+            </button>
           </header>
 
-          {section === 'preferences' ? (
-            <div className="flex flex-col gap-4">
-              <Checkbox
-                checked={draft.taskDefaults.orchestrate}
-                onChange={(orchestrate) =>
-                  patch({ taskDefaults: { ...draft.taskDefaults, orchestrate } })
-                }
-                label="Let Orchestrate start new tasks"
-                hint="When on, the Orchestrate checkbox is ticked when you create a task. You can still change it per task."
-              />
-              <Checkbox
-                checked={draft.taskDefaults.useWorktree}
-                onChange={(useWorktree) =>
-                  patch({ taskDefaults: { ...draft.taskDefaults, useWorktree } })
-                }
-                label="Run new tasks in their own git worktree"
-                hint="When on, the worktree checkbox is ticked when you create a task. Each agent then gets a separate checkout."
-              />
-            </div>
-          ) : null}
-
-          {section === 'workspace' ? (
-            <div className="flex flex-col gap-4">
-              <Field
-                label="Board storage folder"
-                hint="Where the app keeps your tasks (./tasks/*.md) and its index. This is the board's own data, not your code — point it at a git repo if you want versioned tasks."
-              >
-                <DirectoryInput
-                  value={draft.workspaceDir}
-                  onChange={(workspaceDir) => patch({ workspaceDir })}
-                />
-              </Field>
-
-              <Field
-                label="Default working directory"
-                hint="Pre-fills Working directory on new tasks, and is where + Shell opens. Leave blank to fall back to the board storage folder."
-              >
-                <DirectoryInput
-                  value={draft.defaultRepoPath}
-                  onChange={(defaultRepoPath) => patch({ defaultRepoPath })}
-                />
-              </Field>
-            </div>
-          ) : null}
-
-          {section === 'terminal' ? (
-            <div className="flex flex-col gap-4">
-              <Field label="Shell" hint="The shell each embedded terminal session runs.">
-                <input
-                  className={inputClass}
-                  value={draft.shell}
-                  onChange={(event) => patch({ shell: event.target.value })}
-                />
-              </Field>
-            </div>
-          ) : null}
-
-          {section === 'routing' ? (
-            <div className="flex flex-col gap-4">
-              <Field
-                label="Agent for each lane"
-                hint="Orchestrate uses these providers. Claude remains the default until you opt a lane into Codex."
-              >
-                <div className="grid grid-cols-3 gap-2.5 rounded-lg border border-edge bg-chrome/40 p-3">
-                  {(['spec', 'implement', 'review'] as const).map((lane) => (
-                    <label
-                      key={lane}
-                      className="flex flex-col gap-1.5 text-[11px] capitalize text-dim"
-                    >
-                      {lane}
-                      <select
-                        className={inputClass}
-                        value={draft.providerRouting[lane]}
-                        onChange={(event) =>
-                          patch({
-                            providerRouting: {
-                              ...draft.providerRouting,
-                              [lane]: event.target.value as 'claude' | 'codex'
-                            }
-                          })
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-5">
+            <div className="flex max-w-[640px] flex-col gap-5">
+              {section === 'preferences' ? (
+                <div className="flex flex-col gap-2.5">
+                  <Eyebrow>New tasks start with</Eyebrow>
+                  <Card>
+                    <CardRow>
+                      <SwitchRow
+                        checked={draft.taskDefaults.orchestrate}
+                        onChange={(orchestrate) =>
+                          patch({ taskDefaults: { ...draft.taskDefaults, orchestrate } })
                         }
-                      >
-                        {draft.enabledProviders.includes('claude') ? (
-                          <option value="claude">Claude Code</option>
-                        ) : null}
-                        {draft.enabledProviders.includes('codex') ? (
-                          <option value="codex">Codex</option>
-                        ) : null}
-                      </select>
-                    </label>
-                  ))}
+                        label="Let Orchestrate start new tasks"
+                        hint="Ticks the Orchestrate checkbox when you create a task."
+                      />
+                    </CardRow>
+                    <CardRow>
+                      <SwitchRow
+                        checked={draft.taskDefaults.useWorktree}
+                        onChange={(useWorktree) =>
+                          patch({ taskDefaults: { ...draft.taskDefaults, useWorktree } })
+                        }
+                        label="Run new tasks in their own git worktree"
+                        hint="Each agent gets a separate checkout, so parallel runs never collide."
+                      />
+                    </CardRow>
+                  </Card>
+                  <Hint>You can still change both on any task.</Hint>
                 </div>
-              </Field>
-              <Field
-                label="Which prompt runs where"
-                hint="A task with no pinned template uses these. Needs spec wins over the column, so unspecified work always gets specced first."
-              >
-                <div className="grid grid-cols-2 gap-2.5 rounded-lg border border-edge bg-chrome/40 p-3">
-                  <TemplatePicker
-                    label="Needs spec (any column)"
-                    templates={draft.promptTemplates}
-                    value={draft.promptRouting.needsSpec}
-                    onChange={(needsSpec) =>
-                      patch({ promptRouting: { ...draft.promptRouting, needsSpec } })
-                    }
-                  />
-                  {TASK_STATUSES.map((status) => (
-                    <TemplatePicker
-                      key={status}
-                      label={TASK_STATUS_LABELS[status]}
-                      templates={draft.promptTemplates}
-                      value={draft.promptRouting.byStatus[status]}
-                      onChange={(id) =>
-                        patch({
-                          promptRouting: {
-                            ...draft.promptRouting,
-                            byStatus: { ...draft.promptRouting.byStatus, [status]: id }
-                          }
-                        })
-                      }
-                    />
-                  ))}
-                </div>
-              </Field>
+              ) : null}
 
-              <Field
-                label="Fallback template"
-                hint="Used only if a routing entry above points at a template that no longer exists."
-              >
-                <Select
-                  value={draft.defaultPromptTemplateId}
-                  onChange={(event) => patch({ defaultPromptTemplateId: event.target.value })}
-                >
-                  {draft.promptTemplates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
-          ) : null}
-
-          {section === 'templates' ? (
-            <div className="flex flex-col gap-4">
-              <div className="flex items-end gap-2">
-                <Field label="Editing">
-                  <Select
-                    value={selectedId}
-                    onChange={(event) => setSelectedId(event.target.value)}
-                  >
-                    {draft.promptTemplates.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Button className="shrink-0" onClick={addTemplate}>
-                  Add
-                </Button>
-                <Button
-                  variant="danger"
-                  className="shrink-0"
-                  onClick={removeTemplate}
-                  disabled={draft.promptTemplates.length <= 1}
-                >
-                  Remove
-                </Button>
-              </div>
-
-              {selected ? (
+              {section === 'workspace' ? (
                 <>
-                  <Field label="Name">
-                    <input
-                      className={inputClass}
-                      value={selected.name}
-                      onChange={(event) => updateTemplate({ name: event.target.value })}
+                  <Field
+                    label="Board storage folder"
+                    hint="Where the app keeps your tasks (./tasks/*.md) and its index. This is the board's own data, not your code — point it at a git repo if you want versioned tasks."
+                  >
+                    <DirectoryInput
+                      value={draft.workspaceDir}
+                      onChange={(workspaceDir) => patch({ workspaceDir })}
                     />
                   </Field>
                   <Field
-                    label="Body"
-                    hint="The board protocol and any context files are added automatically if you leave their placeholders out."
+                    label="Default working directory"
+                    hint="Pre-fills Working directory on new tasks, and is where + Shell opens. Leave blank to fall back to the board storage folder."
                   >
-                    <textarea
-                      className={`${inputClass} min-h-52 resize-y font-mono text-[12px] leading-relaxed`}
-                      value={selected.template}
-                      onChange={(event) => updateTemplate({ template: event.target.value })}
+                    <DirectoryInput
+                      value={draft.defaultRepoPath}
+                      onChange={(defaultRepoPath) => patch({ defaultRepoPath })}
                     />
                   </Field>
-                  <div>
-                    <p className="mb-1.5 text-[11px] text-faint">Placeholders</p>
-                    <div className="flex flex-wrap gap-1">
-                      {PLACEHOLDERS.map((token) => (
-                        <code
-                          key={token}
-                          className="rounded bg-raised px-1.5 py-[1px] font-mono text-[10.5px] text-dim"
-                        >
-                          {token}
-                        </code>
-                      ))}
-                    </div>
-                  </div>
                 </>
               ) : null}
-            </div>
-          ) : null}
 
-          {section === 'orchestration' ? (
-            <div className="flex flex-col gap-4">
-              <Field
-                label="Slots per kind of work"
-                hint="Orchestrate fills free slots with the highest-priority waiting tasks. A slot is taken while a task has a live session. Set a lane to 0 to have Orchestrate skip it entirely."
-              >
-                <div className="flex flex-col gap-2.5 rounded-lg border border-edge bg-chrome/40 p-3">
-                  {ORCHESTRATION_LANES.map((lane) => (
-                    <label key={lane} className="flex items-center gap-3">
-                      <span className="w-28 shrink-0 text-[12.5px] text-ink">
-                        {ORCHESTRATION_LANE_LABELS[lane]}
-                      </span>
-                      <div className="w-20 shrink-0">
+              {section === 'terminal' ? (
+                <Field label="Shell" hint="The shell each embedded terminal session runs.">
+                  <input
+                    className={`${inputClass} font-mono text-[12px]`}
+                    value={draft.shell}
+                    onChange={(event) => patch({ shell: event.target.value })}
+                  />
+                </Field>
+              ) : null}
+
+              {section === 'routing' ? (
+                <>
+                  <div className="flex flex-col gap-2.5">
+                    <Eyebrow>Agent for each lane</Eyebrow>
+                    <Card>
+                      {ORCHESTRATION_LANES.map((lane) => (
+                        <CardRow
+                          key={lane}
+                          className="grid grid-cols-[minmax(0,1fr)_200px] items-center gap-3 px-3.5 py-2.5"
+                        >
+                          <span className="flex flex-col gap-0.5">
+                            <span className="text-[12.5px] text-ink">
+                              {ORCHESTRATION_LANE_LABELS[lane]}
+                            </span>
+                            <span className="text-[11px] text-faint">{LANE_HINTS[lane]}</span>
+                          </span>
+                          <Select
+                            aria-label={`Agent for ${ORCHESTRATION_LANE_LABELS[lane]}`}
+                            value={draft.providerRouting[lane]}
+                            onChange={(event) =>
+                              patch({
+                                providerRouting: {
+                                  ...draft.providerRouting,
+                                  [lane]: event.target.value as 'claude' | 'codex'
+                                }
+                              })
+                            }
+                          >
+                            {draft.enabledProviders.includes('claude') ? (
+                              <option value="claude">Claude Code</option>
+                            ) : null}
+                            {draft.enabledProviders.includes('codex') ? (
+                              <option value="codex">Codex</option>
+                            ) : null}
+                          </Select>
+                        </CardRow>
+                      ))}
+                    </Card>
+                    <Hint>Claude remains the default until you opt a lane into Codex.</Hint>
+                  </div>
+
+                  <div className="flex flex-col gap-2.5">
+                    <Eyebrow>Which prompt runs where</Eyebrow>
+                    <Card>
+                      <CardRow className="grid grid-cols-[minmax(0,1fr)_200px] items-center gap-3 px-3.5 py-2.5">
+                        <span className="flex flex-col gap-0.5">
+                          <span>
+                            <Chip tone="warn">Needs spec</Chip>
+                          </span>
+                          <span className="text-[11px] text-faint">Any column</span>
+                        </span>
+                        <TemplateSelect
+                          label="Template for Needs spec"
+                          templates={draft.promptTemplates}
+                          value={draft.promptRouting.needsSpec}
+                          onChange={(needsSpec) =>
+                            patch({ promptRouting: { ...draft.promptRouting, needsSpec } })
+                          }
+                        />
+                      </CardRow>
+                      {TASK_STATUSES.map((status) => (
+                        <CardRow
+                          key={status}
+                          className="grid grid-cols-[minmax(0,1fr)_200px] items-center gap-3 px-3.5 py-2.5"
+                        >
+                          <span className="flex items-center gap-2 text-[12.5px] text-ink">
+                            <span
+                              className="size-[7px] rounded-full"
+                              style={{
+                                backgroundColor: `var(--color-col-${COLUMN_TOKENS[status]})`
+                              }}
+                            />
+                            {TASK_STATUS_LABELS[status]}
+                          </span>
+                          <TemplateSelect
+                            label={`Template for ${TASK_STATUS_LABELS[status]}`}
+                            templates={draft.promptTemplates}
+                            value={draft.promptRouting.byStatus[status]}
+                            onChange={(id) =>
+                              patch({
+                                promptRouting: {
+                                  ...draft.promptRouting,
+                                  byStatus: { ...draft.promptRouting.byStatus, [status]: id }
+                                }
+                              })
+                            }
+                          />
+                        </CardRow>
+                      ))}
+                    </Card>
+                    <Hint>
+                      Needs spec wins over the column, so unspecified work is always specced first.
+                      A template pinned on a task overrides all of this.
+                    </Hint>
+                  </div>
+
+                  <Field
+                    label="Fallback template"
+                    hint="Used only if a routing entry above points at a template that no longer exists."
+                  >
+                    <TemplateSelect
+                      label="Fallback template"
+                      templates={draft.promptTemplates}
+                      value={draft.defaultPromptTemplateId}
+                      onChange={(defaultPromptTemplateId) => patch({ defaultPromptTemplateId })}
+                    />
+                  </Field>
+                </>
+              ) : null}
+
+              {section === 'templates' ? (
+                <div className="grid grid-cols-[180px_minmax(0,1fr)] gap-4">
+                  <div className="flex flex-col gap-0.5">
+                    {draft.promptTemplates.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        aria-current={template.id === selectedId}
+                        onClick={() => setSelectedId(template.id)}
+                        className={`flex flex-col items-start gap-0.5 rounded-[7px] border px-[9px] py-[7px] text-left transition-colors ${
+                          template.id === selectedId
+                            ? 'border-edge-strong bg-raised'
+                            : 'border-transparent hover:bg-raised/70'
+                        }`}
+                      >
+                        <span className="text-[12.5px] font-medium text-ink">{template.name}</span>
+                        <span className="text-[11px] text-faint">
+                          {routedTo(draft, template.id)}
+                        </span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={addTemplate}
+                      className="mt-1 inline-flex h-7 items-center gap-1.5 rounded-[7px] border border-dashed border-edge-strong px-[9px] text-[12px] font-medium text-dim transition-colors hover:border-faint hover:text-ink"
+                    >
+                      <svg
+                        aria-hidden
+                        viewBox="0 0 16 16"
+                        width="12"
+                        height="12"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      >
+                        <path d="M8 3.5v9M3.5 8h9" />
+                      </svg>
+                      New template
+                    </button>
+                  </div>
+
+                  {selected ? (
+                    <div className="flex min-w-0 flex-col gap-2.5">
+                      <div className="flex items-center gap-2">
                         <input
-                          type="number"
+                          aria-label="Template name"
+                          className={`${inputClass} flex-1 font-semibold`}
+                          value={selected.name}
+                          onChange={(event) => updateTemplate({ name: event.target.value })}
+                        />
+                        <Button
+                          variant="danger"
+                          className="shrink-0"
+                          onClick={removeTemplate}
+                          disabled={draft.promptTemplates.length <= 1}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                      <textarea
+                        aria-label="Template body"
+                        className={`${inputClass} min-h-60 resize-y rounded-[10px] px-3.5 py-3 font-mono text-[12px] leading-[1.65]`}
+                        value={selected.template}
+                        onChange={(event) => updateTemplate({ template: event.target.value })}
+                      />
+                      <div className="flex flex-col gap-1.5">
+                        <Hint>
+                          Click to insert. The board protocol and context files are added
+                          automatically if you leave them out.
+                        </Hint>
+                        <div className="flex flex-wrap gap-1">
+                          {PLACEHOLDERS.map((token) => (
+                            <button
+                              key={token}
+                              type="button"
+                              onClick={() =>
+                                updateTemplate({
+                                  template:
+                                    selected.template +
+                                    (selected.template.endsWith('\n') ? '' : ' ') +
+                                    token
+                                })
+                              }
+                              className="h-5 rounded-[5px] bg-raised px-1.5 font-mono text-[10.5px] text-dim transition-colors hover:bg-edge-strong hover:text-ink"
+                            >
+                              {token}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {section === 'orchestration' ? (
+                <>
+                  <Card>
+                    <CardRow className="grid grid-cols-[minmax(0,1fr)_104px] items-center gap-3 border-b border-edge px-3.5 py-2">
+                      <Eyebrow>Lane</Eyebrow>
+                      <span className="text-center">
+                        <Eyebrow>At once</Eyebrow>
+                      </span>
+                    </CardRow>
+                    {ORCHESTRATION_LANES.map((lane) => (
+                      <CardRow
+                        key={lane}
+                        className={`grid grid-cols-[minmax(0,1fr)_104px] items-center gap-3 px-3.5 py-2.5 ${
+                          draft.orchestration[lane] === 0 ? 'opacity-60' : ''
+                        }`}
+                      >
+                        <span className="flex flex-col gap-0.5">
+                          <span className="text-[12.5px] font-medium text-ink">
+                            {ORCHESTRATION_LANE_LABELS[lane]}
+                          </span>
+                          <span className="text-[11px] text-faint">
+                            {draft.orchestration[lane] === 0
+                              ? 'Skipped — Orchestrate leaves these alone'
+                              : LANE_HINTS[lane]}
+                          </span>
+                        </span>
+                        <Stepper
+                          label={ORCHESTRATION_LANE_LABELS[lane]}
+                          value={draft.orchestration[lane]}
                           min={0}
                           max={20}
-                          className={inputClass}
-                          value={draft.orchestration[lane]}
-                          onChange={(event) =>
+                          onChange={(value) =>
+                            patch({ orchestration: { ...draft.orchestration, [lane]: value } })
+                          }
+                        />
+                      </CardRow>
+                    ))}
+                  </Card>
+                  <Hint>
+                    Orchestrate fills free slots with the highest-priority waiting task. A slot is
+                    busy while its session is live. Set a lane to 0 to skip it. Up to{' '}
+                    {ORCHESTRATION_LANES.reduce((sum, lane) => sum + draft.orchestration[lane], 0)}{' '}
+                    agents can run at once.
+                  </Hint>
+                </>
+              ) : null}
+
+              {section === 'shortcuts' ? (
+                <>
+                  <Card className="px-3.5 py-1">
+                    {SHORTCUT_COMMANDS.map((command) => (
+                      <ShortcutRow
+                        key={command}
+                        command={command}
+                        bindings={draft.shortcuts[command]}
+                        conflicted={draft.shortcuts[command].some((accelerator) =>
+                          conflicts.has(accelerator)
+                        )}
+                        onChange={(next) =>
+                          patch({ shortcuts: { ...draft.shortcuts, [command]: next } })
+                        }
+                      />
+                    ))}
+                  </Card>
+
+                  {conflicts.size > 0 ? (
+                    <p className="text-[11.5px] text-col-review-text">
+                      {[...conflicts]
+                        .map(
+                          ([accelerator, commands]) =>
+                            `${formatAccelerator(accelerator)} is bound to ${commands
+                              .map((command) => SHORTCUT_LABELS[command])
+                              .join(' and ')}`
+                        )
+                        .join('; ')}
+                      . The first in the list wins.
+                    </p>
+                  ) : null}
+
+                  <Hint>
+                    Click Change and press the new keys. Esc closes a dialog and ⌘↵ saves one; both
+                    are fixed. Ctrl+C, Ctrl+D, Ctrl+L, Ctrl+Z, Esc, Enter and Tab cannot be bound —
+                    the terminal needs them.
+                  </Hint>
+                </>
+              ) : null}
+              {section === 'theme' ? (
+                <>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center">
+                      <span className="text-[12px] font-semibold text-dim">Base</span>
+                      <button
+                        type="button"
+                        className="ml-auto h-[22px] rounded-md px-1.5 text-[11.5px] text-faint transition-colors hover:text-ink"
+                        onClick={() => patch({ theme: DEFAULT_THEME })}
+                      >
+                        Reset theme
+                      </button>
+                    </div>
+                    <ColorInput
+                      label="Base"
+                      value={draft.theme.base}
+                      onChange={(base) => patch({ theme: { ...draft.theme, base } })}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {BASE_PRESETS.map((preset) => {
+                        const on = draft.theme.base.toLowerCase() === preset.hex
+                        return (
+                          <button
+                            key={preset.hex}
+                            type="button"
+                            aria-pressed={on}
+                            onClick={() => patch({ theme: { ...draft.theme, base: preset.hex } })}
+                            className="flex flex-col items-center gap-[5px]"
+                          >
+                            <span
+                              style={{ backgroundColor: preset.hex }}
+                              className={`block h-[34px] w-[52px] rounded-lg border-2 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] ${
+                                on ? 'border-[var(--color-accent-text)]' : 'border-transparent'
+                              }`}
+                            />
+                            <span className={`text-[11px] ${on ? 'text-ink' : 'text-faint'}`}>
+                              {preset.label}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <Hint>
+                      Every surface and text colour is derived from this, so contrast holds.
+                    </Hint>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[12px] font-semibold text-dim">Accent and columns</span>
+                    <Card className="gap-2.5 p-3">
+                      <ColorInput
+                        label="Accent"
+                        value={draft.theme.accent}
+                        onChange={(accent) => patch({ theme: { ...draft.theme, accent } })}
+                      />
+                      {TASK_STATUSES.map((status) => (
+                        <ColorInput
+                          key={status}
+                          label={TASK_STATUS_LABELS[status]}
+                          value={draft.theme.columns[status]}
+                          onChange={(hex) =>
                             patch({
-                              orchestration: {
-                                ...draft.orchestration,
-                                [lane]: Math.max(0, Math.min(20, Number(event.target.value) || 0))
+                              theme: {
+                                ...draft.theme,
+                                columns: { ...draft.theme.columns, [status]: hex }
                               }
                             })
                           }
                         />
-                      </div>
-                      <span className="text-[11px] text-faint">{LANE_HINTS[lane]}</span>
-                    </label>
-                  ))}
-                </div>
-              </Field>
-            </div>
-          ) : null}
-
-          {section === 'shortcuts' ? (
-            <div className="flex flex-col gap-4">
-              <div className="rounded-xl border border-edge bg-chrome/30 px-3 py-1">
-                {SHORTCUT_COMMANDS.map((command) => (
-                  <ShortcutRow
-                    key={command}
-                    command={command}
-                    bindings={draft.shortcuts[command]}
-                    conflicted={draft.shortcuts[command].some((accelerator) =>
-                      conflicts.has(accelerator)
-                    )}
-                    onChange={(next) =>
-                      patch({ shortcuts: { ...draft.shortcuts, [command]: next } })
-                    }
-                  />
-                ))}
-              </div>
-
-              {conflicts.size > 0 ? (
-                <p className="text-[11.5px] text-col-review-text">
-                  {[...conflicts]
-                    .map(
-                      ([accelerator, commands]) =>
-                        `${formatAccelerator(accelerator)} is bound to ${commands
-                          .map((command) => SHORTCUT_LABELS[command])
-                          .join(' and ')}`
-                    )
-                    .join('; ')}
-                  . The first in the list wins.
-                </p>
-              ) : null}
-
-              <p className="text-[11.5px] text-faint">
-                Esc closes a dialog and ⌘↵ saves one; both are fixed. Ctrl+C, Ctrl+D, Ctrl+L,
-                Ctrl+Z, Esc, Enter and Tab cannot be bound — the terminal needs them.
-              </p>
-            </div>
-          ) : null}
-
-          {section === 'theme' ? (
-            <div className="flex flex-col gap-5">
-              <Field
-                label="Colours"
-                hint="Base sets every surface and text colour — the interface derives a full ramp from it, so contrast holds whatever you pick. The column colours double as agent states — In Progress tints Working, In Review tints Waiting on you, Done tints Finished."
-              >
-                <div className="flex flex-col gap-2.5 rounded-lg border border-edge bg-chrome/40 p-3">
-                  <ColorInput
-                    label="Base"
-                    value={draft.theme.base}
-                    onChange={(base) => patch({ theme: { ...draft.theme, base } })}
-                  />
-                  <div className="flex items-center gap-2 pl-[2.4rem]">
-                    {BASE_PRESETS.map((preset) => (
-                      <button
-                        key={preset.hex}
-                        type="button"
-                        title={preset.label}
-                        aria-label={preset.label}
-                        onClick={() => patch({ theme: { ...draft.theme, base: preset.hex } })}
-                        style={{ backgroundColor: preset.hex }}
-                        className={`size-5 rounded-md border transition-colors ${
-                          draft.theme.base.toLowerCase() === preset.hex
-                            ? 'border-accent'
-                            : 'border-edge-strong hover:border-faint'
-                        }`}
-                      />
-                    ))}
-                    <span className="text-[11px] text-faint">presets</span>
-                    <button
-                      type="button"
-                      className="ml-auto text-[11px] text-dim underline decoration-edge-strong underline-offset-2 hover:text-ink"
-                      onClick={() => patch({ theme: DEFAULT_THEME })}
-                    >
-                      Reset to defaults
-                    </button>
+                      ))}
+                    </Card>
+                    <Hint>
+                      Column colours also tint agent states: In Progress is Working, In Review is
+                      Waiting on you, Done is Finished.
+                    </Hint>
                   </div>
-                  <div className="pt-1">
-                    <Checkbox
-                      checked={draft.theme.gradient}
-                      onChange={(gradient) => patch({ theme: { ...draft.theme, gradient } })}
-                      label="Gradient background"
-                      hint="Washes the base colour with a hint of the accent, the way Warp does it."
-                    />
+
+                  <div className="flex flex-col gap-2.5">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4">
+                      <span className="flex flex-col gap-0.5">
+                        <span className="text-[12.5px] text-ink">Gradient background</span>
+                        <Hint>Washes the base with a hint of the accent.</Hint>
+                      </span>
+                      <Switch
+                        label="Gradient background"
+                        checked={draft.theme.gradient}
+                        onChange={(gradient) => patch({ theme: { ...draft.theme, gradient } })}
+                      />
+                    </div>
                     {draft.theme.gradient ? (
-                      <div className="mt-2.5 flex flex-col gap-2 pl-[1.6rem]">
+                      <div className="flex flex-col gap-2 pl-0.5">
                         <ThemeSlider
                           label="Strength"
                           value={Math.round(draft.theme.gradientStrength * 100)}
@@ -798,318 +1072,286 @@ export function SettingsDialog({
                       </div>
                     ) : null}
                   </div>
-                  <ColorInput
-                    label="Accent"
-                    value={draft.theme.accent}
-                    onChange={(accent) => patch({ theme: { ...draft.theme, accent } })}
-                  />
-                  {TASK_STATUSES.map((status) => (
-                    <ColorInput
-                      key={status}
-                      label={TASK_STATUS_LABELS[status]}
-                      value={draft.theme.columns[status]}
-                      onChange={(hex) =>
-                        patch({
-                          theme: {
-                            ...draft.theme,
-                            columns: { ...draft.theme.columns, [status]: hex }
-                          }
-                        })
-                      }
-                    />
-                  ))}
-                </div>
-              </Field>
 
-              <Field label="Interface font">
-                <Select
-                  value={draft.theme.uiFont}
-                  onChange={(event) =>
-                    patch({ theme: { ...draft.theme, uiFont: event.target.value } })
-                  }
-                >
-                  {UI_FONTS.map((font) => (
-                    <option key={font.id} value={font.id}>
-                      {font.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
+                  <div className="h-px bg-edge" />
 
-              <div className="grid grid-cols-[1fr_6rem] gap-3">
-                <Field label="Terminal font">
-                  <Select
-                    value={draft.theme.terminalFont}
-                    onChange={(event) =>
-                      patch({ theme: { ...draft.theme, terminalFont: event.target.value } })
-                    }
-                  >
-                    {TERMINAL_FONTS.map((font) => (
-                      <option key={font.label} value={font.stack}>
-                        {font.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Size">
-                  <input
-                    type="number"
-                    min={9}
-                    max={24}
-                    className={inputClass}
-                    value={draft.theme.terminalFontSize}
-                    onChange={(event) =>
-                      patch({
-                        theme: {
-                          ...draft.theme,
-                          terminalFontSize: Math.max(
-                            9,
-                            Math.min(24, Number(event.target.value) || 12)
-                          )
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_104px] gap-3">
+                    <Field label="Interface font">
+                      <Select
+                        value={draft.theme.uiFont}
+                        onChange={(event) =>
+                          patch({ theme: { ...draft.theme, uiFont: event.target.value } })
                         }
-                      })
-                    }
-                  />
-                </Field>
-              </div>
-
-              <Field
-                label="Terminal colours"
-                hint="The background, text and cursor follow the base colour. These 16 are what programs pick from — git diffs, Claude's output, your prompt — so they are set outright."
-              >
-                <div className="flex flex-col gap-3 rounded-lg border border-edge bg-chrome/40 p-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {TERMINAL_PALETTES.map((preset) => (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() =>
-                          patch({ theme: { ...draft.theme, terminalPalette: preset.palette } })
-                        }
-                        className={`flex items-center gap-2 rounded-lg border px-2 py-1 text-[11.5px] transition-colors ${
-                          samePalette(draft.theme.terminalPalette, preset.palette)
-                            ? 'border-accent text-ink'
-                            : 'border-edge-strong text-dim hover:text-ink'
-                        }`}
                       >
-                        <span className="flex">
-                          {PREVIEW_SLOTS.map((slot) => (
-                            <span
-                              key={slot}
-                              style={{ backgroundColor: preset.palette[slot] }}
-                              className="size-2.5 first:rounded-l-sm last:rounded-r-sm"
-                            />
-                          ))}
-                        </span>
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-8 gap-1.5">
-                    {ANSI_COLOURS.map((slot) => (
-                      <button
-                        key={slot}
-                        type="button"
-                        title={ansiLabel(slot)}
-                        aria-label={ansiLabel(slot)}
-                        aria-pressed={slot === ansiSlot}
-                        onClick={() => setAnsiSlot(slot)}
-                        style={{ backgroundColor: draft.theme.terminalPalette[slot] }}
-                        className={`h-6 rounded-md border transition-colors ${
-                          slot === ansiSlot
-                            ? 'border-accent'
-                            : 'border-edge-strong hover:border-faint'
-                        }`}
+                        {UI_FONTS.map((font) => (
+                          <option key={font.id} value={font.id}>
+                            {font.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="Terminal font">
+                      <Select
+                        value={draft.theme.terminalFont}
+                        onChange={(event) =>
+                          patch({ theme: { ...draft.theme, terminalFont: event.target.value } })
+                        }
+                      >
+                        {TERMINAL_FONTS.map((font) => (
+                          <option key={font.label} value={font.stack}>
+                            {font.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="Size">
+                      <Stepper
+                        label="Terminal font size"
+                        className="h-[34px]"
+                        value={draft.theme.terminalFontSize}
+                        min={9}
+                        max={24}
+                        onChange={(terminalFontSize) =>
+                          patch({ theme: { ...draft.theme, terminalFontSize } })
+                        }
                       />
-                    ))}
+                    </Field>
                   </div>
 
-                  <ColorInput
-                    label={ansiLabel(ansiSlot)}
-                    value={draft.theme.terminalPalette[ansiSlot]}
-                    onChange={(hex) =>
-                      patch({
-                        theme: {
-                          ...draft.theme,
-                          terminalPalette: { ...draft.theme.terminalPalette, [ansiSlot]: hex }
-                        }
-                      })
-                    }
-                  />
-                </div>
-              </Field>
-
-              <div
-                className="rounded-lg border border-edge-strong p-3 font-mono leading-relaxed"
-                style={{
-                  fontFamily: draft.theme.terminalFont,
-                  fontSize: draft.theme.terminalFontSize,
-                  backgroundColor: preview.background,
-                  color: preview.foreground
-                }}
-              >
-                <span style={{ color: preview.green }}>❯</span> claude --resume TASK-0004
-                <br />
-                <span style={{ color: preview.brightBlack }}>---</span>{' '}
-                <span style={{ color: preview.red }}>- const THEME = &#123;</span>
-                <br />
-                <span style={{ color: preview.brightBlack }}>+++</span>{' '}
-                <span style={{ color: preview.green }}>+ terminalTheme(theme)</span>
-                <br />
-                <span style={{ color: preview.yellow }}>warning</span>{' '}
-                <span style={{ color: preview.blue }}>src/core/shortcuts.ts</span>{' '}
-                <span style={{ color: preview.magenta }}>12 passed</span>{' '}
-                <span style={{ color: preview.cyan }}>0 failed</span>
-                <br />
-                <span style={{ backgroundColor: preview.cursor, color: preview.background }}>
-                  {' '}
-                </span>
-              </div>
-            </div>
-          ) : null}
-
-          {section === 'integrations' ? (
-            <div className="flex flex-col gap-4">
-              <Field
-                label="Installed providers"
-                hint="Enable the coding CLIs you use. At least one provider must remain enabled."
-              >
-                <div className="flex flex-col gap-2 rounded-lg border border-edge bg-chrome/40 p-3">
-                  <Checkbox
-                    checked={draft.enabledProviders.includes('claude')}
-                    onChange={(enabled) => toggleProvider('claude', enabled)}
-                    label="Claude Code"
-                  />
-                  <Checkbox
-                    checked={draft.enabledProviders.includes('codex')}
-                    onChange={(enabled) => toggleProvider('codex', enabled)}
-                    label="Codex"
-                  />
-                </div>
-              </Field>
-              <Field
-                label="Default provider"
-                hint="Used by manual launches; orchestration can route each lane independently."
-              >
-                <Select
-                  value={draft.defaultProvider}
-                  onChange={(event) =>
-                    patch({ defaultProvider: event.target.value as 'claude' | 'codex' })
-                  }
-                >
-                  {draft.enabledProviders.includes('claude') ? (
-                    <option value="claude">Claude Code</option>
-                  ) : null}
-                  {draft.enabledProviders.includes('codex') ? (
-                    <option value="codex">Codex</option>
-                  ) : null}
-                </Select>
-              </Field>
-              {draft.enabledProviders.includes('claude') ? (
-                <Field
-                  label="Claude command"
-                  hint="Usually `claude`. Use a wrapper or absolute path when needed."
-                >
-                  <input
-                    className={inputClass}
-                    value={draft.claudeCommand}
-                    onChange={(event) => patch({ claudeCommand: event.target.value })}
-                  />
-                </Field>
-              ) : null}
-              {draft.enabledProviders.includes('claude') ? (
-                <Field
-                  label="Claude MCP server"
-                  hint="Run this once in a terminal, then start a new Claude session. It lets Claude query the board — what is in review, what needs a spec — from anywhere."
-                >
                   <div className="flex flex-col gap-2">
-                    <pre className="overflow-x-auto rounded-lg border border-edge-strong bg-chrome p-3 font-mono text-[11px] leading-relaxed text-dim">
-                      {mcpCommand || 'Building command…'}
-                    </pre>
-                    <div className="flex items-center gap-2.5">
-                      <Button
-                        disabled={!mcpCommand}
-                        onClick={() => {
-                          void navigator.clipboard.writeText(mcpCommand).then(() => {
-                            setCopied(true)
-                            setTimeout(() => setCopied(false), 1600)
-                          })
-                        }}
-                      >
-                        Copy command
-                      </Button>
-                      {copied ? (
-                        <span className="text-[11.5px] text-[var(--color-col-done)]">Copied</span>
-                      ) : null}
+                    <span className="text-[12px] font-semibold text-dim">Terminal colours</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {TERMINAL_PALETTES.map((preset) => {
+                        const on = samePalette(draft.theme.terminalPalette, preset.palette)
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            aria-pressed={on}
+                            onClick={() =>
+                              patch({ theme: { ...draft.theme, terminalPalette: preset.palette } })
+                            }
+                            className={`inline-flex h-7 items-center gap-2 rounded-[7px] border px-2.5 text-[12px] transition-colors ${
+                              on
+                                ? 'border-accent bg-accent/15 text-ink'
+                                : 'border-edge-strong text-dim hover:text-ink'
+                            }`}
+                          >
+                            <span className="flex overflow-hidden rounded-[3px]">
+                              {PREVIEW_SLOTS.map((slot) => (
+                                <span
+                                  key={slot}
+                                  style={{ backgroundColor: preset.palette[slot] }}
+                                  className="h-2.5 w-2"
+                                />
+                              ))}
+                            </span>
+                            {preset.label}
+                          </button>
+                        )
+                      })}
                     </div>
-                  </div>
-                </Field>
-              ) : null}
-              {draft.enabledProviders.includes('codex') ? (
-                <Field
-                  label="Codex command"
-                  hint="Usually `codex`. Codex always runs in the workspace-write sandbox."
-                >
-                  <input
-                    className={inputClass}
-                    value={draft.codexCommand}
-                    onChange={(event) => patch({ codexCommand: event.target.value })}
-                  />
-                </Field>
-              ) : null}
-              {draft.enabledProviders.includes('codex') ? (
-                <Field
-                  label="Codex approvals"
-                  hint="Approve for me sends eligible requests to Codex’s automatic reviewer; it does not grant full access."
-                >
-                  <Select
-                    value={draft.codexApprovalReviewer}
-                    onChange={(event) =>
-                      patch({
-                        codexApprovalReviewer: event.target.value as 'user' | 'auto_review'
-                      })
-                    }
-                  >
-                    <option value="user">Ask me</option>
-                    <option value="auto_review">Approve for me</option>
-                  </Select>
-                </Field>
-              ) : null}
-              {draft.enabledProviders.includes('codex') ? (
-                <Field
-                  label="Codex MCP server"
-                  hint="Run this once, then start a new Codex session to let it query and update the board."
-                >
-                  <div className="flex flex-col gap-2">
-                    <pre className="overflow-x-auto rounded-lg border border-edge-strong bg-chrome p-3 font-mono text-[11px] leading-relaxed text-dim">
-                      {codexMcpCommand || 'Building command…'}
-                    </pre>
-                    <Button
-                      disabled={!codexMcpCommand}
-                      onClick={() => void navigator.clipboard.writeText(codexMcpCommand)}
-                    >
-                      Copy command
-                    </Button>
-                  </div>
-                </Field>
-              ) : null}
-            </div>
-          ) : null}
 
-          {section === 'updates' ? (
-            <div className="flex flex-col gap-4">
-              <Field label="Current version">
-                <span className="font-mono text-[12px] text-ink">{version || '…'}</span>
-              </Field>
-              <Field label="Status">
-                <div className="flex flex-col gap-2.5">
-                  <span
-                    className={`text-[12px] ${update?.kind === 'error' ? 'text-red-300/90' : 'text-dim'}`}
-                  >
-                    {describeUpdate(update)}
-                  </span>
-                  <div className="flex items-center gap-2.5">
+                    <Card className="gap-3 p-3">
+                      <div className="grid grid-cols-8 gap-1.5">
+                        {ANSI_COLOURS.map((slot) => (
+                          <button
+                            key={slot}
+                            type="button"
+                            title={ansiLabel(slot)}
+                            aria-label={ansiLabel(slot)}
+                            aria-pressed={slot === ansiSlot}
+                            onClick={() => setAnsiSlot(slot)}
+                            style={{ backgroundColor: draft.theme.terminalPalette[slot] }}
+                            className={`h-6 rounded-md border transition-colors ${
+                              slot === ansiSlot
+                                ? 'border-[var(--color-accent-text)]'
+                                : 'border-edge-strong hover:border-faint'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <ColorInput
+                        label={ansiLabel(ansiSlot)}
+                        value={draft.theme.terminalPalette[ansiSlot]}
+                        onChange={(hex) =>
+                          patch({
+                            theme: {
+                              ...draft.theme,
+                              terminalPalette: { ...draft.theme.terminalPalette, [ansiSlot]: hex }
+                            }
+                          })
+                        }
+                      />
+                    </Card>
+
+                    <div
+                      className="rounded-[10px] border border-edge-strong px-3.5 py-3 font-mono leading-[1.65]"
+                      style={{
+                        fontFamily: draft.theme.terminalFont,
+                        fontSize: draft.theme.terminalFontSize,
+                        backgroundColor: preview.background,
+                        color: preview.foreground
+                      }}
+                    >
+                      <span style={{ color: preview.green }}>❯</span> claude --resume TASK-0004
+                      <br />
+                      <span style={{ color: preview.brightBlack }}>---</span>{' '}
+                      <span style={{ color: preview.red }}>- const THEME = &#123;</span>
+                      <br />
+                      <span style={{ color: preview.brightBlack }}>+++</span>{' '}
+                      <span style={{ color: preview.green }}>+ terminalTheme(theme)</span>
+                      <br />
+                      <span style={{ color: preview.yellow }}>warning</span>{' '}
+                      <span style={{ color: preview.blue }}>src/core/shortcuts.ts</span>{' '}
+                      <span style={{ color: preview.magenta }}>12 passed</span>{' '}
+                      <span style={{ color: preview.cyan }}>0 failed</span>
+                      <br />
+                      <span style={{ backgroundColor: preview.cursor, color: preview.background }}>
+                        {' '}
+                      </span>
+                    </div>
+                    <Hint>
+                      Background, text and cursor follow the base. These 16 are what git, agents and
+                      your prompt draw with, so they are set outright.
+                    </Hint>
+                  </div>
+                </>
+              ) : null}
+              {section === 'integrations' ? (
+                <>
+                  {(
+                    [
+                      { id: 'claude', label: 'Claude Code', command: draft.claudeCommand },
+                      { id: 'codex', label: 'Codex', command: draft.codexCommand }
+                    ] as const
+                  ).map((provider) => {
+                    const on = draft.enabledProviders.includes(provider.id)
+                    const only = on && draft.enabledProviders.length === 1
+                    const isDefault = on && draft.defaultProvider === provider.id
+                    const mcp = provider.id === 'claude' ? mcpCommand : codexMcpCommand
+                    return (
+                      <Card key={provider.id}>
+                        <div className="flex items-center gap-3 px-3.5 py-3">
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+                              {provider.label}
+                              {isDefault ? <Chip tone="accent">Default</Chip> : null}
+                            </span>
+                            <span className="text-[11.5px] text-faint">
+                              {!on
+                                ? 'Off. Tasks and lanes cannot use it.'
+                                : isDefault
+                                  ? 'Used by manual launches. Orchestrate lanes can pick either.'
+                                  : 'Available for tasks and Orchestrate lanes.'}
+                            </span>
+                          </span>
+                          {on && !isDefault ? (
+                            <Button
+                              variant="subtle"
+                              onClick={() => patch({ defaultProvider: provider.id })}
+                            >
+                              Make default
+                            </Button>
+                          ) : null}
+                          <Switch
+                            label={`Enable ${provider.label}`}
+                            checked={on}
+                            disabled={only}
+                            title={only ? 'At least one provider must stay on' : undefined}
+                            onChange={(enabled) => toggleProvider(provider.id, enabled)}
+                          />
+                        </div>
+
+                        {on ? (
+                          <div className="flex flex-col gap-3 border-t border-edge px-3.5 pb-3.5 pt-3">
+                            <div className="grid grid-cols-[96px_minmax(0,1fr)] items-center gap-2.5">
+                              <span className="text-[12px] text-dim">Command</span>
+                              <input
+                                aria-label={`${provider.label} command`}
+                                className={`${inputClass} max-w-[260px] bg-panel font-mono text-[11.5px]`}
+                                value={provider.command}
+                                onChange={(event) =>
+                                  patch(
+                                    provider.id === 'claude'
+                                      ? { claudeCommand: event.target.value }
+                                      : { codexCommand: event.target.value }
+                                  )
+                                }
+                              />
+                            </div>
+
+                            {provider.id === 'codex' ? (
+                              <div className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-2.5">
+                                <span className="pt-[5px] text-[12px] text-dim">Approvals</span>
+                                <div className="flex flex-col gap-1.5">
+                                  <Segmented
+                                    label="Codex approvals"
+                                    value={draft.codexApprovalReviewer}
+                                    onChange={(codexApprovalReviewer) =>
+                                      patch({ codexApprovalReviewer })
+                                    }
+                                    options={[
+                                      { value: 'user', label: 'Ask me' },
+                                      { value: 'auto_review', label: 'Approve for me' }
+                                    ]}
+                                  />
+                                  <Hint>
+                                    {draft.codexApprovalReviewer === 'user'
+                                      ? 'Codex pauses and asks before risky commands.'
+                                      : 'Eligible requests go to Codex’s automatic reviewer; it does not grant full access.'}{' '}
+                                    Codex always runs in the workspace-write sandbox.
+                                  </Hint>
+                                </div>
+                              </div>
+                            ) : null}
+
+                            <div className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-2.5">
+                              <span className="pt-1.5 text-[12px] text-dim">Board access</span>
+                              <div className="flex min-w-0 flex-col gap-1.5">
+                                <div className="flex min-w-0 items-center gap-1.5 rounded-[7px] border border-edge bg-surface py-1 pl-2.5 pr-1">
+                                  <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
+                                    {mcp || 'Building command…'}
+                                  </code>
+                                  <Button
+                                    className="h-6 shrink-0 px-2 text-[11.5px]"
+                                    disabled={!mcp}
+                                    onClick={() => {
+                                      void navigator.clipboard.writeText(mcp).then(() => {
+                                        setCopied(provider.id)
+                                        setTimeout(() => setCopied(null), 1600)
+                                      })
+                                    }}
+                                  >
+                                    {copied === provider.id ? 'Copied' : 'Copy'}
+                                  </Button>
+                                </div>
+                                <Hint>
+                                  Run once in a terminal, then start a new {provider.label} session.
+                                  It lets the agent read and move tasks on the board from anywhere.
+                                </Hint>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </Card>
+                    )
+                  })}
+                </>
+              ) : null}
+              {section === 'updates' ? (
+                <>
+                  <Card className="flex-row items-center gap-3.5 p-3.5">
+                    <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                      <span className="text-[13px] font-semibold text-ink">
+                        Styr {version || '…'}
+                      </span>
+                      <span
+                        className={`text-[12px] ${update?.kind === 'error' ? 'text-red-300/90' : 'text-dim'}`}
+                      >
+                        {describeUpdate(update)}
+                      </span>
+                    </span>
                     {update?.kind === 'ready' ? (
                       <Button variant="primary" onClick={() => void window.api.updates.install()}>
                         Restart to update
@@ -1127,18 +1369,49 @@ export function SettingsDialog({
                         Check for updates
                       </Button>
                     )}
-                  </div>
-                </div>
-              </Field>
-              <Checkbox
-                checked={draft.updates.checkAutomatically}
-                onChange={(checkAutomatically) => patch({ updates: { checkAutomatically } })}
-                label="Check for updates automatically"
-                hint="When Styr opens and every few hours after. An update downloads in the background and installs the next time you quit, so running agents are never interrupted."
-              />
+                  </Card>
+                  <Card>
+                    <SwitchRow
+                      checked={draft.updates.checkAutomatically}
+                      onChange={(checkAutomatically) => patch({ updates: { checkAutomatically } })}
+                      label="Check for updates automatically"
+                      hint="When Styr opens and every few hours after. An update downloads in the background and installs the next time you quit, so running agents are never interrupted."
+                    />
+                  </Card>
+                </>
+              ) : null}
             </div>
-          ) : null}
-        </div>
+          </div>
+
+          <footer className="flex shrink-0 items-center gap-2 border-t border-edge bg-chrome/40 py-3 pl-6 pr-4">
+            <span
+              className={`flex items-center gap-[7px] text-[12px] ${dirtyCount ? 'text-ink' : 'text-faint'}`}
+            >
+              {dirtyCount ? (
+                <span className="size-1.5 rounded-full bg-[var(--color-accent-text)]" />
+              ) : null}
+              {dirtyCount === 0
+                ? 'All changes saved'
+                : `${dirtyCount} unsaved ${dirtyCount === 1 ? 'section' : 'sections'}`}
+            </span>
+            <div className="flex-1" />
+            {dirtyCount ? (
+              <Button
+                variant="subtle"
+                onClick={() => {
+                  setDraft(settings)
+                  onPreviewTheme(null)
+                }}
+              >
+                Discard
+              </Button>
+            ) : null}
+            <Button variant="primary" disabled={dirtyCount === 0} onClick={save}>
+              Save
+              <kbd className="font-mono text-[10px] font-normal opacity-70">⌘↵</kbd>
+            </Button>
+          </footer>
+        </section>
       </div>
     </Modal>
   )
