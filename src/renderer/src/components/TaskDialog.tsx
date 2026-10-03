@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   TASK_PRIORITIES,
   TASK_PRIORITY_LABELS,
@@ -295,6 +295,8 @@ export function TaskDialog({
   const [preview, setPreview] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [titleMissing, setTitleMissing] = useState(false)
+  const titleRef = useRef<HTMLInputElement>(null)
   // A new task is created by the first save (the prompt preview needs one); later saves must
   // update that record instead of creating a duplicate.
   const [saved, setSaved] = useState<Task | null>(task)
@@ -329,7 +331,11 @@ export function TaskDialog({
   }
 
   async function save(): Promise<Task | null> {
-    if (!payload.title) return null
+    if (!payload.title) {
+      setTitleMissing(true)
+      titleRef.current?.focus()
+      return null
+    }
     setSaving(true)
     try {
       const result = saved
@@ -401,8 +407,7 @@ export function TaskDialog({
   ]
 
   const taskId = task?.id ?? 'TASK-…'
-  const inputText =
-    'rounded-lg border border-transparent bg-transparent text-ink outline-none placeholder:text-faint'
+  const inputText = 'rounded-lg border bg-transparent text-ink outline-none placeholder:text-faint'
 
   return (
     // The backdrop deliberately does not close the dialog: a stray click would discard the draft.
@@ -438,13 +443,24 @@ export function TaskDialog({
               ) : null}
             </div>
             <input
+              ref={titleRef}
               autoFocus
               aria-label="Title"
+              aria-required
+              aria-invalid={titleMissing}
               value={form.title}
               placeholder="What needs doing?"
-              onChange={(event) => patch({ title: event.target.value })}
-              className={`-ml-2 h-[34px] w-full px-2 text-[17px] font-semibold tracking-[-0.01em] hover:border-edge focus:border-accent focus:bg-chrome ${inputText}`}
+              onChange={(event) => {
+                setTitleMissing(false)
+                patch({ title: event.target.value })
+              }}
+              className={`-ml-2 h-[34px] w-full px-2 text-[17px] font-semibold tracking-[-0.01em] focus:bg-chrome ${inputText} ${titleMissing ? 'border-[var(--color-pri-urgent)] focus:border-[var(--color-pri-urgent)]' : 'border-edge-strong hover:border-faint/60 focus:border-accent'}`}
             />
+            {titleMissing ? (
+              <span role="alert" className="text-[11.5px] text-[var(--color-pri-urgent)]">
+                A title is required.
+              </span>
+            ) : null}
           </div>
           <button
             type="button"
@@ -688,7 +704,7 @@ export function TaskDialog({
                   value={form.project}
                   placeholder="None"
                   onChange={(event) => patch({ project: event.target.value })}
-                  className={`h-7 w-full rounded-[7px] px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
+                  className={`h-7 w-full rounded-[7px] border-transparent px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
                 />
               </div>
               <div className="grid h-8 grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
