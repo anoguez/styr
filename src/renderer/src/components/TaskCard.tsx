@@ -62,6 +62,14 @@ export function TaskCardBody({
     task.activity.length > 0 ? `✎ ${task.activity.length}` : null
   ].filter(Boolean)
   const loud = task.priority === 'high' || task.priority === 'urgent'
+  // The agent state sits bottom right: on the meta row, or on the diff row when there is one.
+  const status = agent ? (
+    <AgentBadge agent={agent} />
+  ) : task.agentSession ? (
+    <span className="ml-auto text-faint" title="Has an agent chat to resume">
+      ◈
+    </span>
+  ) : null
 
   return (
     <>
@@ -117,44 +125,41 @@ export function TaskCardBody({
             ⑂ PR
           </a>
         ) : null}
-        {agent ? (
-          <AgentBadge agent={agent} />
-        ) : task.agentSession ? (
-          <span className="ml-auto text-faint" title="Has an agent chat to resume">
-            ◈
-          </span>
-        ) : null}
+        {diffStat ? null : status}
       </div>
 
       {diffStat ? (
-        <button
-          type="button"
-          title={`${diffStat.files} ${diffStat.files === 1 ? 'file' : 'files'} changed · +${diffStat.added} −${diffStat.removed} — view changes`}
-          aria-label={`View changes: ${diffStat.files} files, +${diffStat.added} −${diffStat.removed}`}
-          className="-ml-1 mt-1.5 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[10.5px] text-faint transition-colors hover:bg-raised hover:text-ink"
-          onPointerDown={(event) => event.stopPropagation()}
-          onDoubleClick={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation()
-            onShowChanges?.()
-          }}
-        >
-          <svg
-            aria-hidden
-            viewBox="0 0 16 16"
-            width="12"
-            height="12"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[10.5px]">
+          <button
+            type="button"
+            title={`${diffStat.files} ${diffStat.files === 1 ? 'file' : 'files'} changed · +${diffStat.added} −${diffStat.removed} — view changes`}
+            aria-label={`View changes: ${diffStat.files} files, +${diffStat.added} −${diffStat.removed}`}
+            className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[10.5px] text-faint transition-colors hover:bg-raised hover:text-ink"
+            onPointerDown={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              onShowChanges?.()
+            }}
           >
-            <path d="M4 2.5h5l3 3v8H4z" />
-            <path d="M6.25 7h3.5M8 5.25v3.5M6.25 11h3.5" />
-          </svg>
-          <DiffCount added={diffStat.added} removed={diffStat.removed} />
-        </button>
+            <svg
+              aria-hidden
+              viewBox="0 0 16 16"
+              width="12"
+              height="12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 2.5h5l3 3v8H4z" />
+              <path d="M6.25 7h3.5M8 5.25v3.5M6.25 11h3.5" />
+            </svg>
+            <DiffCount added={diffStat.added} removed={diffStat.removed} />
+          </button>
+          {status}
+        </div>
       ) : null}
     </>
   )
