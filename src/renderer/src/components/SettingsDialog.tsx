@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode
@@ -456,6 +457,7 @@ export function SettingsDialog({
   const [ansiSlot, setAnsiSlot] = useState<AnsiColour>('red')
   const [version, setVersion] = useState('')
   const [search, setSearch] = useState('')
+  const bodyRef = useRef<HTMLTextAreaElement>(null)
   const update = useUpdates()
   const selectFirstTemplate = useCallback(
     (loaded: WorkspaceSettings) =>
@@ -551,6 +553,22 @@ export function SettingsDialog({
       promptTemplates: draft.promptTemplates.map((template) =>
         template.id === selected.id ? { ...template, ...changes } : template
       )
+    })
+  }
+
+  /** Put a placeholder where the caret is, replacing any selection, and keep typing from there. */
+  function insertPlaceholder(token: string): void {
+    const box = bodyRef.current
+    if (!selected || !box) return
+    const start = box.selectionStart
+    const end = box.selectionEnd
+    updateTemplate({
+      template: selected.template.slice(0, start) + token + selected.template.slice(end)
+    })
+    const caret = start + token.length
+    requestAnimationFrame(() => {
+      box.focus()
+      box.setSelectionRange(caret, caret)
     })
   }
 
@@ -1033,6 +1051,7 @@ export function SettingsDialog({
                         </button>
                       </div>
                       <textarea
+                        ref={bodyRef}
                         aria-label="Template body"
                         className={`${inputBase} min-h-40 w-full flex-1 resize-none px-3.5 py-3 font-mono text-[12px] leading-[1.65]`}
                         value={selected.template}
@@ -1048,14 +1067,8 @@ export function SettingsDialog({
                             <button
                               key={token}
                               type="button"
-                              onClick={() =>
-                                updateTemplate({
-                                  template:
-                                    selected.template +
-                                    (selected.template.endsWith('\n') ? '' : ' ') +
-                                    token
-                                })
-                              }
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => insertPlaceholder(token)}
                               className="h-5 rounded-[5px] bg-raised px-1.5 font-mono text-[10.5px] text-dim transition-colors hover:bg-edge-strong hover:text-ink"
                             >
                               {token}
