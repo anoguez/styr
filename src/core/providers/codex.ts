@@ -40,7 +40,8 @@ export function codexCommand(
   { sessionId, resume, cwd, prompt }: CodexCommandInput
 ): string {
   const daemonArgs = `--remote unix:// --cd '${shellQuote(cwd)}'`
-  if (resume) return `${settings.codexCommand} resume ${daemonArgs} ${sessionId}${prompt ? ` ${prompt}` : ''}`
+  if (resume)
+    return `${settings.codexCommand} resume ${daemonArgs} ${sessionId}${prompt ? ` ${prompt}` : ''}`
 
   // `--approve-for-me` brings its own workspace-write sandbox and codex rejects it alongside `--sandbox`.
   const policy =
