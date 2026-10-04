@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/anoguez/styr/compare/v0.12.0...v0.13.0) (2026-10-04)
+
+
+### Features
+
+* terminal UI — context bar, command blocks and agent actions ([#45](https://github.com/anoguez/styr/issues/45)) ([73839f9](https://github.com/anoguez/styr/commit/73839f9509d0a30d7eba32777dcf9dc9a42807e9))
+
+
+### Documentation
+
+* align CLAUDE.md with the Codex provider and agentSession ([#43](https://github.com/anoguez/styr/issues/43)) ([367985a](https://github.com/anoguez/styr/commit/367985aca616944e826ee153525a5db4ec1b83be))
+
 ## [0.12.0](https://github.com/anoguez/styr/compare/v0.11.0...v0.12.0) (2026-10-04)
 
 
