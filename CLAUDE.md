@@ -156,8 +156,8 @@ imported by the renderer — it must not reach for `worktree.ts`, which uses `no
 Everything that differs between agent CLIs sits behind `AgentProvider` in `src/core/providers/`.
 `launch.ts` owns the shared flow — worktree, prompt file, the resume-or-start decision — and asks the
 provider only for what it cannot know: the command line, whether a session still exists on disk, when
-it was last written, and how to register the MCP server. Claude Code (`providers/claude.ts`) is the
-only provider so far. `providerFor` in `providers/index.ts` is the one place a provider is chosen;
+it was last written, and how to register the MCP server. Claude Code (`providers/claude.ts`) and Codex
+are the providers. `providerFor` in `providers/index.ts` is the one place a provider is chosen;
 callers must never branch on the provider themselves.
 
 Status records are provider-neutral: whatever a CLI's hooks look like, they write
@@ -418,8 +418,7 @@ A terminal sends a bare CR for both Enter and Shift+Enter, so Claude Code cannot
 `attachCustomKeyEventHandler`. Keep that logic as a pure function — it is the part worth testing,
 and testing it should not require a DOM or an xterm instance.
 
-`isAppShortcut` now derives from the user's bindings — see **Shortcuts** above. It must never grow
-a key list of its own again.
+`isAppShortcut` derives from the user's bindings (see **Shortcuts**) and holds no key list of its own.
 
 ## Agent state
 
@@ -468,7 +467,7 @@ the raw agent map instead is how the badge kept showing archived agents.
 Terminal exits are written to the agent file (`TerminalExit`) rather than held in memory, so a dead
 session does not come back as whatever it was doing when the app last closed.
 
-`AgentsSidebar` lists any task that has an agent status _or_ a `claudeSessionId`, so a chat you can
+`AgentsSidebar` lists any task that has an agent status _or_ an `agentSession`, so a chat you can
 resume is visible even before its first hook fires. `sortAgentRows` ranks waiting first.
 
 `markAgentExited` in `ipc.ts` records a locally observed terminal exit, and only wins over a hook
@@ -491,7 +490,7 @@ the template it will actually run. Change one and change the other.
 Only Backlog and In Review are dispatchable. In Progress is deliberately excluded: a dead session
 there does not mean the work is free to restart.
 
-`Task.sessions` is the append-only chat history; `Task.claudeSessionId` is which of them the next
+`Task.sessions` is the append-only chat history; `Task.agentSession` is which of them the next
 run continues. They look redundant but are not — Forget clears the pointer while keeping the
 history, and a fresh review appends without discarding the implementer's chat.
 
@@ -519,7 +518,7 @@ advance the board and record the session identically.
    `byStatus[task.status]`,
 4. `settings.defaultPromptTemplateId`, then the first template, then a hardcoded fallback.
 
-`terminal:launchClaude` moves a Backlog task to In Progress itself rather than trusting the agent
+`terminal:launchAgent` moves a Backlog task to In Progress itself rather than trusting the agent
 to do it — the board should reflect that work started even if the session never writes the file.
 Only Backlog advances; In Review is a review and Done is a follow-up.
 
