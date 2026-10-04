@@ -81,7 +81,15 @@ export const SHORTCUT_COMMANDS = [
   'newShell',
   'closeShell',
   'switchWorkspace',
-  'newWorkspace'
+  'newWorkspace',
+  'terminalDirectory',
+  'terminalAskAgent',
+  'terminalCopyOutput',
+  'terminalRetry',
+  'terminalSplit',
+  'terminalAskReview',
+  'terminalHandOff',
+  'terminalCreatePr'
 ] as const
 
 export type ShortcutCommand = (typeof SHORTCUT_COMMANDS)[number]
@@ -276,7 +284,15 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   newShell: ['mod+t'],
   closeShell: ['mod+w'],
   switchWorkspace: [],
-  newWorkspace: []
+  newWorkspace: [],
+  terminalDirectory: ['mod+o'],
+  terminalAskAgent: ['mod+l'],
+  terminalCopyOutput: ['mod+shift+c'],
+  terminalRetry: ['mod+r'],
+  terminalSplit: ['mod+d'],
+  terminalAskReview: [],
+  terminalHandOff: [],
+  terminalCreatePr: []
 }
 
 export interface Settings {
@@ -430,4 +446,53 @@ export interface TerminalSessionInfo {
   provider?: 'claude' | 'codex'
   /** A read-back of a past chat rather than the task's live session. */
   replay?: boolean
+}
+
+/**
+ * Where a command began or ended in a terminal's output stream. `offset` counts characters into the
+ * `data` it travels with, so the renderer can pause between writes and anchor a marker exactly
+ * there; nothing about it reaches xterm itself.
+ */
+export interface TerminalMark {
+  offset: number
+  kind: 'start' | 'end'
+  /** The runtime's id for the command, shared by its start and end marks. */
+  id: string
+  command?: string
+  exitCode?: number
+  /** Epoch milliseconds. */
+  at: number
+}
+
+/** One piece of a terminal's output, with the command boundaries inside it. */
+export interface TerminalOutput {
+  data: string
+  sequence: number
+  marks: TerminalMark[]
+}
+
+/** A completed shell command. Additional terminal and agent metadata can be added over time. */
+export interface TerminalCommand {
+  id: string
+  command: string
+  cwd: string
+  startedAt: number
+  endedAt?: number
+  exitCode?: number
+  /** Output is capped by the main-process terminal runtime. */
+  output?: string
+}
+
+/**
+ * Main-process owned semantic state for a terminal session. Unlike `TerminalSessionInfo.cwd`,
+ * `cwd` follows the shell as it changes directories.
+ */
+export interface TerminalRuntimeState {
+  sessionId: string
+  cwd: string
+  promptReady: boolean
+  runningCommand?: Pick<TerminalCommand, 'id' | 'command' | 'cwd' | 'startedAt'>
+  lastCommand?: TerminalCommand
+  lastExitCode?: number
+  terminated?: boolean
 }

@@ -13,6 +13,8 @@ import type {
   TaskPatch,
   TaskStatus,
   TerminalSessionInfo,
+  TerminalOutput,
+  TerminalRuntimeState,
   UpdateState,
   WorkspaceOverview
 } from '../core/types.js'
@@ -126,17 +128,35 @@ const api = {
     previewPrompt: (taskId: string, templateId?: string): Promise<string> =>
       ipcRenderer.invoke('terminal:previewPrompt', taskId, templateId),
     list: (): Promise<TerminalSessionInfo[]> => ipcRenderer.invoke('terminal:list'),
-    backlog: (id: string): Promise<{ data: string; sequence: number }> =>
-      ipcRenderer.invoke('terminal:backlog', id),
+    backlog: (id: string): Promise<TerminalOutput> => ipcRenderer.invoke('terminal:backlog', id),
+    runtimeState: (id: string): Promise<TerminalRuntimeState | undefined> =>
+      ipcRenderer.invoke('terminal:runtimeState', id),
+    createPr: (taskId: string): Promise<void> => ipcRenderer.invoke('terminal:createPr', taskId),
+    askReview: (taskId: string): Promise<TerminalSessionInfo> =>
+      ipcRenderer.invoke('terminal:askReview', taskId),
+    handOff: (
+      sessionId: string,
+      output: string
+    ): Promise<{ taskId: string; path: string; agentAsked: boolean }> =>
+      ipcRenderer.invoke('terminal:handOff', sessionId, output),
+    gitContext: (path: string): Promise<{ root: string | null; branch: string | null }> =>
+      ipcRenderer.invoke('terminal:gitContext', path),
+    revealDirectory: (path: string): Promise<string> =>
+      ipcRenderer.invoke('terminal:revealDirectory', path),
+    listDirectories: (
+      path: string
+    ): Promise<{ path: string; parent: string | null; names: string[] }> =>
+      ipcRenderer.invoke('terminal:listDirectories', path),
     write: (id: string, data: string): void => ipcRenderer.send('terminal:write', id, data),
     resize: (id: string, cols: number, rows: number): void =>
       ipcRenderer.send('terminal:resize', id, cols, rows),
     kill: (id: string): Promise<void> => ipcRenderer.invoke('terminal:kill', id),
-    onData: (
-      handler: (payload: { id: string; data: string; sequence: number }) => void
-    ): (() => void) => subscribe('terminal:data', handler as (...args: never[]) => void),
+    onData: (handler: (payload: { id: string } & TerminalOutput) => void): (() => void) =>
+      subscribe('terminal:data', handler as (...args: never[]) => void),
     onExit: (handler: (payload: { id: string; exitCode: number }) => void): (() => void) =>
-      subscribe('terminal:exit', handler as (...args: never[]) => void)
+      subscribe('terminal:exit', handler as (...args: never[]) => void),
+    onRuntimeState: (handler: (state: TerminalRuntimeState) => void): (() => void) =>
+      subscribe('terminal:runtimeState', handler as (...args: never[]) => void)
   }
 }
 

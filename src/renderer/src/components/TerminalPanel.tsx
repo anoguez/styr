@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   DndContext,
   PointerSensor,
@@ -15,16 +15,29 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { AGENT_STATE_LABELS, type AgentStatus } from '@core/agentState.js'
-import type { ShortcutBindings, TerminalSessionInfo, ThemeSettings } from '@core/types.js'
+import type {
+  ShortcutBindings,
+  TerminalRuntimeState,
+  TaskStatus,
+  TerminalSessionInfo,
+  ThemeSettings
+} from '@core/types.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
 import { Button } from './ui.js'
-import { TerminalView } from './TerminalView.js'
+import { TerminalSurface, type TerminalTaskRequest } from './TerminalSurface.js'
+import { useTerminalRuntimes } from '../lib/useTerminalRuntimes.js'
 import { sessionLabel, type SessionLabel } from '../lib/sessionLabel.js'
+
+function basename(path: string): string {
+  const trimmed = path.length > 1 ? path.replace(/\/+$/, '') : path
+  return trimmed.slice(trimmed.lastIndexOf('/') + 1) || trimmed
+}
 
 function TerminalTab({
   session,
   label,
   agent,
+  runtime,
   active,
   onSelect,
   onClose
@@ -32,6 +45,7 @@ function TerminalTab({
   session: TerminalSessionInfo
   label: SessionLabel
   agent?: AgentStatus
+  runtime?: TerminalRuntimeState
   active: boolean
   onSelect: (id: string) => void
   onClose: (id: string) => void
@@ -40,6 +54,11 @@ function TerminalTab({
     id: session.id
   })
   const node = useRef<HTMLDivElement | null>(null)
+  // A plain shell has no agent, so its tab reports the shell itself: the program in the foreground
+  // and the folder it is in. A task session keeps the label the task gave it.
+  const running = session.taskId ? undefined : runtime?.runningCommand
+  const name = running ? running.command : label.name
+  const detail = label.detail || (session.taskId || !runtime ? '' : basename(runtime.cwd))
 
   useEffect(() => {
     if (active) node.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -62,18 +81,18 @@ function TerminalTab({
         aria-hidden
         title={agent ? AGENT_STATE_LABELS[agent.state] : undefined}
         className={`size-[6px] shrink-0 rounded-full bg-current ${
-          agent ? AGENT_TONE[agent.state] : 'text-edge-strong'
+          agent ? AGENT_TONE[agent.state] : running ? 'text-col-done' : 'text-edge-strong'
         } ${agent?.state === 'working' ? 'wd-pulse' : ''}`}
       />
       <button
         type="button"
-        title={label.detail ? `${label.name}  ·  ${label.detail}` : label.name}
+        title={detail ? `${name}  ·  ${detail}` : name}
         className="flex min-w-0 items-baseline gap-1.5"
         onClick={() => onSelect(session.id)}
       >
-        <span className="max-w-[180px] truncate">{label.name}</span>
-        {label.detail ? (
-          <span className="shrink-0 font-mono text-[10.5px] text-faint">{label.detail}</span>
+        <span className="max-w-[180px] truncate">{name}</span>
+        {detail ? (
+          <span className="shrink-0 font-mono text-[10.5px] text-faint">{detail}</span>
         ) : null}
       </button>
       <button
@@ -100,12 +119,15 @@ export function TerminalPanel({
   theme,
   bindings,
   taskTitles,
+  taskStates,
   workspaces,
   onToggleExpand,
   onSelect,
   onReorder,
   onNewSession,
-  onCloseSession
+  onCloseSession,
+  onCreateTask,
+  onAskReview
 }: {
   sessions: TerminalSessionInfo[]
   agents: Map<string, AgentStatus>
@@ -114,13 +136,33 @@ export function TerminalPanel({
   theme: ThemeSettings
   bindings: ShortcutBindings
   taskTitles: ReadonlyMap<string, string>
+  taskStates: ReadonlyMap<string, { status: TaskStatus; prUrl?: string }>
   workspaces: { activeId: string; names: ReadonlyMap<string, string> }
   onToggleExpand: () => void
   onSelect: (id: string) => void
   onReorder: (orderedIds: string[]) => void
-  onNewSession: () => void
+  onNewSession: (cwd?: string) => void
   onCloseSession: (id: string) => void
+  onCreateTask: (request: TerminalTaskRequest) => Promise<string>
+  onAskReview: (taskId: string) => Promise<void>
 }): ReactNode {
+  const runtimes = useTerminalRuntimes(sessions)
+  const [fullscreen, setFullscreen] = useState<ReadonlySet<string>>(new Set())
+  const setSessionFullscreen = useCallback((id: string, on: boolean) => {
+    setFullscreen((current) => {
+      if (current.has(id) === on) return current
+      const next = new Set(current)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+  const activeRuntime = activeId ? runtimes.get(activeId) : undefined
+  // While a full-screen program owns the panel the context bar is gone, so the folder it is in
+  // moves up here instead of disappearing.
+  const folder =
+    activeId && fullscreen.has(activeId) && activeRuntime ? activeRuntime.cwd : undefined
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
   function handleDragEnd(event: DragEndEvent): void {
@@ -157,6 +199,7 @@ export function TerminalPanel({
                   key={session.id}
                   session={session}
                   label={sessionLabel(session, taskTitles, workspaces)}
+                  runtime={runtimes.get(session.id)}
                   agent={
                     session.taskId && session.workspaceId === workspaces.activeId
                       ? agents.get(session.taskId)
@@ -172,7 +215,26 @@ export function TerminalPanel({
         </div>
 
         <div className="flex shrink-0 items-center gap-2 border-l border-edge px-2 py-1.5">
-          <Button variant="subtle" onClick={onNewSession}>
+          {folder ? (
+            <button
+              type="button"
+              title={`${folder} — reveal in Finder`}
+              className="inline-flex h-6 items-center gap-1.5 rounded-md border border-transparent px-2 font-mono text-[11px] text-dim hover:bg-raised/70 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+              onClick={() => void window.api.terminal.revealDirectory(folder)}
+            >
+              <svg aria-hidden viewBox="0 0 16 16" width="13" height="13">
+                <path
+                  d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {basename(folder)}
+            </button>
+          ) : null}
+          <Button variant="subtle" onClick={() => onNewSession()}>
             + Shell
           </Button>
           <Button
@@ -222,11 +284,31 @@ export function TerminalPanel({
         ) : (
           sessions.map((session) => (
             <div key={session.id} className="absolute inset-2" hidden={session.id !== activeId}>
-              <TerminalView
-                sessionId={session.id}
+              <TerminalSurface
+                session={session}
                 active={session.id === activeId}
                 theme={theme}
                 bindings={bindings}
+                runtime={runtimes.get(session.id)}
+                agentStatus={
+                  session.taskId && session.workspaceId === workspaces.activeId
+                    ? agents.get(session.taskId)
+                    : undefined
+                }
+                onFullscreenChange={setSessionFullscreen}
+                onSplit={onNewSession}
+                onCreateTask={onCreateTask}
+                taskStatus={
+                  session.taskId && session.workspaceId === workspaces.activeId
+                    ? taskStates.get(session.taskId)?.status
+                    : undefined
+                }
+                taskPrUrl={
+                  session.taskId && session.workspaceId === workspaces.activeId
+                    ? taskStates.get(session.taskId)?.prUrl
+                    : undefined
+                }
+                onAskReview={onAskReview}
               />
             </div>
           ))

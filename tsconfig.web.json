@@ -5,12 +5,14 @@
     "src/core/types.ts",
     "src/core/taskSchema.ts",
     "src/core/prompt.ts",
+    "src/core/shell.ts",
     "src/core/agentState.ts",
     "src/core/shortcuts.ts",
     "src/core/doneCap.ts",
     "src/core/boardOrder.ts",
     "src/core/diff.ts",
-    "src/core/diffView.ts"
+    "src/core/diffView.ts",
+    "src/core/handoff.ts"
   ],
   "compilerOptions": {
     "composite": true,

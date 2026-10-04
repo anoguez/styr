@@ -1,4 +1,6 @@
-import { join } from 'node:path'
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron'
 import { pathsInWorkspace, pinWorkspace, workspaceDir } from '@core/config.js'
 import {
@@ -23,12 +25,22 @@ import { resolveTemplateFor } from '@core/prompt.js'
 import { z } from 'zod'
 import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
 import {
+  findGitRoot,
+  baseBranchFor,
   listBranches,
   readGitBranch,
   removeWorktree,
   taskDiff,
-  taskFilePatch
+  taskFilePatch,
+  workingTreeSummary
 } from '@core/worktree.js'
+import { createPullRequestPrompt } from '@core/pullRequest.js'
+import {
+  agentHandoffPrompt,
+  handoffFileName,
+  isAgentProgram,
+  renderHandoff
+} from '@core/handoff.js'
 import {
   createWorkspace,
   listWorkspaces,
@@ -42,6 +54,7 @@ import {
   globalSettingsFor,
   workspaceSettingsFor,
   worktreeKey,
+  WORKTREE_BRANCH_PREFIX,
   type BrokenSettingsFile,
   type OrchestrationSummary,
   type WorkspaceOverview
@@ -81,6 +94,7 @@ import {
   listSessions,
   resizeSession,
   sessionBacklog,
+  terminalRuntimeState,
   writeToSession,
   type SpawnOptions
 } from './terminal/ptyManager.js'
@@ -728,6 +742,167 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:kill', (_event, id: string) => killSession(id))
   ipcMain.handle('terminal:list', () => listSessions())
   ipcMain.handle('terminal:backlog', (_event, id: string) => sessionBacklog(id))
+  ipcMain.handle('terminal:runtimeState', (_event, id: string) => terminalRuntimeState(id))
+  ipcMain.handle('terminal:createPr', (_event, taskId: string) => askForPullRequest(taskId))
+  ipcMain.handle('terminal:askReview', (_event, taskId: string) => askReview(taskId))
+  ipcMain.handle('terminal:handOff', (_event, sessionId: string, output: string) =>
+    handOffSession(sessionId, String(output ?? ''))
+  )
+  ipcMain.handle('terminal:gitContext', (_event, path: string) => {
+    const root = findGitRoot(path)
+    return { root: root ?? null, branch: (root && readGitBranch(root)) ?? null }
+  })
+  ipcMain.handle('terminal:revealDirectory', (_event, path: string) => shell.openPath(path))
+  ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
+}
+
+/** How long an agent's input box gets to take typed text before Enter arrives. */
+const SUBMIT_DELAY_MS = 250
+
+/**
+ * Types a request into a running agent and submits it. The text and the Enter go in separate
+ * writes: an agent CLI treats a burst that ends in a newline as a paste, and a pasted newline adds
+ * a line to its input box instead of sending it, so the request would sit there unsent.
+ */
+function submitToAgent(sessionId: string, text: string): void {
+  writeToSession(sessionId, text)
+  setTimeout(() => writeToSession(sessionId, '\r'), SUBMIT_DELAY_MS)
+}
+
+/**
+ * Asks the agent running a task to open its pull request, by typing the request into its session —
+ * the thing a user would otherwise type once a review passes. Only a live, idle agent is asked:
+ * text typed at a bare shell would run, and a request queued behind a working agent would surprise.
+ */
+function askForPullRequest(taskId: string): void {
+  const task = findTask(taskId)
+  if (!task) throw new Error(`Task ${taskId} not found`)
+  const settings = loadSettings()
+  const live = findSessionByTask(taskId, settings.activeWorkspaceId)
+  const running = live && terminalRuntimeState(live.id)?.runningCommand
+  if (!live || !running) throw new Error('This task has no running agent to ask. Resume it first.')
+  const state = agentStatuses().find((status) => status.taskId === taskId)?.state
+  if (state === 'working' || state === 'waiting')
+    throw new Error('The agent is still working on this task. Ask once it stops.')
+  const repoPath = task.repoPath || settings.defaultRepoPath.trim()
+  const base = task.baseBranch || (repoPath ? baseBranchFor(repoPath) : undefined)
+  submitToAgent(live.id, createPullRequestPrompt({ taskFile: task.filePath, base }))
+}
+
+/**
+ * Starts a fresh reviewer on an In Review task — the launch Orchestrate makes for the review lane.
+ * Orchestrate skips a task whose tab is open, but this is asked from that very tab, so an agent that
+ * is not mid-turn gives way: its chat stays in the task's history and the reviewer starts clean.
+ */
+async function askReview(taskId: string): Promise<TerminalSessionInfo> {
+  const task = findTask(taskId)
+  if (!task) throw new Error(`Task ${taskId} not found`)
+  if (task.status !== 'in_review') throw new Error(`${taskId} is not in review`)
+  const settings = loadSettings()
+  const live = findSessionByTask(taskId, settings.activeWorkspaceId)
+  if (live) {
+    const state = agentStatuses().find((status) => status.taskId === taskId)?.state
+    if (state === 'working' || state === 'waiting')
+      throw new Error('The agent is still working on this task. Ask for a review once it stops.')
+    killSession(live.id)
+  }
+  return launchSessionForTask(taskId, {
+    withPrompt: true,
+    fresh: true,
+    provider: providerForLane(settings, 'review')
+  })
+}
+
+/**
+ * Writes a handoff document for a terminal session and opens a Backlog task that points at it, so
+ * another agent can pick the work up. The document lives in the workspace folder, not the user's
+ * repository, so it never shows up as an untracked file there. The new task is not orchestrated:
+ * handing work off should not silently start an agent.
+ */
+function handOffSession(
+  sessionId: string,
+  output: string
+): { taskId: string; path: string; agentAsked: boolean } {
+  const info = listSessions().find((session) => session.id === sessionId)
+  if (!info) throw new Error('That terminal session is gone')
+  const settings = loadSettings()
+  const runtime = terminalRuntimeState(sessionId)
+  const cwd = runtime?.cwd || info.cwd
+  // Only an agent that is actually running can be asked: text typed at a bare shell would run.
+  const running = runtime?.runningCommand?.command
+  const agentAsked = Boolean(running && (info.taskId || isAgentProgram(running)))
+  const source =
+    (info.taskId && info.workspaceId === settings.activeWorkspaceId
+      ? findTask(info.taskId)
+      : null) ?? undefined
+  const branch = readGitBranch(cwd)
+  const createdAt = new Date().toISOString()
+
+  const document = renderHandoff({
+    source: source && {
+      id: source.id,
+      title: source.title,
+      status: source.status,
+      description: source.description,
+      activity: source.activity
+    },
+    cwd,
+    branch,
+    ...workingTreeSummary(cwd),
+    output,
+    createdAt,
+    awaitingAgentSummary: agentAsked
+  })
+  const folder = join(workspaceDir(settings), 'handoffs')
+  const path = join(folder, handoffFileName(source, createdAt))
+  mkdirSync(folder, { recursive: true })
+  writeFileSync(path, document, 'utf8')
+
+  // The new worktree starts from the source's branch, so the commits carry over. Uncommitted work
+  // does not; the document says where it is.
+  const carryBranch = branch?.startsWith(WORKTREE_BRANCH_PREFIX) ? branch : undefined
+  const subject = source ? source.title : `work in ${cwd.split('/').pop() || cwd}`
+  const task = createTask({
+    title: `Continue: ${subject}`,
+    description: [
+      source
+        ? `Pick up ${source.id} where the previous agent stopped.`
+        : 'Pick up the work from a terminal session where the previous agent stopped.',
+      '',
+      `Read the handoff document first: ${path}`
+    ].join('\n'),
+    status: 'backlog',
+    priority: source?.priority ?? 'medium',
+    readiness: 'ready',
+    tags: [...new Set([...(source?.tags ?? []), 'handoff'])],
+    repoPath: source?.repoPath || settings.defaultRepoPath.trim() || undefined,
+    baseBranch: carryBranch,
+    useWorktree: settings.taskDefaults.useWorktree,
+    orchestrate: false,
+    contextFiles: [path],
+    provider: settings.defaultProvider
+  })
+  if (source) addNote(source.id, 'styr', `Handed off as ${task.id}; handoff document: ${path}`)
+  // Last, so a failure above never leaves the agent writing a document nothing points at.
+  if (agentAsked) submitToAgent(sessionId, agentHandoffPrompt(path))
+  notifyTasksChanged()
+  return { taskId: task.id, path, agentAsked }
+}
+
+/** Sub-directories of `path` for the terminal's directory picker; unreadable paths list nothing. */
+function listDirectories(path: string): { path: string; parent: string | null; names: string[] } {
+  const resolved = resolve(path === '~' ? homedir() : path)
+  const parent = dirname(resolved)
+  let names: string[] = []
+  try {
+    names = readdirSync(resolved, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b))
+  } catch {
+    // Permission denied or the folder vanished: show an empty list rather than failing the picker.
+  }
+  return { path: resolved, parent: parent === resolved ? null : parent, names }
 }
 
 export { broadcast }

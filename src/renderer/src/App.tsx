@@ -25,6 +25,7 @@ import { CommandPalette, type CommandEntry } from './components/CommandPalette.j
 import { StatusBar } from './components/StatusBar.js'
 import { useUpdates } from './hooks/useUpdates.js'
 import { isTerminalTarget } from './lib/terminalKeys.js'
+import { dispatchTerminalCommand } from './lib/terminalCommands.js'
 import { SECTIONS, SettingsDialog, type SectionId } from './components/SettingsDialog.js'
 import { QuickTaskDialog } from './components/QuickTaskDialog.js'
 import { TaskDialog } from './components/TaskDialog.js'
@@ -118,6 +119,16 @@ export default function App(): ReactNode {
     [board]
   )
 
+  const taskStates = useMemo(
+    () =>
+      new Map(
+        Object.values(board)
+          .flat()
+          .map((task) => [task.id, { status: task.status, prUrl: task.prUrl }] as const)
+      ),
+    [board]
+  )
+
   const agentRows = useMemo<AgentRow[]>(() => {
     const tasks = Object.values(board).flat()
     return sortAgentRows(
@@ -169,14 +180,46 @@ export default function App(): ReactNode {
     setTerminalOpen(true)
   }, [])
 
-  const newShell = useCallback(async () => {
-    adoptSession(
-      await window.api.terminal.create({
-        cwd: settings?.defaultRepoPath || settings?.storageDir,
-        title: 'shell'
+  const newShell = useCallback(
+    async (cwd?: string) => {
+      adoptSession(
+        await window.api.terminal.create({
+          cwd: cwd || settings?.defaultRepoPath || settings?.storageDir,
+          title: 'shell'
+        })
+      )
+    },
+    [adoptSession, settings]
+  )
+
+  const askReview = useCallback(
+    async (taskId: string) => adoptSession(await window.api.terminal.askReview(taskId)),
+    [adoptSession]
+  )
+
+  /** Output the user wants an agent to look at becomes a Backlog task that carries it. */
+  const createTaskFromTerminal = useCallback(
+    async (request: { title: string; description: string }): Promise<string> => {
+      if (!settings) throw new Error('Settings have not loaded yet')
+      const task = await window.api.tasks.create({
+        title: request.title,
+        description: request.description,
+        status: 'backlog',
+        priority: 'medium',
+        readiness: 'needs_spec',
+        tags: [],
+        repoPath: settings.defaultRepoPath.trim() || undefined,
+        useWorktree: settings.taskDefaults.useWorktree,
+        // Not orchestrated: a task made from a click in a terminal should wait for the user, not be
+        // picked up and started by the next Orchestrate run.
+        orchestrate: false,
+        contextFiles: [],
+        provider: settings.defaultProvider
       })
-    )
-  }, [adoptSession, settings])
+      return task.id
+    },
+    [settings]
+  )
 
   const launchAgent = useCallback(
     async (taskId: string, templateId?: string, provider?: 'claude' | 'codex') => {
@@ -321,6 +364,16 @@ export default function App(): ReactNode {
           return setSwitcherOpen(true)
         case 'newWorkspace':
           return setCreatingWorkspace(true)
+        case 'terminalDirectory':
+        case 'terminalAskAgent':
+        case 'terminalCopyOutput':
+        case 'terminalRetry':
+        case 'terminalSplit':
+        case 'terminalAskReview':
+        case 'terminalHandOff':
+        case 'terminalCreatePr':
+          // The active terminal owns what these act on; it answers the event.
+          return dispatchTerminalCommand(command)
       }
     },
     [openSettings, newShell, closeSession, activeSession]
@@ -716,11 +769,14 @@ export default function App(): ReactNode {
                   theme={activeTheme}
                   bindings={bindings}
                   taskTitles={taskTitles}
+                  taskStates={taskStates}
+                  onAskReview={askReview}
                   workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
                   onToggleExpand={() => setTerminalExpanded((open) => !open)}
                   onSelect={setActiveSession}
                   onReorder={reorderSessions}
-                  onNewSession={() => void newShell()}
+                  onNewSession={(cwd) => void newShell(cwd)}
+                  onCreateTask={createTaskFromTerminal}
                   onCloseSession={(id) => void closeSession(id)}
                 />
               </div>

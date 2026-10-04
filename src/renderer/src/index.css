@@ -21,6 +21,10 @@
   /* Brand */
   --color-accent: #6c3f75;
   --color-accent-deep: #3f2545;
+  /* Lighter tints of the accent for text on dark surfaces (agent actions). Derived, so a theme's
+     accent carries through without a second colour to maintain. */
+  --color-accent-ink: color-mix(in oklab, var(--color-accent) 35%, white);
+  --color-accent-soft: color-mix(in oklab, var(--color-accent) 70%, white);
 
   /* Column identity */
   --color-col-backlog: #f1f1e6;

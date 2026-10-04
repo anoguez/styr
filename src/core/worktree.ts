@@ -209,6 +209,21 @@ export function readGitBranch(dir: string): string | undefined {
   }
 }
 
+/**
+ * The top of the checkout `dir` is inside, found by walking up to the nearest `.git` (a directory,
+ * or a pointer file in a linked worktree). Reads the filesystem only, so it is cheap to call.
+ */
+export function findGitRoot(dir: string): string | undefined {
+  let current = dir
+  while (current) {
+    if (existsSync(join(current, '.git'))) return current
+    const parent = dirname(current)
+    if (parent === current) return undefined
+    current = parent
+  }
+  return undefined
+}
+
 export function removeWorktree(repoPath: string, taskId: string): void {
   if (!isGitRepo(repoPath)) return
   const path = worktreePathFor(repoPath, taskId)
@@ -640,5 +655,35 @@ function refHasPath(dir: string, ref: string, path: string): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+export interface WorkingTreeSummary {
+  /** `git status --short`: what is changed but not committed. */
+  status: string
+  /** `git diff HEAD --stat`: how much. */
+  diffStat: string
+  /** The last few commits on the current branch. */
+  commits: string
+}
+
+/**
+ * A short, read-only picture of a checkout for a handoff document. Every part is best effort: a
+ * directory that is not a repository, or a git that fails, yields empty strings rather than
+ * blocking the handoff.
+ */
+export function workingTreeSummary(dir: string): WorkingTreeSummary {
+  const run = (args: string[]): string => {
+    try {
+      // Untrimmed: the first column of `status --short` is a space for an unstaged change.
+      return gitRaw(args, dir)
+    } catch {
+      return ''
+    }
+  }
+  return {
+    status: run(['status', '--short']),
+    diffStat: run(['diff', 'HEAD', '--stat']),
+    commits: run(['log', '-n', '8', '--oneline'])
   }
 }

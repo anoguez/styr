@@ -410,6 +410,31 @@ xterm and discard its scrollback.
 Conflicts are warned about, never refused: refusing would force a user to unbind one command before
 giving its key to another. `commandForEvent` resolves a clash by `SHORTCUT_COMMANDS` order.
 
+## Terminal command blocks
+
+A shell's commands are drawn as **blocks over xterm**, never instead of it: xterm still renders every
+character, so ANSI, TUIs, selection and scrollback are untouched. The pipeline, in order:
+
+- `ptyManager` stamps each `COMMAND_STARTED`/`COMMAND_FINISHED` with its **offset in the output
+  stream** (`TerminalMark`, in `types.ts`) and sends marks beside the data, in `terminal:data` and in
+  the backlog (`TerminalOutput`). Marks are kept as absolute offsets and trimmed with the backlog, so a
+  reload rebuilds the same blocks.
+- `lib/terminalOutput.ts` writes the data in pieces and calls `mark` between them; the empty
+  `terminal.write('', cb)` it uses is queued behind the data, so `cb` runs when the cursor is exactly
+  where the shell was. Never write a block's position from a runtime-state event instead: IPC order
+  does not say where in a chunk the event happened.
+- `lib/blockTracker.ts` turns marks into xterm **markers** (the command's own row is the one above
+  the cursor at start; the end is the cursor's row, plus one if the output had no final newline) and
+  reports `BlockLayout` — buffer lines, viewport top, cell height — per frame. Markers follow
+  scroll, resize reflow and scrollback trimming, and a disposed marker drops its block.
+- `TerminalBlocks.tsx` is a `pointer-events-none` layer positioned from that layout. Only its buttons
+  take the pointer, and hover comes from the host's `mousemove` (`lineAt`), so selecting text is
+  unaffected. The strip on a block's command row has to stay `pointer-events-auto` (it tracks enter and
+  leave so the controls do not vanish when the pointer reaches them).
+
+Not blocks: agent sessions (a task session, or a shell running `claude`/`codex` — one long command)
+and the alternate screen. `TerminalSurface` skips both; the bar reports agent state instead.
+
 ## Terminal keys
 
 A terminal sends a bare CR for both Enter and Shift+Enter, so Claude Code cannot tell them apart.
