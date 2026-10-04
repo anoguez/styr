@@ -287,7 +287,8 @@ function ContextBar({
   onAsk: () => void
   /** Offered only when the task is in review and its agent is not mid-turn. */
   onReview?: () => void
-  onHandOff: () => void
+  /** Offered only while an agent is running; a bare shell has no intent to hand over. */
+  onHandOff?: () => void
   reviewHint: string
   children?: ReactNode
 }): ReactNode {
@@ -427,14 +428,16 @@ function ContextBar({
           <span className="@md:hidden">Review</span>
         </button>
       ) : null}
-      <button
-        type="button"
-        title="Write a handoff document and create a task another agent can pick up"
-        className={`${quietButton} hidden h-[22px] px-[7px] text-[11.5px] @lg:inline-flex`}
-        onClick={onHandOff}
-      >
-        Hand off
-      </button>
+      {onHandOff ? (
+        <button
+          type="button"
+          title="Write a handoff document and create a task another agent can pick up"
+          className={`${quietButton} hidden h-[22px] px-[7px] text-[11.5px] @lg:inline-flex`}
+          onClick={onHandOff}
+        >
+          Hand off
+        </button>
+      ) : null}
       <button
         type="button"
         title={`Ask agent about this terminal${askHint ? ` (${askHint})` : ''}`}
@@ -622,6 +625,19 @@ export function TerminalSurface({
 
   const copyAll = useCallback(() => copy(handle.current?.text() ?? '', 'all output'), [copy])
 
+  const failed =
+    runtime !== undefined &&
+    !running &&
+    runtime.lastExitCode !== undefined &&
+    runtime.lastExitCode !== 0
+  // Only a program on the alternate screen (vim, htop) owns the whole panel. Agent CLIs such as
+  // Claude Code and Codex draw inline, so their sessions keep the bar.
+  const agent = Boolean(session.taskId) || isAgentProgram(runtime?.runningCommand?.command)
+  const fullscreen = altScreen && !agent
+  // Handing off only makes sense while an agent is running; a task's exited session is a bare shell.
+  const canHandOff = agent && Boolean(runtime?.runningCommand)
+  const showBar = runtime !== undefined && !runtime.terminated && !fullscreen
+
   useEffect(() => {
     if (!active) return
     return onTerminalCommand((command: TerminalCommand) => {
@@ -640,21 +656,21 @@ export function TerminalSurface({
         case 'terminalAskReview':
           return void askReview()
         case 'terminalHandOff':
-          return void handOffWork()
+          return canHandOff ? void handOffWork() : undefined
       }
     })
-  }, [active, canChange, sendToAgent, handOffWork, askReview, copyAll, retry, onSplit, cwd])
-
-  const failed =
-    runtime !== undefined &&
-    !running &&
-    runtime.lastExitCode !== undefined &&
-    runtime.lastExitCode !== 0
-  // Only a program on the alternate screen (vim, htop) owns the whole panel. Agent CLIs such as
-  // Claude Code and Codex draw inline, so their sessions keep the bar.
-  const agent = Boolean(session.taskId) || isAgentProgram(runtime?.runningCommand?.command)
-  const fullscreen = altScreen && !agent
-  const showBar = runtime !== undefined && !runtime.terminated && !fullscreen
+  }, [
+    active,
+    canChange,
+    canHandOff,
+    sendToAgent,
+    handOffWork,
+    askReview,
+    copyAll,
+    retry,
+    onSplit,
+    cwd
+  ])
   useEffect(() => {
     onFullscreenChange?.(session.id, fullscreen)
   }, [onFullscreenChange, session.id, fullscreen])
@@ -677,7 +693,9 @@ export function TerminalSurface({
       ...(reviewable
         ? [{ label: '✓ Ask to review', agent: true, run: () => void askReview() }]
         : []),
-      { label: 'Hand off to another agent', agent: true, run: () => void handOffWork() }
+      ...(canHandOff
+        ? [{ label: 'Hand off to another agent', agent: true, run: () => void handOffWork() }]
+        : [])
     ],
     [
       {
@@ -760,7 +778,7 @@ export function TerminalSurface({
           onInterrupt={() => write(INTERRUPT)}
           onAsk={() => void sendToAgent('ask')}
           onReview={reviewable ? () => void askReview() : undefined}
-          onHandOff={() => void handOffWork()}
+          onHandOff={canHandOff ? () => void handOffWork() : undefined}
           reviewHint={shortcutHint(bindings, 'terminalAskReview')}
         >
           {children}
