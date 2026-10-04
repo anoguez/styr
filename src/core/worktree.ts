@@ -642,3 +642,33 @@ function refHasPath(dir: string, ref: string, path: string): boolean {
     return false
   }
 }
+
+export interface WorkingTreeSummary {
+  /** `git status --short`: what is changed but not committed. */
+  status: string
+  /** `git diff HEAD --stat`: how much. */
+  diffStat: string
+  /** The last few commits on the current branch. */
+  commits: string
+}
+
+/**
+ * A short, read-only picture of a checkout for a handoff document. Every part is best effort: a
+ * directory that is not a repository, or a git that fails, yields empty strings rather than
+ * blocking the handoff.
+ */
+export function workingTreeSummary(dir: string): WorkingTreeSummary {
+  const run = (args: string[]): string => {
+    try {
+      // Untrimmed: the first column of `status --short` is a space for an unstaged change.
+      return gitRaw(args, dir)
+    } catch {
+      return ''
+    }
+  }
+  return {
+    status: run(['status', '--short']),
+    diffStat: run(['diff', 'HEAD', '--stat']),
+    commits: run(['log', '-n', '8', '--oneline'])
+  }
+}

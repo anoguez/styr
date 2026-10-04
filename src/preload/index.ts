@@ -131,6 +131,10 @@ const api = {
       ipcRenderer.invoke('terminal:backlog', id),
     runtimeState: (id: string): Promise<TerminalRuntimeState | undefined> =>
       ipcRenderer.invoke('terminal:runtimeState', id),
+    askReview: (taskId: string): Promise<TerminalSessionInfo> =>
+      ipcRenderer.invoke('terminal:askReview', taskId),
+    handOff: (sessionId: string, output: string): Promise<{ taskId: string; path: string }> =>
+      ipcRenderer.invoke('terminal:handOff', sessionId, output),
     gitBranch: (path: string): Promise<string | null> =>
       ipcRenderer.invoke('terminal:gitBranch', path),
     revealDirectory: (path: string): Promise<string> =>

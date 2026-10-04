@@ -39,7 +39,9 @@ export const SHORTCUT_LABELS: Record<ShortcutCommand, string> = {
   terminalAskAgent: 'Terminal: ask agent about this terminal',
   terminalCopyOutput: 'Terminal: copy all output',
   terminalRetry: 'Terminal: retry last command',
-  terminalSplit: 'Terminal: split into a new tab here'
+  terminalSplit: 'Terminal: split into a new tab here',
+  terminalAskReview: 'Terminal: ask for a review of this task',
+  terminalHandOff: 'Terminal: hand off to another agent'
 }
 
 /**
@@ -66,7 +68,9 @@ export const SHORTCUT_SCOPES: Record<ShortcutCommand, ShortcutScope> = {
   terminalAskAgent: 'terminal',
   terminalCopyOutput: 'terminal',
   terminalRetry: 'terminal',
-  terminalSplit: 'terminal'
+  terminalSplit: 'terminal',
+  terminalAskReview: 'terminal',
+  terminalHandOff: 'terminal'
 }
 
 /** What a key event happened in. Required, so no caller can forget that scope exists. */

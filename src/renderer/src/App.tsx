@@ -119,6 +119,16 @@ export default function App(): ReactNode {
     [board]
   )
 
+  const taskStatuses = useMemo(
+    () =>
+      new Map(
+        Object.values(board)
+          .flat()
+          .map((task) => [task.id, task.status])
+      ),
+    [board]
+  )
+
   const agentRows = useMemo<AgentRow[]>(() => {
     const tasks = Object.values(board).flat()
     return sortAgentRows(
@@ -180,6 +190,11 @@ export default function App(): ReactNode {
       )
     },
     [adoptSession, settings]
+  )
+
+  const askReview = useCallback(
+    async (taskId: string) => adoptSession(await window.api.terminal.askReview(taskId)),
+    [adoptSession]
   )
 
   /** Output the user wants an agent to look at becomes a Backlog task that carries it. */
@@ -352,6 +367,8 @@ export default function App(): ReactNode {
         case 'terminalCopyOutput':
         case 'terminalRetry':
         case 'terminalSplit':
+        case 'terminalAskReview':
+        case 'terminalHandOff':
           // The active terminal owns what these act on; it answers the event.
           return dispatchTerminalCommand(command)
       }
@@ -749,6 +766,8 @@ export default function App(): ReactNode {
                   theme={activeTheme}
                   bindings={bindings}
                   taskTitles={taskTitles}
+                  taskStatuses={taskStatuses}
+                  onAskReview={askReview}
                   workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
                   onToggleExpand={() => setTerminalExpanded((open) => !open)}
                   onSelect={setActiveSession}

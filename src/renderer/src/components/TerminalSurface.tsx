@@ -4,6 +4,7 @@ import { shellQuote } from '@core/shell.js'
 import { shortcutHint } from '@core/shortcuts.js'
 import type {
   ShortcutBindings,
+  TaskStatus,
   TerminalRuntimeState,
   TerminalSessionInfo,
   ThemeSettings
@@ -272,6 +273,9 @@ function ContextBar({
   onChoose,
   onInterrupt,
   onAsk,
+  onReview,
+  onHandOff,
+  reviewHint,
   children
 }: {
   runtime: TerminalRuntimeState
@@ -291,6 +295,10 @@ function ContextBar({
   onChoose: (path: string) => void
   onInterrupt: () => void
   onAsk: () => void
+  /** Offered only when the task is in review and its agent is not mid-turn. */
+  onReview?: () => void
+  onHandOff: () => void
+  reviewHint: string
   children?: ReactNode
 }): ReactNode {
   const cwd = runtime.cwd || fallbackCwd
@@ -418,6 +426,25 @@ function ContextBar({
 
       <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">{children}</div>
 
+      {onReview ? (
+        <button
+          type="button"
+          title={`Close this session and start a fresh reviewer, as Orchestrate would${reviewHint ? ` (${reviewHint})` : ''}`}
+          className={`${agentButton} h-[22px] px-2 text-[11.5px]`}
+          onClick={onReview}
+        >
+          ✓ <span className="hidden @md:inline">Ask to review</span>
+          <span className="@md:hidden">Review</span>
+        </button>
+      ) : null}
+      <button
+        type="button"
+        title="Write a handoff document and create a task another agent can pick up"
+        className={`${quietButton} hidden h-[22px] px-[7px] text-[11.5px] @lg:inline-flex`}
+        onClick={onHandOff}
+      >
+        Hand off
+      </button>
       <button
         type="button"
         title={`Ask agent about this terminal${askHint ? ` (${askHint})` : ''}`}
@@ -462,6 +489,8 @@ export function TerminalSurface({
   bindings,
   runtime,
   agentStatus,
+  taskStatus,
+  onAskReview,
   onFullscreenChange,
   onSplit,
   onCreateTask,
@@ -475,6 +504,10 @@ export function TerminalSurface({
   runtime?: TerminalRuntimeState
   /** The hook-reported state of this task's agent, when it is a task session. */
   agentStatus?: AgentStatus
+  /** The board status of this session's task, when it has one. */
+  taskStatus?: TaskStatus
+  /** Start a fresh reviewer on the task (what Orchestrate does for the review lane). */
+  onAskReview?: (taskId: string) => Promise<void>
   /** A full-screen program took over (or gave back) the panel. */
   onFullscreenChange?: (sessionId: string, fullscreen: boolean) => void
   /** Open another shell tab starting in this directory. */
@@ -549,7 +582,7 @@ export function TerminalSurface({
     [cwd, runtime, selection]
   )
 
-  const handOff = useCallback(
+  const sendToAgent = useCallback(
     async (kind: TerminalTaskKind, preferSelection = false): Promise<void> => {
       if (!onCreateTask) return
       const request = taskFromTerminal(kind, contextFor(preferSelection))
@@ -562,6 +595,31 @@ export function TerminalSurface({
     },
     [contextFor, onCreateTask]
   )
+
+  const reviewable =
+    Boolean(session.taskId && onAskReview) &&
+    taskStatus === 'in_review' &&
+    agentStatus?.state !== 'working' &&
+    agentStatus?.state !== 'waiting'
+
+  const askReview = useCallback(async (): Promise<void> => {
+    if (!session.taskId || !onAskReview || !reviewable) return
+    try {
+      await onAskReview(session.taskId)
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'Could not start the review')
+    }
+  }, [session.taskId, onAskReview, reviewable])
+
+  const handOffWork = useCallback(async (): Promise<void> => {
+    try {
+      const text = handle.current?.text() ?? runtime?.lastCommand?.output ?? ''
+      const result = await window.api.terminal.handOff(session.id, text)
+      setNotice(`Handed off as ${result.taskId} — find it in Backlog`)
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'Could not hand off')
+    }
+  }, [session.id, runtime])
 
   const retry = useCallback(() => {
     const command = runtime?.lastCommand?.command
@@ -578,16 +636,20 @@ export function TerminalSurface({
           if (canChange) setPicking((open) => !open)
           return
         case 'terminalAskAgent':
-          return void handOff('ask', true)
+          return void sendToAgent('ask', true)
         case 'terminalCopyOutput':
           return copyAll()
         case 'terminalRetry':
           return retry()
         case 'terminalSplit':
           return onSplit?.(cwd)
+        case 'terminalAskReview':
+          return void askReview()
+        case 'terminalHandOff':
+          return void handOffWork()
       }
     })
-  }, [active, canChange, handOff, copyAll, retry, onSplit, cwd])
+  }, [active, canChange, sendToAgent, handOffWork, askReview, copyAll, retry, onSplit, cwd])
 
   const failed =
     runtime !== undefined &&
@@ -616,8 +678,12 @@ export function TerminalSurface({
       }
     ],
     [
-      { label: '✦ Explain last output', agent: true, run: () => void handOff('explain') },
-      { label: 'Create task from output', run: () => void handOff('output') }
+      { label: '✦ Explain last output', agent: true, run: () => void sendToAgent('explain') },
+      { label: 'Create task from output', run: () => void sendToAgent('output') },
+      ...(reviewable
+        ? [{ label: '✓ Ask to review', agent: true, run: () => void askReview() }]
+        : []),
+      { label: 'Hand off to another agent', agent: true, run: () => void handOffWork() }
     ],
     [
       {
@@ -652,8 +718,8 @@ export function TerminalSurface({
               copy(selection.text, 'selection')
               setSelection(null)
             }}
-            onExplain={() => void handOff('explain', true)}
-            onAsk={() => void handOff('ask', true)}
+            onExplain={() => void sendToAgent('explain', true)}
+            onAsk={() => void sendToAgent('ask', true)}
           />
         ) : null}
         {notice ? (
@@ -668,9 +734,9 @@ export function TerminalSurface({
       {showBar && failed && runtime ? (
         <FailureActions
           runtime={runtime}
-          onFix={() => void handOff('fix')}
-          onExplain={() => void handOff('explain')}
-          onCreate={() => void handOff('output')}
+          onFix={() => void sendToAgent('fix')}
+          onExplain={() => void sendToAgent('explain')}
+          onCreate={() => void sendToAgent('output')}
         />
       ) : null}
       {showBar ? (
@@ -698,7 +764,10 @@ export function TerminalSurface({
           }}
           onChoose={changeDirectory}
           onInterrupt={() => write(INTERRUPT)}
-          onAsk={() => void handOff('ask')}
+          onAsk={() => void sendToAgent('ask')}
+          onReview={reviewable ? () => void askReview() : undefined}
+          onHandOff={() => void handOffWork()}
+          reviewHint={shortcutHint(bindings, 'terminalAskReview')}
         >
           {children}
         </ContextBar>

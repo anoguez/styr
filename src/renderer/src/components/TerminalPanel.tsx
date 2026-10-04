@@ -18,6 +18,7 @@ import { AGENT_STATE_LABELS, type AgentStatus } from '@core/agentState.js'
 import type {
   ShortcutBindings,
   TerminalRuntimeState,
+  TaskStatus,
   TerminalSessionInfo,
   ThemeSettings
 } from '@core/types.js'
@@ -118,13 +119,15 @@ export function TerminalPanel({
   theme,
   bindings,
   taskTitles,
+  taskStatuses,
   workspaces,
   onToggleExpand,
   onSelect,
   onReorder,
   onNewSession,
   onCloseSession,
-  onCreateTask
+  onCreateTask,
+  onAskReview
 }: {
   sessions: TerminalSessionInfo[]
   agents: Map<string, AgentStatus>
@@ -133,6 +136,7 @@ export function TerminalPanel({
   theme: ThemeSettings
   bindings: ShortcutBindings
   taskTitles: ReadonlyMap<string, string>
+  taskStatuses: ReadonlyMap<string, TaskStatus>
   workspaces: { activeId: string; names: ReadonlyMap<string, string> }
   onToggleExpand: () => void
   onSelect: (id: string) => void
@@ -140,6 +144,7 @@ export function TerminalPanel({
   onNewSession: (cwd?: string) => void
   onCloseSession: (id: string) => void
   onCreateTask: (request: TerminalTaskRequest) => Promise<string>
+  onAskReview: (taskId: string) => Promise<void>
 }): ReactNode {
   const runtimes = useTerminalRuntimes(sessions)
   const [fullscreen, setFullscreen] = useState<ReadonlySet<string>>(new Set())
@@ -293,6 +298,12 @@ export function TerminalPanel({
                 onFullscreenChange={setSessionFullscreen}
                 onSplit={onNewSession}
                 onCreateTask={onCreateTask}
+                taskStatus={
+                  session.taskId && session.workspaceId === workspaces.activeId
+                    ? taskStatuses.get(session.taskId)
+                    : undefined
+                }
+                onAskReview={onAskReview}
               />
             </div>
           ))

@@ -86,7 +86,9 @@ export const SHORTCUT_COMMANDS = [
   'terminalAskAgent',
   'terminalCopyOutput',
   'terminalRetry',
-  'terminalSplit'
+  'terminalSplit',
+  'terminalAskReview',
+  'terminalHandOff'
 ] as const
 
 export type ShortcutCommand = (typeof SHORTCUT_COMMANDS)[number]
@@ -286,7 +288,9 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   terminalAskAgent: ['mod+l'],
   terminalCopyOutput: ['mod+shift+c'],
   terminalRetry: ['mod+r'],
-  terminalSplit: ['mod+d']
+  terminalSplit: ['mod+d'],
+  terminalAskReview: [],
+  terminalHandOff: []
 }
 
 export interface Settings {

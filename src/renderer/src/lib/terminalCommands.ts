@@ -6,7 +6,9 @@ export const TERMINAL_COMMANDS = [
   'terminalAskAgent',
   'terminalCopyOutput',
   'terminalRetry',
-  'terminalSplit'
+  'terminalSplit',
+  'terminalAskReview',
+  'terminalHandOff'
 ] as const satisfies readonly ShortcutCommand[]
 
 export type TerminalCommand = (typeof TERMINAL_COMMANDS)[number]
