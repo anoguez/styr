@@ -138,8 +138,8 @@ const api = {
       output: string
     ): Promise<{ taskId: string; path: string; agentAsked: boolean }> =>
       ipcRenderer.invoke('terminal:handOff', sessionId, output),
-    gitBranch: (path: string): Promise<string | null> =>
-      ipcRenderer.invoke('terminal:gitBranch', path),
+    gitContext: (path: string): Promise<{ root: string | null; branch: string | null }> =>
+      ipcRenderer.invoke('terminal:gitContext', path),
     revealDirectory: (path: string): Promise<string> =>
       ipcRenderer.invoke('terminal:revealDirectory', path),
     listDirectories: (

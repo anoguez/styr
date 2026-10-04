@@ -11,6 +11,7 @@ import type {
   ThemeSettings
 } from '@core/types.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
+import { displayPath } from '../lib/terminalPath.js'
 import { onTerminalCommand, type TerminalCommand } from '../lib/terminalCommands.js'
 import {
   firstLine,
@@ -32,13 +33,6 @@ const agentButton =
 export interface TerminalTaskRequest {
   title: string
   description: string
-}
-
-function splitPath(cwd: string): { name: string; rest: string } {
-  const trimmed = cwd.length > 1 ? cwd.replace(/\/+$/, '') : cwd
-  const cut = trimmed.lastIndexOf('/')
-  if (cut < 0 || trimmed === '/') return { name: trimmed, rest: '' }
-  return { name: trimmed.slice(cut + 1), rest: trimmed.slice(0, cut) }
 }
 
 function useElapsedSeconds(startedAt: number | undefined): string | undefined {
@@ -252,6 +246,7 @@ function ContextBar({
   isAgent,
   agentState,
   branch,
+  repoRoot,
   picking,
   menuOpen,
   askHint,
@@ -274,6 +269,7 @@ function ContextBar({
   isAgent?: boolean
   agentState?: AgentStatus['state']
   branch: string | null
+  repoRoot: string | null
   picking: boolean
   menuOpen: boolean
   askHint: string
@@ -298,7 +294,7 @@ function ContextBar({
   const last = runtime.lastCommand
   const failed = !running && runtime.lastExitCode !== undefined && runtime.lastExitCode !== 0
   const fresh = !running && !last && runtime.lastExitCode === undefined
-  const path = splitPath(cwd)
+  const path = displayPath(cwd, repoRoot)
   // A cd typed while a command runs would reach that command's stdin, so only offer it at a prompt.
   const canChange = runtime.promptReady && !running
 
@@ -515,7 +511,10 @@ export function TerminalSurface({
   const [selection, setSelection] = useState<TerminalSelection | null>(null)
   const [picking, setPicking] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [branch, setBranch] = useState<string | null>(null)
+  const [git, setGit] = useState<{ root: string | null; branch: string | null }>({
+    root: null,
+    branch: null
+  })
   const [notice, setNotice] = useState<string>()
 
   const cwd = runtime?.cwd || session.cwd
@@ -525,8 +524,8 @@ export function TerminalSurface({
 
   useEffect(() => {
     let current = true
-    void window.api.terminal.gitBranch(cwd).then((name) => {
-      if (current) setBranch(name)
+    void window.api.terminal.gitContext(cwd).then((context) => {
+      if (current) setGit(context)
     })
     return () => {
       current = false
@@ -757,7 +756,8 @@ export function TerminalSurface({
           fallbackCwd={session.cwd}
           isAgent={agent}
           agentState={agentStatus?.state}
-          branch={branch}
+          branch={git.branch}
+          repoRoot={git.root}
           picking={picking}
           menuOpen={menuOpen}
           askHint={askHint}

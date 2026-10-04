@@ -25,6 +25,7 @@ import { resolveTemplateFor } from '@core/prompt.js'
 import { z } from 'zod'
 import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
 import {
+  findGitRoot,
   listBranches,
   readGitBranch,
   removeWorktree,
@@ -744,7 +745,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:handOff', (_event, sessionId: string, output: string) =>
     handOffSession(sessionId, String(output ?? ''))
   )
-  ipcMain.handle('terminal:gitBranch', (_event, path: string) => readGitBranch(path) ?? null)
+  ipcMain.handle('terminal:gitContext', (_event, path: string) => {
+    const root = findGitRoot(path)
+    return { root: root ?? null, branch: (root && readGitBranch(root)) ?? null }
+  })
   ipcMain.handle('terminal:revealDirectory', (_event, path: string) => shell.openPath(path))
   ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
 }

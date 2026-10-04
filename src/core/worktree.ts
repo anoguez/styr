@@ -209,6 +209,21 @@ export function readGitBranch(dir: string): string | undefined {
   }
 }
 
+/**
+ * The top of the checkout `dir` is inside, found by walking up to the nearest `.git` (a directory,
+ * or a pointer file in a linked worktree). Reads the filesystem only, so it is cheap to call.
+ */
+export function findGitRoot(dir: string): string | undefined {
+  let current = dir
+  while (current) {
+    if (existsSync(join(current, '.git'))) return current
+    const parent = dirname(current)
+    if (parent === current) return undefined
+    current = parent
+  }
+  return undefined
+}
+
 export function removeWorktree(repoPath: string, taskId: string): void {
   if (!isGitRepo(repoPath)) return
   const path = worktreePathFor(repoPath, taskId)
