@@ -258,7 +258,7 @@ function FailureActions({
 function ContextBar({
   runtime,
   fallbackCwd,
-  agentName,
+  isAgent,
   agentState,
   branch,
   picking,
@@ -276,8 +276,8 @@ function ContextBar({
 }: {
   runtime: TerminalRuntimeState
   fallbackCwd: string
-  /** Set for a task's agent session: what runs there is the agent, not a command to interrupt. */
-  agentName?: string
+  /** An agent CLI is running: it is shown by its state, not as a command with a timer. */
+  isAgent?: boolean
   agentState?: AgentStatus['state']
   branch: string | null
   picking: boolean
@@ -370,7 +370,7 @@ function ContextBar({
         </span>
       ) : null}
 
-      {running && agentName ? (
+      {running && isAgent ? (
         // The agent process lives as long as the session, so a timer would count idle time as work.
         // Its own state (from its hooks) says what it is actually doing.
         <span
@@ -382,8 +382,7 @@ function ContextBar({
             aria-hidden
             className={`size-1.5 shrink-0 rounded-full bg-current ${agentState === 'working' ? 'wd-pulse' : ''}`}
           />
-          <span className="max-w-56 truncate">{agentName}</span>
-          {agentState ? <span className="shrink-0">· {AGENT_STATE_LABELS[agentState]}</span> : null}
+          {agentState ? <span className="shrink-0">{AGENT_STATE_LABELS[agentState]}</span> : null}
         </span>
       ) : running ? (
         <>
@@ -678,13 +677,7 @@ export function TerminalSurface({
         <ContextBar
           runtime={runtime}
           fallbackCwd={session.cwd}
-          agentName={
-            agent
-              ? session.taskId
-                ? session.title
-                : runtime?.runningCommand?.command.trim().split(/\s+/)[0]
-              : undefined
-          }
+          isAgent={agent}
           agentState={agentStatus?.state}
           branch={branch}
           picking={picking}
