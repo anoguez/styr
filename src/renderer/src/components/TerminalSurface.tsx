@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { AGENT_STATE_LABELS, type AgentStatus } from '@core/agentState.js'
 import { shellQuote } from '@core/shell.js'
 import { shortcutHint } from '@core/shortcuts.js'
 import type {
@@ -7,6 +8,7 @@ import type {
   TerminalSessionInfo,
   ThemeSettings
 } from '@core/types.js'
+import { AGENT_TONE } from '../lib/agentTone.js'
 import { onTerminalCommand, type TerminalCommand } from '../lib/terminalCommands.js'
 import {
   firstLine,
@@ -256,7 +258,8 @@ function FailureActions({
 function ContextBar({
   runtime,
   fallbackCwd,
-  agentTitle,
+  agentName,
+  agentState,
   branch,
   picking,
   menuOpen,
@@ -274,7 +277,8 @@ function ContextBar({
   runtime: TerminalRuntimeState
   fallbackCwd: string
   /** Set for a task's agent session: what runs there is the agent, not a command to interrupt. */
-  agentTitle?: string
+  agentName?: string
+  agentState?: AgentStatus['state']
   branch: string | null
   picking: boolean
   menuOpen: boolean
@@ -366,26 +370,39 @@ function ContextBar({
         </span>
       ) : null}
 
-      {running ? (
+      {running && agentName ? (
+        // The agent process lives as long as the session, so a timer would count idle time as work.
+        // Its own state (from its hooks) says what it is actually doing.
+        <span
+          className={`inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] ${
+            agentState ? AGENT_TONE[agentState] : 'text-dim'
+          }`}
+        >
+          <span
+            aria-hidden
+            className={`size-1.5 shrink-0 rounded-full bg-current ${agentState === 'working' ? 'wd-pulse' : ''}`}
+          />
+          <span className="max-w-56 truncate">{agentName}</span>
+          {agentState ? <span className="shrink-0">· {AGENT_STATE_LABELS[agentState]}</span> : null}
+        </span>
+      ) : running ? (
         <>
           <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] text-col-progress">
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current wd-pulse" />
-            <span className="max-w-56 truncate">{agentTitle ?? running.command}</span>
+            <span className="max-w-56 truncate">{running.command}</span>
             <span className="shrink-0">· {elapsed}s</span>
           </span>
-          {agentTitle ? null : (
-            <button
-              type="button"
-              className={`${quietButton} h-5 shrink-0 rounded-[5px] border-edge-strong px-1.5 text-[11px]`}
-              onClick={onInterrupt}
-            >
-              <svg aria-hidden viewBox="0 0 16 16" width="10" height="10">
-                <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" />
-              </svg>
-              Interrupt
-              <Kbd>⌃C</Kbd>
-            </button>
-          )}
+          <button
+            type="button"
+            className={`${quietButton} h-5 shrink-0 rounded-[5px] border-edge-strong px-1.5 text-[11px]`}
+            onClick={onInterrupt}
+          >
+            <svg aria-hidden viewBox="0 0 16 16" width="10" height="10">
+              <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" />
+            </svg>
+            Interrupt
+            <Kbd>⌃C</Kbd>
+          </button>
         </>
       ) : runtime.lastExitCode !== undefined ? (
         <span
@@ -445,6 +462,7 @@ export function TerminalSurface({
   theme,
   bindings,
   runtime,
+  agentStatus,
   onFullscreenChange,
   onSplit,
   onCreateTask,
@@ -456,6 +474,8 @@ export function TerminalSurface({
   bindings: ShortcutBindings
   /** The main process's semantic state for this session, once it has reported any. */
   runtime?: TerminalRuntimeState
+  /** The hook-reported state of this task's agent, when it is a task session. */
+  agentStatus?: AgentStatus
   /** A full-screen program took over (or gave back) the panel. */
   onFullscreenChange?: (sessionId: string, fullscreen: boolean) => void
   /** Open another shell tab starting in this directory. */
@@ -658,7 +678,14 @@ export function TerminalSurface({
         <ContextBar
           runtime={runtime}
           fallbackCwd={session.cwd}
-          agentTitle={session.taskId ? session.title : undefined}
+          agentName={
+            agent
+              ? session.taskId
+                ? session.title
+                : runtime?.runningCommand?.command.trim().split(/\s+/)[0]
+              : undefined
+          }
+          agentState={agentStatus?.state}
           branch={branch}
           picking={picking}
           menuOpen={menuOpen}

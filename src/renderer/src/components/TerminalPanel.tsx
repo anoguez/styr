@@ -285,6 +285,11 @@ export function TerminalPanel({
                 theme={theme}
                 bindings={bindings}
                 runtime={runtimes.get(session.id)}
+                agentStatus={
+                  session.taskId && session.workspaceId === workspaces.activeId
+                    ? agents.get(session.taskId)
+                    : undefined
+                }
                 onFullscreenChange={setSessionFullscreen}
                 onSplit={onNewSession}
                 onCreateTask={onCreateTask}
