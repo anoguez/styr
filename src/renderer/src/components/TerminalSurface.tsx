@@ -30,6 +30,17 @@ export interface TerminalTaskRequest {
   description: string
 }
 
+/**
+ * Agent CLIs run on the alternate screen like vim does, but the bar stays for them: their session
+ * is where directory, branch and "ask agent" matter most. A task's session is always one; a shell
+ * is one while it is running one of these by hand.
+ */
+function isAgentCommand(command: string | undefined): boolean {
+  if (!command) return false
+  const program = command.trim().split(/\s+/)[0] ?? ''
+  return ['claude', 'codex'].includes(program.slice(program.lastIndexOf('/') + 1))
+}
+
 function splitPath(cwd: string): { name: string; rest: string } {
   const trimmed = cwd.length > 1 ? cwd.replace(/\/+$/, '') : cwd
   const cut = trimmed.lastIndexOf('/')
@@ -455,7 +466,7 @@ export function TerminalSurface({
   children?: ReactNode
 }): ReactNode {
   const handle = useRef<TerminalHandle | null>(null)
-  const [fullscreen, setFullscreen] = useState(false)
+  const [altScreen, setAltScreen] = useState(false)
   const [selection, setSelection] = useState<TerminalSelection | null>(null)
   const [picking, setPicking] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -566,7 +577,12 @@ export function TerminalSurface({
     runtime.lastExitCode !== 0
   // Only a program on the alternate screen (vim, htop) owns the whole panel. Agent CLIs such as
   // Claude Code and Codex draw inline, so their sessions keep the bar.
+  const agent = Boolean(session.taskId) || isAgentCommand(runtime?.runningCommand?.command)
+  const fullscreen = altScreen && !agent
   const showBar = runtime !== undefined && !runtime.terminated && !fullscreen
+  useEffect(() => {
+    onFullscreenChange?.(session.id, fullscreen)
+  }, [onFullscreenChange, session.id, fullscreen])
   const askHint = shortcutHint(bindings, 'terminalAskAgent')
 
   const groups: MenuItem[][] = [
@@ -607,10 +623,7 @@ export function TerminalSurface({
           bindings={bindings}
           handle={handle}
           onSelection={setSelection}
-          onFullscreenChange={(value) => {
-            setFullscreen(value)
-            onFullscreenChange?.(session.id, value)
-          }}
+          onFullscreenChange={setAltScreen}
         />
         {selection && !fullscreen && onCreateTask ? (
           <SelectionToolbar
