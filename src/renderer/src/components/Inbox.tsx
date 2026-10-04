@@ -362,9 +362,11 @@ export function Inbox({
   // A selection that left the list (finished, filtered out, searched away) falls to the first row.
   const selected = flat.find((item) => item.task.id === selectedId) ?? flat[0]
   const today = new Date().toDateString()
-  const finishedToday = groups.done.filter(
-    (item) => new Date(item.at).toDateString() === today
+  // There is no status history, so "moved" is any task written today.
+  const movedToday = tasks.filter(
+    (task) => new Date(task.updatedAt).toDateString() === today
   ).length
+  const prsReady = tasks.filter((task) => task.prUrl && task.status !== 'done').length
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -385,9 +387,8 @@ export function Inbox({
           </span>
           <div className="flex flex-col gap-0.5">
             {[
-              { v: finishedToday, k: 'finished' },
-              { v: tasks.filter((t) => t.status === 'in_review').length, k: 'in review' },
-              { v: agents.size, k: 'agents' }
+              { v: movedToday, k: 'tasks moved' },
+              { v: prsReady, k: 'PRs ready' }
             ].map((row) => (
               <span
                 key={row.k}
