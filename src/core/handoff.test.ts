@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { handoffFileName, renderHandoff, type HandoffInput } from './handoff.js'
+import {
+  AGENT_SUMMARY_PENDING,
+  agentHandoffPrompt,
+  handoffFileName,
+  isAgentProgram,
+  renderHandoff,
+  type HandoffInput
+} from './handoff.js'
 
 const base: HandoffInput = {
   cwd: '/repo.worktrees/TASK-0001',
@@ -49,6 +56,26 @@ describe('renderHandoff', () => {
     const doc = renderHandoff({ ...base, output })
     expect(doc).toContain('row 499')
     expect(doc).not.toContain('row 100\n')
+  })
+})
+
+describe('agent summary', () => {
+  it('leaves a pending section only when the agent was asked', () => {
+    expect(renderHandoff({ ...base, awaitingAgentSummary: true })).toContain(AGENT_SUMMARY_PENDING)
+    expect(renderHandoff(base)).not.toContain('## Agent summary')
+  })
+
+  it('asks on a single line and names the file', () => {
+    const prompt = agentHandoffPrompt('/ws/my folder/handoffs/a.md')
+    expect(prompt).not.toContain('\n')
+    expect(prompt).toContain('`/ws/my folder/handoffs/a.md`')
+  })
+
+  it('recognises only agent CLIs, by program name', () => {
+    expect(isAgentProgram('claude --resume x')).toBe(true)
+    expect(isAgentProgram('/usr/local/bin/codex --remote unix://')).toBe(true)
+    expect(isAgentProgram('pnpm test')).toBe(false)
+    expect(isAgentProgram(undefined)).toBe(false)
   })
 })
 

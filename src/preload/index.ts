@@ -133,7 +133,10 @@ const api = {
       ipcRenderer.invoke('terminal:runtimeState', id),
     askReview: (taskId: string): Promise<TerminalSessionInfo> =>
       ipcRenderer.invoke('terminal:askReview', taskId),
-    handOff: (sessionId: string, output: string): Promise<{ taskId: string; path: string }> =>
+    handOff: (
+      sessionId: string,
+      output: string
+    ): Promise<{ taskId: string; path: string; agentAsked: boolean }> =>
       ipcRenderer.invoke('terminal:handOff', sessionId, output),
     gitBranch: (path: string): Promise<string | null> =>
       ipcRenderer.invoke('terminal:gitBranch', path),

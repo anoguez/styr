@@ -32,7 +32,12 @@ import {
   taskFilePatch,
   workingTreeSummary
 } from '@core/worktree.js'
-import { handoffFileName, renderHandoff } from '@core/handoff.js'
+import {
+  agentHandoffPrompt,
+  handoffFileName,
+  isAgentProgram,
+  renderHandoff
+} from '@core/handoff.js'
 import {
   createWorkspace,
   listWorkspaces,
@@ -774,11 +779,18 @@ async function askReview(taskId: string): Promise<TerminalSessionInfo> {
  * repository, so it never shows up as an untracked file there. The new task is not orchestrated:
  * handing work off should not silently start an agent.
  */
-function handOffSession(sessionId: string, output: string): { taskId: string; path: string } {
+function handOffSession(
+  sessionId: string,
+  output: string
+): { taskId: string; path: string; agentAsked: boolean } {
   const info = listSessions().find((session) => session.id === sessionId)
   if (!info) throw new Error('That terminal session is gone')
   const settings = loadSettings()
-  const cwd = terminalRuntimeState(sessionId)?.cwd || info.cwd
+  const runtime = terminalRuntimeState(sessionId)
+  const cwd = runtime?.cwd || info.cwd
+  // Only an agent that is actually running can be asked: text typed at a bare shell would run.
+  const running = runtime?.runningCommand?.command
+  const agentAsked = Boolean(running && (info.taskId || isAgentProgram(running)))
   const source =
     (info.taskId && info.workspaceId === settings.activeWorkspaceId
       ? findTask(info.taskId)
@@ -798,7 +810,8 @@ function handOffSession(sessionId: string, output: string): { taskId: string; pa
     branch,
     ...workingTreeSummary(cwd),
     output,
-    createdAt
+    createdAt,
+    awaitingAgentSummary: agentAsked
   })
   const folder = join(workspaceDir(settings), 'handoffs')
   const path = join(folder, handoffFileName(source, createdAt))
@@ -830,8 +843,10 @@ function handOffSession(sessionId: string, output: string): { taskId: string; pa
     provider: settings.defaultProvider
   })
   if (source) addNote(source.id, 'styr', `Handed off as ${task.id}; handoff document: ${path}`)
+  // Last, so a failure above never leaves the agent writing a document nothing points at.
+  if (agentAsked) writeToSession(sessionId, `${agentHandoffPrompt(path)}\r`)
   notifyTasksChanged()
-  return { taskId: task.id, path }
+  return { taskId: task.id, path, agentAsked }
 }
 
 /** Sub-directories of `path` for the terminal's directory picker; unreadable paths list nothing. */

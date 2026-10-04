@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AGENT_STATE_LABELS, type AgentStatus } from '@core/agentState.js'
+import { isAgentProgram } from '@core/handoff.js'
 import { shellQuote } from '@core/shell.js'
 import { shortcutHint } from '@core/shortcuts.js'
 import type {
@@ -31,17 +32,6 @@ const agentButton =
 export interface TerminalTaskRequest {
   title: string
   description: string
-}
-
-/**
- * Agent CLIs run on the alternate screen like vim does, but the bar stays for them: their session
- * is where directory, branch and "ask agent" matter most. A task's session is always one; a shell
- * is one while it is running one of these by hand.
- */
-function isAgentCommand(command: string | undefined): boolean {
-  if (!command) return false
-  const program = command.trim().split(/\s+/)[0] ?? ''
-  return ['claude', 'codex'].includes(program.slice(program.lastIndexOf('/') + 1))
 }
 
 function splitPath(cwd: string): { name: string; rest: string } {
@@ -615,7 +605,11 @@ export function TerminalSurface({
     try {
       const text = handle.current?.text() ?? runtime?.lastCommand?.output ?? ''
       const result = await window.api.terminal.handOff(session.id, text)
-      setNotice(`Handed off as ${result.taskId} — find it in Backlog`)
+      setNotice(
+        result.agentAsked
+          ? `Asked the agent to write the handoff — ${result.taskId} is in Backlog`
+          : `Handed off as ${result.taskId} — find it in Backlog`
+      )
     } catch (reason) {
       setNotice(reason instanceof Error ? reason.message : 'Could not hand off')
     }
@@ -658,7 +652,7 @@ export function TerminalSurface({
     runtime.lastExitCode !== 0
   // Only a program on the alternate screen (vim, htop) owns the whole panel. Agent CLIs such as
   // Claude Code and Codex draw inline, so their sessions keep the bar.
-  const agent = Boolean(session.taskId) || isAgentCommand(runtime?.runningCommand?.command)
+  const agent = Boolean(session.taskId) || isAgentProgram(runtime?.runningCommand?.command)
   const fullscreen = altScreen && !agent
   const showBar = runtime !== undefined && !runtime.terminated && !fullscreen
   useEffect(() => {

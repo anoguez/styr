@@ -20,6 +20,31 @@ export interface HandoffInput {
   /** The tail of the terminal, as plain text. */
   output: string
   createdAt: string
+  /** The agent has been asked to write its own summary into the "Agent summary" section. */
+  awaitingAgentSummary?: boolean
+}
+
+/** Agent CLIs a shell may be running; typing a request into anything else would run it as a command. */
+export function isAgentProgram(command: string | undefined): boolean {
+  if (!command) return false
+  const program = command.trim().split(/\s+/)[0] ?? ''
+  return ['claude', 'codex'].includes(program.slice(program.lastIndexOf('/') + 1))
+}
+
+export const AGENT_SUMMARY_HEADING = '## Agent summary'
+export const AGENT_SUMMARY_PENDING =
+  '_Pending: the previous agent was asked to write this. If this line is still here, it did not._'
+
+/**
+ * The one-line request typed into the running agent. One line, because a newline in a TUI input
+ * submits it; the path is quoted because the workspace folder can contain spaces.
+ */
+export function agentHandoffPrompt(path: string): string {
+  return (
+    `Please write a handoff for the next agent. Open \`${path}\` and replace the pending line under ` +
+    `"${AGENT_SUMMARY_HEADING}" with: what is done, what remains, decisions and why, pitfalls, and ` +
+    'how to verify. Edit only that section and keep it concise. Reply "handoff written" when finished.'
+  )
 }
 
 const MAX_OUTPUT_LINES = 120
@@ -61,6 +86,8 @@ export function renderHandoff(input: HandoffInput): string {
   ]
   if (input.branch) lines.push(`- Branch: \`${input.branch}\``)
   if (source) lines.push(`- Source task: ${source.id} (${source.status.replace('_', ' ')})`)
+
+  if (input.awaitingAgentSummary) lines.push('', AGENT_SUMMARY_HEADING, '', AGENT_SUMMARY_PENDING)
 
   if (source?.description.trim()) lines.push('', '## Task spec', '', source.description.trim())
 

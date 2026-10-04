@@ -11,7 +11,8 @@
     "src/core/doneCap.ts",
     "src/core/boardOrder.ts",
     "src/core/diff.ts",
-    "src/core/diffView.ts"
+    "src/core/diffView.ts",
+    "src/core/handoff.ts"
   ],
   "compilerOptions": {
     "composite": true,
