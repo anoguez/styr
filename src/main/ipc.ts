@@ -26,6 +26,7 @@ import { z } from 'zod'
 import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
 import {
   findGitRoot,
+  baseBranchFor,
   listBranches,
   readGitBranch,
   removeWorktree,
@@ -33,6 +34,7 @@ import {
   taskFilePatch,
   workingTreeSummary
 } from '@core/worktree.js'
+import { createPullRequestPrompt } from '@core/pullRequest.js'
 import {
   agentHandoffPrompt,
   handoffFileName,
@@ -741,6 +743,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:list', () => listSessions())
   ipcMain.handle('terminal:backlog', (_event, id: string) => sessionBacklog(id))
   ipcMain.handle('terminal:runtimeState', (_event, id: string) => terminalRuntimeState(id))
+  ipcMain.handle('terminal:createPr', (_event, taskId: string) => askForPullRequest(taskId))
   ipcMain.handle('terminal:askReview', (_event, taskId: string) => askReview(taskId))
   ipcMain.handle('terminal:handOff', (_event, sessionId: string, output: string) =>
     handOffSession(sessionId, String(output ?? ''))
@@ -751,6 +754,26 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle('terminal:revealDirectory', (_event, path: string) => shell.openPath(path))
   ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
+}
+
+/**
+ * Asks the agent running a task to open its pull request, by typing the request into its session —
+ * the thing a user would otherwise type once a review passes. Only a live, idle agent is asked:
+ * text typed at a bare shell would run, and a request queued behind a working agent would surprise.
+ */
+function askForPullRequest(taskId: string): void {
+  const task = findTask(taskId)
+  if (!task) throw new Error(`Task ${taskId} not found`)
+  const settings = loadSettings()
+  const live = findSessionByTask(taskId, settings.activeWorkspaceId)
+  const running = live && terminalRuntimeState(live.id)?.runningCommand
+  if (!live || !running) throw new Error('This task has no running agent to ask. Resume it first.')
+  const state = agentStatuses().find((status) => status.taskId === taskId)?.state
+  if (state === 'working' || state === 'waiting')
+    throw new Error('The agent is still working on this task. Ask once it stops.')
+  const repoPath = task.repoPath || settings.defaultRepoPath.trim()
+  const base = task.baseBranch || (repoPath ? baseBranchFor(repoPath) : undefined)
+  writeToSession(live.id, `${createPullRequestPrompt({ taskFile: task.filePath, base })}\r`)
 }
 
 /**

@@ -119,7 +119,7 @@ export function TerminalPanel({
   theme,
   bindings,
   taskTitles,
-  taskStatuses,
+  taskStates,
   workspaces,
   onToggleExpand,
   onSelect,
@@ -136,7 +136,7 @@ export function TerminalPanel({
   theme: ThemeSettings
   bindings: ShortcutBindings
   taskTitles: ReadonlyMap<string, string>
-  taskStatuses: ReadonlyMap<string, TaskStatus>
+  taskStates: ReadonlyMap<string, { status: TaskStatus; prUrl?: string }>
   workspaces: { activeId: string; names: ReadonlyMap<string, string> }
   onToggleExpand: () => void
   onSelect: (id: string) => void
@@ -300,7 +300,12 @@ export function TerminalPanel({
                 onCreateTask={onCreateTask}
                 taskStatus={
                   session.taskId && session.workspaceId === workspaces.activeId
-                    ? taskStatuses.get(session.taskId)
+                    ? taskStates.get(session.taskId)?.status
+                    : undefined
+                }
+                taskPrUrl={
+                  session.taskId && session.workspaceId === workspaces.activeId
+                    ? taskStates.get(session.taskId)?.prUrl
                     : undefined
                 }
                 onAskReview={onAskReview}

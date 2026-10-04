@@ -131,6 +131,7 @@ const api = {
     backlog: (id: string): Promise<TerminalOutput> => ipcRenderer.invoke('terminal:backlog', id),
     runtimeState: (id: string): Promise<TerminalRuntimeState | undefined> =>
       ipcRenderer.invoke('terminal:runtimeState', id),
+    createPr: (taskId: string): Promise<void> => ipcRenderer.invoke('terminal:createPr', taskId),
     askReview: (taskId: string): Promise<TerminalSessionInfo> =>
       ipcRenderer.invoke('terminal:askReview', taskId),
     handOff: (

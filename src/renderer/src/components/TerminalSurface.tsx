@@ -190,6 +190,7 @@ function ContextBar({
   onInterrupt,
   onAsk,
   onReview,
+  onCreatePr,
   onHandOff,
   reviewHint,
   children
@@ -218,6 +219,8 @@ function ContextBar({
   onReview?: () => void
   /** Offered only while an agent is running; a bare shell has no intent to hand over. */
   onHandOff?: () => void
+  /** Offered once a task in review has passed and its agent is idle. */
+  onCreatePr?: () => void
   reviewHint: string
   children?: ReactNode
 }): ReactNode {
@@ -357,6 +360,17 @@ function ContextBar({
           <span className="@md:hidden">Review</span>
         </button>
       ) : null}
+      {onCreatePr ? (
+        <button
+          type="button"
+          title="Ask the agent to push the branch and open a pull request"
+          className={`${agentButton} h-[22px] px-2 text-[11.5px]`}
+          onClick={onCreatePr}
+        >
+          ⎇ <span className="hidden @md:inline">Create PR</span>
+          <span className="@md:hidden">PR</span>
+        </button>
+      ) : null}
       {onHandOff ? (
         <button
           type="button"
@@ -412,6 +426,7 @@ export function TerminalSurface({
   runtime,
   agentStatus,
   taskStatus,
+  taskPrUrl,
   onAskReview,
   onFullscreenChange,
   onSplit,
@@ -428,6 +443,8 @@ export function TerminalSurface({
   agentStatus?: AgentStatus
   /** The board status of this session's task, when it has one. */
   taskStatus?: TaskStatus
+  /** The task's pull request, once there is one. */
+  taskPrUrl?: string
   /** Start a fresh reviewer on the task (what Orchestrate does for the review lane). */
   onAskReview?: (taskId: string) => Promise<void>
   /** A full-screen program took over (or gave back) the panel. */
@@ -535,6 +552,26 @@ export function TerminalSurface({
     agentStatus?.state !== 'working' &&
     agentStatus?.state !== 'waiting'
 
+  // Ask for the PR once the review has passed: the task is in review, has no PR yet, and its agent is
+  // running but not mid-turn (text typed at a bare shell would run as a command).
+  const canCreatePr =
+    Boolean(session.taskId) &&
+    taskStatus === 'in_review' &&
+    !taskPrUrl &&
+    Boolean(runtime?.runningCommand) &&
+    agentStatus?.state !== 'working' &&
+    agentStatus?.state !== 'waiting'
+
+  const createPr = useCallback(async (): Promise<void> => {
+    if (!session.taskId || !canCreatePr) return
+    try {
+      await window.api.terminal.createPr(session.taskId)
+      setNotice('Asked the agent to create the pull request')
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'Could not ask for a pull request')
+    }
+  }, [session.taskId, canCreatePr])
+
   const askReview = useCallback(async (): Promise<void> => {
     if (!session.taskId || !onAskReview || !reviewable) return
     try {
@@ -626,6 +663,8 @@ export function TerminalSurface({
           return void askReview()
         case 'terminalHandOff':
           return canHandOff ? void handOffWork() : undefined
+        case 'terminalCreatePr':
+          return void createPr()
       }
     })
   }, [
@@ -635,6 +674,7 @@ export function TerminalSurface({
     sendToAgent,
     handOffWork,
     askReview,
+    createPr,
     copyAll,
     retry,
     onSplit,
@@ -661,6 +701,9 @@ export function TerminalSurface({
       { label: 'Create task from output', run: () => void sendToAgent('output') },
       ...(reviewable
         ? [{ label: '✓ Ask to review', agent: true, run: () => void askReview() }]
+        : []),
+      ...(canCreatePr
+        ? [{ label: '⎇ Create pull request', agent: true, run: () => void createPr() }]
         : []),
       ...(canHandOff
         ? [{ label: 'Hand off to another agent', agent: true, run: () => void handOffWork() }]
@@ -762,6 +805,7 @@ export function TerminalSurface({
           onInterrupt={() => write(INTERRUPT)}
           onAsk={() => void sendToAgent('ask')}
           onReview={reviewable ? () => void askReview() : undefined}
+          onCreatePr={canCreatePr ? () => void createPr() : undefined}
           onHandOff={canHandOff ? () => void handOffWork() : undefined}
           reviewHint={shortcutHint(bindings, 'terminalAskReview')}
         >

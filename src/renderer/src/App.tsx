@@ -119,12 +119,12 @@ export default function App(): ReactNode {
     [board]
   )
 
-  const taskStatuses = useMemo(
+  const taskStates = useMemo(
     () =>
       new Map(
         Object.values(board)
           .flat()
-          .map((task) => [task.id, task.status])
+          .map((task) => [task.id, { status: task.status, prUrl: task.prUrl }] as const)
       ),
     [board]
   )
@@ -371,6 +371,7 @@ export default function App(): ReactNode {
         case 'terminalSplit':
         case 'terminalAskReview':
         case 'terminalHandOff':
+        case 'terminalCreatePr':
           // The active terminal owns what these act on; it answers the event.
           return dispatchTerminalCommand(command)
       }
@@ -768,7 +769,7 @@ export default function App(): ReactNode {
                   theme={activeTheme}
                   bindings={bindings}
                   taskTitles={taskTitles}
-                  taskStatuses={taskStatuses}
+                  taskStates={taskStates}
                   onAskReview={askReview}
                   workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
                   onToggleExpand={() => setTerminalExpanded((open) => !open)}

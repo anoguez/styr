@@ -88,7 +88,8 @@ export const SHORTCUT_COMMANDS = [
   'terminalRetry',
   'terminalSplit',
   'terminalAskReview',
-  'terminalHandOff'
+  'terminalHandOff',
+  'terminalCreatePr'
 ] as const
 
 export type ShortcutCommand = (typeof SHORTCUT_COMMANDS)[number]
@@ -290,7 +291,8 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   terminalRetry: ['mod+r'],
   terminalSplit: ['mod+d'],
   terminalAskReview: [],
-  terminalHandOff: []
+  terminalHandOff: [],
+  terminalCreatePr: []
 }
 
 export interface Settings {
