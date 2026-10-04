@@ -131,6 +131,10 @@ const api = {
       ipcRenderer.invoke('terminal:backlog', id),
     runtimeState: (id: string): Promise<TerminalRuntimeState | undefined> =>
       ipcRenderer.invoke('terminal:runtimeState', id),
+    listDirectories: (
+      path: string
+    ): Promise<{ path: string; parent: string | null; names: string[] }> =>
+      ipcRenderer.invoke('terminal:listDirectories', path),
     write: (id: string, data: string): void => ipcRenderer.send('terminal:write', id, data),
     resize: (id: string, cols: number, rows: number): void =>
       ipcRenderer.send('terminal:resize', id, cols, rows),

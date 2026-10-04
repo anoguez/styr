@@ -1,4 +1,6 @@
-import { join } from 'node:path'
+import { readdirSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron'
 import { pathsInWorkspace, pinWorkspace, workspaceDir } from '@core/config.js'
 import {
@@ -730,6 +732,23 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:list', () => listSessions())
   ipcMain.handle('terminal:backlog', (_event, id: string) => sessionBacklog(id))
   ipcMain.handle('terminal:runtimeState', (_event, id: string) => terminalRuntimeState(id))
+  ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
+}
+
+/** Sub-directories of `path` for the terminal's directory picker; unreadable paths list nothing. */
+function listDirectories(path: string): { path: string; parent: string | null; names: string[] } {
+  const resolved = resolve(path === '~' ? homedir() : path)
+  const parent = dirname(resolved)
+  let names: string[] = []
+  try {
+    names = readdirSync(resolved, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b))
+  } catch {
+    // Permission denied or the folder vanished: show an empty list rather than failing the picker.
+  }
+  return { path: resolved, parent: parent === resolved ? null : parent, names }
 }
 
 export { broadcast }
