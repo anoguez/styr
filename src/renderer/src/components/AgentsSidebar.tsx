@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { AGENT_STATE_LABELS, compareAgentStatus, type AgentStatus } from '@core/agentState.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
+import { timeAgo } from '../lib/timeAgo.js'
 import type { Task, TerminalSessionInfo } from '@core/types.js'
 import type { DiffStat } from '@core/diff.js'
 import { Button, DiffStatButton } from './ui.js'
@@ -16,16 +17,6 @@ export function sortAgentRows(rows: AgentRow[]): AgentRow[] {
     if (a.agent && b.agent) return compareAgentStatus(a.agent, b.agent)
     return Number(Boolean(b.agent)) - Number(Boolean(a.agent))
   })
-}
-
-function timeAgo(iso?: string): string {
-  if (!iso) return ''
-  const seconds = Math.round((Date.now() - Date.parse(iso)) / 1000)
-  if (!Number.isFinite(seconds) || seconds < 0) return ''
-  if (seconds < 60) return `${seconds}s`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
-  return `${Math.floor(seconds / 86400)}d`
 }
 
 function BranchGlyph(): ReactNode {

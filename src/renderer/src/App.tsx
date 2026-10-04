@@ -20,6 +20,8 @@ import { AgentsSidebar, sortAgentRows, type AgentRow } from './components/Agents
 import { ArchiveDialog } from './components/ArchiveDialog.js'
 import { ChangesDialog } from './components/ChangesDialog.js'
 import { Board } from './components/Board.js'
+import { Inbox } from './components/Inbox.js'
+import { buildInbox } from '@core/inbox.js'
 import { OrchestrateDialog } from './components/OrchestrateDialog.js'
 import { CommandPalette, type CommandEntry } from './components/CommandPalette.js'
 import { StatusBar } from './components/StatusBar.js'
@@ -43,6 +45,18 @@ import {
   WorkspaceSwitcher,
   ipcMessage
 } from './components/WorkspaceSwitcher.js'
+
+const VIEW_KEY = 'styr:view'
+
+type View = 'board' | 'inbox'
+
+function savedView(): View {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'inbox' ? 'inbox' : 'board'
+  } catch {
+    return 'board'
+  }
+}
 
 const MIN_TERMINAL_HEIGHT = 140
 const MIN_BOARD_HEIGHT = 220
@@ -97,6 +111,14 @@ export default function App(): ReactNode {
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
+  const [view, setView] = useState<View>(savedView)
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, view)
+    } catch {
+      // Remembering the view is a convenience; a blocked store just means it resets.
+    }
+  }, [view])
   const [changesTask, setChangesTask] = useState<Task | null>(null)
 
   const [sessions, setSessions] = useState<TerminalSessionInfo[]>([])
@@ -348,6 +370,10 @@ export default function App(): ReactNode {
         case 'focusSearch':
           searchRef.current?.focus()
           return searchRef.current?.select()
+        case 'viewBoard':
+          return setView('board')
+        case 'viewInbox':
+          return setView('inbox')
         case 'settings':
           return openSettings()
         case 'toggleTerminal':
@@ -526,6 +552,15 @@ export default function App(): ReactNode {
     [orchestration]
   )
 
+  const queuedPositions = useMemo(
+    () => new Map([...queued].map(([id, entry]) => [id, entry.position])),
+    [queued]
+  )
+  const needsYou = useMemo(
+    () => buildInbox(Object.values(board).flat(), agents, queuedPositions).needs.length,
+    [board, agents, queuedPositions]
+  )
+
   const reorderSessions = useCallback((orderedIds: string[]) => {
     setSessions((current) => {
       const byId = new Map(current.map((session) => [session.id, session]))
@@ -663,6 +698,40 @@ export default function App(): ReactNode {
         </div>
 
         <div className="flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
+          <div
+            role="tablist"
+            aria-label="View"
+            className="flex h-7 items-center gap-0.5 rounded-lg border border-edge-strong bg-chrome p-0.5"
+          >
+            {(
+              [
+                { id: 'board', label: 'Board', command: 'viewBoard' },
+                { id: 'inbox', label: 'Inbox', command: 'viewInbox' }
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={view === tab.id}
+                title={`${tab.label} view ${shortcutHint(bindings, tab.command)}`.trim()}
+                onClick={() => setView(tab.id)}
+                className={`inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors ${
+                  view === tab.id
+                    ? 'border-edge-strong bg-raised text-ink'
+                    : 'border-transparent text-dim hover:text-ink'
+                }`}
+              >
+                {tab.label}
+                {tab.id === 'inbox' && needsYou > 0 ? (
+                  <span className="rounded-[5px] bg-[var(--color-col-review)]/15 px-[5px] font-mono text-[10.5px] font-semibold leading-4 text-[var(--color-col-review-text)]">
+                    {needsYou}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+          <span aria-hidden className="h-[18px] w-px bg-edge" />
           <Button
             onClick={() => setConfirmingOrchestrate(true)}
             disabled={orchestration === null || orchestration.dispatch.length === 0}
@@ -703,6 +772,19 @@ export default function App(): ReactNode {
           <main className="flex min-h-0 flex-1 flex-col" hidden={terminalOpen && terminalExpanded}>
             {loading ? (
               <p className="p-6 text-dim">Loading board…</p>
+            ) : view === 'inbox' ? (
+              <Inbox
+                tasks={Object.values(board).flat()}
+                agents={agents}
+                queued={queuedPositions}
+                diffStats={diffStats}
+                onOpen={setEditing}
+                onLaunch={(task) => void launchAgent(task.id)}
+                onActivate={(task) => activateTask(task.id)}
+                onShowChanges={setChangesTask}
+                onMove={(task, status) => void window.api.tasks.update(task.id, { status })}
+                onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
+              />
             ) : (
               <Board
                 board={board}
