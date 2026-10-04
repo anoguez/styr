@@ -131,6 +131,10 @@ const api = {
       ipcRenderer.invoke('terminal:backlog', id),
     runtimeState: (id: string): Promise<TerminalRuntimeState | undefined> =>
       ipcRenderer.invoke('terminal:runtimeState', id),
+    gitBranch: (path: string): Promise<string | null> =>
+      ipcRenderer.invoke('terminal:gitBranch', path),
+    revealDirectory: (path: string): Promise<string> =>
+      ipcRenderer.invoke('terminal:revealDirectory', path),
     listDirectories: (
       path: string
     ): Promise<{ path: string; parent: string | null; names: string[] }> =>

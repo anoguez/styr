@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, type MutableRefObject, type ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -7,16 +7,37 @@ import { terminalTheme } from '../lib/palette.js'
 import { isAppShortcut, multilineSequence } from '../lib/terminalKeys.js'
 import { TerminalOutputSynchronizer } from '../lib/terminalOutput.js'
 
+export interface TerminalSelection {
+  text: string
+  /** Where the selection ended, relative to the terminal's own box. */
+  x: number
+  y: number
+}
+
+/** What the surface may ask of xterm without owning it. */
+export interface TerminalHandle {
+  /** The whole scrollback and screen as plain text. */
+  text: () => string
+  focus: () => void
+}
+
 export function TerminalView({
   sessionId,
   active,
   theme,
-  bindings
+  bindings,
+  handle,
+  onSelection,
+  onFullscreenChange
 }: {
   sessionId: string
   active: boolean
   theme: ThemeSettings
   bindings: ShortcutBindings
+  handle?: MutableRefObject<TerminalHandle | null>
+  onSelection?: (selection: TerminalSelection | null) => void
+  /** True while a full-screen program (alternate screen: vim, htop, an agent CLI) is showing. */
+  onFullscreenChange?: (fullscreen: boolean) => void
 }): ReactNode {
   const xtermTheme = useMemo(() => terminalTheme(theme), [theme])
   const host = useRef<HTMLDivElement>(null)
@@ -24,6 +45,10 @@ export function TerminalView({
   const terminalRef = useRef<Terminal | null>(null)
   const bindingsRef = useRef(bindings)
   bindingsRef.current = bindings
+  const onSelectionRef = useRef(onSelection)
+  onSelectionRef.current = onSelection
+  const onFullscreenRef = useRef(onFullscreenChange)
+  onFullscreenRef.current = onFullscreenChange
 
   useEffect(() => {
     const element = host.current
@@ -75,6 +100,37 @@ export function TerminalView({
       if (id === sessionId)
         terminal.write(`\r\n\x1b[90m[process exited with code ${exitCode}]\x1b[0m\r\n`)
     })
+    if (handle) {
+      handle.current = {
+        focus: () => terminal.focus(),
+        text: () => {
+          const buffer = terminal.buffer.active
+          const lines: string[] = []
+          for (let row = 0; row < buffer.length; row++) {
+            const line = buffer.getLine(row)
+            if (!line) continue
+            const text = line.translateToString(true)
+            // A wrapped row continues the previous one, so rejoin rather than split a long line.
+            if (line.isWrapped && lines.length > 0) lines[lines.length - 1] += text
+            else lines.push(text)
+          }
+          return lines.join('\n').trimEnd()
+        }
+      }
+    }
+    const reportScreen = (): void =>
+      onFullscreenRef.current?.(terminal.buffer.active.type === 'alternate')
+    const offBuffer = terminal.buffer.onBufferChange(reportScreen)
+    const reportSelection = (event: MouseEvent): void => {
+      const text = terminal.getSelection()
+      if (!text.trim()) return
+      const box = element.getBoundingClientRect()
+      onSelectionRef.current?.({ text, x: event.clientX - box.left, y: event.clientY - box.top })
+    }
+    element.addEventListener('mouseup', reportSelection)
+    const offSelection = terminal.onSelectionChange(() => {
+      if (!terminal.hasSelection()) onSelectionRef.current?.(null)
+    })
     const input = terminal.onData((data) => window.api.terminal.write(sessionId, data))
     const observer = new ResizeObserver(pushSize)
     observer.observe(element)
@@ -82,6 +138,11 @@ export function TerminalView({
     return () => {
       offData()
       offExit()
+      offBuffer.dispose()
+      offSelection.dispose()
+      element.removeEventListener('mouseup', reportSelection)
+      if (handle) handle.current = null
+      onFullscreenRef.current?.(false)
       input.dispose()
       observer.disconnect()
       terminal.dispose()

@@ -81,7 +81,12 @@ export const SHORTCUT_COMMANDS = [
   'newShell',
   'closeShell',
   'switchWorkspace',
-  'newWorkspace'
+  'newWorkspace',
+  'terminalDirectory',
+  'terminalAskAgent',
+  'terminalCopyOutput',
+  'terminalRetry',
+  'terminalSplit'
 ] as const
 
 export type ShortcutCommand = (typeof SHORTCUT_COMMANDS)[number]
@@ -276,7 +281,12 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   newShell: ['mod+t'],
   closeShell: ['mod+w'],
   switchWorkspace: [],
-  newWorkspace: []
+  newWorkspace: [],
+  terminalDirectory: ['mod+o'],
+  terminalAskAgent: ['mod+l'],
+  terminalCopyOutput: ['mod+shift+c'],
+  terminalRetry: ['mod+r'],
+  terminalSplit: ['mod+d']
 }
 
 export interface Settings {

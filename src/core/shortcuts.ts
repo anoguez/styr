@@ -34,7 +34,12 @@ export const SHORTCUT_LABELS: Record<ShortcutCommand, string> = {
   newShell: 'New terminal tab',
   closeShell: 'Close terminal tab',
   switchWorkspace: 'Switch workspace',
-  newWorkspace: 'New workspace'
+  newWorkspace: 'New workspace',
+  terminalDirectory: 'Terminal: change directory',
+  terminalAskAgent: 'Terminal: ask agent about this terminal',
+  terminalCopyOutput: 'Terminal: copy all output',
+  terminalRetry: 'Terminal: retry last command',
+  terminalSplit: 'Terminal: split into a new tab here'
 }
 
 /**
@@ -56,7 +61,12 @@ export const SHORTCUT_SCOPES: Record<ShortcutCommand, ShortcutScope> = {
   newShell: 'terminal',
   closeShell: 'terminal',
   switchWorkspace: 'window',
-  newWorkspace: 'window'
+  newWorkspace: 'window',
+  terminalDirectory: 'terminal',
+  terminalAskAgent: 'terminal',
+  terminalCopyOutput: 'terminal',
+  terminalRetry: 'terminal',
+  terminalSplit: 'terminal'
 }
 
 /** What a key event happened in. Required, so no caller can forget that scope exists. */

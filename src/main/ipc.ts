@@ -732,6 +732,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:list', () => listSessions())
   ipcMain.handle('terminal:backlog', (_event, id: string) => sessionBacklog(id))
   ipcMain.handle('terminal:runtimeState', (_event, id: string) => terminalRuntimeState(id))
+  ipcMain.handle('terminal:gitBranch', (_event, path: string) => readGitBranch(path) ?? null)
+  ipcMain.handle('terminal:revealDirectory', (_event, path: string) => shell.openPath(path))
   ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
 }
 

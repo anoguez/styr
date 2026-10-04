@@ -33,7 +33,22 @@ function installAppMenu(): void {
     { role: 'appMenu' },
     { role: 'fileMenu', submenu: [{ role: 'close', accelerator: 'Shift+CmdOrCtrl+W' }] },
     { role: 'editMenu' },
-    { role: 'viewMenu' },
+    {
+      // The stock View menu binds ⌘R to Reload, which would swallow the terminal's Retry shortcut
+      // and reload the window out from under every running session. Reload moves to ⌥⌘R.
+      label: 'View',
+      submenu: [
+        { role: 'reload', accelerator: 'Alt+CmdOrCtrl+R' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
     { role: 'windowMenu' }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
