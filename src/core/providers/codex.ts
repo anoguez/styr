@@ -39,15 +39,16 @@ export function codexCommand(
   settings: Pick<Settings, 'codexCommand' | 'codexApprovalReviewer'>,
   { sessionId, resume, cwd, prompt }: CodexCommandInput
 ): string {
+  const daemonArgs = `--remote unix:// --cd '${shellQuote(cwd)}'`
+  if (resume)
+    return `${settings.codexCommand} resume ${daemonArgs} ${sessionId}${prompt ? ` ${prompt}` : ''}`
+
   // `--approve-for-me` brings its own workspace-write sandbox and codex rejects it alongside `--sandbox`.
   const policy =
     settings.codexApprovalReviewer === 'auto_review'
       ? '--approve-for-me'
       : '--sandbox workspace-write --ask-for-approval on-request'
-  const args = `--remote unix:// --cd '${shellQuote(cwd)}' ${policy}`
-  return resume
-    ? `${settings.codexCommand} resume ${args} ${sessionId}${prompt ? ` ${prompt}` : ''}`
-    : `${settings.codexCommand} ${args} ${prompt ?? `''`}`
+  return `${settings.codexCommand} ${daemonArgs} ${policy} ${prompt ?? `''`}`
 }
 
 export const codexProvider: AgentProvider = {

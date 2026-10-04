@@ -12,10 +12,15 @@ describe('codexCommand', () => {
     )
   })
 
-  it('resumes through `codex resume <session-id>` on the same daemon', () => {
-    expect(codexCommand(settings, { sessionId: 'abc-123', resume: true, cwd: '/work/styr' })).toBe(
-      `codex resume --remote unix:// --cd '/work/styr' --sandbox workspace-write --ask-for-approval on-request abc-123`
+  it('resumes through the daemon without permission overrides', () => {
+    const command = codexCommand(
+      { ...settings, codexApprovalReviewer: 'auto_review' },
+      { sessionId: 'abc-123', resume: true, cwd: '/work/styr' }
     )
+    expect(command).toBe(`codex resume --remote unix:// --cd '/work/styr' abc-123`)
+    expect(command).not.toContain('--approve-for-me')
+    expect(command).not.toContain('--sandbox')
+    expect(command).not.toContain('--ask-for-approval')
   })
 
   it('quotes a working directory containing spaces and quotes', () => {
