@@ -3,7 +3,10 @@ import { homedir } from 'node:os'
 import { spawn, type IPty } from 'node-pty'
 import { nanoid } from 'nanoid'
 import { withoutSessionMarkers } from '@core/providers/index.js'
-import type { TerminalSessionInfo } from '@core/types.js'
+import type { TerminalRuntimeState, TerminalSessionInfo } from '@core/types.js'
+import { shellIntegrationEnvironment } from './shellIntegration.js'
+import { TerminalProtocolParser } from './terminalProtocol.js'
+import { TerminalRuntime } from './terminalRuntime.js'
 
 export interface SpawnOptions {
   cwd?: string
@@ -22,16 +25,21 @@ interface Session {
   pty: IPty
   backlog: string
   sequence: number
+  parser: TerminalProtocolParser
+  runtime: TerminalRuntime
 }
 
 type DataListener = (id: string, data: string, sequence: number) => void
 type ExitListener = (id: string, exitCode: number) => void
+type RuntimeListener = (state: TerminalRuntimeState) => void
 
 const BACKLOG_LIMIT = 200_000
 const sessions = new Map<string, Session>()
 const exitedTaskIds = new Map<string, { taskId: string; workspaceId?: string }>()
 const dataListeners = new Set<DataListener>()
 const exitListeners = new Set<ExitListener>()
+const runtimeListeners = new Set<RuntimeListener>()
+const exitedRuntimeStates = new Map<string, TerminalRuntimeState>()
 
 function resolveCwd(cwd?: string): string {
   return cwd && existsSync(cwd) ? cwd : homedir()
@@ -60,16 +68,21 @@ export function onTerminalExit(listener: ExitListener): void {
   exitListeners.add(listener)
 }
 
+export function onTerminalRuntimeState(listener: RuntimeListener): void {
+  runtimeListeners.add(listener)
+}
+
 export function createSession(options: SpawnOptions): TerminalSessionInfo {
   const id = nanoid(10)
   const cwd = resolveCwd(options.cwd)
   const shell = options.shell || process.env.SHELL || '/bin/zsh'
+  const environment = sanitisedEnv(options.env)
   const child = spawn(shell, ['-l'], {
     name: 'xterm-256color',
     cols: 100,
     rows: 30,
     cwd,
-    env: sanitisedEnv(options.env)
+    env: { ...environment, ...shellIntegrationEnvironment(shell, environment) }
   })
 
   const info: TerminalSessionInfo = {
@@ -81,15 +94,34 @@ export function createSession(options: SpawnOptions): TerminalSessionInfo {
     ...(options.provider ? { provider: options.provider } : {}),
     ...(options.replay ? { replay: true } : {})
   }
-  const session: Session = { info, pty: child, backlog: '', sequence: 0 }
+  const session: Session = {
+    info,
+    pty: child,
+    backlog: '',
+    sequence: 0,
+    parser: new TerminalProtocolParser(),
+    runtime: new TerminalRuntime(id, cwd)
+  }
   sessions.set(id, session)
 
   child.onData((data) => {
-    session.backlog = (session.backlog + data).slice(-BACKLOG_LIMIT)
+    const parsed = session.parser.parse(data)
+    for (const fragment of parsed.fragments) {
+      if (fragment.kind === 'terminal') session.runtime.appendOutput(fragment.data)
+      else {
+        session.runtime.apply(fragment.event)
+        emitRuntimeState(session.runtime.snapshot())
+      }
+    }
+    session.backlog = (session.backlog + parsed.terminalData).slice(-BACKLOG_LIMIT)
     session.sequence += 1
-    for (const listener of dataListeners) listener(id, data, session.sequence)
+    for (const listener of dataListeners) listener(id, parsed.terminalData, session.sequence)
   })
   child.onExit(({ exitCode }) => {
+    session.runtime.terminate(exitCode)
+    const runtimeState = session.runtime.snapshot()
+    exitedRuntimeStates.set(id, runtimeState)
+    emitRuntimeState(runtimeState)
     if (info.taskId) exitedTaskIds.set(id, { taskId: info.taskId, workspaceId: info.workspaceId })
     sessions.delete(id)
     for (const listener of exitListeners) listener(id, exitCode)
@@ -119,6 +151,10 @@ export function sessionBacklog(id: string): { data: string; sequence: number } {
   return { data: session?.backlog ?? '', sequence: session?.sequence ?? 0 }
 }
 
+export function terminalRuntimeState(id: string): TerminalRuntimeState | undefined {
+  return sessions.get(id)?.runtime.snapshot() ?? exitedRuntimeStates.get(id)
+}
+
 /** The task a session belongs to, with its workspace — ids repeat across workspaces. */
 export function sessionTask(id: string): { taskId: string; workspaceId?: string } | undefined {
   const info = sessions.get(id)?.info
@@ -142,4 +178,8 @@ export function listSessions(): TerminalSessionInfo[] {
 
 export function killAllSessions(): void {
   for (const id of [...sessions.keys()]) killSession(id)
+}
+
+function emitRuntimeState(state: TerminalRuntimeState): void {
+  for (const listener of runtimeListeners) listener(state)
 }

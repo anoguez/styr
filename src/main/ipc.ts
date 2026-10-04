@@ -81,6 +81,7 @@ import {
   listSessions,
   resizeSession,
   sessionBacklog,
+  terminalRuntimeState,
   writeToSession,
   type SpawnOptions
 } from './terminal/ptyManager.js'
@@ -728,6 +729,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:kill', (_event, id: string) => killSession(id))
   ipcMain.handle('terminal:list', () => listSessions())
   ipcMain.handle('terminal:backlog', (_event, id: string) => sessionBacklog(id))
+  ipcMain.handle('terminal:runtimeState', (_event, id: string) => terminalRuntimeState(id))
 }
 
 export { broadcast }

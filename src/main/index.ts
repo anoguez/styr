@@ -15,6 +15,7 @@ import {
   killAllSessions,
   onTerminalData,
   onTerminalExit,
+  onTerminalRuntimeState,
   sessionTask
 } from './terminal/ptyManager.js'
 import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
@@ -100,6 +101,7 @@ app.whenReady().then(() => {
   installAppMenu()
 
   onTerminalData((id, data, sequence) => broadcast('terminal:data', { id, data, sequence }))
+  onTerminalRuntimeState((state) => broadcast('terminal:runtimeState', state))
   onTerminalExit((id, exitCode) => {
     const task = sessionTask(id)
     broadcast('terminal:exit', { id, exitCode })
