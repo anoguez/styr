@@ -756,6 +756,19 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
 }
 
+/** How long an agent's input box gets to take typed text before Enter arrives. */
+const SUBMIT_DELAY_MS = 250
+
+/**
+ * Types a request into a running agent and submits it. The text and the Enter go in separate
+ * writes: an agent CLI treats a burst that ends in a newline as a paste, and a pasted newline adds
+ * a line to its input box instead of sending it, so the request would sit there unsent.
+ */
+function submitToAgent(sessionId: string, text: string): void {
+  writeToSession(sessionId, text)
+  setTimeout(() => writeToSession(sessionId, '\r'), SUBMIT_DELAY_MS)
+}
+
 /**
  * Asks the agent running a task to open its pull request, by typing the request into its session —
  * the thing a user would otherwise type once a review passes. Only a live, idle agent is asked:
@@ -773,7 +786,7 @@ function askForPullRequest(taskId: string): void {
     throw new Error('The agent is still working on this task. Ask once it stops.')
   const repoPath = task.repoPath || settings.defaultRepoPath.trim()
   const base = task.baseBranch || (repoPath ? baseBranchFor(repoPath) : undefined)
-  writeToSession(live.id, `${createPullRequestPrompt({ taskFile: task.filePath, base })}\r`)
+  submitToAgent(live.id, createPullRequestPrompt({ taskFile: task.filePath, base }))
 }
 
 /**
@@ -871,7 +884,7 @@ function handOffSession(
   })
   if (source) addNote(source.id, 'styr', `Handed off as ${task.id}; handoff document: ${path}`)
   // Last, so a failure above never leaves the agent writing a document nothing points at.
-  if (agentAsked) writeToSession(sessionId, `${agentHandoffPrompt(path)}\r`)
+  if (agentAsked) submitToAgent(sessionId, agentHandoffPrompt(path))
   notifyTasksChanged()
   return { taskId: task.id, path, agentAsked }
 }
