@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/anoguez/styr/compare/v0.13.0...v0.14.0) (2026-10-04)
+
+
+### Features
+
+* inbox view ([#46](https://github.com/anoguez/styr/issues/46)) ([56ea9f6](https://github.com/anoguez/styr/commit/56ea9f68491439beeb002e49843172ab25f03b81))
+
 ## [0.13.0](https://github.com/anoguez/styr/compare/v0.12.0...v0.13.0) (2026-10-04)
 
 
