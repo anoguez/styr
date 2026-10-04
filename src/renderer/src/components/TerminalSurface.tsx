@@ -245,6 +245,7 @@ function FailureActions({
 function ContextBar({
   runtime,
   fallbackCwd,
+  agentTitle,
   branch,
   picking,
   menuOpen,
@@ -261,6 +262,8 @@ function ContextBar({
 }: {
   runtime: TerminalRuntimeState
   fallbackCwd: string
+  /** Set for a task's agent session: what runs there is the agent, not a command to interrupt. */
+  agentTitle?: string
   branch: string | null
   picking: boolean
   menuOpen: boolean
@@ -356,20 +359,22 @@ function ContextBar({
         <>
           <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] text-col-progress">
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current wd-pulse" />
-            <span className="max-w-56 truncate">{running.command}</span>
+            <span className="max-w-56 truncate">{agentTitle ?? running.command}</span>
             <span className="shrink-0">· {elapsed}s</span>
           </span>
-          <button
-            type="button"
-            className={`${quietButton} h-5 shrink-0 rounded-[5px] border-edge-strong px-1.5 text-[11px]`}
-            onClick={onInterrupt}
-          >
-            <svg aria-hidden viewBox="0 0 16 16" width="10" height="10">
-              <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" />
-            </svg>
-            Interrupt
-            <Kbd>⌃C</Kbd>
-          </button>
+          {agentTitle ? null : (
+            <button
+              type="button"
+              className={`${quietButton} h-5 shrink-0 rounded-[5px] border-edge-strong px-1.5 text-[11px]`}
+              onClick={onInterrupt}
+            >
+              <svg aria-hidden viewBox="0 0 16 16" width="10" height="10">
+                <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" />
+              </svg>
+              Interrupt
+              <Kbd>⌃C</Kbd>
+            </button>
+          )}
         </>
       ) : runtime.lastExitCode !== undefined ? (
         <span
@@ -559,8 +564,9 @@ export function TerminalSurface({
     !running &&
     runtime.lastExitCode !== undefined &&
     runtime.lastExitCode !== 0
-  // An agent CLI (or any full-screen program) owns the whole panel: no prompt means no bar.
-  const showBar = runtime !== undefined && !session.taskId && !runtime.terminated && !fullscreen
+  // Only a program on the alternate screen (vim, htop) owns the whole panel. Agent CLIs such as
+  // Claude Code and Codex draw inline, so their sessions keep the bar.
+  const showBar = runtime !== undefined && !runtime.terminated && !fullscreen
   const askHint = shortcutHint(bindings, 'terminalAskAgent')
 
   const groups: MenuItem[][] = [
@@ -639,6 +645,7 @@ export function TerminalSurface({
         <ContextBar
           runtime={runtime}
           fallbackCwd={session.cwd}
+          agentTitle={session.taskId ? session.title : undefined}
           branch={branch}
           picking={picking}
           menuOpen={menuOpen}

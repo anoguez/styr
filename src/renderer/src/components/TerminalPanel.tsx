@@ -153,13 +153,10 @@ export function TerminalPanel({
     })
   }, [])
   const activeRuntime = activeId ? runtimes.get(activeId) : undefined
-  const activeSession = sessions.find((session) => session.id === activeId)
   // While a full-screen program owns the panel the context bar is gone, so the folder it is in
   // moves up here instead of disappearing.
   const folder =
-    activeId && fullscreen.has(activeId) && activeRuntime && !activeSession?.taskId
-      ? activeRuntime.cwd
-      : undefined
+    activeId && fullscreen.has(activeId) && activeRuntime ? activeRuntime.cwd : undefined
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
