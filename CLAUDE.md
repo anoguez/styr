@@ -677,3 +677,13 @@ IPC) — it is deliberately not in `TaskPatch`. It is orthogonal to status, drop
 board, `isAgentArchived` and Orchestrate, and keeps the file. The Archive dialog (palette: "View
 archive") lists archived tasks and unarchives them. The age cap does not auto-archive, so the board
 never rewrites files on a timer.
+
+## Inbox
+
+The header's Board/Inbox switch (`⌘1`/`⌘2`, the `viewBoard`/`viewInbox` commands) swaps the board for
+`Inbox.tsx`: the same tasks regrouped as Needs you / Running / Up next / Done. The grouping is
+`buildInbox` in `core/inbox.ts` — pure, derived from tasks, agent states and the Orchestrate queue,
+and it writes nothing, so the two views cannot disagree. A working agent outranks `needs_spec`.
+Actions reuse the board's own handlers (launch, activate, changes, status update, archive); the
+inbox cannot answer a permission prompt, so a waiting agent's action is "Open terminal". The view
+is `App` state, not a setting, and the search box filters both views.
