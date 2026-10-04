@@ -13,6 +13,7 @@ import type {
   TaskPatch,
   TaskStatus,
   TerminalSessionInfo,
+  TerminalOutput,
   TerminalRuntimeState,
   UpdateState,
   WorkspaceOverview
@@ -127,8 +128,7 @@ const api = {
     previewPrompt: (taskId: string, templateId?: string): Promise<string> =>
       ipcRenderer.invoke('terminal:previewPrompt', taskId, templateId),
     list: (): Promise<TerminalSessionInfo[]> => ipcRenderer.invoke('terminal:list'),
-    backlog: (id: string): Promise<{ data: string; sequence: number }> =>
-      ipcRenderer.invoke('terminal:backlog', id),
+    backlog: (id: string): Promise<TerminalOutput> => ipcRenderer.invoke('terminal:backlog', id),
     runtimeState: (id: string): Promise<TerminalRuntimeState | undefined> =>
       ipcRenderer.invoke('terminal:runtimeState', id),
     askReview: (taskId: string): Promise<TerminalSessionInfo> =>
@@ -150,9 +150,8 @@ const api = {
     resize: (id: string, cols: number, rows: number): void =>
       ipcRenderer.send('terminal:resize', id, cols, rows),
     kill: (id: string): Promise<void> => ipcRenderer.invoke('terminal:kill', id),
-    onData: (
-      handler: (payload: { id: string; data: string; sequence: number }) => void
-    ): (() => void) => subscribe('terminal:data', handler as (...args: never[]) => void),
+    onData: (handler: (payload: { id: string } & TerminalOutput) => void): (() => void) =>
+      subscribe('terminal:data', handler as (...args: never[]) => void),
     onExit: (handler: (payload: { id: string; exitCode: number }) => void): (() => void) =>
       subscribe('terminal:exit', handler as (...args: never[]) => void),
     onRuntimeState: (handler: (state: TerminalRuntimeState) => void): (() => void) =>

@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import type { ShortcutBindings, ThemeSettings } from '@core/types.js'
 import { terminalTheme } from '../lib/palette.js'
 import { isAppShortcut, multilineSequence } from '../lib/terminalKeys.js'
+import { BlockTracker, type BlockLayout } from '../lib/blockTracker.js'
 import { TerminalOutputSynchronizer } from '../lib/terminalOutput.js'
 
 export interface TerminalSelection {
@@ -18,8 +19,12 @@ export interface TerminalSelection {
 export interface TerminalHandle {
   /** The whole scrollback and screen as plain text. */
   text: () => string
+  /** Buffer lines `from` (inclusive) to `to` (exclusive) as plain text. */
+  lines: (from: number, to: number) => string
   focus: () => void
 }
+
+export type { BlockLayout }
 
 export function TerminalView({
   sessionId,
@@ -28,7 +33,9 @@ export function TerminalView({
   bindings,
   handle,
   onSelection,
-  onFullscreenChange
+  onFullscreenChange,
+  onBlocks,
+  onHoverLine
 }: {
   sessionId: string
   active: boolean
@@ -38,6 +45,10 @@ export function TerminalView({
   onSelection?: (selection: TerminalSelection | null) => void
   /** True while a full-screen program (alternate screen: vim, htop, an agent CLI) is showing. */
   onFullscreenChange?: (fullscreen: boolean) => void
+  /** Where the shell's commands sit in the buffer; reported as output arrives and as it scrolls. */
+  onBlocks?: (layout: BlockLayout) => void
+  /** The buffer line under the pointer, or null when it is outside the terminal. */
+  onHoverLine?: (line: number | null) => void
 }): ReactNode {
   const xtermTheme = useMemo(() => terminalTheme(theme), [theme])
   const host = useRef<HTMLDivElement>(null)
@@ -49,6 +60,10 @@ export function TerminalView({
   onSelectionRef.current = onSelection
   const onFullscreenRef = useRef(onFullscreenChange)
   onFullscreenRef.current = onFullscreenChange
+  const onBlocksRef = useRef(onBlocks)
+  onBlocksRef.current = onBlocks
+  const onHoverRef = useRef(onHoverLine)
+  onHoverRef.current = onHoverLine
 
   useEffect(() => {
     const element = host.current
@@ -88,7 +103,15 @@ export function TerminalView({
       window.api.terminal.resize(sessionId, terminal.cols, terminal.rows)
     }
 
-    const output = new TerminalOutputSynchronizer((data) => terminal.write(data))
+    const tracker = new BlockTracker(terminal, element, (layout) => onBlocksRef.current?.(layout))
+    const output = new TerminalOutputSynchronizer({
+      write: (data) => {
+        if (data) terminal.write(data)
+      },
+      // An empty write is queued behind the data before it, so its callback runs exactly when the
+      // cursor is where the shell was when it sent the mark.
+      mark: (mark) => terminal.write('', () => tracker.mark(mark))
+    })
     const offData = window.api.terminal.onData(({ id, ...event }) => {
       if (id === sessionId) output.writeLive(event)
     })
@@ -100,22 +123,24 @@ export function TerminalView({
       if (id === sessionId)
         terminal.write(`\r\n\x1b[90m[process exited with code ${exitCode}]\x1b[0m\r\n`)
     })
+    const rangeText = (from: number, to: number): string => {
+      const buffer = terminal.buffer.active
+      const lines: string[] = []
+      for (let row = Math.max(0, from); row < Math.min(to, buffer.length); row++) {
+        const line = buffer.getLine(row)
+        if (!line) continue
+        const text = line.translateToString(true)
+        // A wrapped row continues the previous one, so rejoin rather than split a long line.
+        if (line.isWrapped && lines.length > 0) lines[lines.length - 1] += text
+        else lines.push(text)
+      }
+      return lines.join('\n').trimEnd()
+    }
     if (handle) {
       handle.current = {
         focus: () => terminal.focus(),
-        text: () => {
-          const buffer = terminal.buffer.active
-          const lines: string[] = []
-          for (let row = 0; row < buffer.length; row++) {
-            const line = buffer.getLine(row)
-            if (!line) continue
-            const text = line.translateToString(true)
-            // A wrapped row continues the previous one, so rejoin rather than split a long line.
-            if (line.isWrapped && lines.length > 0) lines[lines.length - 1] += text
-            else lines.push(text)
-          }
-          return lines.join('\n').trimEnd()
-        }
+        lines: (from, to) => rangeText(from, to),
+        text: () => rangeText(0, terminal.buffer.active.length)
       }
     }
     const reportScreen = (): void =>
@@ -128,6 +153,19 @@ export function TerminalView({
       onSelectionRef.current?.({ text, x: event.clientX - box.left, y: event.clientY - box.top })
     }
     element.addEventListener('mouseup', reportSelection)
+    let hovered: number | null = null
+    const hover = (event: MouseEvent): void => {
+      const line = tracker.lineAt(event.clientY)
+      if (line === hovered) return
+      hovered = line
+      onHoverRef.current?.(line)
+    }
+    const leave = (): void => {
+      hovered = null
+      onHoverRef.current?.(null)
+    }
+    element.addEventListener('mousemove', hover)
+    element.addEventListener('mouseleave', leave)
     const offSelection = terminal.onSelectionChange(() => {
       if (!terminal.hasSelection()) onSelectionRef.current?.(null)
     })
@@ -141,8 +179,11 @@ export function TerminalView({
       offBuffer.dispose()
       offSelection.dispose()
       element.removeEventListener('mouseup', reportSelection)
+      element.removeEventListener('mousemove', hover)
+      element.removeEventListener('mouseleave', leave)
       if (handle) handle.current = null
       onFullscreenRef.current?.(false)
+      tracker.dispose()
       input.dispose()
       observer.disconnect()
       terminal.dispose()

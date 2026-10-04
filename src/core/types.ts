@@ -446,6 +446,29 @@ export interface TerminalSessionInfo {
   replay?: boolean
 }
 
+/**
+ * Where a command began or ended in a terminal's output stream. `offset` counts characters into the
+ * `data` it travels with, so the renderer can pause between writes and anchor a marker exactly
+ * there; nothing about it reaches xterm itself.
+ */
+export interface TerminalMark {
+  offset: number
+  kind: 'start' | 'end'
+  /** The runtime's id for the command, shared by its start and end marks. */
+  id: string
+  command?: string
+  exitCode?: number
+  /** Epoch milliseconds. */
+  at: number
+}
+
+/** One piece of a terminal's output, with the command boundaries inside it. */
+export interface TerminalOutput {
+  data: string
+  sequence: number
+  marks: TerminalMark[]
+}
+
 /** A completed shell command. Additional terminal and agent metadata can be added over time. */
 export interface TerminalCommand {
   id: string

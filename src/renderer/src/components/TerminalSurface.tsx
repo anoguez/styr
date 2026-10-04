@@ -20,6 +20,9 @@ import {
   type TerminalTaskKind
 } from '../lib/terminalContext.js'
 import { DirectoryPicker } from './DirectoryPicker.js'
+import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
+import { TerminalBlocks, type BlockActions } from './TerminalBlocks.js'
+import type { BlockLayout, TrackedBlock } from '../lib/blockTracker.js'
 import { TerminalView, type TerminalHandle, type TerminalSelection } from './TerminalView.js'
 
 const INTERRUPT = '\x03'
@@ -68,79 +71,6 @@ function CopyIcon(): ReactNode {
       <rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.5" />
       <path d="M10.5 3.5V3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v5.5a1 1 0 0 0 1 1h.5" />
     </svg>
-  )
-}
-
-interface MenuItem {
-  label: string
-  kbd?: string
-  agent?: boolean
-  disabled?: boolean
-  run: () => void
-}
-
-/** The "⋯" menu: actions on the terminal as a whole. */
-function ActionsMenu({
-  groups,
-  onClose
-}: {
-  groups: MenuItem[][]
-  onClose: () => void
-}): ReactNode {
-  const root = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    root.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus()
-    const close = (event: MouseEvent): void => {
-      if (!root.current?.contains(event.target as Node)) onClose()
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [onClose])
-
-  return (
-    <div
-      ref={root}
-      role="menu"
-      className="pointer-events-auto absolute bottom-full right-1.5 z-20 mb-1 flex w-[232px] flex-col rounded-lg border border-edge-strong bg-panel p-1 shadow-2xl"
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          event.stopPropagation()
-          onClose()
-        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-          event.preventDefault()
-          const items = [
-            ...(root.current?.querySelectorAll<HTMLElement>('button:not(:disabled)') ?? [])
-          ]
-          const at = items.indexOf(document.activeElement as HTMLElement)
-          const step = event.key === 'ArrowDown' ? 1 : -1
-          items[(at + step + items.length) % items.length]?.focus()
-        }
-      }}
-    >
-      {groups.map((group, index) => (
-        <div key={index} className={index > 0 ? 'mt-1 border-t border-edge pt-1' : ''}>
-          {group.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              role="menuitem"
-              disabled={item.disabled}
-              className={`flex h-[26px] w-full items-center gap-2 rounded-md px-2 text-left text-[12.5px] hover:bg-raised focus:bg-raised focus:outline-none disabled:opacity-40 ${
-                item.agent ? 'text-[#d9b4e0]' : 'text-ink'
-              }`}
-              onClick={() => {
-                onClose()
-                item.run()
-              }}
-            >
-              <span className="flex-1">{item.label}</span>
-              {item.kbd ? <Kbd>{item.kbd}</Kbd> : null}
-            </button>
-          ))}
-        </div>
-      ))}
-    </div>
   )
 }
 
@@ -245,6 +175,7 @@ function ContextBar({
   fallbackCwd,
   isAgent,
   agentState,
+  blocksOn,
   branch,
   repoRoot,
   picking,
@@ -268,6 +199,8 @@ function ContextBar({
   /** An agent CLI is running: it is shown by its state, not as a command with a timer. */
   isAgent?: boolean
   agentState?: AgentStatus['state']
+  /** Commands report themselves in blocks over the terminal, so the bar leaves them out. */
+  blocksOn?: boolean
   branch: string | null
   repoRoot: string | null
   picking: boolean
@@ -379,7 +312,7 @@ function ContextBar({
           />
           {agentState ? <span className="shrink-0">{AGENT_STATE_LABELS[agentState]}</span> : null}
         </span>
-      ) : running ? (
+      ) : running && !blocksOn ? (
         <>
           <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] text-col-progress">
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current wd-pulse" />
@@ -398,7 +331,7 @@ function ContextBar({
             <Kbd>⌃C</Kbd>
           </button>
         </>
-      ) : runtime.lastExitCode !== undefined ? (
+      ) : runtime.lastExitCode !== undefined && !blocksOn ? (
         <span
           className={`inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] ${
             failed ? 'text-danger' : 'text-faint'
@@ -516,6 +449,10 @@ export function TerminalSurface({
     branch: null
   })
   const [notice, setNotice] = useState<string>()
+  const [layout, setLayout] = useState<BlockLayout | null>(null)
+  const [hoverLine, setHoverLine] = useState<number | null>(null)
+  const [stickyBlock, setStickyBlock] = useState<string | null>(null)
+  const [blockMenu, setBlockMenu] = useState<string | null>(null)
 
   const cwd = runtime?.cwd || session.cwd
   const running = runtime?.runningCommand
@@ -575,9 +512,13 @@ export function TerminalSurface({
   )
 
   const sendToAgent = useCallback(
-    async (kind: TerminalTaskKind, preferSelection = false): Promise<void> => {
+    async (
+      kind: TerminalTaskKind,
+      preferSelection = false,
+      context?: TerminalContext
+    ): Promise<void> => {
       if (!onCreateTask) return
-      const request = taskFromTerminal(kind, contextFor(preferSelection))
+      const request = taskFromTerminal(kind, context ?? contextFor(preferSelection))
       setSelection(null)
       try {
         setNotice(`Created ${await onCreateTask(request)} — find it in Backlog`)
@@ -633,6 +574,35 @@ export function TerminalSurface({
   // Claude Code and Codex draw inline, so their sessions keep the bar.
   const agent = Boolean(session.taskId) || isAgentProgram(runtime?.runningCommand?.command)
   const fullscreen = altScreen && !agent
+  // A shell's commands become blocks; an agent session is one long command, which is not a block.
+  const blocksOn = !agent && layout !== null && !layout.alternate
+  const shellBlocks = layout?.blocks.filter((block) => !isAgentProgram(block.command)) ?? []
+  const hoveredBlock =
+    blockMenu ??
+    stickyBlock ??
+    (hoverLine === null
+      ? null
+      : (shellBlocks.find((block) => hoverLine >= block.startLine && hoverLine < block.endLine)
+          ?.id ?? null))
+  const outputOf = (block: TrackedBlock): string =>
+    handle.current?.lines(block.startLine + 1, block.endLine) ?? ''
+  const contextOfBlock = (block: TrackedBlock): TerminalContext => ({
+    cwd,
+    command: block.command,
+    exitCode: block.exitCode,
+    text: outputOf(block)
+  })
+  const blockActions: BlockActions = {
+    copyOutput: (block) => copy(outputOf(block), 'output'),
+    copyCommand: (block) => copy(block.command, 'command'),
+    retry: (block) => {
+      if (canChange) write(`${block.command}\r`)
+    },
+    fix: (block) => void sendToAgent('fix', false, contextOfBlock(block)),
+    explain: (block) => void sendToAgent('explain', false, contextOfBlock(block)),
+    createTask: (block) => void sendToAgent('output', false, contextOfBlock(block)),
+    interrupt: () => write(INTERRUPT)
+  }
   // Handing off only makes sense while an agent is running; a task's exited session is a bare shell.
   const canHandOff = agent && Boolean(runtime?.runningCommand)
   const showBar = runtime !== undefined && !runtime.terminated && !fullscreen
@@ -720,7 +690,20 @@ export function TerminalSurface({
           handle={handle}
           onSelection={setSelection}
           onFullscreenChange={setAltScreen}
+          onBlocks={setLayout}
+          onHoverLine={setHoverLine}
         />
+        {blocksOn && layout ? (
+          <TerminalBlocks
+            layout={{ ...layout, blocks: shellBlocks }}
+            hoveredId={hoveredBlock}
+            menuId={blockMenu}
+            canRetry={canChange}
+            actions={blockActions}
+            onHover={setStickyBlock}
+            onMenu={setBlockMenu}
+          />
+        ) : null}
         {selection && !fullscreen && onCreateTask ? (
           <SelectionToolbar
             selection={selection}
@@ -756,6 +739,7 @@ export function TerminalSurface({
           fallbackCwd={session.cwd}
           isAgent={agent}
           agentState={agentStatus?.state}
+          blocksOn={blocksOn}
           branch={git.branch}
           repoRoot={git.root}
           picking={picking}

@@ -115,7 +115,7 @@ app.whenReady().then(() => {
   registerIpcHandlers()
   installAppMenu()
 
-  onTerminalData((id, data, sequence) => broadcast('terminal:data', { id, data, sequence }))
+  onTerminalData((id, output) => broadcast('terminal:data', { id, ...output }))
   onTerminalRuntimeState((state) => broadcast('terminal:runtimeState', state))
   onTerminalExit((id, exitCode) => {
     const task = sessionTask(id)
