@@ -210,7 +210,9 @@ export default function App(): ReactNode {
         tags: [],
         repoPath: settings.defaultRepoPath.trim() || undefined,
         useWorktree: settings.taskDefaults.useWorktree,
-        orchestrate: settings.taskDefaults.orchestrate,
+        // Not orchestrated: a task made from a click in a terminal should wait for the user, not be
+        // picked up and started by the next Orchestrate run.
+        orchestrate: false,
         contextFiles: [],
         provider: settings.defaultProvider
       })

@@ -63,7 +63,7 @@ export function ActionsMenu({
               role="menuitem"
               disabled={item.disabled}
               className={`flex h-[26px] w-full items-center gap-2 rounded-md px-2 text-left text-[12.5px] hover:bg-raised focus:bg-raised focus:outline-none disabled:opacity-40 ${
-                item.agent ? 'text-[#d9b4e0]' : 'text-ink'
+                item.agent ? 'text-accent-ink' : 'text-ink'
               }`}
               onClick={() => {
                 onClose()

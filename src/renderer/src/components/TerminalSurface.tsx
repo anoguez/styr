@@ -31,7 +31,7 @@ const CLEAR = '\x0c'
 const quietButton =
   'pointer-events-auto inline-flex items-center gap-1.5 rounded-md border border-transparent font-medium text-dim hover:bg-raised/70 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40'
 const agentButton =
-  'pointer-events-auto inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/15 font-medium text-[#d9b4e0] hover:bg-accent/30 focus-visible:outline-2 focus-visible:outline-accent'
+  'pointer-events-auto inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/15 font-medium text-accent-ink hover:bg-accent/30 focus-visible:outline-2 focus-visible:outline-accent'
 
 export interface TerminalTaskRequest {
   title: string
@@ -373,7 +373,7 @@ function ContextBar({
         className={`${quietButton} h-[22px] px-[7px] text-[11.5px]`}
         onClick={onAsk}
       >
-        <span className="text-[#aa75b5]">✦</span>
+        <span className="text-accent-soft">✦</span>
         <span className="hidden @md:inline">Ask agent</span>
         {askHint ? (
           <span className="hidden font-mono text-[10px] text-faint @md:inline">{askHint}</span>
