@@ -686,4 +686,4 @@ The header's Board/Inbox switch (`⌘1`/`⌘2`, the `viewBoard`/`viewInbox` comm
 and it writes nothing, so the two views cannot disagree. A working agent outranks `needs_spec`.
 Actions reuse the board's own handlers (launch, activate, changes, status update, archive); the
 inbox cannot answer a permission prompt, so a waiting agent's action is "Open terminal". The view
-is `App` state, not a setting, and the search box filters both views.
+is `App` state remembered in the renderer's `localStorage` (`styr:view`) — a per-machine convenience, not a setting, so it stays out of the config files — and the search box filters both views.

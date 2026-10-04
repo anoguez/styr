@@ -45,6 +45,18 @@ import {
   ipcMessage
 } from './components/WorkspaceSwitcher.js'
 
+const VIEW_KEY = 'styr:view'
+
+type View = 'board' | 'inbox'
+
+function savedView(): View {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'inbox' ? 'inbox' : 'board'
+  } catch {
+    return 'board'
+  }
+}
+
 const MIN_TERMINAL_HEIGHT = 140
 const MIN_BOARD_HEIGHT = 220
 const TERMINAL_OPEN_RATIO = 0.45
@@ -98,7 +110,14 @@ export default function App(): ReactNode {
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
-  const [view, setView] = useState<'board' | 'inbox'>('board')
+  const [view, setView] = useState<View>(savedView)
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, view)
+    } catch {
+      // Remembering the view is a convenience; a blocked store just means it resets.
+    }
+  }, [view])
   const [changesTask, setChangesTask] = useState<Task | null>(null)
 
   const [sessions, setSessions] = useState<TerminalSessionInfo[]>([])
