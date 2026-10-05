@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.0](https://github.com/anoguez/styr/compare/v0.14.0...v0.15.0) (2026-10-05)
+
+
+### Features
+
+* make header version clickable and highlight when an update is available ([#48](https://github.com/anoguez/styr/issues/48)) ([98be34f](https://github.com/anoguez/styr/commit/98be34f0be0b0c8cd09e4be2754dbafccc967133))
+
+
+### Bug Fixes
+
+* read an Activity heading without the marker as activity ([#50](https://github.com/anoguez/styr/issues/50)) ([1ca88c3](https://github.com/anoguez/styr/commit/1ca88c34912915117ca40ab62785b3b66ef7ecd3))
+
 ## [0.14.0](https://github.com/anoguez/styr/compare/v0.13.0...v0.14.0) (2026-10-04)
 
 
