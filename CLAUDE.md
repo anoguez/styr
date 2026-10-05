@@ -589,6 +589,10 @@ Task markdown is edited by humans and by Claude sessions, not just by this app. 
   fails validation is recorded in `brokenTaskFiles()` and skipped, never rewritten. Rewriting it
   would destroy the very fields that failed to parse.
 
+The activity block starts at `<!-- styr:activity -->`; with no marker, a line that is exactly
+`## Activity` starts it instead (so an agent's bare heading is not read as description). The marker
+wins when both exist, and serialising always writes the marker.
+
 `parseActivity` keeps any `- ` bullet it cannot parse as an entry with empty `at`/`author`, and
 `renderActivity` writes those back bare. That is what makes a hand-written note survive a later
 programmatic write.

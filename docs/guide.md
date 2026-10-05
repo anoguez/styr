@@ -51,6 +51,11 @@ The redirect loops after SSO.
 - `2026-09-30T01:05:00.000Z` **claude** — Reproduced it; the state cookie is dropped.
 ```
 
+The `<!-- styr:activity -->` marker is what Styr writes. When reading a file, an `## Activity`
+heading on its own line is also accepted as the start of the activity list if there is no marker, so
+a hand-written or agent-written section is not mistaken for the description. The marker wins when both
+are present, and the next save rewrites the file with the marker.
+
 `.json` task files are read and written too, using the same fields plus `description` and
 `activity` — useful when a generator emits JSON.
 
