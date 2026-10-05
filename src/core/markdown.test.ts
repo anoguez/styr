@@ -68,4 +68,59 @@ describe('task Markdown', () => {
       description: 'Ready for planning.'
     })
   })
+
+  it('reads an Activity heading without the marker as activity', () => {
+    const raw = [
+      '---',
+      'id: TASK-0044',
+      'title: Bare heading',
+      'status: backlog',
+      'priority: low',
+      'readiness: ready',
+      'createdAt: 2026-10-01T07:00:00.000Z',
+      'updatedAt: 2026-10-01T07:00:00.000Z',
+      '---',
+      '',
+      'Do the thing.',
+      '',
+      '## Activity',
+      '',
+      '- Started work',
+      '- `2026-10-01T08:00:00.000Z` **claude** — Done'
+    ].join('\n')
+    const parsed = parseTaskMarkdown(raw, '/workspace/tasks/TASK-0044-bare-heading.md')
+
+    expect(parsed.description).toBe('Do the thing.')
+    expect(parsed.activity).toHaveLength(2)
+    expect(parseTaskMarkdown(serialiseTask(parsed), parsed.filePath).activity).toEqual(
+      parsed.activity
+    )
+  })
+
+  it('prefers the marker over an earlier Activity heading in the description', () => {
+    const raw = [
+      '---',
+      'id: TASK-0045',
+      'title: Marker wins',
+      'status: backlog',
+      'priority: low',
+      'readiness: ready',
+      'createdAt: 2026-10-01T07:00:00.000Z',
+      'updatedAt: 2026-10-01T07:00:00.000Z',
+      '---',
+      '',
+      '## Activity',
+      '',
+      'Explain the section.',
+      '',
+      '<!-- styr:activity -->',
+      '## Activity',
+      '',
+      '- Note'
+    ].join('\n')
+    const parsed = parseTaskMarkdown(raw, '/workspace/tasks/TASK-0045-marker-wins.md')
+
+    expect(parsed.description).toContain('Explain the section.')
+    expect(parsed.activity).toHaveLength(1)
+  })
 })

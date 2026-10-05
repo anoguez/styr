@@ -4,6 +4,8 @@ import { taskFrontmatterSchema } from './taskSchema.js'
 import type { ActivityEntry, Task } from './types.js'
 
 const ACTIVITY_MARKER = '<!-- styr:activity -->'
+// A hand-written file may carry the heading without the marker; the marker is only ever written by us.
+const ACTIVITY_HEADING_RE = /^## Activity[ \t]*$/m
 const TOKEN_FIELDS = ['status', 'priority', 'readiness'] as const
 const TIMESTAMP_FIELDS = ['createdAt', 'updatedAt', 'doneAt', 'archivedAt'] as const
 const ENTRY_RE = /^- `([^`]+)` \*\*([^*]+)\*\* — (.*)$/
@@ -101,7 +103,11 @@ export function parseTaskMarkdown(raw: string, filePath: string): Task {
   const parsed = matter(raw)
   const front = taskFrontmatterSchema.parse(migrateProviderFields(tolerate(parsed.data)))
   const markerAt = parsed.content.indexOf(ACTIVITY_MARKER)
-  const description = (markerAt === -1 ? parsed.content : parsed.content.slice(0, markerAt)).trim()
-  const activity = markerAt === -1 ? [] : parseActivity(parsed.content.slice(markerAt))
+  const headingAt = ACTIVITY_HEADING_RE.exec(parsed.content)?.index ?? -1
+  // The marker wins; a bare heading counts only when no marker exists, so a description that
+  // mentions "## Activity" above a real marker is left alone.
+  const splitAt = markerAt !== -1 ? markerAt : headingAt
+  const description = (splitAt === -1 ? parsed.content : parsed.content.slice(0, splitAt)).trim()
+  const activity = splitAt === -1 ? [] : parseActivity(parsed.content.slice(splitAt))
   return { ...front, description, activity, filePath, format: 'markdown' }
 }
