@@ -101,6 +101,8 @@ export default function App(): ReactNode {
   useTheme(activeTheme)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const update = useUpdates()
+  const newVersion =
+    update?.kind === 'ready' || update?.kind === 'downloading' ? update.version : undefined
   const [orchestration, setOrchestration] = useState<OrchestrationSummary | null>(null)
   const [confirmingOrchestrate, setConfirmingOrchestrate] = useState(false)
 
@@ -652,7 +654,22 @@ export default function App(): ReactNode {
         <span className="font-wordmark -ml-1 text-[13.5px] font-semibold tracking-[0.02em] text-ink">
           Styr
         </span>
-        {appInfo ? <span className="text-[11px] text-faint">v{appInfo.version}</span> : null}
+        {appInfo ? (
+          <button
+            type="button"
+            className={`text-[11px] [-webkit-app-region:no-drag] ${
+              newVersion ? 'font-medium text-accent hover:underline' : 'text-faint hover:text-dim'
+            }`}
+            title={
+              newVersion
+                ? `Styr ${newVersion} is ${update?.kind === 'ready' ? 'ready to install' : 'downloading'} — open Settings`
+                : 'Updates'
+            }
+            onClick={() => openSettings('updates')}
+          >
+            v{appInfo.version}
+          </button>
+        ) : null}
         {appInfo && !appInfo.isPackaged ? (
           <Chip tone="warn" title={`Running from source · v${appInfo.version}`}>
             DEV
