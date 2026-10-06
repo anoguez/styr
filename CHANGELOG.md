@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.18.0](https://github.com/anoguez/styr/compare/v0.17.1...v0.18.0) (2026-10-06)
+
+
+### Features
+
+* external sources (GitHub) with a structural read-only guard ([#69](https://github.com/anoguez/styr/issues/69)) ([4d05562](https://github.com/anoguez/styr/commit/4d055627b1fe97808cce6245337989c63913e556))
+* order the Done column by completion date, newest first ([#70](https://github.com/anoguez/styr/issues/70)) ([07ef72c](https://github.com/anoguez/styr/commit/07ef72cf7e9a0bebd87038aa025940dc956b253c))
+* remove an agent from a task, with confirmation ([#63](https://github.com/anoguez/styr/issues/63)) ([576410d](https://github.com/anoguez/styr/commit/576410db284fed264eca581f5e45e372076a4187))
+
+
+### Bug Fixes
+
+* focus the terminal when switching to its tab ([#66](https://github.com/anoguez/styr/issues/66)) ([bb6c15e](https://github.com/anoguez/styr/commit/bb6c15e33ab4a71310a595528685b1a138a2ff38))
+* leave Done tasks out of the status bar task count ([#68](https://github.com/anoguez/styr/issues/68)) ([9a6397d](https://github.com/anoguez/styr/commit/9a6397db1b9fdb29d992a372ac0d4f6f8e4fc59e))
+* let Codex agents reach the network so gh and git push work ([#67](https://github.com/anoguez/styr/issues/67)) ([af63333](https://github.com/anoguez/styr/commit/af6333331732ff3b71920b5e892e3a3ef2309a3a))
+* return a specced task to Backlog so Orchestrate can pick it up ([#65](https://github.com/anoguez/styr/issues/65)) ([9a514ab](https://github.com/anoguez/styr/commit/9a514ab81954d94484cfc551392b7f03db7a6793))
+
 ## [0.17.1](https://github.com/anoguez/styr/compare/v0.17.0...v0.17.1) (2026-10-06)
 
 
