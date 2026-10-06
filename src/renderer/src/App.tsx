@@ -406,6 +406,21 @@ export default function App(): ReactNode {
           return setSwitcherOpen(true)
         case 'newWorkspace':
           return setCreatingWorkspace(true)
+        case 'terminalTab1':
+        case 'terminalTab2':
+        case 'terminalTab3':
+        case 'terminalTab4':
+        case 'terminalTab5':
+        case 'terminalTab6':
+        case 'terminalTab7':
+        case 'terminalTab8':
+        case 'terminalTab9': {
+          // Tab N, as in a browser; with no such tab the key does nothing.
+          const target = sessions[Number(command.slice('terminalTab'.length)) - 1]
+          if (!target) return
+          setActiveSession(target.id)
+          return setTerminalOpen(true)
+        }
         case 'terminalDirectory':
         case 'terminalAskAgent':
         case 'terminalCopyOutput':
@@ -418,7 +433,7 @@ export default function App(): ReactNode {
           return dispatchTerminalCommand(command)
       }
     },
-    [openSettings, newShell, closeSession, activeSession]
+    [openSettings, newShell, closeSession, activeSession, sessions]
   )
 
   const commandEntries = useMemo<CommandEntry[]>(() => {
