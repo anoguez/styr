@@ -8,7 +8,7 @@ import {
   saveGlobalSettings,
   settingsFilePath
 } from '@core/settingsStore.js'
-import { readAllAgentStatuses, recordAgentEvent } from '@core/agentStore.js'
+import { clearAgentStatus, readAllAgentStatuses, recordAgentEvent } from '@core/agentStore.js'
 import { agentKey, isAgentArchived } from '@core/agentState.js'
 import type { AgentStatus } from '@core/agentState.js'
 import {
@@ -176,11 +176,18 @@ const codexMonitor = new CodexMonitor((update) => {
   notifyAgentsChanged()
 })
 
+/** Agents the user removed while live: their terminal's exit must not write a status back. */
+const removedWhileLive = new Set<string>()
+
 export function markAgentExited(
   taskId: string,
   workspaceId = loadSettings().activeWorkspaceId
 ): void {
   codexMonitor.release(monitorKey(workspaceId, taskId))
+  if (removedWhileLive.delete(monitorKey(workspaceId, taskId))) {
+    notifyAgentsChanged()
+    return
+  }
   recordAgentEvent(pathsInWorkspace(loadSettings(), workspaceId), taskId, 'TerminalExit')
   notifyAgentsChanged()
 }
@@ -713,6 +720,25 @@ export function registerIpcHandlers(): void {
     const task = updateTask(taskId, { agentSession: undefined })
     notifyTasksChanged()
     return task
+  })
+
+  // Removes the agent from the board: ends its live terminal, drops its status and forgets the
+  // current chat. The chat history on the task stays.
+  ipcMain.handle('agents:remove', (_event, taskId: unknown) => {
+    const id = z.string().min(1).parse(taskId)
+    const settings = loadSettings()
+    const workspaceId = settings.activeWorkspaceId
+    const live = findSessionByTask(id, workspaceId)
+    if (live) {
+      removedWhileLive.add(monitorKey(workspaceId, id))
+      killSession(live.id)
+    }
+    codexMonitor.release(monitorKey(workspaceId, id))
+    clearAgentStatus(settings, id)
+    const task = findTask(id)
+    if (task?.agentSession) updateTask(id, { agentSession: undefined })
+    notifyTasksChanged()
+    notifyAgentsChanged()
   })
 
   ipcMain.handle('terminal:previewPrompt', (_event, taskId: string, templateId?: string) => {

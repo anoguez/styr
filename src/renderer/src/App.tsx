@@ -30,7 +30,7 @@ import { QuickTaskDialog } from './components/QuickTaskDialog.js'
 import { TaskDialog } from './components/TaskDialog.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
 import { sessionLabel } from './lib/sessionLabel.js'
-import { Button, Chip, inputClass } from './components/ui.js'
+import { Button, Chip, Modal, inputClass } from './components/ui.js'
 import { useSettings } from './hooks/useSettings.js'
 import { useTheme } from './hooks/useTheme.js'
 import { useDiffStats } from './hooks/useDiffStats.js'
@@ -88,6 +88,7 @@ export default function App(): ReactNode {
   const update = useUpdates()
   const [orchestration, setOrchestration] = useState<OrchestrationSummary | null>(null)
   const [confirmingOrchestrate, setConfirmingOrchestrate] = useState(false)
+  const [removingAgent, setRemovingAgent] = useState<AgentRow | null>(null)
 
   const [editing, setEditing] = useState<Task | null>(null)
   const [creating, setCreating] = useState(false)
@@ -734,6 +735,7 @@ export default function App(): ReactNode {
             diffStats={diffStats}
             onShowChanges={setChangesTask}
             onOpenTask={setEditing}
+            onRemove={setRemovingAgent}
             onClose={() => setAgentsOpen(false)}
             onActivate={(row) => activateTask(row.task.id)}
           />
@@ -787,6 +789,36 @@ export default function App(): ReactNode {
           onClose={() => setConfirmingOrchestrate(false)}
           onConfirm={() => void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))}
         />
+      ) : null}
+
+      {removingAgent ? (
+        <Modal
+          title="Remove this agent?"
+          subtitle={`${removingAgent.task.id} · ${removingAgent.task.title}`}
+          onClose={() => setRemovingAgent(null)}
+          footer={
+            <>
+              <Button onClick={() => setRemovingAgent(null)}>Cancel</Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  const { task } = removingAgent
+                  setRemovingAgent(null)
+                  void window.api.agents.remove(task.id)
+                }}
+              >
+                Remove
+              </Button>
+            </>
+          }
+        >
+          <p className="text-[12.5px] text-dim">
+            {removingAgent.session
+              ? 'Its terminal is closed and the chat is forgotten. '
+              : 'The chat is forgotten. '}
+            The task and its worktree are kept, and you can start a new agent on it later.
+          </p>
+        </Modal>
       ) : null}
 
       {quickAdding && settings ? (
