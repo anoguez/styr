@@ -10,6 +10,10 @@ import {
 } from './sessionLifecycle.js'
 import type { Settings, Task, TerminalSessionInfo } from './types.js'
 
+vi.mock('./providers/index.js', () => ({
+  providerById: () => ({ sessionExists: (id: string) => id === 'saved-chat' })
+}))
+
 function task(extra: Partial<Task> = {}): Task {
   return {
     id: 'TASK-1',
@@ -230,6 +234,37 @@ describe('startForTask', () => {
     ])
   })
 
+  it('watches a resumed Codex thread and marks the session ready', async () => {
+    const h = harness()
+    h.ports.planLaunch = () => ({
+      provider: 'codex',
+      command: 'a',
+      cwd: '/repo',
+      sessionId: 'thread-1',
+      resumed: true
+    })
+    await createSessionLifecycle(h.ports).startForTask('TASK-1', { provider: 'codex' })
+    expect(h.calls).toEqual([
+      'update TASK-1 agentSession,sessions,status',
+      'notifyTasks',
+      'watch default:TASK-1 thread-1',
+      'session TASK-1 codex',
+      'event default:TASK-1 SessionStart',
+      'notifyAgents'
+    ])
+  })
+
+  it('shares one launch between simultaneous requests', async () => {
+    const h = harness()
+    const lifecycle = createSessionLifecycle(h.ports)
+    const [a, b] = await Promise.all([
+      lifecycle.startForTask('TASK-1'),
+      lifecycle.startForTask('TASK-1')
+    ])
+    expect(a).toBe(b)
+    expect(h.calls.filter((c) => c.startsWith('session'))).toHaveLength(1)
+  })
+
   it('releases the monitor when the session cannot be created', async () => {
     const h = harness()
     h.ports.createSession = () => {
@@ -357,7 +392,49 @@ describe('askFork', () => {
     expect(await lifecycle.askFork('s1', 'q')).toBeNull()
     h.sessions[0] = session()
     expect(await lifecycle.askFork('s1', 'q')).toBeNull() // task has no agentSession
+    h.tasks.set(
+      'TASK-1',
+      task({ agentSession: { provider: 'claude', id: 'lost-chat' } } as Partial<Task>)
+    )
+    expect(await lifecycle.askFork('s1', 'q')).toBeNull() // the chat is gone from disk
     expect(h.calls).toEqual([])
+  })
+
+  it('creates an answer task, notes the source and launches a fork of its chat', async () => {
+    const h = harness()
+    h.sessions.push(session())
+    h.ports.findSessionByTask = (taskId) => (taskId === 'TASK-1' ? h.sessions[0] : undefined)
+    h.tasks.set(
+      'TASK-1',
+      task({ agentSession: { provider: 'claude', id: 'saved-chat' } } as Partial<Task>)
+    )
+    const plan = vi.fn(h.ports.planLaunch)
+    h.ports.planLaunch = plan
+    await createSessionLifecycle(h.ports).askFork('s1', 'Why?')
+    expect(h.calls[0]).toBe('create Why?')
+    expect(h.calls[1]).toBe('note TASK-1 styr Forked for a question as TASK-2')
+    expect(h.calls).toContain('session TASK-2 claude')
+    expect(plan.mock.calls[0][2]).toMatchObject({
+      forkFrom: 'saved-chat',
+      withPrompt: true,
+      sessionLabel: 'Fork of TASK-1'
+    })
+  })
+
+  it('says where the question was saved when the launch fails', async () => {
+    const h = harness()
+    h.sessions.push(session())
+    h.ports.findSessionByTask = (taskId) => (taskId === 'TASK-1' ? h.sessions[0] : undefined)
+    h.tasks.set(
+      'TASK-1',
+      task({ agentSession: { provider: 'claude', id: 'saved-chat' } } as Partial<Task>)
+    )
+    h.ports.createSession = () => {
+      throw new Error('spawn failed')
+    }
+    await expect(createSessionLifecycle(h.ports).askFork('s1', 'Why?')).rejects.toThrow(
+      'spawn failed (the question is saved as TASK-2 in Backlog)'
+    )
   })
 })
 
