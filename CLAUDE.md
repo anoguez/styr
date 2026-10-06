@@ -580,8 +580,10 @@ that `done` means the work is on the base branch, not that it was approved: a pa
 commits still unlanded stays `in_review` and notes branch/base/count. The prompt never assumes a PR
 or host — `gh` only when there is a GitHub remote.
 
-Styr does not rely on the agent. `main/landing.ts` runs from `notifyTasksChanged` (so the watcher
-covers external merges): an `in_review` worktree task whose branch has landed moves to `done`, and a
+Styr does not rely on the agent. The rules are `settleTasks` in `core/landing.ts` — pure over injected
+git ports and a `LandingCache`, returning the task-file writes (and any per-task errors, which
+`main/landing.ts` logs rather than swallows); `main/landing.ts` only performs them. It runs from
+`notifyTasksChanged` (so the watcher covers external merges): an `in_review` worktree task whose branch has landed moves to `done`, and a
 `done` task with a `worktreePath` is cleaned up through `cleanupLandedTask` in `core/worktree.ts`.
 `branchLanding` checks the local base and `origin/<base>` — the task's `baseBranch` when set and still present, else the automatic base; "landed" is either zero commits ahead, or
 (squash/rebase) every file changed since the merge-base identical on the base. A branch with no
