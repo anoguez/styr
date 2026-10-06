@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AGENT_STATE_LABELS, isAgentArchived, type AgentState } from '@core/agentState.js'
+import { terminalDraft } from '@core/derivedTask.js'
 import { openTaskCounts } from '@core/boardCounts.js'
 import { sortColumn } from '@core/boardOrder.js'
 import { resolveTemplateFor } from '@core/prompt.js'
@@ -251,22 +252,7 @@ export default function App(): ReactNode {
   const createTaskFromTerminal = useCallback(
     async (request: TerminalTaskRequest): Promise<string> => {
       if (!settings) throw new Error('Settings have not loaded yet')
-      const task = await window.api.tasks.create({
-        title: request.title,
-        description: request.description,
-        status: 'backlog',
-        priority: 'medium',
-        readiness: request.ready ? 'ready' : 'needs_spec',
-        tags: request.tags ?? [],
-        repoPath: request.repoPath || settings.defaultRepoPath.trim() || undefined,
-        // A question needs no branch of its own.
-        useWorktree: request.launch ? false : settings.taskDefaults.useWorktree,
-        // Not orchestrated: a task made from a click in a terminal should wait for the user, not be
-        // picked up and started by the next Orchestrate run.
-        orchestrate: false,
-        contextFiles: [],
-        provider: settings.defaultProvider
-      })
+      const task = await window.api.tasks.create(terminalDraft(request, settings))
       if (request.launch) await launchAgent(task.id)
       return task.id
     },
