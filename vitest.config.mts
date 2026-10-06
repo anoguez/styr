@@ -7,7 +7,10 @@ export default defineConfig({
   test: {
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'lcov']
+      reporter: ['text', 'lcov'],
+      // A floor just under today's numbers: new code without tests that pulls coverage down fails CI.
+      // Raise these as coverage grows; never lower them to make a PR pass.
+      thresholds: { lines: 85, statements: 82, functions: 82, branches: 73 }
     }
   }
 })
