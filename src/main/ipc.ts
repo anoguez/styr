@@ -12,7 +12,7 @@ import {
   saveGlobalSettings,
   settingsFilePath
 } from '@core/settingsStore.js'
-import { readAllAgentStatuses, recordAgentEvent } from '@core/agentStore.js'
+import { clearAgentStatus, readAllAgentStatuses, recordAgentEvent } from '@core/agentStore.js'
 import { agentKey, isAgentArchived } from '@core/agentState.js'
 import type { AgentStatus } from '@core/agentState.js'
 import {
@@ -26,6 +26,7 @@ import { askTitle, forkDescription } from '@core/askAgent.js'
 import { providerById, providerFor } from '@core/providers/index.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { z } from 'zod'
+import { recordNotifyDuration, stopSampling, takeSnapshot } from './diagnostics.js'
 import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
 import {
   findGitRoot,
@@ -206,11 +207,18 @@ const codexMonitor = new CodexMonitor((update) => {
   notifyAgentsChanged()
 })
 
+/** Agents the user removed while live: their terminal's exit must not write a status back. */
+const removedWhileLive = new Set<string>()
+
 export function markAgentExited(
   taskId: string,
   workspaceId = loadSettings().activeWorkspaceId
 ): void {
   codexMonitor.release(monitorKey(workspaceId, taskId))
+  if (removedWhileLive.delete(monitorKey(workspaceId, taskId))) {
+    notifyAgentsChanged()
+    return
+  }
   recordAgentEvent(pathsInWorkspace(loadSettings(), workspaceId), taskId, 'TerminalExit')
   notifyAgentsChanged()
 }
@@ -254,10 +262,39 @@ export function notifyAgentsChanged(): void {
   updateTray([...listed, ...background.statuses], titles)
 }
 
+let diffStatsRun: Promise<Record<string, DiffStat>> | undefined
+
+/**
+ * Per-task change totals for the cards. The git work is synchronous, so the loop yields between
+ * tasks (~0.2s each): IPC, the watcher and the terminals keep being served in the gaps.
+ */
+async function computeDiffStats(): Promise<Record<string, DiffStat>> {
+  const workspaceId = loadSettings().activeWorkspaceId
+  const stats: Record<string, DiffStat> = {}
+  for (const task of queryTasks()) {
+    // Done work has landed (or is being cleaned up); a count there is noise.
+    if (!task.worktreePath || !task.repoPath || task.status === 'done' || task.archivedAt) continue
+    await new Promise((resolve) => setImmediate(resolve))
+    const diff = taskDiff(task.repoPath, worktreeKey(workspaceId, task.id), {
+      worktree: task.useWorktree !== false,
+      baseBranch: task.baseBranch
+    })
+    if ('error' in diff || diff.kind !== 'changes') continue
+    stats[task.id] = {
+      added: diff.totalAdditions,
+      removed: diff.totalDeletions,
+      files: diff.totalFiles
+    }
+  }
+  return stats
+}
+
 export function notifyTasksChanged(): void {
+  const started = performance.now()
   syncIndex()
   if (settleLandedTasks()) syncIndex()
   observeTasks(queryTasks())
+  recordNotifyDuration(performance.now() - started)
   broadcast('tasks:changed')
 }
 
@@ -567,25 +604,12 @@ export function registerIpcHandlers(): void {
       )
     }
   )
-  ipcMain.handle('git:diffStats', (): Record<string, DiffStat> => {
-    const workspaceId = loadSettings().activeWorkspaceId
-    const stats: Record<string, DiffStat> = {}
-    for (const task of queryTasks()) {
-      // Done work has landed (or is being cleaned up); a count there is noise.
-      if (!task.worktreePath || !task.repoPath || task.status === 'done' || task.archivedAt)
-        continue
-      const diff = taskDiff(task.repoPath, worktreeKey(workspaceId, task.id), {
-        worktree: task.useWorktree !== false,
-        baseBranch: task.baseBranch
-      })
-      if ('error' in diff || diff.kind !== 'changes') continue
-      stats[task.id] = {
-        added: diff.totalAdditions,
-        removed: diff.totalDeletions,
-        files: diff.totalFiles
-      }
-    }
-    return stats
+  ipcMain.handle('git:diffStats', () => {
+    // One run at a time: a burst of task changes must not stack up a queue of full git passes.
+    diffStatsRun ??= computeDiffStats().finally(() => {
+      diffStatsRun = undefined
+    })
+    return diffStatsRun
   })
   ipcMain.handle('agents:list', () => agentStatuses())
 
@@ -636,6 +660,10 @@ export function registerIpcHandlers(): void {
     if (task) void openPathWith(task.filePath)
   })
 
+  ipcMain.handle('diagnostics:snapshot', () =>
+    takeSnapshot({ terminals: listSessions().length, taskCount: queryTasks().length })
+  )
+  ipcMain.handle('diagnostics:stop', () => stopSampling())
   ipcMain.handle('app:info', () => ({ isPackaged: app.isPackaged, version: app.getVersion() }))
 
   ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') => {
@@ -788,6 +816,25 @@ export function registerIpcHandlers(): void {
     const task = updateTask(taskId, { agentSession: undefined })
     notifyTasksChanged()
     return task
+  })
+
+  // Removes the agent from the board: ends its live terminal, drops its status and forgets the
+  // current chat. The chat history on the task stays.
+  ipcMain.handle('agents:remove', (_event, taskId: unknown) => {
+    const id = z.string().min(1).parse(taskId)
+    const settings = loadSettings()
+    const workspaceId = settings.activeWorkspaceId
+    const live = findSessionByTask(id, workspaceId)
+    if (live) {
+      removedWhileLive.add(monitorKey(workspaceId, id))
+      killSession(live.id)
+    }
+    codexMonitor.release(monitorKey(workspaceId, id))
+    clearAgentStatus(settings, id)
+    const task = findTask(id)
+    if (task?.agentSession) updateTask(id, { agentSession: undefined })
+    notifyTasksChanged()
+    notifyAgentsChanged()
   })
 
   ipcMain.handle('terminal:previewPrompt', (_event, taskId: string, templateId?: string) => {

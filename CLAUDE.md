@@ -192,6 +192,10 @@ Resumes bind the stored id up front. `prepareCodex` runs before anything is writ
 launch (CLI < 0.159.3, daemon missing/older) with an error naming the fix. The control socket
 speaks WebSocket, not raw JSON lines, so `codex app-server proxy` is of no use as a transport.
 
+Fresh and fork launches pass `-c sandbox_workspace_write.network_access=true`: the sandbox has network off
+by default, which made `gh` report an invalid token and `git push` fail. Resumed threads keep the sandbox
+they started with. Whether the daemon honours the override is unverified against a real daemon.
+
 The MCP install command for Codex sets `STYR_MCP_AUTHOR=codex` so board notes are attributed.
 
 ## Launching Claude
@@ -513,7 +517,9 @@ without launching anything; `ipc.ts` only performs the launches.
 the template it will actually run. Change one and change the other.
 
 Only Backlog and In Review are dispatchable. In Progress is deliberately excluded: a dead session
-there does not mean the work is free to restart.
+there does not mean the work is free to restart. So a spec run that stops after specifying must hand
+the task back to Backlog with `readiness: ready` (the spec template and `boardProtocol` say so);
+left in In Progress it is invisible to Orchestrate.
 
 `Task.sessions` is the append-only chat history; `Task.agentSession` is which of them the next
 run continues. They look redundant but are not — Forget clears the pointer while keeping the
@@ -570,13 +576,29 @@ or host — `gh` only when there is a GitHub remote.
 Styr does not rely on the agent. `main/landing.ts` runs from `notifyTasksChanged` (so the watcher
 covers external merges): an `in_review` worktree task whose branch has landed moves to `done`, and a
 `done` task with a `worktreePath` is cleaned up through `cleanupLandedTask` in `core/worktree.ts`.
-`branchLanding` checks the local base and `origin/<base>`; "landed" is either zero commits ahead, or
+`branchLanding` checks the local base and `origin/<base>` — the task's `baseBranch` when set and still present, else the automatic base; "landed" is either zero commits ahead, or
 (squash/rebase) every file changed since the merge-base identical on the base. A branch with no
 commits of its own is not landed — the reflog tells a never-moved tip from a fast-forward merge.
 Cleanup never forces the worktree removal, uses `branch -D` only after that check, deletes the remote
-branch only when its tip equals the local one, and reports refusals once (in-memory `reported` set —
+branch only when its tip equals the local one, and reports refusals once (deduped against the task's own latest styr note, so a restart does not repeat it —
 the note write retriggers the watcher). `worktreePath` is cleared via `taskStore` once the worktree
 is gone. Tasks with `useWorktree: false` are skipped entirely.
+
+## Diagnostics
+
+Command palette → "Show performance" opens `PerformanceDialog`: per-process CPU and memory
+(`app.getAppMetrics`), main event-loop delay, recent `notifyTasksChanged` durations, renderer heap,
+DOM nodes and long tasks, with a "Copy report" button. Sampling lives in `main/diagnostics.ts`; the
+shapes, buffer and text formatter are pure in `core/diagnostics.ts`. Everything is memory-only —
+never written to a task file, config or the index — and costs nothing while the panel is closed:
+the timer, the long-task observer and the event-loop histogram all stop on close. Dev builds read
+higher than a packaged app, so judge speed on a packaged one.
+
+The main process is single-threaded and git calls there are synchronous (`execFileSync`), so each
+costs the whole UI. Anything that runs on every task write (`notifyTasksChanged`) must be cheap in
+the steady state: `main/landing.ts` skips a task whose status, worktree and branch/base ref tips
+are unchanged (`LandingCache`, 5-minute expiry), and `git:diffStats` yields between tasks and runs
+one pass at a time. Check the panel's "Task change handling" line after touching either.
 
 ## Hand-edited task files
 

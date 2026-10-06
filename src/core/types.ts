@@ -91,7 +91,16 @@ export const SHORTCUT_COMMANDS = [
   'terminalSplit',
   'terminalAskReview',
   'terminalHandOff',
-  'terminalCreatePr'
+  'terminalCreatePr',
+  'terminalTab1',
+  'terminalTab2',
+  'terminalTab3',
+  'terminalTab4',
+  'terminalTab5',
+  'terminalTab6',
+  'terminalTab7',
+  'terminalTab8',
+  'terminalTab9'
 ] as const
 
 export type ShortcutCommand = (typeof SHORTCUT_COMMANDS)[number]
@@ -330,8 +339,8 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   quickTask: ['mod+shift+n'],
   commandPalette: ['mod+p', 'mod+k'],
   focusSearch: ['mod+f'],
-  viewBoard: ['mod+1'],
-  viewInbox: ['mod+2'],
+  viewBoard: ['ctrl+1'],
+  viewInbox: ['ctrl+2'],
   settings: ['mod+,'],
   toggleTerminal: ['ctrl+`', 'mod+`'],
   toggleAgents: [],
@@ -347,7 +356,16 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   terminalSplit: ['mod+d'],
   terminalAskReview: [],
   terminalHandOff: [],
-  terminalCreatePr: []
+  terminalCreatePr: [],
+  terminalTab1: ['mod+1'],
+  terminalTab2: ['mod+2'],
+  terminalTab3: ['mod+3'],
+  terminalTab4: ['mod+4'],
+  terminalTab5: ['mod+5'],
+  terminalTab6: ['mod+6'],
+  terminalTab7: ['mod+7'],
+  terminalTab8: ['mod+8'],
+  terminalTab9: ['mod+9']
 }
 
 export interface Settings {

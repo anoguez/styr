@@ -64,6 +64,7 @@ import { useUpdates } from '../hooks/useUpdates.js'
 import { useWorkspaceTarget } from '../hooks/useWorkspaceTarget.js'
 import { ansiLabel, TERMINAL_FONTS, TERMINAL_PALETTES, UI_FONTS } from '../hooks/useTheme.js'
 import { terminalTheme } from '../lib/palette.js'
+import { THEME_PRESETS, applyPreset } from '../lib/themePresets.js'
 import { workspaceColor } from '../lib/workspaceColor.js'
 
 const PLACEHOLDERS = [
@@ -111,16 +112,6 @@ function ThemeSlider({
     </label>
   )
 }
-
-const BASE_PRESETS = [
-  { label: 'Harbour', hex: '#0d2233' },
-  { label: 'Midnight', hex: '#0e1117' },
-  { label: 'Graphite', hex: '#101010' },
-  { label: 'Deep sea', hex: '#0b1418' },
-  { label: 'Plum', hex: '#141018' },
-  { label: 'Ember', hex: '#1d0f0f' },
-  { label: 'Moss', hex: '#0d1410' }
-]
 
 const LANE_HINTS: Record<OrchestrationLane, string> = {
   spec: 'tasks flagged as needing a spec',
@@ -1328,7 +1319,7 @@ export function SettingsDialog({
                 <>
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center">
-                      <span className="text-[12px] font-semibold text-dim">Base</span>
+                      <span className="text-[12px] font-semibold text-dim">Theme</span>
                       <button
                         type="button"
                         className="ml-auto h-[22px] rounded-md px-1.5 text-[11.5px] text-faint transition-colors hover:text-ink"
@@ -1338,22 +1329,34 @@ export function SettingsDialog({
                       </button>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {BASE_PRESETS.map((preset) => {
-                        const on = draft.theme.base.toLowerCase() === preset.hex
+                      {THEME_PRESETS.map((preset) => {
+                        const on = draft.theme.base.toLowerCase() === preset.base
                         return (
                           <button
-                            key={preset.hex}
+                            key={preset.label}
                             type="button"
                             aria-pressed={on}
-                            onClick={() => patch({ theme: { ...draft.theme, base: preset.hex } })}
+                            onClick={() => patch({ theme: applyPreset(draft.theme, preset) })}
                             className="flex flex-col items-center gap-[5px]"
                           >
                             <span
-                              style={{ backgroundColor: preset.hex }}
-                              className={`block h-[34px] w-[52px] rounded-lg border-2 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] ${
+                              style={{ backgroundColor: preset.base }}
+                              className={`flex h-[34px] w-[52px] items-end gap-[3px] rounded-lg border-2 p-1 shadow-[inset_0_0_0_1px_rgba(128,128,128,0.25)] ${
                                 on ? 'border-[var(--color-accent-text)]' : 'border-transparent'
                               }`}
-                            />
+                            >
+                              <span
+                                style={{ backgroundColor: preset.accent }}
+                                className="h-2 w-3 rounded-sm"
+                              />
+                              {Object.values(preset.columns).map((hex) => (
+                                <span
+                                  key={hex}
+                                  style={{ backgroundColor: hex }}
+                                  className="h-2 w-[5px] rounded-sm"
+                                />
+                              ))}
+                            </span>
                             <span className={`text-[11px] ${on ? 'text-ink' : 'text-faint'}`}>
                               {preset.label}
                             </span>
@@ -1364,8 +1367,8 @@ export function SettingsDialog({
                         value={draft.theme.base}
                         onChange={(base) => patch({ theme: { ...draft.theme, base } })}
                         trigger={({ open, toggle }) => {
-                          const custom = !BASE_PRESETS.some(
-                            (preset) => preset.hex === draft.theme.base.toLowerCase()
+                          const custom = !THEME_PRESETS.some(
+                            (preset) => preset.base === draft.theme.base.toLowerCase()
                           )
                           return (
                             <button
@@ -1394,7 +1397,9 @@ export function SettingsDialog({
                       />
                     </div>
                     <Hint>
-                      Every surface and text colour is derived from this, so contrast holds.
+                      A theme sets the base, accent and column colours together. Every surface and
+                      text colour is derived from the base, so contrast holds; change any colour
+                      below to make it your own.
                     </Hint>
                   </div>
 
@@ -1738,7 +1743,8 @@ export function SettingsDialog({
                                     {draft.codexApprovalReviewer === 'user'
                                       ? 'Codex pauses and asks before risky commands.'
                                       : 'Eligible requests go to Codex’s automatic reviewer; it does not grant full access.'}{' '}
-                                    Codex always runs in the workspace-write sandbox.
+                                    Codex runs in the workspace-write sandbox with network access,
+                                    so it can push and use `gh`.
                                   </Hint>
                                 </div>
                               </div>

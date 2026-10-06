@@ -10,11 +10,13 @@
     "src/core/shortcuts.ts",
     "src/core/doneCap.ts",
     "src/core/boardOrder.ts",
+    "src/core/boardCounts.ts",
     "src/core/inbox.ts",
     "src/core/diff.ts",
     "src/core/diffView.ts",
     "src/core/handoff.ts",
-    "src/core/askAgent.ts"
+    "src/core/askAgent.ts",
+    "src/core/diagnostics.ts"
   ],
   "compilerOptions": {
     "composite": true,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AGENT_STATE_LABELS, isAgentArchived, type AgentState } from '@core/agentState.js'
+import { openTaskCounts } from '@core/boardCounts.js'
 import { sortColumn } from '@core/boardOrder.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { commandForEvent, SHORTCUT_LABELS, shortcutHint } from '@core/shortcuts.js'
@@ -18,6 +19,7 @@ import {
 } from '@core/types.js'
 import { AgentsSidebar, sortAgentRows, type AgentRow } from './components/AgentsSidebar.js'
 import { ArchiveDialog } from './components/ArchiveDialog.js'
+import { PerformanceDialog } from './components/PerformanceDialog.js'
 import { ChangesDialog } from './components/ChangesDialog.js'
 import { Board } from './components/Board.js'
 import { Inbox } from './components/Inbox.js'
@@ -34,7 +36,7 @@ import { QuickTaskDialog } from './components/QuickTaskDialog.js'
 import { TaskDialog } from './components/TaskDialog.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
 import { sessionLabel } from './lib/sessionLabel.js'
-import { Button, Chip, inputClass } from './components/ui.js'
+import { Button, Chip, Modal, inputClass } from './components/ui.js'
 import { useSettings } from './hooks/useSettings.js'
 import { useTheme } from './hooks/useTheme.js'
 import { useDiffStats } from './hooks/useDiffStats.js'
@@ -106,6 +108,7 @@ export default function App(): ReactNode {
     update?.kind === 'ready' || update?.kind === 'downloading' ? update.version : undefined
   const [orchestration, setOrchestration] = useState<OrchestrationSummary | null>(null)
   const [confirmingOrchestrate, setConfirmingOrchestrate] = useState(false)
+  const [removingAgent, setRemovingAgent] = useState<AgentRow | null>(null)
 
   const [editing, setEditing] = useState<Task | null>(null)
   const [creating, setCreating] = useState(false)
@@ -114,6 +117,7 @@ export default function App(): ReactNode {
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
+  const [performanceOpen, setPerformanceOpen] = useState(false)
   const [view, setView] = useState<View>(savedView)
   useEffect(() => {
     try {
@@ -172,10 +176,7 @@ export default function App(): ReactNode {
 
   const counts = useMemo(
     () => ({
-      total: Object.values(board).reduce((sum, list) => sum + list.length, 0),
-      needsSpec: Object.values(board)
-        .flat()
-        .filter((task) => task.readiness === 'needs_spec').length,
+      ...openTaskCounts(board),
       waiting: agentRows.filter((row) => row.agent?.state === 'waiting').length,
       working: agentRows.filter((row) => row.agent?.state === 'working').length
     }),
@@ -406,6 +407,21 @@ export default function App(): ReactNode {
           return setSwitcherOpen(true)
         case 'newWorkspace':
           return setCreatingWorkspace(true)
+        case 'terminalTab1':
+        case 'terminalTab2':
+        case 'terminalTab3':
+        case 'terminalTab4':
+        case 'terminalTab5':
+        case 'terminalTab6':
+        case 'terminalTab7':
+        case 'terminalTab8':
+        case 'terminalTab9': {
+          // Tab N, as in a browser; with no such tab the key does nothing.
+          const target = sessions[Number(command.slice('terminalTab'.length)) - 1]
+          if (!target) return
+          setActiveSession(target.id)
+          return setTerminalOpen(true)
+        }
         case 'terminalDirectory':
         case 'terminalAskAgent':
         case 'terminalCopyOutput':
@@ -418,7 +434,7 @@ export default function App(): ReactNode {
           return dispatchTerminalCommand(command)
       }
     },
-    [openSettings, newShell, closeSession, activeSession]
+    [openSettings, newShell, closeSession, activeSession, sessions]
   )
 
   const commandEntries = useMemo<CommandEntry[]>(() => {
@@ -455,6 +471,13 @@ export default function App(): ReactNode {
         run: () => void switchWorkspace(workspace.id)
       })
     }
+    entries.push({
+      id: 'view:performance',
+      label: 'Show performance',
+      group: 'Actions',
+      keywords: 'slow cpu memory profile diagnostics usage lag',
+      run: () => setPerformanceOpen(true)
+    })
     entries.push({
       id: 'view:archive',
       label: `View archive (${archived.length})`,
@@ -907,6 +930,7 @@ export default function App(): ReactNode {
             diffStats={diffStats}
             onShowChanges={setChangesTask}
             onOpenTask={setEditing}
+            onRemove={setRemovingAgent}
             onClose={() => setAgentsOpen(false)}
             onActivate={(row) => activateTask(row.task.id)}
           />
@@ -943,6 +967,8 @@ export default function App(): ReactNode {
         <CommandPalette entries={commandEntries} onClose={() => setPaletteOpen(false)} />
       ) : null}
 
+      {performanceOpen ? <PerformanceDialog onClose={() => setPerformanceOpen(false)} /> : null}
+
       {archiveOpen ? (
         <ArchiveDialog
           tasks={archived}
@@ -960,6 +986,36 @@ export default function App(): ReactNode {
           onClose={() => setConfirmingOrchestrate(false)}
           onConfirm={() => void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))}
         />
+      ) : null}
+
+      {removingAgent ? (
+        <Modal
+          title="Remove this agent?"
+          subtitle={`${removingAgent.task.id} · ${removingAgent.task.title}`}
+          onClose={() => setRemovingAgent(null)}
+          footer={
+            <>
+              <Button onClick={() => setRemovingAgent(null)}>Cancel</Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  const { task } = removingAgent
+                  setRemovingAgent(null)
+                  void window.api.agents.remove(task.id)
+                }}
+              >
+                Remove
+              </Button>
+            </>
+          }
+        >
+          <p className="text-[12.5px] text-dim">
+            {removingAgent.session
+              ? 'Its terminal is closed and the chat is forgotten. '
+              : 'The chat is forgotten. '}
+            The task and its worktree are kept, and you can start a new agent on it later.
+          </p>
+        </Modal>
       ) : null}
 
       {quickAdding && settings ? (

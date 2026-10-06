@@ -46,10 +46,13 @@ export function codexCommand(
     return `${settings.codexCommand} resume ${daemonArgs} ${sessionId}${prompt ? ` ${prompt}` : ''}`
 
   // `--approve-for-me` brings its own workspace-write sandbox and codex rejects it alongside `--sandbox`.
+  // The sandbox blocks the network by default, which stops `gh` and `git push` — the board protocol
+  // has agents push and open a PR — so network is opened inside it. Files stay confined.
+  const network = '-c sandbox_workspace_write.network_access=true'
   const policy =
     settings.codexApprovalReviewer === 'auto_review'
-      ? '--approve-for-me'
-      : '--sandbox workspace-write --ask-for-approval on-request'
+      ? `--approve-for-me ${network}`
+      : `--sandbox workspace-write --ask-for-approval on-request ${network}`
   if (forkFrom)
     return `${settings.codexCommand} fork ${daemonArgs} ${policy} ${forkFrom}${prompt ? ` ${prompt}` : ''}`
   return `${settings.codexCommand} ${daemonArgs} ${policy} ${prompt ?? `''`}`

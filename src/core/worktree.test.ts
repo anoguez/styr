@@ -7,6 +7,9 @@ import {
   branchLanding,
   branchNameFor,
   cleanupLandedTask,
+  isRepeatNote,
+  landingFingerprint,
+  refListing,
   ensureWorktree,
   isGitRepo,
   listBranches,
@@ -187,6 +190,28 @@ describe('landing and cleanup', () => {
     })
   })
 
+  it('fingerprints the refs a landing answer depends on, and only those', () => {
+    const repository = temporaryRepository()
+    const branch = commitOnTask(repository, 'TASK-0060')
+    commitOnTask(repository, 'TASK-0061', 'other.txt')
+    const before = landingFingerprint(refListing(repository), 'TASK-0060')
+
+    // another task committing again does not matter to this one
+    writeFileSync(join(worktreePathFor(repository, 'TASK-0061'), 'more.txt'), 'x\n')
+    runGit(['add', 'more.txt'], worktreePathFor(repository, 'TASK-0061'))
+    runGit(['commit', '-m', 'More'], worktreePathFor(repository, 'TASK-0061'))
+    expect(landingFingerprint(refListing(repository), 'TASK-0060')).toBe(before)
+
+    // the base moving does
+    runGit(['merge', '--ff-only', branch], repository)
+    expect(landingFingerprint(refListing(repository), 'TASK-0060')).not.toBe(before)
+  })
+
+  it('has a stable fingerprint when git cannot list refs', () => {
+    expect(landingFingerprint(undefined, 'TASK-0062')).toBe('unavailable')
+    expect(refListing('/nonexistent-styr-dir')).toBeUndefined()
+  })
+
   it('cleans up after a fast-forward merge', () => {
     const repository = temporaryRepository()
     const branch = commitOnTask(repository, 'TASK-0052')
@@ -230,6 +255,37 @@ describe('landing and cleanup', () => {
     expect(result.worktreeRemoved).toBe(false)
     expect(result.notes.join(' ')).toContain('uncommitted')
     expect(branches(repository)).toContain(branch)
+  })
+
+  it('measures landing against the task base branch', () => {
+    const repository = temporaryRepository()
+    runGit(['branch', 'release/1.0'], repository)
+    const branch = commitOnTask(repository, 'TASK-0056')
+    runGit(['checkout', 'release/1.0'], repository)
+    runGit(['merge', '--ff-only', branch], repository)
+    runGit(['checkout', 'main'], repository)
+
+    expect(branchLanding(repository, 'TASK-0056')?.landed).toBe(false)
+    expect(branchLanding(repository, 'TASK-0056', 'release/1.0')).toMatchObject({
+      base: 'release/1.0',
+      landed: true
+    })
+    expect(cleanupLandedTask(repository, 'TASK-0056', 'release/1.0').worktreeRemoved).toBe(true)
+  })
+
+  it('falls back to the automatic base when the task base is gone', () => {
+    const repository = temporaryRepository()
+    commitOnTask(repository, 'TASK-0057')
+    expect(branchLanding(repository, 'TASK-0057', 'vanished')).toMatchObject({ base: 'main' })
+  })
+
+  it('recognises a repeated note', () => {
+    const log = [
+      { author: 'styr', message: 'a' },
+      { author: 'me', message: 'b' }
+    ]
+    expect(isRepeatNote(log, 'styr', 'a')).toBe(true)
+    expect(isRepeatNote(log, 'styr', 'c')).toBe(false)
   })
 })
 

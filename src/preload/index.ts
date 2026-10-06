@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { AgentStatus } from '../core/agentState.js'
+import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
   AppInfo,
@@ -61,6 +62,10 @@ const api = {
     onActivateRequested: (handler: (taskId: string) => void): (() => void) =>
       subscribe('tasks:activate', handler as (...args: never[]) => void)
   },
+  diagnostics: {
+    snapshot: (): Promise<DiagnosticsSnapshot> => ipcRenderer.invoke('diagnostics:snapshot'),
+    stop: (): Promise<void> => ipcRenderer.invoke('diagnostics:stop')
+  },
   app: {
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
     mcpCommand: (provider?: 'claude' | 'codex'): Promise<string> =>
@@ -83,6 +88,7 @@ const api = {
   },
   agents: {
     list: (): Promise<AgentStatus[]> => ipcRenderer.invoke('agents:list'),
+    remove: (taskId: string): Promise<void> => ipcRenderer.invoke('agents:remove', taskId),
     onChanged: (handler: (statuses: AgentStatus[]) => void): (() => void) =>
       subscribe('agents:changed', handler as (...args: never[]) => void)
   },

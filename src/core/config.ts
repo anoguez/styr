@@ -33,7 +33,8 @@ const SPEC_TEMPLATE = [
   '## When you are done specifying',
   '- Write the finished spec into the body of {{filePath}}, below the frontmatter.',
   '- Set `readiness: ready` so the task can be picked up.',
-  '- Leave the status at in_progress if you carry straight on into building it.'
+  '- If you stop after specifying, set `status: backlog` together with `readiness: ready`, so the orchestrator can pick the task up.',
+  '- Leave the status at in_progress only if you carry straight on into building it.'
 ].join('\n')
 
 const IMPLEMENT_TEMPLATE = [
