@@ -536,7 +536,7 @@ export function TaskDialog({
                     <div className="flex items-center gap-2">
                       <span className="text-[12px] font-semibold text-dim">Context files</span>
                       <span className="text-[11.5px] text-faint">
-                        Paths go into the prompt. Nothing is copied.
+                        Files or folders. Paths go into the prompt; nothing is copied.
                       </span>
                       <button
                         type="button"
@@ -555,7 +555,26 @@ export function TaskDialog({
                         }}
                       >
                         <PlusIcon size={12} />
-                        Add
+                        Add file
+                      </button>
+                      <button
+                        type="button"
+                        className={`${GHOST_BTN} h-6`}
+                        onClick={() => {
+                          void window.api.settings
+                            .pickFiles(form.repoPath || undefined, true)
+                            .then((picked) =>
+                              patch({
+                                contextFiles: [
+                                  ...form.contextFiles,
+                                  ...picked.filter((file) => !form.contextFiles.includes(file))
+                                ]
+                              })
+                            )
+                        }}
+                      >
+                        <PlusIcon size={12} />
+                        Add folder
                       </button>
                     </div>
                     <div className="flex flex-wrap gap-1.5">

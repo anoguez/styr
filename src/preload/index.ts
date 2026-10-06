@@ -109,8 +109,8 @@ const api = {
     brokenFiles: (): Promise<BrokenSettingsFile[]> => ipcRenderer.invoke('settings:brokenFiles'),
     pickDirectory: (current?: string): Promise<string | null> =>
       ipcRenderer.invoke('settings:pickDirectory', current),
-    pickFiles: (startIn?: string): Promise<string[]> =>
-      ipcRenderer.invoke('settings:pickFiles', startIn),
+    pickFiles: (startIn?: string, folders?: boolean): Promise<string[]> =>
+      ipcRenderer.invoke('settings:pickFiles', startIn, folders),
     onChanged: (handler: (settings: Settings) => void): (() => void) =>
       subscribe('settings:changed', handler as (...args: never[]) => void)
   },
