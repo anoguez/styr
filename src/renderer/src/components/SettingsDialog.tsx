@@ -1699,7 +1699,8 @@ export function SettingsDialog({
                                     {draft.codexApprovalReviewer === 'user'
                                       ? 'Codex pauses and asks before risky commands.'
                                       : 'Eligible requests go to Codex’s automatic reviewer; it does not grant full access.'}{' '}
-                                    Codex always runs in the workspace-write sandbox.
+                                    Codex runs in the workspace-write sandbox with network access,
+                                    so it can push and use `gh`.
                                   </Hint>
                                 </div>
                               </div>
