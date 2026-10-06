@@ -306,6 +306,8 @@ export interface Settings {
   activeWorkspaceId: string
   defaultRepoPath: string
   shell: string
+  /** App that opens files from Styr (task files, folders). Empty uses the system default. */
+  openFilesWith: string
   claudeCommand: string
   claudeApprovalMode: 'user' | 'auto'
   codexCommand: string
@@ -341,6 +343,7 @@ export const GLOBAL_SETTING_KEYS = [
 export const WORKSPACE_SETTING_KEYS = [
   'defaultRepoPath',
   'shell',
+  'openFilesWith',
   'claudeCommand',
   'claudeApprovalMode',
   'codexCommand',

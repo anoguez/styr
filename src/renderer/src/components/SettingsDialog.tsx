@@ -138,9 +138,9 @@ export const SECTIONS = [
     label: 'General',
     scope: 'workspace',
     blurb: 'Defaults for new tasks in this workspace. Existing tasks keep their own settings.',
-    keys: ['taskDefaults', 'doneCap', 'defaultRepoPath', 'shell'],
+    keys: ['taskDefaults', 'doneCap', 'defaultRepoPath', 'shell', 'openFilesWith'],
     words:
-      'done cap archive hide limit worktree directory shell terminal orchestrate default preferences'
+      'done cap archive hide limit worktree directory shell terminal orchestrate default preferences open editor app markdown'
   },
   {
     id: 'integrations',
@@ -854,6 +854,18 @@ export function SettingsDialog({
                       className={`${inputBase} h-8 w-60 px-2.5 font-mono text-[11.5px]`}
                       value={draft.shell}
                       onChange={(event) => patch({ shell: event.target.value })}
+                    />
+                  </Field>
+                  <Field
+                    label="Open files with"
+                    hint="App used to open task files and folders, e.g. Visual Studio Code or Typora. Leave empty for the system default."
+                  >
+                    <input
+                      aria-label="Open files with"
+                      className={`${inputBase} h-8 w-60 px-2.5 text-[12px]`}
+                      value={draft.openFilesWith}
+                      placeholder="System default"
+                      onChange={(event) => patch({ openFilesWith: event.target.value })}
                     />
                   </Field>
                 </>

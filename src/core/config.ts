@@ -109,6 +109,7 @@ export function shippedSettings(): Settings {
     activeWorkspaceId: DEFAULT_WORKSPACE_ID,
     defaultRepoPath: '',
     shell: process.env.SHELL ?? '/bin/zsh',
+    openFilesWith: '',
     claudeCommand: 'claude',
     claudeApprovalMode: 'user',
     codexCommand: 'codex',
