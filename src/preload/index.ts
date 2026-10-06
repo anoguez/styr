@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { AgentStatus } from '../core/agentState.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
@@ -147,6 +147,9 @@ const api = {
       ipcRenderer.invoke('terminal:openInCode', path),
     revealDirectory: (path: string): Promise<string> =>
       ipcRenderer.invoke('terminal:revealDirectory', path),
+    openLink: (url: string): Promise<void> => ipcRenderer.invoke('terminal:openLink', url),
+    pathsForFiles: (files: File[]): string[] =>
+      files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
     listDirectories: (
       path: string
     ): Promise<{ path: string; parent: string | null; names: string[] }> =>

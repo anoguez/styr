@@ -779,6 +779,10 @@ export function registerIpcHandlers(): void {
     return (await shell.openPath(path)) ? 'failed' : 'folder'
   })
   ipcMain.handle('terminal:revealDirectory', (_event, path: string) => openPathWith(path))
+  ipcMain.handle('terminal:openLink', (_event, url: string) => {
+    // Only web links: a terminal can print any string, and openExternal would run other schemes.
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+  })
   ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
 }
 
