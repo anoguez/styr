@@ -37,6 +37,30 @@ const LADDER: Record<keyof SurfaceRamp, number> = {
   faint: 47
 }
 
+/**
+ * The same ramp for a light base, where surfaces step from tinted grey up to white and text is
+ * dark. Only used when the base itself is light, so dark themes (Harbour included) are untouched.
+ */
+const LIGHT_LADDER: Record<keyof SurfaceRamp, number> = {
+  chrome: 91,
+  surface: 95,
+  panel: 97,
+  card: 99,
+  raised: 100,
+  edge: 87,
+  edgeStrong: 78,
+  ink: 12,
+  dim: 36,
+  faint: 46
+}
+
+/** A base lighter than this is treated as a light theme. */
+const LIGHT_BASE_LIGHTNESS = 55
+
+export function isLightBase(base: string): boolean {
+  return hexToHsl(base).l >= LIGHT_BASE_LIGHTNESS
+}
+
 const TEXT_KEYS = new Set<keyof SurfaceRamp>(['ink', 'dim', 'faint'])
 
 function clamp(value: number, min: number, max: number): number {
@@ -96,9 +120,17 @@ export function hslToHex({ h, s, l }: Hsl): string {
  */
 export function surfaceRamp(base: string): SurfaceRamp {
   const { h, s, l } = hexToHsl(base)
+  const light = l >= LIGHT_BASE_LIGHTNESS
   const shift = clamp(l - LADDER.surface, -4, 8)
   const tone = (key: keyof SurfaceRamp): string => {
     const isText = TEXT_KEYS.has(key)
+    if (light) {
+      return hslToHex({
+        h,
+        s: isText ? clamp(s, 0, 20) : clamp(s, 0, 30),
+        l: LIGHT_LADDER[key]
+      })
+    }
     return hslToHex({
       h,
       s: isText ? clamp(s, 0, 16) : clamp(s, 0, 45),
@@ -139,6 +171,15 @@ export function backgroundGradient(
 ): string {
   const { h, s, l } = hexToHsl(base)
   const amount = clamp(strength, 0, 1)
+  if (l >= LIGHT_BASE_LIGHTNESS) {
+    const top = hslToHex({ h, s, l: Math.min(l + 3 * amount, 99) })
+    const bottom = hslToHex({ h, s, l: Math.max(l - 5 * amount, 80) })
+    return (
+      `radial-gradient(1200px 620px at 6% -16%, ${rgba(accent, 0.16 * amount)}, transparent 58%), ` +
+      `radial-gradient(900px 500px at 100% 108%, ${rgba(accent, 0.08 * amount)}, transparent 60%), ` +
+      `linear-gradient(${angle}deg, ${top} 0%, ${bottom} 68%)`
+    )
+  }
   const top = hslToHex({ h, s: Math.min(s + 8 * amount, 45), l: Math.min(l + 10 * amount, 34) })
   const bottom = hslToHex({ h, s, l: Math.max(l - 2.5 * amount, 2) })
   return (
