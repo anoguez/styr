@@ -694,7 +694,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('settings:pickFiles', async (event, startIn?: string) => {
     const parent = BrowserWindow.fromWebContents(event.sender)
     const options: OpenDialogOptions = {
-      properties: ['openFile', 'multiSelections'],
+      properties: ['openFile', 'openDirectory', 'multiSelections'],
       defaultPath: startIn || loadSettings().defaultRepoPath || undefined
     }
     const result = parent

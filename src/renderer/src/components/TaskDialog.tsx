@@ -343,12 +343,14 @@ export function TaskDialog({
       routedName)
     : routedName
 
+  const repoFolder = form.repoPath.trim().replace(/\/+$/, '').split('/').pop() ?? ''
+
   const payload = {
     title: form.title.trim(),
     status: form.status,
     priority: form.priority,
     readiness: form.readiness,
-    project: form.project.trim() || undefined,
+    project: form.project.trim() || repoFolder || undefined,
     tags: form.tags,
     repoPath: form.repoPath.trim() || undefined,
     prUrl: form.prUrl.trim() || undefined,
@@ -536,7 +538,7 @@ export function TaskDialog({
                     <div className="flex items-center gap-2">
                       <span className="text-[12px] font-semibold text-dim">Context files</span>
                       <span className="text-[11.5px] text-faint">
-                        Paths go into the prompt. Nothing is copied.
+                        Files or folders. Paths go into the prompt; nothing is copied.
                       </span>
                       <button
                         type="button"
@@ -735,7 +737,7 @@ export function TaskDialog({
                   <input
                     aria-label="Project"
                     value={form.project}
-                    placeholder="None"
+                    placeholder={repoFolder || 'None'}
                     onChange={(event) => patch({ project: event.target.value })}
                     className={`h-7 w-full rounded-[7px] border-transparent px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
                   />

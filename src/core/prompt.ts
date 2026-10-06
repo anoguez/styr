@@ -46,7 +46,7 @@ function contextBlock(files: string[]): string {
   if (files.length === 0) return ''
   return [
     '## Context files',
-    'Read these before you start:',
+    'Read these before you start (a folder is context: look through what it holds):',
     ...files.map((file) => `- ${file}`)
   ].join('\n')
 }
