@@ -78,7 +78,12 @@ export function formatDiagnostics(
     `  ${'Total'.padEnd(22)} ${num(total.cpu, '%', 1).padStart(7)} ${num(total.memory, ' MB').padStart(9)}`,
     '',
     `Main event loop delay: p50 ${num(snapshot.eventLoopMs?.p50, ' ms', 1)}, p99 ${num(snapshot.eventLoopMs?.p99, ' ms', 1)}, max ${num(snapshot.eventLoopMs?.max, ' ms', 1)}`,
-    `Task change handling (last ${snapshot.notifyMs.length}): median ${num(percentile(snapshot.notifyMs, 0.5), ' ms')}, worst ${num(percentile(snapshot.notifyMs, 1), ' ms')}`,
+    `Task change handling (last ${snapshot.notifyMs.length}): median ${num(percentile(snapshot.notifyMs, 0.5), ' ms')}, worst ${num(percentile(snapshot.notifyMs, 1), ' ms')}, latest ${
+      snapshot.notifyMs
+        .slice(-5)
+        .map((ms) => Math.round(ms))
+        .join(', ') || '–'
+    } ms`,
     `Tasks ${snapshot.taskCount} · open terminals ${snapshot.terminals}`
   ]
   if (renderer) {

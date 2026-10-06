@@ -45,6 +45,7 @@ describe('formatDiagnostics', () => {
     expect(text).toContain('420 MB')
     expect(text).toContain('p50 –')
     expect(text).toContain('worst 400 ms')
+    expect(text).toContain('latest 10, 20, 400 ms')
     expect(text).not.toContain('NaN')
   })
 
