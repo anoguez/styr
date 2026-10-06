@@ -817,6 +817,7 @@ export default function App(): ReactNode {
                     .then(adoptSession)
                 }
                 diffStats={diffStats}
+                onQuickAdd={() => setQuickAdding(true)}
                 doneFooter={
                   hiddenDone > 0 || showAllDone || archived.length > 0 ? (
                     <div className="mt-auto flex shrink-0 flex-col items-center gap-1 pt-1 text-[11px] text-faint">
