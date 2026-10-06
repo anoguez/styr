@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.17.0](https://github.com/anoguez/styr/compare/v0.16.0...v0.17.0) (2026-10-06)
+
+
+### Features
+
+* ⌘1–⌘9 switch terminal tabs; board and inbox move to ⌃1 and ⌃2 ([#59](https://github.com/anoguez/styr/issues/59)) ([a79991a](https://github.com/anoguez/styr/commit/a79991ab21ccde7d365e8576114a0b9910fdec1b))
+* ask agent opens a question prompt and forks the chat in task sessions ([#56](https://github.com/anoguez/styr/issues/56)) ([4c48dcc](https://github.com/anoguez/styr/commit/4c48dcc0e60aaeef2f029ae29dbdc4c161e27aac))
+* built-in themes carry a full palette and add light themes ([#58](https://github.com/anoguez/styr/issues/58)) ([ed89e2a](https://github.com/anoguez/styr/commit/ed89e2adf82a1bfe0a4dedf6b546f22b75b453b4))
+* double-click empty Backlog space to quick add a task ([#55](https://github.com/anoguez/styr/issues/55)) ([a65cd31](https://github.com/anoguez/styr/commit/a65cd31a8a06e7a3c145c02af3fee7d06ece5006))
+
+
+### Bug Fixes
+
+* measure landing against the task's base branch and stop repeating cleanup notes ([#60](https://github.com/anoguez/styr/issues/60)) ([483caf4](https://github.com/anoguez/styr/commit/483caf4af39058aac82ed6e54ba09dc699f62a4b))
+
 ## [0.16.0](https://github.com/anoguez/styr/compare/v0.15.0...v0.16.0) (2026-10-06)
 
 
