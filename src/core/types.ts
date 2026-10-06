@@ -72,6 +72,7 @@ export interface ThemeSettings {
 export const SHORTCUT_COMMANDS = [
   'newTask',
   'quickTask',
+  'quickOpen',
   'commandPalette',
   'focusSearch',
   'viewBoard',
@@ -337,7 +338,8 @@ export const DEFAULT_THEME: ThemeSettings = {
 export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   newTask: ['mod+n'],
   quickTask: ['mod+shift+n'],
-  commandPalette: ['mod+p', 'mod+k'],
+  quickOpen: ['mod+p'],
+  commandPalette: ['mod+shift+p', 'mod+k'],
   focusSearch: ['mod+f'],
   viewBoard: ['ctrl+1'],
   viewInbox: ['ctrl+2'],
