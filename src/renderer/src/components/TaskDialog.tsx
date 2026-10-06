@@ -343,12 +343,14 @@ export function TaskDialog({
       routedName)
     : routedName
 
+  const repoFolder = form.repoPath.trim().replace(/\/+$/, '').split('/').pop() ?? ''
+
   const payload = {
     title: form.title.trim(),
     status: form.status,
     priority: form.priority,
     readiness: form.readiness,
-    project: form.project.trim() || undefined,
+    project: form.project.trim() || repoFolder || undefined,
     tags: form.tags,
     repoPath: form.repoPath.trim() || undefined,
     prUrl: form.prUrl.trim() || undefined,
@@ -735,7 +737,7 @@ export function TaskDialog({
                   <input
                     aria-label="Project"
                     value={form.project}
-                    placeholder="None"
+                    placeholder={repoFolder || 'None'}
                     onChange={(event) => patch({ project: event.target.value })}
                     className={`h-7 w-full rounded-[7px] border-transparent px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
                   />
