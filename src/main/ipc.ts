@@ -753,6 +753,10 @@ export function registerIpcHandlers(): void {
     return { root: root ?? null, branch: (root && readGitBranch(root)) ?? null }
   })
   ipcMain.handle('terminal:revealDirectory', (_event, path: string) => shell.openPath(path))
+  ipcMain.handle('terminal:openLink', (_event, url: string) => {
+    // Only web links: a terminal can print any string, and openExternal would run other schemes.
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+  })
   ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
 }
 

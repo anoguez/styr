@@ -6,6 +6,7 @@ import type { ShortcutBindings, ThemeSettings } from '@core/types.js'
 import { terminalTheme } from '../lib/palette.js'
 import { isAppShortcut, multilineSequence } from '../lib/terminalKeys.js'
 import { BlockTracker, type BlockLayout } from '../lib/blockTracker.js'
+import { shellQuote } from '@core/shell.js'
 import { TerminalOutputSynchronizer } from '../lib/terminalOutput.js'
 
 export interface TerminalSelection {
@@ -81,7 +82,13 @@ export function TerminalView({
     fitRef.current = fit
     terminalRef.current = terminal
     terminal.loadAddon(fit)
-    terminal.loadAddon(new WebLinksAddon())
+    terminal.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        // The addon's default opens about:blank and then navigates it, which the main process's
+        // window-open handler sends to the browser as "about:blank". Ask for the real URL instead.
+        if (event.button === 0) void window.api.terminal.openLink(uri)
+      })
+    )
     terminal.open(element)
 
     terminal.attachCustomKeyEventHandler((event) => {
@@ -169,6 +176,23 @@ export function TerminalView({
     const offSelection = terminal.onSelectionChange(() => {
       if (!terminal.hasSelection()) onSelectionRef.current?.(null)
     })
+    const allowDrop = (event: DragEvent): void => {
+      if (!event.dataTransfer?.types.includes('Files')) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+    }
+    const drop = (event: DragEvent): void => {
+      const files = Array.from(event.dataTransfer?.files ?? [])
+      if (files.length === 0) return
+      event.preventDefault()
+      const paths = window.api.terminal.pathsForFiles(files)
+      // paste() applies bracketed paste, so an agent CLI reads the paths as pasted text
+      // (Claude Code turns a pasted image path into an attachment).
+      if (paths.length > 0) terminal.paste(paths.map((p) => `'${shellQuote(p)}'`).join(' ') + ' ')
+      terminal.focus()
+    }
+    element.addEventListener('dragover', allowDrop)
+    element.addEventListener('drop', drop)
     const input = terminal.onData((data) => window.api.terminal.write(sessionId, data))
     const observer = new ResizeObserver(pushSize)
     observer.observe(element)
@@ -181,6 +205,8 @@ export function TerminalView({
       element.removeEventListener('mouseup', reportSelection)
       element.removeEventListener('mousemove', hover)
       element.removeEventListener('mouseleave', leave)
+      element.removeEventListener('dragover', allowDrop)
+      element.removeEventListener('drop', drop)
       if (handle) handle.current = null
       onFullscreenRef.current?.(false)
       tracker.dispose()
