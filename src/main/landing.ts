@@ -1,11 +1,8 @@
 import { addNote, updateTask } from '@core/taskStore.js'
 import { loadSettings } from '@core/settingsStore.js'
 import { worktreeKey, type Task } from '@core/types.js'
-import { branchLanding, cleanupLandedTask } from '@core/worktree.js'
+import { branchLanding, cleanupLandedTask, isRepeatNote } from '@core/worktree.js'
 import { queryTasks } from './taskIndex.js'
-
-/** Cleanup outcomes already written to Activity, so a refusal is reported once rather than on every change. */
-const reported = new Set<string>()
 
 /**
  * Keeps the board honest about merges without asking any host. An In Review task whose branch has
@@ -31,7 +28,7 @@ export function settleLandedTasks(): boolean {
 
 function settle(task: Task, repoPath: string, key: string): boolean {
   if (task.status === 'in_review') {
-    const landing = branchLanding(repoPath, key)
+    const landing = branchLanding(repoPath, key, task.baseBranch)
     if (!landing?.landed) return false
     updateTask(task.id, { status: 'done' })
     addNote(task.id, 'styr', `Work landed on ${landing.base}; moved to done.`)
@@ -43,16 +40,16 @@ function settle(task: Task, repoPath: string, key: string): boolean {
 }
 
 function cleanup(task: Task, repoPath: string, key: string): boolean {
-  const result = cleanupLandedTask(repoPath, key)
-  const noteKey = `${key}:${result.notes.join('|')}`
+  const result = cleanupLandedTask(repoPath, key, task.baseBranch)
   let wrote = false
   if (result.worktreeRemoved && task.worktreePath) {
     updateTask(task.id, { worktreePath: undefined })
     wrote = true
   }
-  if (result.notes.length > 0 && !reported.has(noteKey)) {
-    reported.add(noteKey)
-    addNote(task.id, 'styr', result.notes.join(' '))
+  // Deduped against the task's own Activity, which survives a restart; a refusal is reported once.
+  const message = result.notes.join(' ')
+  if (message && !isRepeatNote(task.activity, 'styr', message)) {
+    addNote(task.id, 'styr', message)
     wrote = true
   }
   return wrote
