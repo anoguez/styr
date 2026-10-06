@@ -414,7 +414,7 @@ describe('askFork', () => {
     expect(h.calls[0]).toBe('create Why?')
     expect(h.calls[1]).toBe('note TASK-1 styr Forked for a question as TASK-2')
     expect(h.calls).toContain('session TASK-2 claude')
-    expect(plan.mock.calls[0][2]).toMatchObject({
+    expect(plan.mock.calls[0]?.[2]).toMatchObject({
       forkFrom: 'saved-chat',
       withPrompt: true,
       sessionLabel: 'Fork of TASK-1'
