@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron'
+import { opensTextFiles, type AppInfo } from '@core/appFilter.js'
 import { pathsInWorkspace, pinWorkspace, workspaceDir } from '@core/config.js'
 import {
   isSettingsFileBroken,
@@ -773,19 +774,47 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
 }
 
-/** Names of the apps installed in the usual macOS folders, for the "Open files with" picker. */
-function listInstalledApps(): string[] {
-  const names = new Set<string>()
+const appInfoCache = new Map<string, boolean>()
+
+function readsText(appPath: string): Promise<boolean> {
+  const cached = appInfoCache.get(appPath)
+  if (cached !== undefined) return Promise.resolve(cached)
+  return new Promise((resolve) => {
+    execFile(
+      'plutil',
+      ['-convert', 'json', '-o', '-', join(appPath, 'Contents', 'Info.plist')],
+      { maxBuffer: 8 * 1024 * 1024 },
+      (error, stdout) => {
+        let result = false
+        if (!error) {
+          try {
+            result = opensTextFiles(JSON.parse(stdout) as AppInfo)
+          } catch {
+            // An unreadable plist is treated as not a text editor.
+          }
+        }
+        appInfoCache.set(appPath, result)
+        resolve(result)
+      }
+    )
+  })
+}
+
+/** Names of the installed apps that open text or markdown, for the "Open files with" picker. */
+async function listInstalledApps(): Promise<string[]> {
+  const found = new Map<string, string>()
   for (const dir of ['/Applications', '/System/Applications', join(homedir(), 'Applications')]) {
     try {
       for (const entry of readdirSync(dir)) {
-        if (entry.endsWith('.app')) names.add(entry.slice(0, -4))
+        if (entry.endsWith('.app')) found.set(entry.slice(0, -4), join(dir, entry))
       }
     } catch {
       // The folder may not exist.
     }
   }
-  return [...names].sort((a, b) => a.localeCompare(b))
+  const names = [...found.keys()]
+  const keep = await Promise.all(names.map((name) => readsText(found.get(name)!)))
+  return names.filter((_, i) => keep[i]).sort((a, b) => a.localeCompare(b))
 }
 
 /**
