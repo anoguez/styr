@@ -9,13 +9,11 @@ import {
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_THEME,
-  ORCHESTRATION_LANES,
   SHORTCUT_COMMANDS,
   type AppInfo,
   type OrchestrationSummary,
   type ShortcutCommand,
   type Task,
-  type TerminalSessionInfo,
   type ThemeSettings
 } from '@core/types.js'
 import { AgentsSidebar, sortAgentRows, type AgentRow } from './components/AgentsSidebar.js'
@@ -37,6 +35,8 @@ import { QuickTaskDialog } from './components/QuickTaskDialog.js'
 import { TaskDialog } from './components/TaskDialog.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
 import { sessionLabel } from './lib/sessionLabel.js'
+import { orchestrateHint } from './lib/orchestrateHint.js'
+import { useTerminalSessions } from './hooks/useTerminalSessions.js'
 import { Button, Chip, Modal, inputClass } from './components/ui.js'
 import { useSettings } from './hooks/useSettings.js'
 import { useTheme } from './hooks/useTheme.js'
@@ -129,9 +129,17 @@ export default function App(): ReactNode {
   }, [view])
   const [changesTask, setChangesTask] = useState<Task | null>(null)
 
-  const [sessions, setSessions] = useState<TerminalSessionInfo[]>([])
-  const [activeSession, setActiveSession] = useState<string | null>(null)
-  const [terminalOpen, setTerminalOpen] = useState(false)
+  const {
+    sessions,
+    activeSession,
+    terminalOpen,
+    adopt: adoptSession,
+    select: setActiveSession,
+    reorder: reorderSessions,
+    toggleTerminal,
+    close: closeSession,
+    activateForTask
+  } = useTerminalSessions()
   const [agentsOpen, setAgentsOpen] = useState(true)
   const [terminalExpanded, setTerminalExpanded] = useState(false)
   const [terminalHeight, setTerminalHeight] = useState(preferredTerminalHeight)
@@ -188,25 +196,6 @@ export default function App(): ReactNode {
     void window.api.app.info().then(setAppInfo)
   }, [])
 
-  useEffect(() => {
-    void window.api.terminal.list().then((existing) => {
-      setSessions(existing)
-      setActiveSession((current) => current ?? existing[0]?.id ?? null)
-    })
-    return window.api.terminal.onExit(({ id }) => {
-      setSessions((current) => current.filter((session) => session.id !== id))
-      setActiveSession((current) => (current === id ? null : current))
-    })
-  }, [])
-
-  const adoptSession = useCallback((session: TerminalSessionInfo) => {
-    setSessions((current) =>
-      current.some((existing) => existing.id === session.id) ? current : [...current, session]
-    )
-    setActiveSession(session.id)
-    setTerminalOpen(true)
-  }, [])
-
   const newShell = useCallback(
     async (cwd?: string) => {
       adoptSession(
@@ -261,17 +250,9 @@ export default function App(): ReactNode {
 
   const activateTask = useCallback(
     (taskId: string) => {
-      const session = sessions.find(
-        (current) => current.taskId === taskId && current.workspaceId === activeWorkspaceId
-      )
-      if (session) {
-        setActiveSession(session.id)
-        setTerminalOpen(true)
-        return
-      }
-      void launchAgent(taskId)
+      if (!activateForTask(taskId, activeWorkspaceId)) void launchAgent(taskId)
     },
-    [sessions, launchAgent, activeWorkspaceId]
+    [activateForTask, launchAgent, activeWorkspaceId]
   )
 
   // A request can name a task of a workspace that is still loading (the menu bar switches first),
@@ -330,35 +311,11 @@ export default function App(): ReactNode {
     [adoptSession, refreshOrchestration]
   )
 
-  const orchestrateHint = useMemo(() => {
-    if (!orchestration) return 'Orchestrate'
-    const { dispatch, occupied, capacity, optedOut, missingWorkingDir } = orchestration
-    if (dispatch.length > 0) {
-      return `Start ${dispatch.length}: ${dispatch.map((d) => `${d.taskId} (${d.lane})`).join(', ')}`
-    }
-    const full = ORCHESTRATION_LANES.filter(
-      (lane) => occupied[lane] >= capacity[lane] && capacity[lane] > 0
-    )
-    if (full.length > 0) return `No free slots in: ${full.join(', ')}`
-    const notes = [
-      orchestration.idleSessions > 0
-        ? `${orchestration.idleSessions} already have a terminal tab open — close it to hand the task back`
-        : '',
-      optedOut > 0 ? `${optedOut} opted out` : '',
-      missingWorkingDir > 0 ? `${missingWorkingDir} without a working directory` : ''
-    ].filter(Boolean)
-    return notes.length > 0 ? `Nothing to start — ${notes.join(', ')}` : 'Nothing ready to start'
-  }, [orchestration])
+  const orchestrateTitle = useMemo(() => orchestrateHint(orchestration), [orchestration])
 
   const openSettings = useCallback((section?: SectionId) => {
     setSettingsSection(section)
     setShowSettings(true)
-  }, [])
-
-  const closeSession = useCallback(async (id: string) => {
-    await window.api.terminal.kill(id)
-    setSessions((current) => current.filter((session) => session.id !== id))
-    setActiveSession((current) => (current === id ? null : current))
   }, [])
 
   const runCommand = useCallback(
@@ -380,7 +337,7 @@ export default function App(): ReactNode {
         case 'settings':
           return openSettings()
         case 'toggleTerminal':
-          return setTerminalOpen((open) => !open)
+          return toggleTerminal()
         case 'toggleAgents':
           return setAgentsOpen((open) => !open)
         case 'orchestrate':
@@ -405,8 +362,7 @@ export default function App(): ReactNode {
           // Tab N, as in a browser; with no such tab the key does nothing.
           const target = sessions[Number(command.slice('terminalTab'.length)) - 1]
           if (!target) return
-          setActiveSession(target.id)
-          return setTerminalOpen(true)
+          return setActiveSession(target.id)
         }
         case 'terminalDirectory':
         case 'terminalAskAgent':
@@ -420,7 +376,15 @@ export default function App(): ReactNode {
           return dispatchTerminalCommand(command)
       }
     },
-    [openSettings, newShell, closeSession, activeSession, sessions]
+    [
+      openSettings,
+      newShell,
+      closeSession,
+      activeSession,
+      sessions,
+      toggleTerminal,
+      setActiveSession
+    ]
   )
 
   const commandEntries = useMemo<CommandEntry[]>(() => {
@@ -528,10 +492,7 @@ export default function App(): ReactNode {
         hint: detail || undefined,
         group: 'Terminals',
         keywords: 'terminal tab session',
-        run: () => {
-          setActiveSession(session.id)
-          setTerminalOpen(true)
-        }
+        run: () => setActiveSession(session.id)
       })
     }
 
@@ -559,6 +520,7 @@ export default function App(): ReactNode {
     agentsOpen,
     bindings,
     runCommand,
+    setActiveSession,
     launchAgent,
     activateTask,
     openSettings,
@@ -587,15 +549,6 @@ export default function App(): ReactNode {
     () => buildInbox(Object.values(board).flat(), agents, queuedPositions).needs.length,
     [board, agents, queuedPositions]
   )
-
-  const reorderSessions = useCallback((orderedIds: string[]) => {
-    setSessions((current) => {
-      const byId = new Map(current.map((session) => [session.id, session]))
-      return orderedIds
-        .map((id) => byId.get(id))
-        .filter((session): session is TerminalSessionInfo => session !== undefined)
-    })
-  }, [])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
@@ -777,7 +730,7 @@ export default function App(): ReactNode {
           <Button
             onClick={() => setConfirmingOrchestrate(true)}
             disabled={orchestration === null || orchestration.dispatch.length === 0}
-            title={orchestrateHint}
+            title={orchestrateTitle}
           >
             Orchestrate
             {orchestration && orchestration.dispatch.length > 0 ? (
