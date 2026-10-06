@@ -3,6 +3,22 @@ import type { DiffStat } from '@core/diff.js'
 
 const REFRESH_MS = 30_000
 
+/** Same tasks with the same counts. A new Map each poll would re-render the whole board for nothing. */
+export function sameDiffStats(a: Map<string, DiffStat>, b: Map<string, DiffStat>): boolean {
+  if (a.size !== b.size) return false
+  for (const [id, stat] of a) {
+    const other = b.get(id)
+    if (
+      !other ||
+      other.added !== stat.added ||
+      other.removed !== stat.removed ||
+      other.files !== stat.files
+    )
+      return false
+  }
+  return true
+}
+
 /**
  * Per-task change totals for the cards. Derived from git on demand, never stored: refreshed when
  * the board changes and on a slow timer, because commits do not touch the task files.
@@ -15,7 +31,9 @@ export function useDiffStats(workspaceId: string): Map<string, DiffStat> {
     let pending: number | undefined
     const load = (): void => {
       void window.api.git.diffStats().then((next) => {
-        if (!cancelled) setStats(new Map(Object.entries(next)))
+        if (cancelled) return
+        const incoming = new Map(Object.entries(next))
+        setStats((current) => (sameDiffStats(current, incoming) ? current : incoming))
       })
     }
     const soon = (): void => {
