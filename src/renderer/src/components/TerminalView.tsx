@@ -220,7 +220,14 @@ export function TerminalView({
   }, [sessionId])
 
   useEffect(() => {
-    if (active) requestAnimationFrame(() => fitRef.current?.fit())
+    if (!active) return
+    // The host is `hidden` until now, so xterm can only take focus once it is shown. Switching
+    // tabs should leave the user typing, not clicking into the terminal first.
+    const frame = requestAnimationFrame(() => {
+      fitRef.current?.fit()
+      terminalRef.current?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
   }, [active])
 
   useEffect(() => {
