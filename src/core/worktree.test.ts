@@ -7,8 +7,6 @@ import {
   branchLanding,
   branchNameFor,
   cleanupLandedTask,
-  isRepeatNote,
-  landingFingerprint,
   refListing,
   ensureWorktree,
   isGitRepo,
@@ -18,6 +16,7 @@ import {
   taskFilePatch,
   worktreePathFor
 } from './worktree.js'
+import { refsFingerprint } from './landing.js'
 
 const temporaryDirectories: string[] = []
 const GIT_REPOSITORY_CONTEXT = [
@@ -194,21 +193,21 @@ describe('landing and cleanup', () => {
     const repository = temporaryRepository()
     const branch = commitOnTask(repository, 'TASK-0060')
     commitOnTask(repository, 'TASK-0061', 'other.txt')
-    const before = landingFingerprint(refListing(repository), 'TASK-0060')
+    const before = refsFingerprint(refListing(repository), 'TASK-0060')
 
     // another task committing again does not matter to this one
     writeFileSync(join(worktreePathFor(repository, 'TASK-0061'), 'more.txt'), 'x\n')
     runGit(['add', 'more.txt'], worktreePathFor(repository, 'TASK-0061'))
     runGit(['commit', '-m', 'More'], worktreePathFor(repository, 'TASK-0061'))
-    expect(landingFingerprint(refListing(repository), 'TASK-0060')).toBe(before)
+    expect(refsFingerprint(refListing(repository), 'TASK-0060')).toBe(before)
 
     // the base moving does
     runGit(['merge', '--ff-only', branch], repository)
-    expect(landingFingerprint(refListing(repository), 'TASK-0060')).not.toBe(before)
+    expect(refsFingerprint(refListing(repository), 'TASK-0060')).not.toBe(before)
   })
 
   it('has a stable fingerprint when git cannot list refs', () => {
-    expect(landingFingerprint(undefined, 'TASK-0062')).toBe('unavailable')
+    expect(refsFingerprint(undefined, 'TASK-0062')).toBe('unavailable')
     expect(refListing('/nonexistent-styr-dir')).toBeUndefined()
   })
 
@@ -277,15 +276,6 @@ describe('landing and cleanup', () => {
     const repository = temporaryRepository()
     commitOnTask(repository, 'TASK-0057')
     expect(branchLanding(repository, 'TASK-0057', 'vanished')).toMatchObject({ base: 'main' })
-  })
-
-  it('recognises a repeated note', () => {
-    const log = [
-      { author: 'styr', message: 'a' },
-      { author: 'me', message: 'b' }
-    ]
-    expect(isRepeatNote(log, 'styr', 'a')).toBe(true)
-    expect(isRepeatNote(log, 'styr', 'c')).toBe(false)
   })
 })
 
