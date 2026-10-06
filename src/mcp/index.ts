@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { pinWorkspace } from '@core/config.js'
+import { adapterFor, currentSources, runCommand, writableSource } from '@core/sources/index.js'
 import { addNote, createTask, deleteTask, getTask, listTasks, updateTask } from '@core/taskStore.js'
 import { TASK_PRIORITIES, TASK_READINESS, TASK_STATUSES, type Task } from '@core/types.js'
 
@@ -165,6 +166,51 @@ server.registerTool(
   async ({ id }) => {
     deleteTask(id)
     return json({ deleted: id })
+  }
+)
+
+server.registerTool(
+  'list_sources',
+  {
+    title: 'List external sources',
+    description:
+      'List the external sources (such as GitHub repositories) linked to this workspace, with ' +
+      'their access level. A read-only source must never be changed.',
+    inputSchema: {}
+  },
+  async () =>
+    json(
+      currentSources().map(({ id, provider, name, repo, access, enabled }) => ({
+        id,
+        provider,
+        name,
+        repo,
+        access,
+        enabled
+      }))
+    )
+)
+
+server.registerTool(
+  'comment_on_source_item',
+  {
+    title: 'Comment on an external item',
+    description:
+      'Post a comment on an item (issue) of an external source. Fails with an error when the ' +
+      'source is read-only or disabled; do not look for another way to write to it.',
+    inputSchema: { sourceId: z.string(), itemId: z.string(), body: z.string().min(1) }
+  },
+  async ({ sourceId, itemId, body }) => {
+    try {
+      const writer = writableSource(sourceId)
+      const provider = currentSources().find((source) => source.id === sourceId)?.provider ?? ''
+      const status = await adapterFor(provider)?.status(runCommand)
+      if (status && status.state !== 'ready') return json({ error: `The CLI is ${status.state}.` })
+      await writer.comment(itemId, body)
+      return json({ commented: itemId })
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : String(error) })
+    }
   }
 )
 
