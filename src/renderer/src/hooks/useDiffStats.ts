@@ -30,6 +30,8 @@ export function useDiffStats(workspaceId: string): Map<string, DiffStat> {
     let cancelled = false
     let pending: number | undefined
     const load = (): void => {
+      // A hidden window shows no cards; it refreshes once when it comes back.
+      if (document.hidden) return
       void window.api.git.diffStats().then((next) => {
         if (cancelled) return
         const incoming = new Map(Object.entries(next))
@@ -42,11 +44,16 @@ export function useDiffStats(workspaceId: string): Map<string, DiffStat> {
     }
     load()
     const timer = window.setInterval(load, REFRESH_MS)
+    const onVisible = (): void => {
+      if (!document.hidden) load()
+    }
+    document.addEventListener('visibilitychange', onVisible)
     const unsubscribe = window.api.tasks.onChanged(soon)
     return () => {
       cancelled = true
       window.clearTimeout(pending)
       window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
       unsubscribe()
     }
   }, [workspaceId])
