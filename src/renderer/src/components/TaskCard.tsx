@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -20,20 +20,65 @@ const PRIORITY_BAR: Record<TaskPriority, string> = {
   urgent: 'bg-[var(--color-pri-urgent)]'
 }
 
+const ICON_PATHS: Record<'file' | 'note' | 'pr' | 'issue', ReactNode> = {
+  file: (
+    <g strokeLinejoin="round">
+      <path d="M4 2.5h5l3 3v8H4z" />
+      <path d="M9 2.5v3h3" />
+    </g>
+  ),
+  note: <path d="M3 13.5h3l7-7-3-3-7 7z" strokeLinecap="round" strokeLinejoin="round" />,
+  pr: (
+    <g strokeLinecap="round">
+      <circle cx="4.5" cy="3.5" r="1.6" />
+      <circle cx="4.5" cy="12.5" r="1.6" />
+      <circle cx="11.5" cy="12.5" r="1.6" />
+      <path d="M4.5 5.1v5.8M11.5 10.9V6.5a2 2 0 0 0-2-2H7.5" />
+    </g>
+  ),
+  issue: (
+    <g>
+      <circle cx="8" cy="8" r="5.25" />
+      <circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+    </g>
+  )
+}
+
+/** One stroke style for every glyph in the refs row, so the row reads as a single set. */
+function RefIcon({ name }: { name: keyof typeof ICON_PATHS }): ReactNode {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 16 16"
+      width="11"
+      height="11"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    >
+      {ICON_PATHS[name]}
+    </svg>
+  )
+}
+
+function Dot({ pulse = false }: { pulse?: boolean }): ReactNode {
+  return (
+    <span
+      aria-hidden
+      className={`size-[6px] shrink-0 rounded-full bg-current ${pulse ? 'wd-pulse' : ''}`}
+    />
+  )
+}
+
 export function AgentBadge({ agent }: { agent: AgentStatus }): ReactNode {
   return (
     <span
-      className={`ml-auto inline-flex min-w-0 items-center gap-1 whitespace-nowrap ${AGENT_TONE[agent.state]}`}
+      className={`inline-flex min-w-0 items-center gap-[5px] whitespace-nowrap font-medium ${AGENT_TONE[agent.state]}`}
       title={
         agent.lastMessage ? `${AGENT_STATE_LABELS[agent.state]} — ${agent.lastMessage}` : undefined
       }
     >
-      <span
-        aria-hidden
-        className={`size-[6px] shrink-0 rounded-full bg-current ${
-          agent.state === 'working' ? 'wd-pulse' : ''
-        }`}
-      />
+      <Dot pulse={agent.state === 'working'} />
       <span className="truncate">{AGENT_STATE_LABELS[agent.state]}</span>
     </span>
   )
@@ -57,23 +102,24 @@ export function TaskCardBody({
   diffStat?: DiffStat
   onShowChanges?: () => void
 }): ReactNode {
-  const meta = [
-    task.contextFiles.length > 0 ? `◎ ${task.contextFiles.length}` : null,
-    task.activity.length > 0 ? `✎ ${task.activity.length}` : null
-  ].filter(Boolean)
   const loud = task.priority === 'high' || task.priority === 'urgent'
-  // With a diff count the PR link and agent state move to its row: PR centred, state bottom right.
+  const files = task.contextFiles.length
+  const notes = task.activity.length
+  const stop = { onPointerDown: (e: SyntheticEvent) => e.stopPropagation() }
+  const linkClass =
+    'inline-flex shrink-0 items-center gap-[3px] whitespace-nowrap text-[var(--color-accent-text)] hover:underline'
   const prLink = task.prUrl ? (
     <a
       href={task.prUrl}
       target="_blank"
       rel="noreferrer"
       title={task.prUrl}
-      className="shrink-0 whitespace-nowrap text-[var(--color-accent-text)] hover:underline"
-      onPointerDown={(event) => event.stopPropagation()}
+      className={linkClass}
+      {...stop}
       onClick={(event) => event.stopPropagation()}
     >
-      ⑂ PR
+      <RefIcon name="pr" />
+      PR
     </a>
   ) : null
   const issueLink = task.externalRef?.url ? (
@@ -82,18 +128,32 @@ export function TaskCardBody({
       target="_blank"
       rel="noreferrer"
       title={task.externalRef.url}
-      className="shrink-0 whitespace-nowrap text-[var(--color-accent-text)] hover:underline"
-      onPointerDown={(event) => event.stopPropagation()}
+      className={`${linkClass} font-mono`}
+      {...stop}
       onClick={(event) => event.stopPropagation()}
     >
-      #{task.externalRef.id}
+      <RefIcon name="issue" />
+      {task.externalRef.id}
     </a>
   ) : null
-  const status = agent ? (
+  // "Needs spec" and "Chat to resume" are states too, so they share the strip with the agent.
+  const state = agent ? (
     <AgentBadge agent={agent} />
+  ) : task.readiness === 'needs_spec' ? (
+    <span
+      className="inline-flex min-w-0 items-center gap-[5px] whitespace-nowrap font-medium text-[var(--color-col-review-text)]"
+      title="Needs a spec before it can be worked on"
+    >
+      <Dot />
+      <span className="truncate">Needs spec</span>
+    </span>
   ) : task.agentSession ? (
-    <span className="ml-auto text-faint" title="Has an agent chat to resume">
-      ◈
+    <span
+      className="inline-flex min-w-0 items-center gap-[5px] whitespace-nowrap font-medium text-dim"
+      title="Has an agent chat to resume"
+    >
+      <Dot />
+      <span className="truncate">Chat to resume</span>
     </span>
   ) : null
 
@@ -111,17 +171,19 @@ export function TaskCardBody({
         {task.title}
       </p>
 
-      {task.project || task.tags.length > 0 || task.readiness === 'needs_spec' || loud ? (
+      {loud || task.project || task.tags.length > 0 ? (
         <div className="mt-2.5 flex flex-wrap items-center gap-1">
           {loud ? (
-            <Chip tone="warn" title={`${task.priority} priority`}>
+            <span
+              title={`${task.priority} priority`}
+              className="inline-flex items-center rounded-md px-1.5 py-[1px] text-[10.5px] font-semibold capitalize"
+              style={{
+                color: `var(--color-pri-${task.priority})`,
+                background: `color-mix(in oklab, var(--color-pri-${task.priority}) 15%, transparent)`
+              }}
+            >
               {task.priority}
-            </Chip>
-          ) : null}
-          {task.readiness === 'needs_spec' ? (
-            <Chip tone="warn" title="Needs a spec before it can be worked on">
-              needs spec
-            </Chip>
+            </span>
           ) : null}
           {task.project ? <Chip tone="accent">{task.project}</Chip> : null}
           {task.tags.map((tag) => (
@@ -130,24 +192,34 @@ export function TaskCardBody({
         </div>
       ) : null}
 
-      <div className="mt-2.5 flex min-w-0 items-center gap-2 text-[10.5px] text-faint">
+      <div className="mt-2.5 flex min-w-0 items-center gap-2.5 text-[10.5px] text-faint">
         <span className="shrink-0 whitespace-nowrap font-mono tracking-tight">{task.id}</span>
-        {meta.length > 0 ? <span className="text-edge-strong">·</span> : null}
-        {meta.map((item) => (
-          <span key={item} className="shrink-0 whitespace-nowrap">
-            {item}
-          </span>
-        ))}
         {issueLink}
-        {diffStat ? null : prLink}
-        {diffStat ? null : status}
+        {prLink}
+        <span className="ml-auto flex shrink-0 items-center gap-2 font-mono">
+          {files > 0 ? (
+            <span className="inline-flex items-center gap-[3px]" title={`${files} context files`}>
+              <RefIcon name="file" />
+              {files}
+            </span>
+          ) : null}
+          {notes > 0 ? (
+            <span className="inline-flex items-center gap-[3px]" title={`${notes} notes`}>
+              <RefIcon name="note" />
+              {notes}
+            </span>
+          ) : null}
+        </span>
       </div>
 
-      {diffStat ? (
-        <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[10.5px]">
-          <DiffStatButton stat={diffStat} onClick={() => onShowChanges?.()} />
-          <div className="flex min-w-0 flex-1 justify-center">{prLink}</div>
-          {status}
+      {state || diffStat ? (
+        <div className="-ml-3.5 -mr-3 mt-[9px] flex min-w-0 items-center gap-2 border-t border-edge pl-3.5 pr-3 pt-[7px] text-[11px]">
+          {state}
+          {diffStat ? (
+            <span className="-mr-1 ml-auto shrink-0">
+              <DiffStatButton stat={diffStat} onClick={() => onShowChanges?.()} />
+            </span>
+          ) : null}
         </div>
       ) : null}
     </>
@@ -218,7 +290,7 @@ export function TaskCard({
     <article
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={`group relative shrink-0 cursor-grab overflow-hidden rounded-[var(--radius-card)] border bg-card pl-3.5 pr-3 py-3 transition-[background-color,border-color,box-shadow] duration-150 hover:border-edge-strong hover:bg-raised hover:shadow-[0_2px_12px_-4px_rgba(0,0,0,0.6)] active:cursor-grabbing ${
+      className={`group relative shrink-0 cursor-grab overflow-hidden rounded-[var(--radius-card)] border bg-card pl-3.5 pr-3 pb-2.5 pt-3 transition-[background-color,border-color,box-shadow] duration-150 hover:border-edge-strong hover:bg-raised hover:shadow-[0_2px_12px_-4px_rgba(0,0,0,0.6)] active:cursor-grabbing ${
         isDragging ? 'opacity-40' : ''
       } ${queued ? 'border-accent/45' : 'border-edge'}`}
       onDoubleClick={() => onOpen(task)}
