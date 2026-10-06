@@ -33,6 +33,7 @@ export function Board({
   onOpenTerminal,
   diffStats,
   doneFooter,
+  onQuickAdd,
   templateNameFor
 }: {
   board: TaskBoard
@@ -46,6 +47,8 @@ export function Board({
   diffStats: Map<string, DiffStat>
   /** Rendered at the foot of the Done column: the hidden count and its controls. */
   doneFooter?: ReactNode
+  /** Double-click on empty Backlog space. */
+  onQuickAdd?: () => void
   templateNameFor: (task: Task) => string
 }): ReactNode {
   const [dragging, setDragging] = useState<Task | null>(null)
@@ -111,6 +114,7 @@ export function Board({
             onOpenTerminal={onOpenTerminal}
             diffStats={diffStats}
             footer={status === 'done' ? doneFooter : undefined}
+            onDoubleClickEmpty={status === 'backlog' ? onQuickAdd : undefined}
             templateNameFor={templateNameFor}
           />
         ))}

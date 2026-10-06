@@ -32,6 +32,7 @@ export function Column({
   onOpenTerminal,
   diffStats,
   footer,
+  onDoubleClickEmpty,
   templateNameFor
 }: {
   status: TaskStatus
@@ -45,6 +46,7 @@ export function Column({
   onOpenTerminal: (task: Task) => void
   diffStats: Map<string, DiffStat>
   footer?: ReactNode
+  onDoubleClickEmpty?: () => void
   templateNameFor: (task: Task) => string
 }): ReactNode {
   const { setNodeRef, isOver } = useDroppable({ id: `column:${status}` })
@@ -67,6 +69,13 @@ export function Column({
         className={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-xl border border-t-2 p-2 transition-colors duration-150 ${
           isOver ? 'border-dashed border-accent/60 bg-accent/[0.07]' : 'border-edge bg-panel/80'
         }`}
+        onDoubleClick={
+          onDoubleClickEmpty
+            ? (event) => {
+                if (event.target === event.currentTarget) onDoubleClickEmpty()
+              }
+            : undefined
+        }
         style={
           isOver ? undefined : { borderTopColor: `color-mix(in oklab, ${accent} 60%, transparent)` }
         }
@@ -95,7 +104,7 @@ export function Column({
         {footer}
 
         {tasks.length === 0 && !footer ? (
-          <p className="m-auto select-none px-2 text-center text-[11.5px] text-faint/70">
+          <p className="pointer-events-none m-auto select-none px-2 text-center text-[11.5px] text-faint/70">
             {EMPTY_HINT[status]}
           </p>
         ) : null}
