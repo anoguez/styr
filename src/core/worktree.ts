@@ -296,15 +296,27 @@ function contentLanded(repoPath: string, base: string, branch: string): boolean 
  * Whether a task branch's work is on the base. A remote-tracking base counts too, so a PR merged on
  * the host is seen before the user pulls. Undefined when there is no branch or no base to compare.
  */
-export function branchLanding(repoPath: string, taskId: string): Landing | undefined {
+export function branchLanding(
+  repoPath: string,
+  taskId: string,
+  baseBranch?: string
+): Landing | undefined {
   if (!isGitRepo(repoPath)) return undefined
   const branch = branchNameFor(taskId)
   if (!branchExists(repoPath, branch)) return undefined
-  const base = baseBranchFor(repoPath)
+  // The task's own base wins while it still exists; a vanished one falls back to the automatic base.
+  const chosen =
+    baseBranch &&
+    (refExists(repoPath, `refs/heads/${baseBranch}`) ||
+      refExists(repoPath, `refs/remotes/origin/${baseBranch}`))
+      ? baseBranch
+      : undefined
+  const base = chosen ?? baseBranchFor(repoPath)
   if (!base) return undefined
 
   const bases = [base, `origin/${base}`].filter((ref) => refExists(repoPath, ref))
-  let ahead = countAhead(repoPath, base, branch)
+  if (bases.length === 0) return undefined
+  let ahead = Math.min(...bases.map((ref) => countAhead(repoPath, ref, branch)))
   let landed = false
   for (const ref of bases) {
     const count = countAhead(repoPath, ref, branch)
@@ -331,6 +343,16 @@ function hasOwnCommits(repoPath: string, branch: string): boolean {
   }
 }
 
+/** True when the latest note by `author` already says `message`, so a retry does not repeat it. */
+export function isRepeatNote(
+  activity: { author: string; message: string }[],
+  author: string,
+  message: string
+): boolean {
+  const last = [...activity].reverse().find((entry) => entry.author === author)
+  return last?.message === message
+}
+
 export interface CleanupResult {
   /** The worktree directory is gone (or never existed), so `worktreePath` can be cleared. */
   worktreeRemoved: boolean
@@ -343,15 +365,19 @@ export interface CleanupResult {
  * Nothing is forced past a check — a dirty worktree stays, and a branch whose work cannot be shown
  * to be on the base stays — and each refusal is reported rather than thrown.
  */
-export function cleanupLandedTask(repoPath: string, taskId: string): CleanupResult {
+export function cleanupLandedTask(
+  repoPath: string,
+  taskId: string,
+  baseBranch?: string
+): CleanupResult {
   const notes: string[] = []
   const path = worktreePathFor(repoPath, taskId)
   const branch = branchNameFor(taskId)
-  const landing = branchLanding(repoPath, taskId)
+  const landing = branchLanding(repoPath, taskId, baseBranch)
 
   if (landing && !landing.landed) {
     notes.push(
-      `Kept worktree and branch ${branch}: ${landing.ahead} commit(s) are not on ${landing.base}.`
+      `Kept worktree and branch ${branch}: ${landing.ahead} commit(s) are not on ${landing.base}. Use Remove in the task dialog to discard the checkout.`
     )
     return { worktreeRemoved: !existsSync(path), notes }
   }

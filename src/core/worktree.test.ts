@@ -7,6 +7,7 @@ import {
   branchLanding,
   branchNameFor,
   cleanupLandedTask,
+  isRepeatNote,
   ensureWorktree,
   isGitRepo,
   listBranches,
@@ -230,6 +231,37 @@ describe('landing and cleanup', () => {
     expect(result.worktreeRemoved).toBe(false)
     expect(result.notes.join(' ')).toContain('uncommitted')
     expect(branches(repository)).toContain(branch)
+  })
+
+  it('measures landing against the task base branch', () => {
+    const repository = temporaryRepository()
+    runGit(['branch', 'release/1.0'], repository)
+    const branch = commitOnTask(repository, 'TASK-0056')
+    runGit(['checkout', 'release/1.0'], repository)
+    runGit(['merge', '--ff-only', branch], repository)
+    runGit(['checkout', 'main'], repository)
+
+    expect(branchLanding(repository, 'TASK-0056')?.landed).toBe(false)
+    expect(branchLanding(repository, 'TASK-0056', 'release/1.0')).toMatchObject({
+      base: 'release/1.0',
+      landed: true
+    })
+    expect(cleanupLandedTask(repository, 'TASK-0056', 'release/1.0').worktreeRemoved).toBe(true)
+  })
+
+  it('falls back to the automatic base when the task base is gone', () => {
+    const repository = temporaryRepository()
+    commitOnTask(repository, 'TASK-0057')
+    expect(branchLanding(repository, 'TASK-0057', 'vanished')).toMatchObject({ base: 'main' })
+  })
+
+  it('recognises a repeated note', () => {
+    const log = [
+      { author: 'styr', message: 'a' },
+      { author: 'me', message: 'b' }
+    ]
+    expect(isRepeatNote(log, 'styr', 'a')).toBe(true)
+    expect(isRepeatNote(log, 'styr', 'c')).toBe(false)
   })
 })
 

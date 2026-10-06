@@ -570,11 +570,11 @@ or host — `gh` only when there is a GitHub remote.
 Styr does not rely on the agent. `main/landing.ts` runs from `notifyTasksChanged` (so the watcher
 covers external merges): an `in_review` worktree task whose branch has landed moves to `done`, and a
 `done` task with a `worktreePath` is cleaned up through `cleanupLandedTask` in `core/worktree.ts`.
-`branchLanding` checks the local base and `origin/<base>`; "landed" is either zero commits ahead, or
+`branchLanding` checks the local base and `origin/<base>` — the task's `baseBranch` when set and still present, else the automatic base; "landed" is either zero commits ahead, or
 (squash/rebase) every file changed since the merge-base identical on the base. A branch with no
 commits of its own is not landed — the reflog tells a never-moved tip from a fast-forward merge.
 Cleanup never forces the worktree removal, uses `branch -D` only after that check, deletes the remote
-branch only when its tip equals the local one, and reports refusals once (in-memory `reported` set —
+branch only when its tip equals the local one, and reports refusals once (deduped against the task's own latest styr note, so a restart does not repeat it —
 the note write retriggers the watcher). `worktreePath` is cleared via `taskStore` once the worktree
 is gone. Tasks with `useWorktree: false` are skipped entirely.
 
