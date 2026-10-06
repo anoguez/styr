@@ -25,6 +25,7 @@ const RESERVED = new Set(['ctrl+c', 'ctrl+d', 'ctrl+l', 'ctrl+z', 'escape', 'ent
 export const SHORTCUT_LABELS: Record<ShortcutCommand, string> = {
   newTask: 'New task',
   quickTask: 'Quick add task',
+  quickOpen: 'Go to task, agent or terminal',
   commandPalette: 'Command palette',
   focusSearch: 'Focus search',
   viewBoard: 'Show the board',
@@ -66,6 +67,7 @@ export type ShortcutScope = 'window' | 'terminal'
 export const SHORTCUT_SCOPES: Record<ShortcutCommand, ShortcutScope> = {
   newTask: 'window',
   quickTask: 'window',
+  quickOpen: 'window',
   commandPalette: 'window',
   focusSearch: 'window',
   viewBoard: 'window',

@@ -4,10 +4,17 @@ import { inputClass } from './ui.js'
 
 export type CommandGroup = 'Tasks' | 'Agents' | 'Terminals' | 'Workspaces' | 'Settings' | 'Actions'
 
+/**
+ * `go` is ⌘P: things to jump to (tasks, agents, terminals). `command` is ⇧⌘P, or a leading `>`
+ * typed into the go list: actions, workspaces and settings. Every entry belongs to exactly one.
+ */
+export type PaletteMode = 'go' | 'command'
+
 export interface CommandEntry {
   id: string
   label: string
   group: CommandGroup
+  mode: PaletteMode
   hint?: string
   keywords?: string
   run: () => void
@@ -29,26 +36,40 @@ function searchText(entry: CommandEntry): string {
   return [entry.label, entry.hint, entry.keywords, entry.group].filter(Boolean).join(' ')
 }
 
+const PLACEHOLDERS: Record<PaletteMode, string> = {
+  go: 'Go to a task, agent or terminal… (type > for commands)',
+  command: 'Run a command…'
+}
+
+/** Command mode is a `>` prefix on the input, so ⌘P plus `>` and ⇧⌘P read the same. */
+export function splitQuery(raw: string): { mode: PaletteMode; text: string } {
+  return raw.startsWith('>') ? { mode: 'command', text: raw.slice(1) } : { mode: 'go', text: raw }
+}
+
 export function CommandPalette({
   entries,
+  initialMode,
   onClose
 }: {
   entries: CommandEntry[]
+  initialMode: PaletteMode
   onClose: () => void
 }): ReactNode {
-  const [query, setQuery] = useState('')
+  const [raw, setRaw] = useState(initialMode === 'command' ? '>' : '')
+  const { mode, text: query } = splitQuery(raw)
   const [active, setActive] = useState(0)
   const list = useRef<HTMLUListElement>(null)
 
   const matches = useMemo(() => {
-    const ranked = rankBy(query, entries, searchText).map((result) => result.item)
+    const inMode = entries.filter((entry) => entry.mode === mode)
+    const ranked = rankBy(query, inMode, searchText).map((result) => result.item)
     if (query.trim().length > 0) return ranked.slice(0, 40)
     return [...ranked]
       .sort((a, b) => GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group))
       .slice(0, 40)
-  }, [entries, query])
+  }, [entries, mode, query])
 
-  useEffect(() => setActive(0), [query])
+  useEffect(() => setActive(0), [raw])
 
   useEffect(() => {
     list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
@@ -91,9 +112,9 @@ export function CommandPalette({
         <div className="border-b border-edge p-2.5">
           <input
             autoFocus
-            value={query}
-            placeholder="Go to a task, agent, terminal or setting…"
-            onChange={(event) => setQuery(event.target.value)}
+            value={raw}
+            placeholder={PLACEHOLDERS[mode]}
+            onChange={(event) => setRaw(event.target.value)}
             onKeyDown={onKeyDown}
             className={`${inputClass} border-transparent bg-transparent text-[14px] focus:border-transparent focus:ring-0`}
           />

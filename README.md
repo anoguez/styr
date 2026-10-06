@@ -36,7 +36,7 @@ a board you can see, and in plain files you can read.
 - **Chats you can resume.** Each task remembers its conversations, whichever agent ran them, and
   resumes each through its own CLI. Close the app, come back tomorrow, and pick up where the agent
   left off.
-- **A real terminal.** Embedded xterm tabs, drag to reorder, a command palette (`⌘P`), rebindable
+- **A real terminal.** Embedded xterm tabs, drag to reorder, quick open (`⌘P`) and a command palette (`⇧⌘P`), rebindable
   shortcuts and a fully themeable UI.
 
 ## Agent support
