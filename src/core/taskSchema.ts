@@ -189,6 +189,9 @@ export const settingsSchema = z.object({
   updates: z
     .object({ checkAutomatically: z.boolean().default(true) })
     .default({ checkAutomatically: true }),
+  experimental: z
+    .object({ externalSources: z.boolean().default(false) })
+    .default({ externalSources: false }),
   taskDefaults: z
     .object({ orchestrate: z.boolean().default(true), useWorktree: z.boolean().default(false) })
     .default({ orchestrate: true, useWorktree: false }),
@@ -205,7 +208,8 @@ const GLOBAL_KEY_MASK = {
   storageDir: true,
   activeWorkspaceId: true,
   updates: true,
-  shortcuts: true
+  shortcuts: true,
+  experimental: true
 } as const satisfies Record<GlobalSettingKey, true>
 
 export const globalSettingsSchema = settingsSchema.pick(GLOBAL_KEY_MASK)

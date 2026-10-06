@@ -732,6 +732,13 @@ is `App` state remembered in the renderer's `localStorage` (`styr:view`) — a p
 
 ## External sources
 
+External sources are **experimental**: `Settings.experimental.externalSources` (a global setting, Settings →
+Experimental) gates them. Off, `activeSources(settings)` is empty, so sync, polling, mirroring,
+`writableSource` and the MCP tools all do nothing, and the GitHub page, its palette entry and the
+task dialog's Issue row are hidden (`flag` on a `SECTIONS` entry). Existing links stay in the task
+files and the card badge still shows. A new experimental feature adds a key to `ExperimentalSettings`
+and a `flag` on its section.
+
 A **source** is an optional external system (GitHub Issues first) whose items are imported as tasks
 and linked by `Task.externalRef` (`provider`, `id`, `url`, plus `sourceId`, `target`,
 `remoteUpdatedAt` and `syncedHash`). Sources are the workspace setting `Settings.sources`

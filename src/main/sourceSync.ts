@@ -1,6 +1,7 @@
 import { loadSettings } from '@core/settingsStore.js'
 import {
   adapterFor,
+  currentSources,
   runCommand,
   sourceTargets,
   writableSource,
@@ -38,7 +39,7 @@ function setState(id: string, state: SourceSyncState): void {
 }
 
 function find(sourceId: string): { source: SourceConfig; adapter: SourceAdapter } {
-  const source = loadSettings().sources.find((item) => item.id === sourceId)
+  const source = currentSources().find((item) => item.id === sourceId)
   if (!source) throw new Error('That integration is not set up.')
   const adapter = adapterFor(source.provider)
   if (!adapter) throw new Error(`No adapter for ${source.provider}.`)
@@ -203,7 +204,7 @@ export function observeTasks(tasks: Task[]): void {
   const before = snapshot
   snapshot = new Map(tasks.map((task) => [task.id, task]))
   if (!before) return
-  const sources = loadSettings().sources
+  const sources = currentSources()
   for (const task of tasks) {
     const prev = before.get(task.id)
     if (!prev || prev.status === task.status || !task.externalRef?.sourceId) continue
@@ -252,7 +253,7 @@ export function resetSourceObserver(): void {
 export function restartSourcePolling(): void {
   for (const timer of timers.values()) clearInterval(timer)
   timers.clear()
-  for (const source of loadSettings().sources) {
+  for (const source of currentSources()) {
     if (!source.enabled || source.pollMinutes <= 0) continue
     timers.set(
       source.id,

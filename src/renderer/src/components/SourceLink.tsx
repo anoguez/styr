@@ -19,7 +19,8 @@ export function SourceLink({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const ref = task.externalRef
-  const enabled = settings.sources.some((source) => source.enabled)
+  const enabled =
+    settings.experimental.externalSources && settings.sources.some((source) => source.enabled)
 
   async function run(action: () => Promise<Task>): Promise<void> {
     setBusy(true)
@@ -39,7 +40,7 @@ export function SourceLink({
     }
   }
 
-  if (!ref && !enabled) return null
+  if (!settings.experimental.externalSources || (!ref && !enabled)) return null
 
   return (
     <div className="flex flex-col gap-1.5">

@@ -1,5 +1,5 @@
 import { loadSettings } from '../settingsStore.js'
-import type { SourceConfig, SourceTarget } from '../types.js'
+import type { Settings, SourceConfig, SourceTarget } from '../types.js'
 import { githubAdapter, runCommand } from './github.js'
 import type { CommandRunner, SourceAdapter, SourceWriter } from './types.js'
 
@@ -25,8 +25,16 @@ export function sourceProviders(): { provider: string; label: string }[] {
   return ADAPTERS.map(({ provider, label }) => ({ provider, label }))
 }
 
+/**
+ * The sources that may act. External sources are experimental, so with the flag off there are
+ * none — which also makes `writableSource` refuse, and sync, polling and the MCP tools do nothing.
+ */
+export function activeSources(settings: Settings): SourceConfig[] {
+  return settings.experimental.externalSources ? settings.sources : []
+}
+
 export function currentSources(): SourceConfig[] {
-  return loadSettings().sources
+  return activeSources(loadSettings())
 }
 
 /**

@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { RemoteItem, SourceConfig, SourceTarget, Task } from '../types.js'
-import { SourceReadOnlyError, sourceTargets, writableSource } from './index.js'
+import type { RemoteItem, Settings, SourceConfig, SourceTarget, Task } from '../types.js'
+import { SourceReadOnlyError, activeSources, sourceTargets, writableSource } from './index.js'
 import {
   checkGh,
   compareVersions,
@@ -83,6 +83,20 @@ function task(over: Partial<Task> = {}): Task {
     ...over
   }
 }
+
+describe('the experimental flag', () => {
+  const settings = (externalSources: boolean) =>
+    ({ experimental: { externalSources }, sources: [source({ access: 'read_write' })] }) as Settings
+
+  it('leaves no source able to act while off, even a configured read/write one', () => {
+    expect(activeSources(settings(false))).toEqual([])
+    expect(activeSources(settings(true))).toHaveLength(1)
+    const { run } = fakeRunner(() => ok())
+    expect(() => writableSource('s1', TARGET, run, () => activeSources(settings(false)))).toThrow(
+      /not set up/
+    )
+  })
+})
 
 describe('writableSource', () => {
   it('refuses every read-only source', () => {

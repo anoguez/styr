@@ -370,6 +370,7 @@ export interface Settings {
   theme: ThemeSettings
   shortcuts: ShortcutBindings
   updates: UpdateSettings
+  experimental: ExperimentalSettings
   taskDefaults: TaskDefaults
   doneCap: DoneCap
   sources: SourceConfig[]
@@ -382,7 +383,8 @@ export const GLOBAL_SETTING_KEYS = [
   'storageDir',
   'activeWorkspaceId',
   'updates',
-  'shortcuts'
+  'shortcuts',
+  'experimental'
 ] as const satisfies readonly (keyof Settings)[]
 
 /**
@@ -467,6 +469,12 @@ export interface TaskDefaults {
   orchestrate: boolean
   /** New tasks start with "Run in its own git worktree" checked. */
   useWorktree: boolean
+}
+
+/** Features still being tried out. Each is off until switched on in Settings → Experimental. */
+export interface ExperimentalSettings {
+  /** External sources (GitHub issues) under Settings → Integrations. */
+  externalSources: boolean
 }
 
 export interface UpdateSettings {
