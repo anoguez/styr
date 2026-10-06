@@ -26,6 +26,7 @@ import { askTitle, forkDescription } from '@core/askAgent.js'
 import { providerById, providerFor } from '@core/providers/index.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { z } from 'zod'
+import { recordNotifyDuration, stopSampling, takeSnapshot } from './diagnostics.js'
 import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
 import {
   findGitRoot,
@@ -269,8 +270,10 @@ async function computeDiffStats(): Promise<Record<string, DiffStat>> {
 }
 
 export function notifyTasksChanged(): void {
+  const started = performance.now()
   syncIndex()
   if (settleLandedTasks()) syncIndex()
+  recordNotifyDuration(performance.now() - started)
   broadcast('tasks:changed')
 }
 
@@ -616,6 +619,10 @@ export function registerIpcHandlers(): void {
     if (task) void openPathWith(task.filePath)
   })
 
+  ipcMain.handle('diagnostics:snapshot', () =>
+    takeSnapshot({ terminals: listSessions().length, taskCount: queryTasks().length })
+  )
+  ipcMain.handle('diagnostics:stop', () => stopSampling())
   ipcMain.handle('app:info', () => ({ isPackaged: app.isPackaged, version: app.getVersion() }))
 
   ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') => {

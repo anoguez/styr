@@ -14,7 +14,8 @@
     "src/core/diff.ts",
     "src/core/diffView.ts",
     "src/core/handoff.ts",
-    "src/core/askAgent.ts"
+    "src/core/askAgent.ts",
+    "src/core/diagnostics.ts"
   ],
   "compilerOptions": {
     "composite": true,

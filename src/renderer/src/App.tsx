@@ -18,6 +18,7 @@ import {
 } from '@core/types.js'
 import { AgentsSidebar, sortAgentRows, type AgentRow } from './components/AgentsSidebar.js'
 import { ArchiveDialog } from './components/ArchiveDialog.js'
+import { PerformanceDialog } from './components/PerformanceDialog.js'
 import { ChangesDialog } from './components/ChangesDialog.js'
 import { Board } from './components/Board.js'
 import { Inbox } from './components/Inbox.js'
@@ -114,6 +115,7 @@ export default function App(): ReactNode {
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
+  const [performanceOpen, setPerformanceOpen] = useState(false)
   const [view, setView] = useState<View>(savedView)
   useEffect(() => {
     try {
@@ -470,6 +472,13 @@ export default function App(): ReactNode {
         run: () => void switchWorkspace(workspace.id)
       })
     }
+    entries.push({
+      id: 'view:performance',
+      label: 'Show performance',
+      group: 'Actions',
+      keywords: 'slow cpu memory profile diagnostics usage lag',
+      run: () => setPerformanceOpen(true)
+    })
     entries.push({
       id: 'view:archive',
       label: `View archive (${archived.length})`,
@@ -955,6 +964,8 @@ export default function App(): ReactNode {
       {paletteOpen ? (
         <CommandPalette entries={commandEntries} onClose={() => setPaletteOpen(false)} />
       ) : null}
+
+      {performanceOpen ? <PerformanceDialog onClose={() => setPerformanceOpen(false)} /> : null}
 
       {archiveOpen ? (
         <ArchiveDialog
