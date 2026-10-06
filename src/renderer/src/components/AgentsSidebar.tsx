@@ -45,6 +45,7 @@ function AgentRowItem({
   diffStat,
   onActivate,
   onOpenTask,
+  onRemove,
   onShowChanges
 }: {
   row: AgentRow
@@ -52,6 +53,7 @@ function AgentRowItem({
   onShowChanges: (task: Task) => void
   onActivate: (row: AgentRow) => void
   onOpenTask: (task: Task) => void
+  onRemove: (row: AgentRow) => void
 }): ReactNode {
   const { task, agent, session } = row
   const state = agent?.state
@@ -108,15 +110,26 @@ function AgentRowItem({
         </div>
       ) : null}
 
-      <button
-        type="button"
-        aria-label={`Open ${task.id}`}
-        title={`Open ${task.id}`}
-        className="absolute right-2 top-2 rounded border border-edge-strong bg-panel px-1.5 py-[2px] text-[10px] text-dim opacity-0 transition-opacity hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
-        onClick={() => onOpenTask(task)}
-      >
-        Open
-      </button>
+      <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <button
+          type="button"
+          aria-label={`Open ${task.id}`}
+          title={`Open ${task.id}`}
+          className="rounded border border-edge-strong bg-panel px-1.5 py-[2px] text-[10px] text-dim hover:text-ink"
+          onClick={() => onOpenTask(task)}
+        >
+          Open
+        </button>
+        <button
+          type="button"
+          aria-label={`Remove agent from ${task.id}`}
+          title="Remove this agent"
+          className="rounded border border-edge-strong bg-panel px-1.5 py-[2px] text-[10px] text-dim hover:text-danger"
+          onClick={() => onRemove(row)}
+        >
+          Remove
+        </button>
+      </div>
     </li>
   )
 }
@@ -127,6 +140,7 @@ export function AgentsSidebar({
   onActivate,
   onOpenTask,
   onShowChanges,
+  onRemove,
   onClose
 }: {
   rows: AgentRow[]
@@ -134,6 +148,7 @@ export function AgentsSidebar({
   onShowChanges: (task: Task) => void
   onActivate: (row: AgentRow) => void
   onOpenTask: (task: Task) => void
+  onRemove: (row: AgentRow) => void
   onClose: () => void
 }): ReactNode {
   const waiting = rows.filter((row) => row.agent?.state === 'waiting').length
@@ -177,6 +192,7 @@ export function AgentsSidebar({
               onShowChanges={onShowChanges}
               onActivate={onActivate}
               onOpenTask={onOpenTask}
+              onRemove={onRemove}
             />
           ))}
         </ul>

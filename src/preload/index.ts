@@ -85,6 +85,7 @@ const api = {
   },
   agents: {
     list: (): Promise<AgentStatus[]> => ipcRenderer.invoke('agents:list'),
+    remove: (taskId: string): Promise<void> => ipcRenderer.invoke('agents:remove', taskId),
     onChanged: (handler: (statuses: AgentStatus[]) => void): (() => void) =>
       subscribe('agents:changed', handler as (...args: never[]) => void)
   },
