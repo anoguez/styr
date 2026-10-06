@@ -22,6 +22,7 @@ import {
   type SettingsChange,
   type ShortcutCommand,
   type TerminalPalette,
+  type ExperimentalSettings,
   type ThemeSettings,
   type UpdateState,
   type WorkspaceSettings,
@@ -57,6 +58,7 @@ import {
   inputBase
 } from './ui.js'
 import { WorkspacesPane } from './WorkspacesPane.js'
+import { SourcesPane } from './SourcesPane.js'
 import type { Workspaces } from '../hooks/useWorkspaces.js'
 import { useUpdates } from '../hooks/useUpdates.js'
 import { useWorkspaceTarget } from '../hooks/useWorkspaceTarget.js'
@@ -134,7 +136,7 @@ export const SECTIONS = [
       'done cap archive hide limit worktree directory shell terminal orchestrate default preferences open editor app markdown'
   },
   {
-    id: 'integrations',
+    id: 'agents',
     label: 'Agents',
     scope: 'workspace',
     blurb: 'The coding CLIs Styr can launch, and how to reach them.',
@@ -146,7 +148,17 @@ export const SECTIONS = [
       'codexCommand',
       'codexApprovalReviewer'
     ],
-    words: 'claude codex provider mcp command approvals integrations'
+    words: 'claude codex provider mcp command approvals agents'
+  },
+  {
+    id: 'source-github',
+    label: 'GitHub',
+    group: 'integrations',
+    scope: 'workspace',
+    blurb: 'Link GitHub issues to tasks. Read-only sources are never written to.',
+    keys: ['sources'],
+    flag: 'externalSources',
+    words: 'github issues sync gh external source integrations'
   },
   {
     id: 'routing',
@@ -211,10 +223,22 @@ export const SECTIONS = [
     blurb: 'Keep Styr current.',
     keys: ['updates'],
     words: 'version release'
+  },
+  {
+    id: 'experimental',
+    label: 'Experimental',
+    scope: 'app',
+    blurb: 'Features still being tried out. Each one stays hidden until you switch it on.',
+    keys: ['experimental'],
+    words: 'beta preview labs flags features github sources'
   }
 ] as const satisfies readonly {
   id: string
   label: string
+  /** The nav heading it sits under; defaults to its scope. */
+  group?: 'integrations'
+  /** Hidden unless this experimental feature is switched on. */
+  flag?: keyof ExperimentalSettings
   scope: 'workspace' | 'app'
   blurb: string
   keys: readonly (keyof Settings)[]
@@ -514,7 +538,10 @@ export function SettingsDialog({
   }, [])
 
   const selected = draft.promptTemplates.find((template) => template.id === selectedId) ?? null
+  const flagOn = (item: (typeof SECTIONS)[number]): boolean =>
+    !('flag' in item) || draft.experimental[item.flag]
   const active = SECTIONS.find((item) => item.id === section) ?? SECTIONS[0]
+  const activeHidden = !flagOn(active)
   const conflicts = shortcutConflicts(draft.shortcuts)
   const preview = terminalTheme(draft.theme)
   // What is on disk now: the app-level values, with the edited workspace's own laid over them.
@@ -531,16 +558,24 @@ export function SettingsDialog({
   const previewedTheme = target.editingActiveWorkspace && themeEdited ? draft.theme : null
   const query = search.trim().toLowerCase()
   const matches = (item: (typeof SECTIONS)[number]): boolean =>
-    !query || `${item.label} ${item.words}`.toLowerCase().includes(query)
+    flagOn(item) && (!query || `${item.label} ${item.words}`.toLowerCase().includes(query))
+  const groupOf = (item: (typeof SECTIONS)[number]): string =>
+    'group' in item ? item.group : item.scope
   const navGroups = [
-    { label: 'Workspace', picker: true, scope: 'workspace' as const },
-    { label: 'All workspaces', picker: false, scope: 'app' as const }
+    { label: 'Workspace', picker: true, key: 'workspace' },
+    { label: 'Integrations', picker: false, key: 'integrations' },
+    { label: 'All workspaces', picker: false, key: 'app' }
   ]
     .map((group) => ({
       ...group,
-      items: SECTIONS.filter((item) => item.scope === group.scope && matches(item))
+      items: SECTIONS.filter((item) => groupOf(item) === group.key && matches(item))
     }))
     .filter((group) => group.items.length > 0)
+
+  // Switching the feature off while on its page would leave a page that no longer exists.
+  useEffect(() => {
+    if (activeHidden) setSection('experimental')
+  }, [activeHidden])
 
   useEffect(() => {
     onPreviewTheme(previewedTheme)
@@ -1595,7 +1630,16 @@ export function SettingsDialog({
                 </>
               ) : null}
 
-              {section === 'integrations' ? (
+              {section === 'source-github' ? (
+                <SourcesPane
+                  sources={draft.sources}
+                  saved={target.savedWorkspaceSettings.sources}
+                  canAct={target.editingActiveWorkspace}
+                  onChange={(sources) => patch({ sources })}
+                />
+              ) : null}
+
+              {section === 'agents' ? (
                 <>
                   {(
                     [
@@ -1741,6 +1785,22 @@ export function SettingsDialog({
                   })}
                 </>
               ) : null}
+              {section === 'experimental' ? (
+                <>
+                  <Card>
+                    <SwitchRow
+                      label="External sources"
+                      hint="Link GitHub issues to tasks. Adds a GitHub page under Integrations. Off, nothing is read from or written to GitHub."
+                      checked={draft.experimental.externalSources}
+                      onChange={(externalSources) =>
+                        patch({ experimental: { ...draft.experimental, externalSources } })
+                      }
+                    />
+                  </Card>
+                  <Hint>Experimental features can change or disappear between releases.</Hint>
+                </>
+              ) : null}
+
               {section === 'updates' ? (
                 <>
                   <Card className="flex-row items-center gap-3.5 p-3.5">

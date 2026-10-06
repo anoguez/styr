@@ -75,6 +75,19 @@ import {
 } from '@core/taskStore.js'
 import { settleLandedTasks } from './landing.js'
 import {
+  initSourceSync,
+  linkTask,
+  listSourceTargets,
+  observeTasks,
+  refreshTask,
+  resetSourceObserver,
+  restartSourcePolling,
+  sourceStates,
+  syncSource,
+  unlinkTask
+} from './sourceSync.js'
+import { adapterFor, runCommand, sourceProviders } from '@core/sources/index.js'
+import {
   taskDraftSchema,
   taskFilterSchema,
   taskPatchSchema,
@@ -280,6 +293,7 @@ export function notifyTasksChanged(): void {
   const started = performance.now()
   syncIndex()
   if (settleLandedTasks()) syncIndex()
+  observeTasks(queryTasks())
   recordNotifyDuration(performance.now() - started)
   broadcast('tasks:changed')
 }
@@ -456,6 +470,8 @@ function summarisePlan(): OrchestrationSummary {
  * before awaiting, which is what makes restarting them here safe.
  */
 function repoint(): void {
+  resetSourceObserver()
+  restartSourcePolling()
   closeIndex()
   startWatching(() => notifyTasksChanged())
   startWatchingAgents(() => notifyAgentsChanged())
@@ -471,6 +487,7 @@ function refreshAfterSettingsSave(folderBefore: string, savedWorkspaceId: string
   const saved = loadSettings()
   if (workspaceDir(saved) !== folderBefore) repoint()
   else if (savedWorkspaceId === saved.activeWorkspaceId) notifyTasksChanged()
+  restartSourcePolling()
   broadcast('settings:changed', saved)
 }
 
@@ -531,6 +548,23 @@ async function deleteWorkspace(id: string): Promise<void> {
 }
 
 export function registerIpcHandlers(): void {
+  initSourceSync({
+    onTasksChanged: notifyTasksChanged,
+    onState: (states) => broadcast('sources:state', states)
+  })
+  restartSourcePolling()
+  ipcMain.handle('sources:providers', () => sourceProviders())
+  ipcMain.handle('sources:ghStatus', () => adapterFor('github')!.status(runCommand))
+  ipcMain.handle('sources:state', () => sourceStates())
+  ipcMain.handle('sources:targets', (_event, sourceId: string) =>
+    listSourceTargets(String(sourceId))
+  )
+  ipcMain.handle('sources:sync', (_event, sourceId: string) => syncSource(String(sourceId)))
+  ipcMain.handle('sources:link', (_event, taskId: string, text: string) =>
+    linkTask(String(taskId), String(text))
+  )
+  ipcMain.handle('sources:unlink', (_event, taskId: string) => unlinkTask(String(taskId)))
+  ipcMain.handle('sources:refresh', (_event, taskId: string) => refreshTask(String(taskId)))
   ipcMain.handle('tasks:list', (_event, filter: unknown) =>
     queryTasks(taskFilterSchema.parse(filter ?? {}))
   )

@@ -550,6 +550,7 @@ export default function App(): ReactNode {
     }
 
     for (const section of SECTIONS) {
+      if ('flag' in section && !settings?.experimental[section.flag]) continue
       entries.push({
         id: `settings:${section.id}`,
         label: `Settings — ${section.label}`,
@@ -562,6 +563,7 @@ export default function App(): ReactNode {
     return entries
   }, [
     board,
+    settings?.experimental,
     archived.length,
     diffStats,
     agentRows,

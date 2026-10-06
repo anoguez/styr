@@ -1,0 +1,331 @@
+import { loadSettings } from '@core/settingsStore.js'
+import {
+  adapterFor,
+  currentSources,
+  runCommand,
+  sourceTargets,
+  writableSource,
+  type CliStatus,
+  type SourceAdapter
+} from '@core/sources/index.js'
+import { IMPORT_LIMIT, fieldHashes, linkedTask, planPush, planSync } from '@core/sources/sync.js'
+import { addNote, createTask, getTask, listTasks, updateTask } from '@core/taskStore.js'
+import type { RemoteItem, SourceConfig, SourceSyncState, SourceTarget, Task } from '@core/types.js'
+
+interface Hooks {
+  onTasksChanged: () => void
+  onState: (states: Record<string, SourceSyncState>) => void
+}
+
+let hooks: Hooks | null = null
+const states = new Map<string, SourceSyncState>()
+const timers = new Map<string, NodeJS.Timeout>()
+/** The last statuses seen, so a change can be told from a refresh. Null until the first look. */
+let snapshot: Map<string, Task> | null = null
+/** Tasks whose status a sync just set, so mirroring does not push it straight back. */
+const fromSync = new Set<string>()
+
+export function initSourceSync(next: Hooks): void {
+  hooks = next
+}
+
+export function sourceStates(): Record<string, SourceSyncState> {
+  return Object.fromEntries(states)
+}
+
+function setState(id: string, state: SourceSyncState): void {
+  states.set(id, state)
+  hooks?.onState(sourceStates())
+}
+
+function find(sourceId: string): { source: SourceConfig; adapter: SourceAdapter } {
+  const source = currentSources().find((item) => item.id === sourceId)
+  if (!source) throw new Error('That integration is not set up.')
+  const adapter = adapterFor(source.provider)
+  if (!adapter) throw new Error(`No adapter for ${source.provider}.`)
+  return { source, adapter }
+}
+
+function cliProblem(status: CliStatus): string | null {
+  if (status.state === 'ready') return null
+  if (status.state === 'missing') return 'The GitHub CLI (gh) is not installed.'
+  if (status.state === 'outdated') return `gh ${status.version} is too old.`
+  return 'gh is not logged in. Run `gh auth login`.'
+}
+
+export const NO_REPOSITORIES =
+  'No GitHub repository found. Give a task, or the default repo path in General settings, a checkout whose remote is on GitHub.'
+
+/** The repositories of the active workspace's tasks, as this provider sees them. */
+export function targetsOf(adapter: SourceAdapter): SourceTarget[] {
+  return sourceTargets(adapter, [
+    ...listTasks().map((task) => task.repoPath ?? ''),
+    loadSettings().defaultRepoPath
+  ])
+}
+
+export function listSourceTargets(sourceId: string): SourceTarget[] {
+  const { adapter } = find(sourceId)
+  return targetsOf(adapter)
+}
+
+function applyPlan(actions: ReturnType<typeof planSync>['actions']): void {
+  for (const action of actions) {
+    if (action.kind === 'create') {
+      createTask(action.draft)
+    } else if (action.kind === 'update') {
+      if (action.patch.status) fromSync.add(action.taskId)
+      updateTask(action.taskId, action.patch)
+      if (action.note) addNote(action.taskId, 'styr', action.note)
+    } else {
+      addNote(action.taskId, 'styr', action.note)
+    }
+  }
+}
+
+/** Links already reported stale, so a poll does not repeat the note. */
+const staleReported = new Set<string>()
+
+/**
+ * `list` only returns what matches the filters (open issues by default), so a linked issue that
+ * was closed meanwhile would never be seen again. Read those one by one; one the source no longer
+ * knows is noted once as stale and left alone.
+ */
+async function addUnlistedLinked(
+  source: SourceConfig,
+  adapter: SourceAdapter,
+  target: string,
+  items: RemoteItem[]
+): Promise<void> {
+  const seen = new Set(items.map((item) => item.id))
+  for (const task of listTasks()) {
+    const ref = task.externalRef
+    if (!ref || ref.sourceId !== source.id || ref.target !== target || seen.has(ref.id)) continue
+    if (task.archivedAt) continue
+    const key = `${task.id}:${ref.id}`
+    try {
+      items.push(await adapter.get(runCommand, target, ref.id))
+      staleReported.delete(key)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/not found|could not resolve|404|deleted|transferred/i.test(message)) continue
+      if (staleReported.has(key)) continue
+      staleReported.add(key)
+      addNote(
+        task.id,
+        'styr',
+        `${target}#${ref.id} can no longer be found in the source; the link may be stale.`
+      )
+    }
+  }
+}
+
+/**
+ * A push that failed leaves no queue, so the next sync re-derives it from the two states: a Done
+ * task whose issue is still open is closed again. Goes through the guard like any push.
+ */
+async function retryPushes(
+  source: SourceConfig,
+  target: string,
+  items: RemoteItem[]
+): Promise<void> {
+  if (!source.mirrorStatus || source.access !== 'read_write' || !source.enabled) return
+  for (const item of items) {
+    if (item.state !== 'open') continue
+    const task = linkedTask(listTasks(), source.id, target, item.id)
+    if (!task || task.status !== 'done') continue
+    try {
+      await writableSource(source.id, target).close(item.id)
+      addNote(task.id, 'styr', `Closed ${target}#${item.id} on ${source.provider}.`)
+    } catch {
+      // noted when it first failed; tried again at the next sync
+    }
+  }
+  hooks?.onTasksChanged()
+}
+
+/** Pulls one source into the board. Never throws; the outcome is the source's state. */
+export async function syncSource(sourceId: string): Promise<SourceSyncState> {
+  const previous = states.get(sourceId)
+  if (previous?.syncing) return previous
+  setState(sourceId, { ...(previous ?? { created: 0, updated: 0 }), syncing: true })
+  let result: SourceSyncState
+  try {
+    const { source, adapter } = find(sourceId)
+    const status = await adapter.status(runCommand)
+    const problem = cliProblem(status)
+    if (problem) throw new Error(problem)
+    const targets = targetsOf(adapter)
+    if (targets.length === 0) throw new Error(NO_REPOSITORIES)
+    let created = 0
+    let updated = 0
+    const failures: string[] = []
+    for (const where of targets) {
+      try {
+        const items = await adapter.list(source, runCommand, where.target, { limit: IMPORT_LIMIT })
+        await addUnlistedLinked(source, adapter, where.target, items)
+        const plan = planSync(listTasks(), items, source, adapter.tagPrefix, where)
+        applyPlan(plan.actions)
+        created += plan.created
+        updated += plan.updated
+        void retryPushes(source, where.target, items)
+        if (plan.actions.length > 0) hooks?.onTasksChanged()
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error))
+      }
+    }
+    result = {
+      syncing: false,
+      lastAt: new Date().toISOString(),
+      ...(failures.length > 0 ? { error: failures.join(' ') } : {}),
+      created,
+      updated
+    }
+  } catch (error) {
+    result = {
+      syncing: false,
+      lastAt: previous?.lastAt,
+      error: error instanceof Error ? error.message : String(error),
+      created: 0,
+      updated: 0
+    }
+  }
+  setState(sourceId, result)
+  return result
+}
+
+/**
+ * Links a task to an item without importing it; reads the source but never writes to it. A bare
+ * `#12` means the repository of the task's own checkout; a pasted URL names its own.
+ */
+export async function linkTask(taskId: string, text: string, sourceId = 'github'): Promise<Task> {
+  const { source, adapter } = find(sourceId)
+  if (!source.enabled) throw new Error('Turn the integration on in Settings first.')
+  const task = getTask(taskId)
+  if (!task) throw new Error(`Task ${taskId} not found`)
+  const own = task.repoPath ? adapter.detectTarget(task.repoPath) : null
+  const ref = adapter.parseRef(text, own)
+  if (!ref) {
+    throw new Error(
+      own
+        ? `Not an issue of ${own}: ${text}`
+        : 'Paste the issue URL; this task has no checkout on GitHub to read #numbers from.'
+    )
+  }
+  const duplicate = listTasks().find(
+    (other) =>
+      other.id !== taskId &&
+      other.externalRef?.sourceId === source.id &&
+      other.externalRef.target === ref.target &&
+      other.externalRef.id === ref.id
+  )
+  if (duplicate) throw new Error(`${ref.target}#${ref.id} is already linked to ${duplicate.id}.`)
+  const item = await adapter.get(runCommand, ref.target, ref.id)
+  const updated = updateTask(taskId, {
+    externalRef: {
+      provider: source.provider,
+      id: item.id,
+      url: item.url,
+      sourceId: source.id,
+      target: ref.target,
+      remoteUpdatedAt: item.updatedAt,
+      ...fieldHashes(task.title, task.description)
+    }
+  })
+  hooks?.onTasksChanged()
+  return updated
+}
+
+export function unlinkTask(taskId: string): Task {
+  const updated = updateTask(taskId, { externalRef: undefined })
+  hooks?.onTasksChanged()
+  return updated
+}
+
+/** Re-reads one linked task's item now, whatever the poll says. */
+export async function refreshTask(taskId: string): Promise<Task> {
+  const task = getTask(taskId)
+  const ref = task?.externalRef
+  if (!task || !ref?.sourceId || !ref.target)
+    throw new Error('This task is not linked to a source.')
+  const { source, adapter } = find(ref.sourceId)
+  const item = await adapter.get(runCommand, ref.target, ref.id)
+  const repoPath = task.repoPath ?? ''
+  applyPlan(
+    planSync([task], [item], source, adapter.tagPrefix, { target: ref.target, repoPath }).actions
+  )
+  hooks?.onTasksChanged()
+  return getTask(taskId) ?? task
+}
+
+/**
+ * Called after every refresh with the board as it now stands. A linked task whose status moved
+ * is pushed to its source, if that source allows it; the first call only records a baseline.
+ * Failures are noted on the task and never block the local change.
+ */
+export function observeTasks(tasks: Task[]): void {
+  const before = snapshot
+  snapshot = new Map(tasks.map((task) => [task.id, task]))
+  if (!before) return
+  const sources = currentSources()
+  for (const task of tasks) {
+    const prev = before.get(task.id)
+    if (!prev || prev.status === task.status || !task.externalRef?.sourceId) continue
+    if (fromSync.delete(task.id)) continue
+    const source = sources.find((item) => item.id === task.externalRef?.sourceId)
+    const target = task.externalRef.target
+    if (!source || !target || source.access !== 'read_write' || !source.enabled) continue
+    const actions = planPush(prev, task, source)
+    if (actions.length === 0) continue
+    void push(task.id, source.id, target, actions)
+  }
+}
+
+async function push(
+  taskId: string,
+  sourceId: string,
+  target: string,
+  actions: ReturnType<typeof planPush>
+): Promise<void> {
+  for (const action of actions) {
+    try {
+      // looked up again here, so a source switched to read-only meanwhile refuses
+      const writer = writableSource(sourceId, target)
+      if (action.kind === 'close') await writer.close(action.itemId)
+      else if (action.kind === 'reopen') await writer.reopen(action.itemId)
+      else await writer.comment(action.itemId, action.body)
+      addNote(taskId, 'styr', action.note)
+    } catch (error) {
+      addNote(
+        taskId,
+        'styr',
+        `Could not update the source: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  }
+  hooks?.onTasksChanged()
+}
+
+/** Forgets the board baseline, e.g. after switching workspace, so the new board is not "changed". */
+export function resetSourceObserver(): void {
+  snapshot = null
+  fromSync.clear()
+}
+
+/** (Re)starts one poll timer per enabled source of the active workspace. */
+export function restartSourcePolling(): void {
+  for (const timer of timers.values()) clearInterval(timer)
+  timers.clear()
+  for (const source of currentSources()) {
+    if (!source.enabled || source.pollMinutes <= 0) continue
+    timers.set(
+      source.id,
+      setInterval(() => void syncSource(source.id), source.pollMinutes * 60_000)
+    )
+  }
+}
+
+export function stopSourcePolling(): void {
+  for (const timer of timers.values()) clearInterval(timer)
+  timers.clear()
+}

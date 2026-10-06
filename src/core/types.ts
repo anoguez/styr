@@ -212,6 +212,57 @@ export interface ExternalRef {
   provider: string
   id: string
   url?: string
+  /** Which source (`SourceConfig.id`) the item came from. */
+  sourceId?: string
+  /** Which repository of that source, e.g. `owner/name`; item ids repeat across repositories. */
+  target?: string
+  /** The remote item's last-update stamp at the last sync, for change detection. */
+  remoteUpdatedAt?: string
+  /** Hash of the title and body as last imported, to tell a local edit from the remote one. */
+  syncedHash?: string
+  /** Per-field hashes of the last import, so editing the title does not freeze the body. */
+  syncedTitleHash?: string
+  syncedBodyHash?: string
+}
+
+/** READ never changes anything in the source; READ/WRITE lets Styr push updates back. */
+export type SourceAccess = 'read' | 'read_write'
+
+/**
+ * One integration, switched on and configured for the workspace. There is one per provider and no
+ * repository in it: the repositories come from the tasks' own `repoPath`s.
+ */
+export interface SourceConfig {
+  /** The provider's name; there is one source per provider. */
+  id: string
+  provider: string
+  access: SourceAccess
+  enabled: boolean
+  /** Minutes between automatic syncs; 0 turns polling off. */
+  pollMinutes: number
+  /** Only items carrying all of these labels; empty means all. */
+  labels: string[]
+  includeClosed: boolean
+  /** Write-side options; ignored unless `access` is `read_write`. */
+  mirrorStatus: boolean
+  commentOnReview: boolean
+}
+
+/** A repository found in a task's checkout, and the folder it was found in. */
+export interface SourceTarget {
+  /** GitHub: `owner/name`. */
+  target: string
+  repoPath: string
+}
+
+export interface RemoteItem {
+  id: string
+  url: string
+  title: string
+  body: string
+  state: 'open' | 'closed'
+  labels: string[]
+  updatedAt: string
 }
 
 export interface ActivityEntry {
@@ -340,8 +391,10 @@ export interface Settings {
   theme: ThemeSettings
   shortcuts: ShortcutBindings
   updates: UpdateSettings
+  experimental: ExperimentalSettings
   taskDefaults: TaskDefaults
   doneCap: DoneCap
+  sources: SourceConfig[]
 }
 
 /**
@@ -351,7 +404,8 @@ export const GLOBAL_SETTING_KEYS = [
   'storageDir',
   'activeWorkspaceId',
   'updates',
-  'shortcuts'
+  'shortcuts',
+  'experimental'
 ] as const satisfies readonly (keyof Settings)[]
 
 /**
@@ -375,7 +429,8 @@ export const WORKSPACE_SETTING_KEYS = [
   'orchestration',
   'theme',
   'taskDefaults',
-  'doneCap'
+  'doneCap',
+  'sources'
 ] as const satisfies readonly (keyof Settings)[]
 
 export type GlobalSettingKey = (typeof GLOBAL_SETTING_KEYS)[number]
@@ -435,6 +490,12 @@ export interface TaskDefaults {
   orchestrate: boolean
   /** New tasks start with "Run in its own git worktree" checked. */
   useWorktree: boolean
+}
+
+/** Features still being tried out. Each is off until switched on in Settings → Experimental. */
+export interface ExperimentalSettings {
+  /** External sources (GitHub issues) under Settings → Integrations. */
+  externalSources: boolean
 }
 
 export interface UpdateSettings {
@@ -521,3 +582,19 @@ export interface TerminalRuntimeState {
   lastExitCode?: number
   terminated?: boolean
 }
+
+/** What the last sync of a source did, shown in the Integrations pane. */
+export interface SourceSyncState {
+  syncing: boolean
+  lastAt?: string
+  error?: string
+  created: number
+  updated: number
+}
+
+/** Whether an adapter's command-line tool is usable. */
+export type CliStatus =
+  | { state: 'missing' }
+  | { state: 'outdated'; version: string; minimum: string }
+  | { state: 'unauthenticated'; version: string }
+  | { state: 'ready'; version: string; account?: string }

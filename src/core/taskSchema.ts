@@ -18,7 +18,25 @@ export const taskReadinessSchema = z.enum(TASK_READINESS)
 export const externalRefSchema = z.object({
   provider: z.string(),
   id: z.string(),
-  url: z.string().optional()
+  url: z.string().optional(),
+  sourceId: z.string().optional(),
+  target: z.string().optional(),
+  remoteUpdatedAt: z.string().optional(),
+  syncedHash: z.string().optional(),
+  syncedTitleHash: z.string().optional(),
+  syncedBodyHash: z.string().optional()
+})
+
+export const sourceConfigSchema = z.object({
+  id: z.string().min(1),
+  provider: z.string().min(1),
+  access: z.enum(['read', 'read_write']).default('read'),
+  enabled: z.boolean().default(true),
+  pollMinutes: z.number().int().min(0).max(1440).default(5),
+  labels: z.array(z.string()).default([]),
+  includeClosed: z.boolean().default(false),
+  mirrorStatus: z.boolean().default(false),
+  commentOnReview: z.boolean().default(false)
 })
 
 export const taskSessionRefSchema = z.object({
@@ -173,6 +191,9 @@ export const settingsSchema = z.object({
   updates: z
     .object({ checkAutomatically: z.boolean().default(true) })
     .default({ checkAutomatically: true }),
+  experimental: z
+    .object({ externalSources: z.boolean().default(false) })
+    .default({ externalSources: false }),
   taskDefaults: z
     .object({ orchestrate: z.boolean().default(true), useWorktree: z.boolean().default(false) })
     .default({ orchestrate: true, useWorktree: false }),
@@ -181,14 +202,16 @@ export const settingsSchema = z.object({
       maxCount: z.number().int().min(0).max(1000).default(DEFAULT_DONE_CAP.maxCount),
       maxAgeDays: z.number().int().min(0).max(365).default(DEFAULT_DONE_CAP.maxAgeDays)
     })
-    .default(DEFAULT_DONE_CAP)
+    .default(DEFAULT_DONE_CAP),
+  sources: z.array(sourceConfigSchema).default([])
 })
 
 const GLOBAL_KEY_MASK = {
   storageDir: true,
   activeWorkspaceId: true,
   updates: true,
-  shortcuts: true
+  shortcuts: true,
+  experimental: true
 } as const satisfies Record<GlobalSettingKey, true>
 
 export const globalSettingsSchema = settingsSchema.pick(GLOBAL_KEY_MASK)
