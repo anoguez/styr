@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { rankBy } from '../lib/fuzzy.js'
+import { splitQuery, type PaletteMode } from '../lib/paletteMode.js'
 import { inputClass } from './ui.js'
 
 export type CommandGroup = 'Tasks' | 'Agents' | 'Terminals' | 'Workspaces' | 'Settings' | 'Actions'
 
-/**
- * `go` is ⌘P: things to jump to (tasks, agents, terminals). `command` is ⇧⌘P, or a leading `>`
- * typed into the go list: actions, workspaces and settings. Every entry belongs to exactly one.
- */
-export type PaletteMode = 'go' | 'command'
+export type { PaletteMode }
 
 export interface CommandEntry {
   id: string
@@ -39,11 +36,6 @@ function searchText(entry: CommandEntry): string {
 const PLACEHOLDERS: Record<PaletteMode, string> = {
   go: 'Go to a task, agent or terminal… (type > for commands)',
   command: 'Run a command…'
-}
-
-/** Command mode is a `>` prefix on the input, so ⌘P plus `>` and ⇧⌘P read the same. */
-export function splitQuery(raw: string): { mode: PaletteMode; text: string } {
-  return raw.startsWith('>') ? { mode: 'command', text: raw.slice(1) } : { mode: 'go', text: raw }
 }
 
 export function CommandPalette({

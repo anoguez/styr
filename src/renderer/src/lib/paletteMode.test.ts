@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { splitQuery } from './CommandPalette.js'
+import { splitQuery } from './paletteMode.js'
 
 describe('splitQuery', () => {
   it('stays in go mode without a prefix', () => {
