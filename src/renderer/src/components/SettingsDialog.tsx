@@ -138,9 +138,9 @@ export const SECTIONS = [
     label: 'General',
     scope: 'workspace',
     blurb: 'Defaults for new tasks in this workspace. Existing tasks keep their own settings.',
-    keys: ['taskDefaults', 'doneCap', 'defaultRepoPath', 'shell'],
+    keys: ['taskDefaults', 'doneCap', 'defaultRepoPath', 'shell', 'openFilesWith'],
     words:
-      'done cap archive hide limit worktree directory shell terminal orchestrate default preferences'
+      'done cap archive hide limit worktree directory shell terminal orchestrate default preferences open editor app markdown'
   },
   {
     id: 'integrations',
@@ -404,6 +404,44 @@ function slugId(name: string): string {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'template'
+  )
+}
+
+const OTHER_APP = '\u0000other'
+
+/** Picks the app that opens files: the system default, an installed app, or one found by browsing. */
+function OpenWithSelect({
+  value,
+  onChange
+}: {
+  value: string
+  onChange: (value: string) => void
+}): ReactNode {
+  const [apps, setApps] = useState<string[]>([])
+  useEffect(() => {
+    void window.api.settings.listApps().then(setApps)
+  }, [])
+  const options = value && !apps.includes(value) ? [value, ...apps] : apps
+  return (
+    <div className="w-60">
+      <Select
+        compact
+        aria-label="Open files with"
+        value={value}
+        onChange={(event) => {
+          if (event.target.value !== OTHER_APP) return onChange(event.target.value)
+          void window.api.settings.pickApp().then((picked) => picked && onChange(picked))
+        }}
+      >
+        <option value="">System default</option>
+        {options.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+        <option value={OTHER_APP}>Other…</option>
+      </Select>
+    </div>
   )
 }
 
@@ -854,6 +892,15 @@ export function SettingsDialog({
                       className={`${inputBase} h-8 w-60 px-2.5 font-mono text-[11.5px]`}
                       value={draft.shell}
                       onChange={(event) => patch({ shell: event.target.value })}
+                    />
+                  </Field>
+                  <Field
+                    label="Open files with"
+                    hint="App that opens task files and folders. System default uses whatever macOS has set for the file type."
+                  >
+                    <OpenWithSelect
+                      value={draft.openFilesWith}
+                      onChange={(openFilesWith) => patch({ openFilesWith })}
                     />
                   </Field>
                 </>

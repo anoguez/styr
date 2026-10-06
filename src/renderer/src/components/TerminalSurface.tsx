@@ -178,6 +178,7 @@ function ContextBar({
   blocksOn,
   branch,
   repoRoot,
+  onOpenBranch,
   picking,
   menuOpen,
   askHint,
@@ -204,6 +205,7 @@ function ContextBar({
   blocksOn?: boolean
   branch: string | null
   repoRoot: string | null
+  onOpenBranch: () => void
   picking: boolean
   menuOpen: boolean
   askHint: string
@@ -268,9 +270,11 @@ function ContextBar({
       </button>
 
       {branch ? (
-        <span
-          title="Branch"
-          className="hidden min-w-0 items-center gap-1 font-mono text-[10.5px] text-faint @lg:flex"
+        <button
+          type="button"
+          title="Open this checkout in VS Code"
+          onClick={onOpenBranch}
+          className="pointer-events-auto hidden min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10.5px] text-faint hover:bg-raised/70 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent @lg:flex"
         >
           <svg aria-hidden viewBox="0 0 16 16" width="11" height="11" className="shrink-0">
             <g {...iconProps}>
@@ -281,7 +285,7 @@ function ContextBar({
             </g>
           </svg>
           <span className="truncate">{branch}</span>
-        </span>
+        </button>
       ) : null}
 
       <span className="flex-1" />
@@ -785,6 +789,14 @@ export function TerminalSurface({
           blocksOn={blocksOn}
           branch={git.branch}
           repoRoot={git.root}
+          onOpenBranch={() => {
+            if (!git.root) return
+            void window.api.terminal.openInCode(git.root).then((result) => {
+              if (result === 'folder')
+                setNotice('VS Code is not installed — opened the folder instead.')
+              else if (result === 'failed') setNotice('Could not open the folder.')
+            })
+          }}
           picking={picking}
           menuOpen={menuOpen}
           askHint={askHint}

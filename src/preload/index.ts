@@ -111,6 +111,8 @@ const api = {
       ipcRenderer.invoke('settings:pickDirectory', current),
     pickFiles: (startIn?: string): Promise<string[]> =>
       ipcRenderer.invoke('settings:pickFiles', startIn),
+    listApps: (): Promise<string[]> => ipcRenderer.invoke('settings:listApps'),
+    pickApp: (): Promise<string | null> => ipcRenderer.invoke('settings:pickApp'),
     onChanged: (handler: (settings: Settings) => void): (() => void) =>
       subscribe('settings:changed', handler as (...args: never[]) => void)
   },
@@ -141,6 +143,8 @@ const api = {
       ipcRenderer.invoke('terminal:handOff', sessionId, output),
     gitContext: (path: string): Promise<{ root: string | null; branch: string | null }> =>
       ipcRenderer.invoke('terminal:gitContext', path),
+    openInCode: (path: string): Promise<'code' | 'folder' | 'failed'> =>
+      ipcRenderer.invoke('terminal:openInCode', path),
     revealDirectory: (path: string): Promise<string> =>
       ipcRenderer.invoke('terminal:revealDirectory', path),
     openLink: (url: string): Promise<void> => ipcRenderer.invoke('terminal:openLink', url),

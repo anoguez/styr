@@ -149,6 +149,7 @@ export const settingsSchema = z.object({
   activeWorkspaceId: z.string().default('default'),
   defaultRepoPath: z.string().default(''),
   shell: z.string().default(''),
+  openFilesWith: z.string().default(''),
   claudeCommand: z.string().default('claude'),
   claudeApprovalMode: z.enum(['user', 'auto']).default('user'),
   codexCommand: z.string().default('codex'),

@@ -1,7 +1,9 @@
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron'
+import { opensTextFiles, type AppInfo } from '@core/appFilter.js'
 import { pathsInWorkspace, pinWorkspace, workspaceDir } from '@core/config.js'
 import {
   isSettingsFileBroken,
@@ -588,7 +590,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('tasks:openInEditor', (_event, id: string) => {
     const task = findTask(id)
-    if (task) void shell.openPath(task.filePath)
+    if (task) void openPathWith(task.filePath)
   })
 
   ipcMain.handle('app:info', () => ({ isPackaged: app.isPackaged, version: app.getVersion() }))
@@ -673,6 +675,22 @@ export function registerIpcHandlers(): void {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 
+  ipcMain.handle('settings:listApps', () => listInstalledApps())
+
+  ipcMain.handle('settings:pickApp', async (event) => {
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const options: OpenDialogOptions = {
+      properties: ['openFile'],
+      defaultPath: '/Applications',
+      filters: [{ name: 'Applications', extensions: ['app'] }]
+    }
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options)
+    const picked = result.canceled ? undefined : result.filePaths[0]
+    return picked ? basename(picked, '.app') : null
+  })
+
   ipcMain.handle('settings:pickFiles', async (event, startIn?: string) => {
     const parent = BrowserWindow.fromWebContents(event.sender)
     const options: OpenDialogOptions = {
@@ -752,12 +770,81 @@ export function registerIpcHandlers(): void {
     const root = findGitRoot(path)
     return { root: root ?? null, branch: (root && readGitBranch(root)) ?? null }
   })
-  ipcMain.handle('terminal:revealDirectory', (_event, path: string) => shell.openPath(path))
+  ipcMain.handle('terminal:openInCode', async (_event, path: string) => {
+    const opened = await new Promise<boolean>((resolve) =>
+      execFile('open', ['-a', 'Visual Studio Code', path], (error) => resolve(!error))
+    )
+    if (opened) return 'code'
+    // VS Code is optional, so fall back to the folder rather than failing.
+    return (await shell.openPath(path)) ? 'failed' : 'folder'
+  })
+  ipcMain.handle('terminal:revealDirectory', (_event, path: string) => openPathWith(path))
   ipcMain.handle('terminal:openLink', (_event, url: string) => {
     // Only web links: a terminal can print any string, and openExternal would run other schemes.
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
   ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
+}
+
+const appInfoCache = new Map<string, boolean>()
+
+function readsText(appPath: string): Promise<boolean> {
+  const cached = appInfoCache.get(appPath)
+  if (cached !== undefined) return Promise.resolve(cached)
+  return new Promise((resolve) => {
+    execFile(
+      'plutil',
+      ['-convert', 'json', '-o', '-', join(appPath, 'Contents', 'Info.plist')],
+      { maxBuffer: 8 * 1024 * 1024 },
+      (error, stdout) => {
+        let result = false
+        if (!error) {
+          try {
+            result = opensTextFiles(JSON.parse(stdout) as AppInfo)
+          } catch {
+            // An unreadable plist is treated as not a text editor.
+          }
+        }
+        appInfoCache.set(appPath, result)
+        resolve(result)
+      }
+    )
+  })
+}
+
+/** Names of the installed apps that open text or markdown, for the "Open files with" picker. */
+async function listInstalledApps(): Promise<string[]> {
+  const found = new Map<string, string>()
+  for (const dir of ['/Applications', '/System/Applications', join(homedir(), 'Applications')]) {
+    try {
+      for (const entry of readdirSync(dir)) {
+        if (entry.endsWith('.app')) found.set(entry.slice(0, -4), join(dir, entry))
+      }
+    } catch {
+      // The folder may not exist.
+    }
+  }
+  const names = [...found.keys()]
+  const keep = await Promise.all(names.map((name) => readsText(found.get(name)!)))
+  return names.filter((_, i) => keep[i]).sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * Opens a file or folder in the app chosen in Settings (macOS `open -a`), else the system default.
+ * Returns an error string, or '' on success, like `shell.openPath`.
+ */
+async function openPathWith(path: string): Promise<string> {
+  const appName = loadSettings().openFilesWith.trim()
+  if (!appName) return shell.openPath(path)
+  return new Promise((resolve) => {
+    execFile('open', ['-a', appName, path], (error) => {
+      if (!error) return resolve('')
+      // A mistyped app name should not leave the click doing nothing.
+      void shell
+        .openPath(path)
+        .then((fallback) => resolve(fallback || `Could not open with ${appName}`))
+    })
+  })
 }
 
 /** How long an agent's input box gets to take typed text before Enter arrives. */
