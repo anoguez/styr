@@ -15,6 +15,7 @@ import {
 import type { TaskDiff } from '@core/diff.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { Button, Chip, DiffCount, Modal, Select } from './ui.js'
+import { SourceLink } from './SourceLink.js'
 
 interface FormState {
   title: string
@@ -307,6 +308,7 @@ export function TaskDialog({
     }
   }, [task])
   const [form, setForm] = useState<FormState>(() => toForm(task, settings))
+  const [linkedTask, setLinkedTask] = useState<Task | null>(null)
   const [tab, setTab] = useState<TabKey>('brief')
   const [branchInfo, setBranchInfo] = useState<{ branches: string[]; current?: string }>({
     branches: []
@@ -754,6 +756,13 @@ export function TaskDialog({
                     className={`h-7 w-full rounded-[7px] px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${inputText}`}
                   />
                 </div>
+                {saved ? (
+                  <SourceLink
+                    task={linkedTask ?? saved}
+                    settings={settings}
+                    onTask={setLinkedTask}
+                  />
+                ) : null}
                 <TagsEditor tags={form.tags} onChange={(tags) => patch({ tags })} />
               </div>
 

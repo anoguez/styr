@@ -76,6 +76,19 @@ export function TaskCardBody({
       ⑂ PR
     </a>
   ) : null
+  const issueLink = task.externalRef?.url ? (
+    <a
+      href={task.externalRef.url}
+      target="_blank"
+      rel="noreferrer"
+      title={task.externalRef.url}
+      className="shrink-0 whitespace-nowrap text-[var(--color-accent-text)] hover:underline"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      #{task.externalRef.id}
+    </a>
+  ) : null
   const status = agent ? (
     <AgentBadge agent={agent} />
   ) : task.agentSession ? (
@@ -125,6 +138,7 @@ export function TaskCardBody({
             {item}
           </span>
         ))}
+        {issueLink}
         {diffStat ? null : prLink}
         {diffStat ? null : status}
       </div>

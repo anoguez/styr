@@ -57,6 +57,7 @@ import {
   inputBase
 } from './ui.js'
 import { WorkspacesPane } from './WorkspacesPane.js'
+import { SourcesPane } from './SourcesPane.js'
 import type { Workspaces } from '../hooks/useWorkspaces.js'
 import { useUpdates } from '../hooks/useUpdates.js'
 import { useWorkspaceTarget } from '../hooks/useWorkspaceTarget.js'
@@ -143,7 +144,7 @@ export const SECTIONS = [
       'done cap archive hide limit worktree directory shell terminal orchestrate default preferences open editor app markdown'
   },
   {
-    id: 'integrations',
+    id: 'agents',
     label: 'Agents',
     scope: 'workspace',
     blurb: 'The coding CLIs Styr can launch, and how to reach them.',
@@ -155,7 +156,16 @@ export const SECTIONS = [
       'codexCommand',
       'codexApprovalReviewer'
     ],
-    words: 'claude codex provider mcp command approvals integrations'
+    words: 'claude codex provider mcp command approvals agents'
+  },
+  {
+    id: 'source-github',
+    label: 'GitHub',
+    group: 'integrations',
+    scope: 'workspace',
+    blurb: 'Link GitHub issues to tasks. Read-only sources are never written to.',
+    keys: ['sources'],
+    words: 'github issues sync gh external source integrations'
   },
   {
     id: 'routing',
@@ -224,6 +234,8 @@ export const SECTIONS = [
 ] as const satisfies readonly {
   id: string
   label: string
+  /** The nav heading it sits under; defaults to its scope. */
+  group?: 'integrations'
   scope: 'workspace' | 'app'
   blurb: string
   keys: readonly (keyof Settings)[]
@@ -541,13 +553,16 @@ export function SettingsDialog({
   const query = search.trim().toLowerCase()
   const matches = (item: (typeof SECTIONS)[number]): boolean =>
     !query || `${item.label} ${item.words}`.toLowerCase().includes(query)
+  const groupOf = (item: (typeof SECTIONS)[number]): string =>
+    'group' in item ? item.group : item.scope
   const navGroups = [
-    { label: 'Workspace', picker: true, scope: 'workspace' as const },
-    { label: 'All workspaces', picker: false, scope: 'app' as const }
+    { label: 'Workspace', picker: true, key: 'workspace' },
+    { label: 'Integrations', picker: false, key: 'integrations' },
+    { label: 'All workspaces', picker: false, key: 'app' }
   ]
     .map((group) => ({
       ...group,
-      items: SECTIONS.filter((item) => item.scope === group.scope && matches(item))
+      items: SECTIONS.filter((item) => groupOf(item) === group.key && matches(item))
     }))
     .filter((group) => group.items.length > 0)
 
@@ -1590,7 +1605,16 @@ export function SettingsDialog({
                 </>
               ) : null}
 
-              {section === 'integrations' ? (
+              {section === 'source-github' ? (
+                <SourcesPane
+                  sources={draft.sources}
+                  saved={target.savedWorkspaceSettings.sources}
+                  canAct={target.editingActiveWorkspace}
+                  onChange={(sources) => patch({ sources })}
+                />
+              ) : null}
+
+              {section === 'agents' ? (
                 <>
                   {(
                     [
