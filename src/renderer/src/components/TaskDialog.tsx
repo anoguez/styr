@@ -555,26 +555,7 @@ export function TaskDialog({
                         }}
                       >
                         <PlusIcon size={12} />
-                        Add file
-                      </button>
-                      <button
-                        type="button"
-                        className={`${GHOST_BTN} h-6`}
-                        onClick={() => {
-                          void window.api.settings
-                            .pickFiles(form.repoPath || undefined, true)
-                            .then((picked) =>
-                              patch({
-                                contextFiles: [
-                                  ...form.contextFiles,
-                                  ...picked.filter((file) => !form.contextFiles.includes(file))
-                                ]
-                              })
-                            )
-                        }}
-                      >
-                        <PlusIcon size={12} />
-                        Add folder
+                        Add
                       </button>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
