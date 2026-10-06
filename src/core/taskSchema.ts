@@ -22,7 +22,9 @@ export const externalRefSchema = z.object({
   sourceId: z.string().optional(),
   target: z.string().optional(),
   remoteUpdatedAt: z.string().optional(),
-  syncedHash: z.string().optional()
+  syncedHash: z.string().optional(),
+  syncedTitleHash: z.string().optional(),
+  syncedBodyHash: z.string().optional()
 })
 
 export const sourceConfigSchema = z.object({

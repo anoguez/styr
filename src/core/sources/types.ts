@@ -24,7 +24,7 @@ export interface SourceWriter {
   comment(id: string, body: string): Promise<void>
 }
 
-/** The read half. An adapter has no write methods of its own — `writer` is the only way in. */
+/** The read half. An adapter has no write methods; writers are private to `writableSource`. */
 export interface SourceAdapter {
   readonly provider: string
   readonly label: string
@@ -42,5 +42,4 @@ export interface SourceAdapter {
   get(run: CommandRunner, target: string, id: string): Promise<RemoteItem>
   /** Turns what a user pasted (`#42`, `42`, a URL) into an item; a URL names its own repository. */
   parseRef(text: string, defaultTarget: string | null): { target: string; id: string } | null
-  writer(target: string, run: CommandRunner): SourceWriter
 }

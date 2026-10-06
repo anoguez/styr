@@ -28,7 +28,33 @@ export interface SyncPlan {
   unchanged: number
 }
 
-function refFor(source: SourceConfig, target: string, item: RemoteItem, hash: string): ExternalRef {
+export function fieldHashes(
+  title: string,
+  body: string
+): Pick<ExternalRef, 'syncedHash' | 'syncedTitleHash' | 'syncedBodyHash'> {
+  return {
+    syncedHash: contentHash(title, body),
+    syncedTitleHash: contentHash(title, ''),
+    syncedBodyHash: contentHash('', body)
+  }
+}
+
+/** Has the user changed this field since the last import? Older links carry only the combined hash. */
+function editedLocally(ref: ExternalRef, task: Task): { title: boolean; body: boolean } {
+  if (ref.syncedTitleHash !== undefined || ref.syncedBodyHash !== undefined) {
+    return {
+      title:
+        ref.syncedTitleHash !== undefined && ref.syncedTitleHash !== contentHash(task.title, ''),
+      body:
+        ref.syncedBodyHash !== undefined && ref.syncedBodyHash !== contentHash('', task.description)
+    }
+  }
+  const both =
+    ref.syncedHash !== undefined && ref.syncedHash !== contentHash(task.title, task.description)
+  return { title: both, body: both }
+}
+
+function refFor(source: SourceConfig, target: string, item: RemoteItem): ExternalRef {
   return {
     provider: source.provider,
     id: item.id,
@@ -36,7 +62,7 @@ function refFor(source: SourceConfig, target: string, item: RemoteItem, hash: st
     sourceId: source.id,
     target,
     remoteUpdatedAt: item.updatedAt,
-    syncedHash: hash
+    ...fieldHashes(item.title, item.body)
   }
 }
 
@@ -94,7 +120,7 @@ export function planSync(
           readiness: 'needs_spec',
           tags: tagsFor(tagPrefix, item),
           repoPath: where.repoPath,
-          externalRef: refFor(source, target, item, contentHash(item.title, item.body))
+          externalRef: refFor(source, target, item)
         }
       })
       plan.created++
@@ -109,19 +135,22 @@ export function planSync(
 
     const patch: TaskPatch = {}
     const notes: string[] = []
-    const edited =
-      ref.syncedHash !== undefined && ref.syncedHash !== contentHash(task.title, task.description)
-    let hash = ref.syncedHash
-
-    if (edited) {
-      notes.push(
-        `${target}#${item.id} changed remotely; your edited title and description were kept.`
-      )
+    const edited = editedLocally(ref, task)
+    let titleHash = ref.syncedTitleHash
+    let bodyHash = ref.syncedBodyHash
+    if (edited.title) {
+      notes.push(`${target}#${item.id} changed remotely; your edited title was kept.`)
     } else {
       patch.title = item.title
-      patch.description = item.body
-      hash = contentHash(item.title, item.body)
+      titleHash = contentHash(item.title, '')
     }
+    if (edited.body) {
+      notes.push(`${target}#${item.id} changed remotely; your edited description was kept.`)
+    } else {
+      patch.description = item.body
+      bodyHash = contentHash('', item.body)
+    }
+    const hash = contentHash(patch.title ?? task.title, patch.description ?? task.description)
     patch.tags = mergeTags(task.tags, tagPrefix, item)
 
     if (item.state === 'closed' && task.status !== 'done' && !task.archivedAt) {
@@ -137,7 +166,9 @@ export function planSync(
       ...ref,
       url: item.url,
       remoteUpdatedAt: item.updatedAt,
-      ...(hash ? { syncedHash: hash } : {})
+      syncedHash: hash,
+      ...(titleHash ? { syncedTitleHash: titleHash } : {}),
+      ...(bodyHash ? { syncedBodyHash: bodyHash } : {})
     }
     plan.actions.push({
       kind: 'update',

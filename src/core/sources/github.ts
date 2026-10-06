@@ -149,7 +149,8 @@ export function detectGithubRepo(repoPath: string): string | null {
   return null
 }
 
-function writer(target: string, run: CommandRunner): SourceWriter {
+/** Not on the adapter: `writableSource` is the only caller. */
+export function githubWriter(target: string, run: CommandRunner): SourceWriter {
   const repo = checked(target)
   const issue = async (verb: string[], id: string, what: string): Promise<void> => {
     const result = await run('gh', ['issue', ...verb, id, '-R', repo])
@@ -211,7 +212,5 @@ export const githubAdapter: SourceAdapter = {
     if (url) return { target: url[1]!, id: url[2]! }
     const id = /^#?(\d+)$/.exec(trimmed)?.[1]
     return id && defaultTarget ? { target: defaultTarget, id } : null
-  },
-
-  writer
+  }
 }

@@ -8,9 +8,9 @@ import {
   type CliStatus,
   type SourceAdapter
 } from '@core/sources/index.js'
-import { IMPORT_LIMIT, planPush, planSync, contentHash } from '@core/sources/sync.js'
+import { IMPORT_LIMIT, fieldHashes, linkedTask, planPush, planSync } from '@core/sources/sync.js'
 import { addNote, createTask, getTask, listTasks, updateTask } from '@core/taskStore.js'
-import type { SourceConfig, SourceSyncState, SourceTarget, Task } from '@core/types.js'
+import type { RemoteItem, SourceConfig, SourceSyncState, SourceTarget, Task } from '@core/types.js'
 
 interface Hooks {
   onTasksChanged: () => void
@@ -83,6 +83,67 @@ function applyPlan(actions: ReturnType<typeof planSync>['actions']): void {
   }
 }
 
+/** Links already reported stale, so a poll does not repeat the note. */
+const staleReported = new Set<string>()
+
+/**
+ * `list` only returns what matches the filters (open issues by default), so a linked issue that
+ * was closed meanwhile would never be seen again. Read those one by one; one the source no longer
+ * knows is noted once as stale and left alone.
+ */
+async function addUnlistedLinked(
+  source: SourceConfig,
+  adapter: SourceAdapter,
+  target: string,
+  items: RemoteItem[]
+): Promise<void> {
+  const seen = new Set(items.map((item) => item.id))
+  for (const task of listTasks()) {
+    const ref = task.externalRef
+    if (!ref || ref.sourceId !== source.id || ref.target !== target || seen.has(ref.id)) continue
+    if (task.archivedAt) continue
+    const key = `${task.id}:${ref.id}`
+    try {
+      items.push(await adapter.get(runCommand, target, ref.id))
+      staleReported.delete(key)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/not found|could not resolve|404|deleted|transferred/i.test(message)) continue
+      if (staleReported.has(key)) continue
+      staleReported.add(key)
+      addNote(
+        task.id,
+        'styr',
+        `${target}#${ref.id} can no longer be found in the source; the link may be stale.`
+      )
+    }
+  }
+}
+
+/**
+ * A push that failed leaves no queue, so the next sync re-derives it from the two states: a Done
+ * task whose issue is still open is closed again. Goes through the guard like any push.
+ */
+async function retryPushes(
+  source: SourceConfig,
+  target: string,
+  items: RemoteItem[]
+): Promise<void> {
+  if (!source.mirrorStatus || source.access !== 'read_write' || !source.enabled) return
+  for (const item of items) {
+    if (item.state !== 'open') continue
+    const task = linkedTask(listTasks(), source.id, target, item.id)
+    if (!task || task.status !== 'done') continue
+    try {
+      await writableSource(source.id, target).close(item.id)
+      addNote(task.id, 'styr', `Closed ${target}#${item.id} on ${source.provider}.`)
+    } catch {
+      // noted when it first failed; tried again at the next sync
+    }
+  }
+  hooks?.onTasksChanged()
+}
+
 /** Pulls one source into the board. Never throws; the outcome is the source's state. */
 export async function syncSource(sourceId: string): Promise<SourceSyncState> {
   const previous = states.get(sourceId)
@@ -102,10 +163,12 @@ export async function syncSource(sourceId: string): Promise<SourceSyncState> {
     for (const where of targets) {
       try {
         const items = await adapter.list(source, runCommand, where.target, { limit: IMPORT_LIMIT })
+        await addUnlistedLinked(source, adapter, where.target, items)
         const plan = planSync(listTasks(), items, source, adapter.tagPrefix, where)
         applyPlan(plan.actions)
         created += plan.created
         updated += plan.updated
+        void retryPushes(source, where.target, items)
         if (plan.actions.length > 0) hooks?.onTasksChanged()
       } catch (error) {
         failures.push(error instanceof Error ? error.message : String(error))
@@ -166,7 +229,7 @@ export async function linkTask(taskId: string, text: string, sourceId = 'github'
       sourceId: source.id,
       target: ref.target,
       remoteUpdatedAt: item.updatedAt,
-      syncedHash: contentHash(task.title, task.description)
+      ...fieldHashes(task.title, task.description)
     }
   })
   hooks?.onTasksChanged()

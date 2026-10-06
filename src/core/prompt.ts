@@ -91,6 +91,9 @@ function placeholder(key: string): RegExp {
 export function buildPrompt(template: string, task: Task, workspaceId?: string): string {
   const sections: Record<string, string> = {
     contextFiles: contextBlock(task.contextFiles),
+    issue: task.externalRef?.url
+      ? `This task is linked to an external issue: ${task.externalRef.url}`
+      : '',
     board: boardProtocol(task, workspaceId)
   }
   const values: Record<string, string> = {

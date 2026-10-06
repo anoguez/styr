@@ -92,6 +92,11 @@ export function SourceLink({
           </div>
         )}
       </div>
+      {ref?.remoteUpdatedAt ? (
+        <div className="pl-[84px] text-[11.5px] text-dim">
+          Remote last updated {new Date(ref.remoteUpdatedAt).toLocaleString()}
+        </div>
+      ) : null}
       {error ? <span className="pl-[84px] text-[11.5px] text-danger">{error}</span> : null}
     </div>
   )

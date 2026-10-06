@@ -12,7 +12,7 @@ import {
   githubAdapter,
   parseGithubRemote
 } from './github.js'
-import { contentHash, planPush, planSync } from './sync.js'
+import { contentHash, fieldHashes, planPush, planSync } from './sync.js'
 import type { CommandRunner, RunResult } from './types.js'
 
 const ok = (stdout = ''): RunResult => ({ code: 0, stdout, stderr: '' })
@@ -351,5 +351,56 @@ describe('planPush', () => {
   it('does nothing when the options are off or the status is unchanged', () => {
     expect(planPush(task(), task({ status: 'done' }), source({ access: 'read_write' }))).toEqual([])
     expect(planPush(task(), task(), cfg)).toEqual([])
+  })
+})
+
+describe('writableSource downgrade', () => {
+  it('refuses a handle already obtained once the source becomes read-only', async () => {
+    const { run, calls } = fakeRunner(() => ok())
+    let current = source({ access: 'read_write' })
+    const writer = writableSource('s1', TARGET, run, () => [current])
+    await writer.close('42')
+    current = source({ access: 'read' })
+    expect(() => writer.close('43')).toThrow(SourceReadOnlyError)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('leaves no write method on the adapter', () => {
+    expect('writer' in githubAdapter).toBe(false)
+  })
+})
+
+describe('planSync per-field conflicts', () => {
+  const remote = item({ title: 'New title', body: 'New body', updatedAt: '2026-02-01T00:00:00Z' })
+  const linked = (over: Partial<Task>) =>
+    task({
+      ...over,
+      externalRef: { ...task().externalRef!, ...fieldHashes('Crash on start', 'It crashes') }
+    })
+
+  it('keeps an edited title but still takes the remote body', () => {
+    const plan = planSync([linked({ title: 'Mine' })], [remote], source(), 'github', where)
+    const action = plan.actions[0]
+    expect(action?.kind === 'update' && action.patch.title).toBeFalsy()
+    expect(action?.kind === 'update' && action.patch.description).toBe('New body')
+  })
+
+  it('keeps an edited body but still takes the remote title', () => {
+    const plan = planSync([linked({ description: 'Mine' })], [remote], source(), 'github', where)
+    const action = plan.actions[0]
+    expect(action?.kind === 'update' && action.patch.title).toBe('New title')
+    expect(action?.kind === 'update' && action.patch.description).toBeFalsy()
+  })
+
+  it('syncs a remote close of a linked task', () => {
+    const plan = planSync(
+      [linked({})],
+      [item({ state: 'closed', updatedAt: '2026-02-01T00:00:00Z' })],
+      source(),
+      'github',
+      where
+    )
+    const action = plan.actions[0]
+    expect(action?.kind === 'update' && action.patch.status).toBe('done')
   })
 })

@@ -1,6 +1,6 @@
 import { loadSettings } from '../settingsStore.js'
 import type { Settings, SourceConfig, SourceTarget } from '../types.js'
-import { githubAdapter, runCommand } from './github.js'
+import { githubAdapter, githubWriter, runCommand } from './github.js'
 import type { CommandRunner, SourceAdapter, SourceWriter } from './types.js'
 
 export * from './types.js'
@@ -15,6 +15,11 @@ export class SourceReadOnlyError extends Error {
 }
 
 const ADAPTERS: readonly SourceAdapter[] = [githubAdapter]
+
+/** Not exported: a writer can only be had through `writableSource`'s guard. */
+const WRITERS: Record<string, (target: string, run: CommandRunner) => SourceWriter> = {
+  github: githubWriter
+}
 
 /** The one place an adapter is chosen. */
 export function adapterFor(provider: string): SourceAdapter | undefined {
@@ -48,13 +53,23 @@ export function writableSource(
   run: CommandRunner = runCommand,
   sources: () => SourceConfig[] = currentSources
 ): SourceWriter {
-  const config = sources().find((source) => source.id === sourceId)
-  if (!config) throw new Error(`Source ${sourceId} is not set up.`)
-  if (config.access !== 'read_write' || !config.enabled)
-    throw new SourceReadOnlyError(config.provider)
-  const adapter = adapterFor(config.provider)
-  if (!adapter) throw new Error(`No adapter for ${config.provider}.`)
-  return adapter.writer(target, run)
+  const guard = (): void => {
+    const config = sources().find((source) => source.id === sourceId)
+    if (!config) throw new Error(`Source ${sourceId} is not set up.`)
+    if (config.access !== 'read_write' || !config.enabled)
+      throw new SourceReadOnlyError(config.provider)
+  }
+  guard()
+  const provider = sources().find((source) => source.id === sourceId)!.provider
+  const make = WRITERS[provider]
+  if (!make) throw new Error(`No adapter for ${provider}.`)
+  const inner = make(target, run)
+  // checked again at every call, so a downgrade between obtaining the handle and using it still refuses
+  return {
+    close: (id) => (guard(), inner.close(id)),
+    reopen: (id) => (guard(), inner.reopen(id)),
+    comment: (id, body) => (guard(), inner.comment(id, body))
+  }
 }
 
 /** The repositories the workspace's tasks (and default repo path) live in, one entry per repository. */

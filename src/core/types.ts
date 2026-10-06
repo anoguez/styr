@@ -211,6 +211,9 @@ export interface ExternalRef {
   remoteUpdatedAt?: string
   /** Hash of the title and body as last imported, to tell a local edit from the remote one. */
   syncedHash?: string
+  /** Per-field hashes of the last import, so editing the title does not freeze the body. */
+  syncedTitleHash?: string
+  syncedBodyHash?: string
 }
 
 /** READ never changes anything in the source; READ/WRITE lets Styr push updates back. */
