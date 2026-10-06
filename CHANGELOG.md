@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.0](https://github.com/anoguez/styr/compare/v0.18.1...v0.19.0) (2026-10-06)
+
+
+### Features
+
+* fixed footer slots on kanban cards (design 1b) ([#83](https://github.com/anoguez/styr/issues/83)) ([4366271](https://github.com/anoguez/styr/commit/4366271a6e6c1adb729adc1c0e5fa3ea852650ce))
+
+
+### Bug Fixes
+
+* open the changes dialog near full window ([#81](https://github.com/anoguez/styr/issues/81)) ([44fed33](https://github.com/anoguez/styr/commit/44fed332749d467a9d9d5f306c4c3bed7d7b570b))
+
 ## [0.18.1](https://github.com/anoguez/styr/compare/v0.18.0...v0.18.1) (2026-10-06)
 
 
