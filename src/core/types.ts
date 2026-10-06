@@ -543,3 +543,21 @@ export interface TerminalRuntimeState {
   lastExitCode?: number
   terminated?: boolean
 }
+
+/** What the last sync of a source did, shown in the Integrations pane. */
+export interface SourceSyncState {
+  syncing: boolean
+  lastAt?: string
+  error?: string
+  created: number
+  updated: number
+}
+
+/** Whether an adapter's command-line tool is usable. */
+export type CliStatus =
+  | { state: 'missing' }
+  | { state: 'outdated'; version: string; minimum: string }
+  | { state: 'unauthenticated'; version: string }
+  | { state: 'ready'; version: string; account?: string }
+
+export type SourceCheck = { ok: true; account?: string } | { ok: false; reason: string }

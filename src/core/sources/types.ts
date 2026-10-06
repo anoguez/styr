@@ -1,4 +1,6 @@
-import type { RemoteItem, SourceConfig } from '../types.js'
+import type { CliStatus, RemoteItem, SourceCheck, SourceConfig } from '../types.js'
+
+export type { CliStatus, SourceCheck }
 
 export interface RunResult {
   code: number
@@ -10,14 +12,6 @@ export interface RunResult {
 
 /** How an adapter runs its CLI. Injected so tests never touch a real one. */
 export type CommandRunner = (command: string, args: string[]) => Promise<RunResult>
-
-export type CliStatus =
-  | { state: 'missing' }
-  | { state: 'outdated'; version: string; minimum: string }
-  | { state: 'unauthenticated'; version: string }
-  | { state: 'ready'; version: string; account?: string }
-
-export type SourceCheck = { ok: true; account?: string } | { ok: false; reason: string }
 
 export interface ListOptions {
   limit: number

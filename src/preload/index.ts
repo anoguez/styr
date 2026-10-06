@@ -4,9 +4,13 @@ import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
   AppInfo,
   BrokenSettingsFile,
+  CliStatus,
   OrchestrationSummary,
   Settings,
   SettingsChange,
+  SourceCheck,
+  SourceConfig,
+  SourceSyncState,
   Task,
   TaskDraft,
   TaskFilter,
@@ -90,6 +94,22 @@ const api = {
     taskDiff: (taskId: string): Promise<DiffResult> => ipcRenderer.invoke('git:taskDiff', taskId),
     filePatch: (taskId: string, path: string, full = false): Promise<PatchResult> =>
       ipcRenderer.invoke('git:filePatch', taskId, path, full)
+  },
+  sources: {
+    providers: (): Promise<{ provider: string; label: string }[]> =>
+      ipcRenderer.invoke('sources:providers'),
+    ghStatus: (): Promise<CliStatus> => ipcRenderer.invoke('sources:ghStatus'),
+    state: (): Promise<Record<string, SourceSyncState>> => ipcRenderer.invoke('sources:state'),
+    test: (config: SourceConfig): Promise<SourceCheck> =>
+      ipcRenderer.invoke('sources:test', config),
+    sync: (sourceId: string): Promise<SourceSyncState> =>
+      ipcRenderer.invoke('sources:sync', sourceId),
+    link: (taskId: string, sourceId: string, text: string): Promise<Task> =>
+      ipcRenderer.invoke('sources:link', taskId, sourceId, text),
+    unlink: (taskId: string): Promise<Task> => ipcRenderer.invoke('sources:unlink', taskId),
+    refresh: (taskId: string): Promise<Task> => ipcRenderer.invoke('sources:refresh', taskId),
+    onState: (handler: (states: Record<string, SourceSyncState>) => void): (() => void) =>
+      subscribe('sources:state', handler as (...args: never[]) => void)
   },
   workspaces: {
     list: (): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:list'),
