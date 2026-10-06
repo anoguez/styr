@@ -1,4 +1,5 @@
 import { askTitle, forkDescription } from './askAgent.js'
+import { askDraft, handoffDraft } from './derivedTask.js'
 import { agentHandoffPrompt, handoffFileName, isAgentProgram, renderHandoff } from './handoff.js'
 import type { LaunchOptions, LaunchPlan } from './launch.js'
 import { providerForLane } from './orchestrate.js'
@@ -354,21 +355,17 @@ export function createSessionLifecycle(ports: SessionPorts) {
     const ref = source?.agentSession
     if (!source || !ref || !providerById(ref.provider).sessionExists(ref.id)) return null
 
-    const task = ports.createTask({
-      title: askTitle(question, `Ask: ${source.title}`),
-      description: forkDescription(question, source),
-      status: 'backlog',
-      priority: source.priority,
-      readiness: 'ready',
-      tags: ['ask'],
-      // The fork runs where the source does: Claude keys its transcripts by directory, and the
-      // answer should see the same files. An answer-only task has no use for a branch of its own.
-      repoPath: info.cwd,
-      useWorktree: false,
-      orchestrate: false,
-      contextFiles: [],
-      provider: ref.provider
-    })
+    // The fork runs where the source does: Claude keys its transcripts by directory, and the
+    // answer should see the same files.
+    const task = ports.createTask(
+      askDraft({
+        title: askTitle(question, `Ask: ${source.title}`),
+        description: forkDescription(question, source),
+        source,
+        cwd: info.cwd,
+        provider: ref.provider
+      })
+    )
     ports.addNote(source.id, 'styr', `Forked for a question as ${task.id}`)
     ports.notifyTasks()
     try {
@@ -431,26 +428,24 @@ export function createSessionLifecycle(ports: SessionPorts) {
     // does not; the document says where it is.
     const carryBranch = branch?.startsWith(WORKTREE_BRANCH_PREFIX) ? branch : undefined
     const subject = source ? source.title : `work in ${cwd.split('/').pop() || cwd}`
-    const task = ports.createTask({
-      title: `Continue: ${subject}`,
-      description: [
-        source
-          ? `Pick up ${source.id} where the previous agent stopped.`
-          : 'Pick up the work from a terminal session where the previous agent stopped.',
-        '',
-        `Read the handoff document first: ${path}`
-      ].join('\n'),
-      status: 'backlog',
-      priority: source?.priority ?? 'medium',
-      readiness: 'ready',
-      tags: [...new Set([...(source?.tags ?? []), 'handoff'])],
-      repoPath: source?.repoPath || settings.defaultRepoPath.trim() || undefined,
-      baseBranch: carryBranch,
-      useWorktree: settings.taskDefaults.useWorktree,
-      orchestrate: false,
-      contextFiles: [path],
-      provider: settings.defaultProvider
-    })
+    const task = ports.createTask(
+      handoffDraft(
+        {
+          title: `Continue: ${subject}`,
+          description: [
+            source
+              ? `Pick up ${source.id} where the previous agent stopped.`
+              : 'Pick up the work from a terminal session where the previous agent stopped.',
+            '',
+            `Read the handoff document first: ${path}`
+          ].join('\n'),
+          source,
+          baseBranch: carryBranch,
+          document: path
+        },
+        settings
+      )
+    )
     if (source) {
       ports.addNote(source.id, 'styr', `Handed off as ${task.id}; handoff document: ${path}`)
     }
