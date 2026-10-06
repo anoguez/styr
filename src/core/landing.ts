@@ -1,4 +1,5 @@
-import { branchNameFor, type CleanupResult, type Landing } from './worktree.js'
+import { branchNameFor, type Checkout } from './worktree.js'
+import type { CleanupResult, Landing } from './worktreeLanding.js'
 import { worktreeKey, type Task, type TaskStatus } from './types.js'
 
 /** git is slow enough (~0.2s a task) that re-checking every kept worktree on each write froze the app. */
@@ -72,8 +73,8 @@ export function isRepeatNote(
 /** The git half of the decision, injected so the rules can be tested without a repository. */
 export interface LandingGit {
   refListing(repoPath: string): string | undefined
-  branchLanding(repoPath: string, key: string, baseBranch?: string): Landing | undefined
-  cleanupLandedTask(repoPath: string, key: string, baseBranch?: string): CleanupResult
+  branchLanding(checkout: Checkout): Landing | undefined
+  cleanupLandedTask(checkout: Checkout): CleanupResult
 }
 
 export interface LandingPorts {
@@ -138,7 +139,7 @@ export function settleTasks(tasks: readonly LandingTask[], ports: LandingPorts):
       const refs = refsFingerprint(listingFor(repoPath), key, task.baseBranch)
       const fingerprint = `${task.status}|${task.worktreePath ?? ''}|${refs}`
       if (cache.isFresh(cacheKey, fingerprint)) continue
-      settle(task, repoPath, key, git, taskWrites)
+      settle(task, { repoPath, key, baseBranch: task.baseBranch }, git, taskWrites)
       if (taskWrites.length > 0) cache.forget(cacheKey)
       else cache.remember(cacheKey, fingerprint)
     } catch (error) {
@@ -152,34 +153,27 @@ export function settleTasks(tasks: readonly LandingTask[], ports: LandingPorts):
   return { writes, errors }
 }
 
-function settle(
-  task: LandingTask,
-  repoPath: string,
-  key: string,
-  git: LandingGit,
-  out: LandingWrite[]
-): void {
+function settle(task: LandingTask, checkout: Checkout, git: LandingGit, out: LandingWrite[]): void {
   if (task.status === 'in_review') {
-    const landing = git.branchLanding(repoPath, key, task.baseBranch)
+    const landing = git.branchLanding(checkout)
     if (!landing?.landed) return
     out.push(
       { kind: 'status', taskId: task.id, status: 'done' },
       { kind: 'note', taskId: task.id, message: `Work landed on ${landing.base}; moved to done.` }
     )
-    cleanup(task, repoPath, key, git, out)
+    cleanup(task, checkout, git, out)
     return
   }
-  cleanup(task, repoPath, key, git, out)
+  cleanup(task, checkout, git, out)
 }
 
 function cleanup(
   task: LandingTask,
-  repoPath: string,
-  key: string,
+  checkout: Checkout,
   git: LandingGit,
   out: LandingWrite[]
 ): void {
-  const result = git.cleanupLandedTask(repoPath, key, task.baseBranch)
+  const result = git.cleanupLandedTask(checkout)
   if (result.worktreeRemoved && task.worktreePath) {
     out.push({ kind: 'clearWorktree', taskId: task.id })
   }

@@ -1,30 +1,19 @@
-import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
-  MAX_PATCH_BYTES,
-  cleanPatch,
-  countPatchLines,
-  parseNameStatus,
-  parseNumstat,
-  untrackedFiles,
-  emptyDiff,
-  MAX_DIFF_FILES,
-  type DiffResult,
-  type PatchResult
-} from './diff.js'
+  branchExists,
+  branchNameFor,
+  checkoutPath,
+  git,
+  isGitRepo,
+  refExists,
+  baseBranchFor,
+  type Checkout
+} from './gitExec.js'
 import { WORKTREE_BRANCH_PREFIX } from './types.js'
 
-const REPOSITORY_CONTEXT_ENV = [
-  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-  'GIT_COMMON_DIR',
-  'GIT_DIR',
-  'GIT_IMPLICIT_WORK_TREE',
-  'GIT_INDEX_FILE',
-  'GIT_OBJECT_DIRECTORY',
-  'GIT_PREFIX',
-  'GIT_WORK_TREE'
-]
+export { baseBranchFor, branchNameFor, checkoutPath, isGitRepo }
+export type { Checkout }
 
 export interface WorktreeResult {
   path: string
@@ -32,71 +21,25 @@ export interface WorktreeResult {
   created: boolean
 }
 
-function git(args: string[], cwd: string, timeout?: number): string {
-  const env = { ...process.env }
-  for (const key of REPOSITORY_CONTEXT_ENV) delete env[key]
-
-  return execFileSync('git', args, {
-    cwd,
-    env,
-    encoding: 'utf8',
-    timeout,
-    stdio: ['ignore', 'pipe', 'pipe']
-  }).trim()
-}
-
-export function isGitRepo(dir: string): boolean {
-  if (!dir || !existsSync(dir)) return false
-  try {
-    return git(['rev-parse', '--is-inside-work-tree'], dir) === 'true'
-  } catch {
-    return false
-  }
-}
-
-/**
- * Worktrees live beside the repository rather than inside it, so they never show up as untracked
- * files and need no .gitignore entry in the user's project.
- */
-export function worktreePathFor(repoPath: string, taskId: string): string {
-  return join(dirname(repoPath), `${basename(repoPath)}.worktrees`, taskId)
-}
-
-export function branchNameFor(taskId: string): string {
-  return `${WORKTREE_BRANCH_PREFIX}${taskId}`
-}
-
-function branchExists(repoPath: string, branch: string): boolean {
-  try {
-    git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], repoPath)
-    return true
-  } catch {
-    return false
-  }
-}
-
 /**
  * Creates the task's worktree if it is missing, or returns the existing one. Idempotent so a
  * resumed session lands back in the same checkout.
  */
-export function ensureWorktree(
-  repoPath: string,
-  taskId: string,
-  baseBranch?: string
-): WorktreeResult {
+export function ensureWorktree(checkout: Checkout): WorktreeResult {
+  const { repoPath } = checkout
   if (!isGitRepo(repoPath)) {
     throw new Error(`${repoPath || '(no working directory)'} is not a git repository`)
   }
 
-  const path = worktreePathFor(repoPath, taskId)
-  const branch = branchNameFor(taskId)
+  const path = checkoutPath(checkout)
+  const branch = branchNameFor(checkout.key)
 
   git(['worktree', 'prune'], repoPath)
   if (existsSync(path)) return { path, branch, created: false }
 
   const args = branchExists(repoPath, branch)
     ? ['worktree', 'add', path, branch]
-    : ['worktree', 'add', '-b', branch, path, startPointFor(repoPath, baseBranch)]
+    : ['worktree', 'add', '-b', branch, path, startPointFor(checkout)]
   git(args, repoPath)
   return { path, branch, created: true }
 }
@@ -109,7 +52,7 @@ export function ensureWorktree(
  * The remote tip is used only when HEAD is strictly behind it; if HEAD is ahead or diverged it is
  * kept, as that is the user's own state.
  */
-function startPointFor(repoPath: string, baseBranch?: string): string {
+function startPointFor({ repoPath, baseBranch }: Checkout): string {
   let fetched = true
   try {
     git(['fetch', '--quiet', 'origin'], repoPath, 30_000)
@@ -223,495 +166,10 @@ export function findGitRoot(dir: string): string | undefined {
   }
   return undefined
 }
-
-export function removeWorktree(repoPath: string, taskId: string): void {
+export function removeWorktree(checkout: Checkout): void {
+  const { repoPath } = checkout
   if (!isGitRepo(repoPath)) return
-  const path = worktreePathFor(repoPath, taskId)
+  const path = checkoutPath(checkout)
   if (existsSync(path)) git(['worktree', 'remove', path, '--force'], repoPath)
   git(['worktree', 'prune'], repoPath)
-}
-
-export interface Landing {
-  branch: string
-  /** The branch the work is meant to land on. */
-  base: string
-  /** Commits on the task branch that are not on the base. */
-  ahead: number
-  /** Every commit is on the base, or (squash/rebase merges) every file it changed matches the base. */
-  landed: boolean
-}
-
-function refExists(repoPath: string, ref: string): boolean {
-  try {
-    git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], repoPath)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * The branch work is meant to land on: the remote's default branch when there is one, else
- * `main`/`master`, else whatever the main checkout is on (a worktree branches from its HEAD).
- */
-export function baseBranchFor(repoPath: string): string | undefined {
-  try {
-    const remoteHead = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repoPath)
-    const name = remoteHead.replace(/^origin\//, '')
-    if (name && refExists(repoPath, `refs/heads/${name}`)) return name
-  } catch {
-    // no remote, or origin/HEAD was never set
-  }
-  for (const name of ['main', 'master']) {
-    if (refExists(repoPath, `refs/heads/${name}`)) return name
-  }
-  try {
-    const current = git(['rev-parse', '--abbrev-ref', 'HEAD'], repoPath)
-    return current && current !== 'HEAD' ? current : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function countAhead(repoPath: string, base: string, branch: string): number {
-  return Number(git(['rev-list', '--count', `${base}..${branch}`], repoPath))
-}
-
-/** True when every file the branch changed since its merge-base is identical on `base`. */
-function contentLanded(repoPath: string, base: string, branch: string): boolean {
-  try {
-    const mergeBase = git(['merge-base', base, branch], repoPath)
-    const changed = git(['diff', '--name-only', '-z', mergeBase, branch], repoPath)
-      .split('\0')
-      .filter(Boolean)
-    if (changed.length === 0) return false
-    git(['diff', '--quiet', base, branch, '--', ...changed], repoPath)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * Whether a task branch's work is on the base. A remote-tracking base counts too, so a PR merged on
- * the host is seen before the user pulls. Undefined when there is no branch or no base to compare.
- */
-export function branchLanding(
-  repoPath: string,
-  taskId: string,
-  baseBranch?: string
-): Landing | undefined {
-  if (!isGitRepo(repoPath)) return undefined
-  const branch = branchNameFor(taskId)
-  if (!branchExists(repoPath, branch)) return undefined
-  // The task's own base wins while it still exists; a vanished one falls back to the automatic base.
-  const chosen =
-    baseBranch &&
-    (refExists(repoPath, `refs/heads/${baseBranch}`) ||
-      refExists(repoPath, `refs/remotes/origin/${baseBranch}`))
-      ? baseBranch
-      : undefined
-  const base = chosen ?? baseBranchFor(repoPath)
-  if (!base) return undefined
-
-  const bases = [base, `origin/${base}`].filter((ref) => refExists(repoPath, ref))
-  if (bases.length === 0) return undefined
-  let ahead = Math.min(...bases.map((ref) => countAhead(repoPath, ref, branch)))
-  let landed = false
-  for (const ref of bases) {
-    const count = countAhead(repoPath, ref, branch)
-    ahead = Math.min(ahead, count)
-    if (count === 0 || contentLanded(repoPath, ref, branch)) landed = true
-  }
-  if (landed && ahead === 0 && !hasOwnCommits(repoPath, branch)) landed = false
-  return { branch, base, ahead, landed }
-}
-
-/**
- * A fresh branch with no commits is trivially "on the base"; that is not landed work. The reflog
- * remembers the commit the branch was created at, so a tip that never moved is told apart from one
- * that was fast-forward merged. Without a reflog the branch is not assumed to have landed.
- */
-function hasOwnCommits(repoPath: string, branch: string): boolean {
-  try {
-    const entries = git(['reflog', 'show', '--format=%H', `refs/heads/${branch}`], repoPath)
-      .split('\n')
-      .filter(Boolean)
-    return entries.length > 1 && entries[0] !== entries[entries.length - 1]
-  } catch {
-    return false
-  }
-}
-
-/** Every local and origin ref with its tip, in one git call. Undefined when git cannot list them. */
-export function refListing(repoPath: string): string | undefined {
-  try {
-    return git(
-      ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads', 'refs/remotes/origin'],
-      repoPath
-    )
-  } catch {
-    return undefined
-  }
-}
-
-export interface CleanupResult {
-  /** The worktree directory is gone (or never existed), so `worktreePath` can be cleared. */
-  worktreeRemoved: boolean
-  /** One line per thing done or left in place, for the task's Activity. */
-  notes: string[]
-}
-
-/**
- * Removes what a landed task left behind: its worktree, its local branch and its remote branch.
- * Nothing is forced past a check — a dirty worktree stays, and a branch whose work cannot be shown
- * to be on the base stays — and each refusal is reported rather than thrown.
- */
-export function cleanupLandedTask(
-  repoPath: string,
-  taskId: string,
-  baseBranch?: string
-): CleanupResult {
-  const notes: string[] = []
-  const path = worktreePathFor(repoPath, taskId)
-  const branch = branchNameFor(taskId)
-  const landing = branchLanding(repoPath, taskId, baseBranch)
-
-  if (landing && !landing.landed) {
-    notes.push(
-      `Kept worktree and branch ${branch}: ${landing.ahead} commit(s) are not on ${landing.base}. Use Remove in the task dialog to discard the checkout.`
-    )
-    return { worktreeRemoved: !existsSync(path), notes }
-  }
-
-  git(['worktree', 'prune'], repoPath)
-  if (existsSync(path)) {
-    try {
-      git(['worktree', 'remove', path], repoPath)
-      notes.push(`Removed worktree ${path}.`)
-    } catch {
-      notes.push(`Left worktree ${path} in place: it has uncommitted or untracked changes.`)
-      return { worktreeRemoved: false, notes }
-    }
-  }
-  if (!landing) return { worktreeRemoved: true, notes }
-
-  const remoteTip = remoteBranchTip(repoPath, branch)
-  const localTip = git(['rev-parse', branch], repoPath)
-  try {
-    git(['branch', '-D', branch], repoPath)
-    notes.push(`Deleted local branch ${branch}.`)
-  } catch (error) {
-    notes.push(`Could not delete local branch ${branch}: ${firstLine(error)}`)
-  }
-
-  if (remoteTip === localTip) {
-    try {
-      git(['push', 'origin', '--delete', branch], repoPath, 30_000)
-      notes.push(`Deleted remote branch origin/${branch}.`)
-    } catch (error) {
-      notes.push(`Could not delete remote branch origin/${branch}: ${firstLine(error)}`)
-    }
-  } else if (remoteTip) {
-    notes.push(`Kept remote branch origin/${branch}: it has commits that are not the local tip.`)
-  }
-  return { worktreeRemoved: true, notes }
-}
-
-function remoteBranchTip(repoPath: string, branch: string): string | undefined {
-  try {
-    const line = git(['ls-remote', '--heads', 'origin', branch], repoPath, 15_000)
-    return line.split(/\s/)[0] || undefined
-  } catch {
-    return undefined
-  }
-}
-
-function firstLine(error: unknown): string {
-  const text = error instanceof Error ? error.message : String(error)
-  return text.split('\n').find((line) => line.trim() && !line.startsWith('Command failed')) ?? text
-}
-
-/** Like `git()` but keeps the output intact and returns stdout of a command that may exit 1. */
-function gitRaw(args: string[], cwd: string, okExit: number[] = [0]): string {
-  const env = { ...process.env }
-  for (const key of REPOSITORY_CONTEXT_ENV) delete env[key]
-  try {
-    return execFileSync('git', args, {
-      cwd,
-      env,
-      encoding: 'utf8',
-      maxBuffer: MAX_PATCH_BYTES * 4,
-      stdio: ['ignore', 'pipe', 'pipe']
-    })
-  } catch (error) {
-    const failure = error as { status?: number; stdout?: string }
-    if (failure.status !== undefined && okExit.includes(failure.status)) return failure.stdout ?? ''
-    throw error
-  }
-}
-
-/** The ref a task's diff is measured against: the merge-base with its (preferably remote) base. */
-function diffBaseFor(dir: string, repoPath: string, baseBranch?: string): string | undefined {
-  const name = baseBranch ?? baseBranchFor(repoPath)
-  const candidates = name ? [`origin/${name}`, name] : []
-  let best: string | undefined
-  let bestAhead = Infinity
-  for (const ref of candidates) {
-    if (!refExists(dir, ref)) continue
-    try {
-      const mergeBase = git(['merge-base', ref, 'HEAD'], dir)
-      // Prefer the ref whose merge-base is closest to HEAD, so landed work is not re-shown.
-      const ahead = Number(git(['rev-list', '--count', `${mergeBase}..HEAD`], dir))
-      if (ahead < bestAhead) {
-        best = mergeBase
-        bestAhead = ahead
-      }
-    } catch {
-      // unrelated histories: try the next candidate
-    }
-  }
-  if (best) return best
-  try {
-    return git(['rev-parse', 'HEAD^'], dir)
-  } catch {
-    return undefined
-  }
-}
-
-type DiffTarget =
-  | {
-      dir: string
-      base: string
-      mergeBase?: string
-      branch?: string
-      note?: string
-      repo?: boolean
-    }
-  | { gone: true; branch: string; branchKept: boolean }
-  | { error: string }
-
-export interface DiffOptions {
-  /** True when the task is meant to have a worktree; false diffs the repository itself. */
-  worktree: boolean
-  baseBranch?: string
-}
-
-function diffTarget(repoPath: string, key: string, opts: DiffOptions): DiffTarget {
-  if (!isGitRepo(repoPath)) {
-    return { error: `${repoPath || '(no repository)'} is not a git repository` }
-  }
-  if (!opts.worktree) {
-    return {
-      dir: repoPath,
-      base: 'HEAD',
-      repo: true,
-      note: 'No worktree for this task — showing uncommitted changes in the repository.'
-    }
-  }
-  const branch = branchNameFor(key)
-  const dir = worktreePathFor(repoPath, key)
-  if (!existsSync(dir)) return { gone: true, branch, branchKept: branchExists(repoPath, branch) }
-  let onBranch = false
-  try {
-    onBranch = git(['rev-parse', '--abbrev-ref', 'HEAD'], dir) === branch
-  } catch {
-    // unborn HEAD
-  }
-  if (!onBranch) {
-    return {
-      dir,
-      base: 'HEAD',
-      note: 'The task branch is missing or detached — showing uncommitted changes only.'
-    }
-  }
-  const base = diffBaseFor(dir, repoPath, opts.baseBranch)
-  if (!base) return { error: 'Could not find a base branch to compare against' }
-  return {
-    dir,
-    base,
-    mergeBase: base,
-    branch
-  }
-}
-
-function pathSet(raw: string): Set<string> {
-  return new Set(raw.split('\0').filter(Boolean))
-}
-
-/**
- * Everything a task changed: commits since the merge-base with the base branch, plus staged,
- * unstaged and untracked work in the worktree. Patches are fetched lazily by `taskFilePatch`.
- */
-export function taskDiff(repoPath: string, key: string, opts: DiffOptions): DiffResult {
-  try {
-    const target = diffTarget(repoPath, key, opts)
-    if ('error' in target) return target
-    if ('gone' in target) {
-      return { ...emptyDiff('gone'), branch: target.branch, branchKept: target.branchKept }
-    }
-    const { dir, base } = target
-    const statuses = parseNameStatus(gitRaw(['diff', '--name-status', '-z', '-M', base], dir))
-    const files = parseNumstat(gitRaw(['diff', '--numstat', '-z', '-M', base], dir), statuses)
-    const untracked = untrackedFiles(
-      gitRaw(['ls-files', '--others', '--exclude-standard', '-z'], dir),
-      new Set(files.map((file) => file.path))
-    )
-    for (const file of untracked) {
-      const patch = untrackedPatch(dir, file.path)
-      if (patch === 'binary') file.binary = true
-      else if (patch !== 'too-large') Object.assign(file, countPatchLines(patch))
-    }
-    // Which files are not committed yet: dirty against HEAD, or untracked.
-    const dirty = pathSet(gitRaw(['diff', '--name-only', '-z', 'HEAD'], dir))
-    const committed =
-      base === 'HEAD'
-        ? new Set<string>()
-        : pathSet(gitRaw(['diff', '--name-only', '-z', base, 'HEAD'], dir))
-    const untrackedPaths = new Set(untracked.map((file) => file.path))
-    const all = [...files, ...untracked].sort((a, b) => a.path.localeCompare(b.path))
-    for (const file of all) {
-      const isDirty = dirty.has(file.path) || untrackedPaths.has(file.path)
-      file.uncommitted = isDirty
-      file.origin = untrackedPaths.has(file.path)
-        ? 'untracked'
-        : isDirty && committed.has(file.path)
-          ? 'both'
-          : isDirty
-            ? 'uncommitted'
-            : 'committed'
-    }
-    const kind = target.repo
-      ? 'repo'
-      : all.length > 0
-        ? 'changes'
-        : branchIsLanded(repoPath, key)
-          ? 'landed'
-          : 'empty'
-    return {
-      kind,
-      baseName: target.repo ? 'HEAD' : (opts.baseBranch ?? baseBranchFor(repoPath) ?? 'HEAD'),
-      mergeBase: target.mergeBase ? target.mergeBase.slice(0, 7) : undefined,
-      branch: target.branch,
-      note: target.note,
-      files: all.slice(0, MAX_DIFF_FILES),
-      omitted: Math.max(0, all.length - MAX_DIFF_FILES),
-      totalFiles: all.length,
-      totalAdditions: all.reduce((sum, file) => sum + file.additions, 0),
-      totalDeletions: all.reduce((sum, file) => sum + file.deletions, 0)
-    }
-  } catch (error) {
-    return { error: firstLine(error) }
-  }
-}
-
-function branchIsLanded(repoPath: string, key: string): boolean {
-  try {
-    return branchLanding(repoPath, key)?.landed === true
-  } catch {
-    return false
-  }
-}
-
-function untrackedPatch(dir: string, path: string): string | 'binary' | 'too-large' {
-  try {
-    const raw = gitRaw(['diff', '--no-index', '--', '/dev/null', path], dir, [0, 1])
-    if (/^Binary files /m.test(raw)) return 'binary'
-    return raw
-  } catch {
-    return 'too-large'
-  }
-}
-
-function fileBytes(dir: string, path: string): number | undefined {
-  try {
-    return statSync(join(dir, path)).size
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * One file's unified patch. The path must be in the current file list — no arbitrary reads.
- * `full` asks for the whole file as context so folded unchanged lines can be shown.
- */
-export function taskFilePatch(
-  repoPath: string,
-  key: string,
-  opts: DiffOptions,
-  path: string,
-  full = false
-): PatchResult {
-  try {
-    const target = diffTarget(repoPath, key, opts)
-    if ('error' in target) return target
-    if ('gone' in target) return { error: 'Worktree no longer exists' }
-    const diff = taskDiff(repoPath, key, opts)
-    if ('error' in diff) return diff
-    const file = diff.files.find((candidate) => candidate.path === path)
-    if (!file) return { placeholder: 'unchanged' }
-    const { dir, base } = target
-    if (file.binary) return { placeholder: 'binary', bytes: fileBytes(dir, path) }
-    const context = full ? ['-U1000000'] : []
-    const tracked = file.status !== 'added' || refHasPath(dir, base, path)
-    const raw = tracked
-      ? gitRaw(
-          ['diff', '-M', ...context, base, '--', ...(file.oldPath ? [file.oldPath] : []), path],
-          dir
-        )
-      : gitRaw(['diff', '--no-index', ...context, '--', '/dev/null', path], dir, [0, 1])
-    if (/^Binary files /m.test(raw)) return { placeholder: 'binary', bytes: fileBytes(dir, path) }
-    if (/^[-+]Subproject commit /m.test(raw)) {
-      const from = /^-Subproject commit (\w+)/m.exec(raw)?.[1]
-      const to = /^\+Subproject commit (\w+)/m.exec(raw)?.[1]
-      return { placeholder: 'submodule', from: from?.slice(0, 7), to: to?.slice(0, 7) }
-    }
-    if (Buffer.byteLength(raw) > MAX_PATCH_BYTES) {
-      return { placeholder: 'too-large', bytes: fileBytes(dir, path) ?? Buffer.byteLength(raw) }
-    }
-    return { patch: cleanPatch(raw) }
-  } catch (error) {
-    const failure = error as { code?: string }
-    if (failure.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return { placeholder: 'too-large' }
-    return { error: firstLine(error) }
-  }
-}
-
-function refHasPath(dir: string, ref: string, path: string): boolean {
-  try {
-    git(['cat-file', '-e', `${ref}:${path}`], dir)
-    return true
-  } catch {
-    return false
-  }
-}
-
-export interface WorkingTreeSummary {
-  /** `git status --short`: what is changed but not committed. */
-  status: string
-  /** `git diff HEAD --stat`: how much. */
-  diffStat: string
-  /** The last few commits on the current branch. */
-  commits: string
-}
-
-/**
- * A short, read-only picture of a checkout for a handoff document. Every part is best effort: a
- * directory that is not a repository, or a git that fails, yields empty strings rather than
- * blocking the handoff.
- */
-export function workingTreeSummary(dir: string): WorkingTreeSummary {
-  const run = (args: string[]): string => {
-    try {
-      // Untrimmed: the first column of `status --short` is a space for an unstaged change.
-      return gitRaw(args, dir)
-    } catch {
-      return ''
-    }
-  }
-  return {
-    status: run(['status', '--short']),
-    diffStat: run(['diff', 'HEAD', '--stat']),
-    commits: run(['log', '-n', '8', '--oneline'])
-  }
 }

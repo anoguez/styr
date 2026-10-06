@@ -1,7 +1,7 @@
 import { addNote, updateTask } from '@core/taskStore.js'
 import { loadSettings } from '@core/settingsStore.js'
 import { LandingCache, settleTasks, type LandingWrite } from '@core/landing.js'
-import { branchLanding, cleanupLandedTask, refListing } from '@core/worktree.js'
+import { branchLanding, cleanupLandedTask, refListing } from '@core/worktreeLanding.js'
 import { queryTasks } from './taskIndex.js'
 
 const cache = new LandingCache()

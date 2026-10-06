@@ -122,7 +122,7 @@ workspace.
 
 `worktreeKey(workspaceId, taskId)` (in `types.ts`, because `prompt.ts` needs it) names a task's
 worktree and branch: bare id for Default so old worktrees still resolve, `<workspace>-<id>` for the
-rest. Pass the key wherever `worktree.ts` takes an id.
+rest. Pass the key as `Checkout.key` (see Worktrees).
 
 Codex starts MCP servers with a filtered environment, so a Codex agent's MCP calls follow the
 _active_ workspace unless its MCP entry forwards `STYR_WORKSPACE_ID`. Not solved; Claude Code passes
@@ -130,7 +130,11 @@ its environment through.
 
 ## Worktrees
 
-`src/core/worktree.ts` wraps git. `ensureWorktree` is idempotent so a resume lands in the same
+Git worktree code is split in four, all in `src/core/`: `gitExec.ts` (private: the git runners, ref
+helpers, and the `Checkout` value), `worktree.ts` (lifecycle: ensure, remove, branches), `worktreeLanding.ts`
+(`branchLanding`, `cleanupLandedTask`) and `worktreeDiff.ts` (`taskDiff`, `taskFilePatch`,
+`workingTreeSummary`). A `Checkout` is `{repoPath, key, baseBranch?}`; the worktree path and branch derive
+from it (`checkoutPath`, `branchNameFor`), so pass it instead of the loose triple. `ensureWorktree` is idempotent so a resume lands in the same
 checkout. Worktrees are created beside the repo (`<repo>.worktrees/<taskId>`) — inside it they would
 show as untracked files in the user's project.
 
@@ -584,7 +588,7 @@ Styr does not rely on the agent. The rules are `settleTasks` in `core/landing.ts
 git ports and a `LandingCache`, returning the task-file writes (and any per-task errors, which
 `main/landing.ts` logs rather than swallows); `main/landing.ts` only performs them. It runs from
 `notifyTasksChanged` (so the watcher covers external merges): an `in_review` worktree task whose branch has landed moves to `done`, and a
-`done` task with a `worktreePath` is cleaned up through `cleanupLandedTask` in `core/worktree.ts`.
+`done` task with a `worktreePath` is cleaned up through `cleanupLandedTask` in `core/worktreeLanding.ts`.
 `branchLanding` checks the local base and `origin/<base>` — the task's `baseBranch` when set and still present, else the automatic base; "landed" is either zero commits ahead, or
 (squash/rebase) every file changed since the merge-base identical on the base. A branch with no
 commits of its own is not landed — the reflog tells a never-moved tip from a fast-forward merge.
