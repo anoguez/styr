@@ -26,6 +26,7 @@ import { askTitle, forkDescription } from '@core/askAgent.js'
 import { providerById, providerFor } from '@core/providers/index.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { z } from 'zod'
+import { recordNotifyDuration, stopSampling, takeSnapshot } from './diagnostics.js'
 import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
 import {
   findGitRoot,
@@ -241,9 +242,38 @@ export function notifyAgentsChanged(): void {
   updateTray([...listed, ...background.statuses], titles)
 }
 
+let diffStatsRun: Promise<Record<string, DiffStat>> | undefined
+
+/**
+ * Per-task change totals for the cards. The git work is synchronous, so the loop yields between
+ * tasks (~0.2s each): IPC, the watcher and the terminals keep being served in the gaps.
+ */
+async function computeDiffStats(): Promise<Record<string, DiffStat>> {
+  const workspaceId = loadSettings().activeWorkspaceId
+  const stats: Record<string, DiffStat> = {}
+  for (const task of queryTasks()) {
+    // Done work has landed (or is being cleaned up); a count there is noise.
+    if (!task.worktreePath || !task.repoPath || task.status === 'done' || task.archivedAt) continue
+    await new Promise((resolve) => setImmediate(resolve))
+    const diff = taskDiff(task.repoPath, worktreeKey(workspaceId, task.id), {
+      worktree: task.useWorktree !== false,
+      baseBranch: task.baseBranch
+    })
+    if ('error' in diff || diff.kind !== 'changes') continue
+    stats[task.id] = {
+      added: diff.totalAdditions,
+      removed: diff.totalDeletions,
+      files: diff.totalFiles
+    }
+  }
+  return stats
+}
+
 export function notifyTasksChanged(): void {
+  const started = performance.now()
   syncIndex()
   if (settleLandedTasks()) syncIndex()
+  recordNotifyDuration(performance.now() - started)
   broadcast('tasks:changed')
 }
 
@@ -533,25 +563,12 @@ export function registerIpcHandlers(): void {
       )
     }
   )
-  ipcMain.handle('git:diffStats', (): Record<string, DiffStat> => {
-    const workspaceId = loadSettings().activeWorkspaceId
-    const stats: Record<string, DiffStat> = {}
-    for (const task of queryTasks()) {
-      // Done work has landed (or is being cleaned up); a count there is noise.
-      if (!task.worktreePath || !task.repoPath || task.status === 'done' || task.archivedAt)
-        continue
-      const diff = taskDiff(task.repoPath, worktreeKey(workspaceId, task.id), {
-        worktree: task.useWorktree !== false,
-        baseBranch: task.baseBranch
-      })
-      if ('error' in diff || diff.kind !== 'changes') continue
-      stats[task.id] = {
-        added: diff.totalAdditions,
-        removed: diff.totalDeletions,
-        files: diff.totalFiles
-      }
-    }
-    return stats
+  ipcMain.handle('git:diffStats', () => {
+    // One run at a time: a burst of task changes must not stack up a queue of full git passes.
+    diffStatsRun ??= computeDiffStats().finally(() => {
+      diffStatsRun = undefined
+    })
+    return diffStatsRun
   })
   ipcMain.handle('agents:list', () => agentStatuses())
 
@@ -602,6 +619,10 @@ export function registerIpcHandlers(): void {
     if (task) void openPathWith(task.filePath)
   })
 
+  ipcMain.handle('diagnostics:snapshot', () =>
+    takeSnapshot({ terminals: listSessions().length, taskCount: queryTasks().length })
+  )
+  ipcMain.handle('diagnostics:stop', () => stopSampling())
   ipcMain.handle('app:info', () => ({ isPackaged: app.isPackaged, version: app.getVersion() }))
 
   ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') => {

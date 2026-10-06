@@ -343,6 +343,41 @@ function hasOwnCommits(repoPath: string, branch: string): boolean {
   }
 }
 
+/** Every local and origin ref with its tip, in one git call. Undefined when git cannot list them. */
+export function refListing(repoPath: string): string | undefined {
+  try {
+    return git(
+      ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads', 'refs/remotes/origin'],
+      repoPath
+    )
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * What a task's landing answer depends on: the tips of its branch and of every ref it could be
+ * measured against, picked out of a `refListing`. Equal fingerprints mean `branchLanding` would say
+ * the same thing.
+ */
+export function landingFingerprint(
+  listing: string | undefined,
+  taskId: string,
+  baseBranch?: string
+): string {
+  if (listing === undefined) return 'unavailable'
+  const names = [baseBranch, 'main', 'master'].filter((name): name is string => Boolean(name))
+  const wanted = new Set([
+    `refs/heads/${branchNameFor(taskId)}`,
+    'refs/remotes/origin/HEAD',
+    ...names.flatMap((name) => [`refs/heads/${name}`, `refs/remotes/origin/${name}`])
+  ])
+  return listing
+    .split('\n')
+    .filter((line) => wanted.has(line.split(' ')[0] ?? ''))
+    .join('\n')
+}
+
 /** True when the latest note by `author` already says `message`, so a retry does not repeat it. */
 export function isRepeatNote(
   activity: { author: string; message: string }[],

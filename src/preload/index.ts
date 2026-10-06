@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { AgentStatus } from '../core/agentState.js'
+import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
   AppInfo,
@@ -57,6 +58,10 @@ const api = {
     onChanged: (handler: () => void): (() => void) => subscribe('tasks:changed', handler),
     onActivateRequested: (handler: (taskId: string) => void): (() => void) =>
       subscribe('tasks:activate', handler as (...args: never[]) => void)
+  },
+  diagnostics: {
+    snapshot: (): Promise<DiagnosticsSnapshot> => ipcRenderer.invoke('diagnostics:snapshot'),
+    stop: (): Promise<void> => ipcRenderer.invoke('diagnostics:stop')
   },
   app: {
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
