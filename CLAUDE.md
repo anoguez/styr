@@ -215,6 +215,13 @@ project directory name.
 anything, so a second launch focuses the open tab instead of spawning a rival agent on the same
 task. The renderer dedupes by session id in `adoptSession`, so the same handler covers both cases.
 
+`src/core/sessionLifecycle.ts` owns the launch lifecycle behind injected `SessionPorts` (the task
+store, index lookups, pty manager, Codex monitor, `pinWorkspace`): start for a task, the Codex thread
+handoff (`pendingTemplates`), the workspace-changed-during-await guard, the ask PR / review / fork
+and hand-off guards. `ipc.ts` builds the real ports and forwards its handlers. A launch's metadata is
+written by one function for the active and for a background workspace (`recordCodexUpdate`); keep it
+that way. Add new launch behaviour there with a fake-port test, not in `ipc.ts`.
+
 ## Menu bar
 
 `src/main/tray.ts` mirrors agent state into the macOS menu bar, dock badge and notifications.
