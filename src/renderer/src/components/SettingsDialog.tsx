@@ -407,6 +407,44 @@ function slugId(name: string): string {
   )
 }
 
+const OTHER_APP = '\u0000other'
+
+/** Picks the app that opens files: the system default, an installed app, or one found by browsing. */
+function OpenWithSelect({
+  value,
+  onChange
+}: {
+  value: string
+  onChange: (value: string) => void
+}): ReactNode {
+  const [apps, setApps] = useState<string[]>([])
+  useEffect(() => {
+    void window.api.settings.listApps().then(setApps)
+  }, [])
+  const options = value && !apps.includes(value) ? [value, ...apps] : apps
+  return (
+    <div className="w-60">
+      <Select
+        compact
+        aria-label="Open files with"
+        value={value}
+        onChange={(event) => {
+          if (event.target.value !== OTHER_APP) return onChange(event.target.value)
+          void window.api.settings.pickApp().then((picked) => picked && onChange(picked))
+        }}
+      >
+        <option value="">System default</option>
+        {options.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+        <option value={OTHER_APP}>Other…</option>
+      </Select>
+    </div>
+  )
+}
+
 function TemplateSelect({
   label,
   templates,
@@ -858,14 +896,11 @@ export function SettingsDialog({
                   </Field>
                   <Field
                     label="Open files with"
-                    hint="App used to open task files and folders, e.g. Visual Studio Code or Typora. Leave empty for the system default."
+                    hint="App that opens task files and folders. System default uses whatever macOS has set for the file type."
                   >
-                    <input
-                      aria-label="Open files with"
-                      className={`${inputBase} h-8 w-60 px-2.5 text-[12px]`}
+                    <OpenWithSelect
                       value={draft.openFilesWith}
-                      placeholder="System default"
-                      onChange={(event) => patch({ openFilesWith: event.target.value })}
+                      onChange={(openFilesWith) => patch({ openFilesWith })}
                     />
                   </Field>
                 </>

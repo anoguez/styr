@@ -111,6 +111,8 @@ const api = {
       ipcRenderer.invoke('settings:pickDirectory', current),
     pickFiles: (startIn?: string): Promise<string[]> =>
       ipcRenderer.invoke('settings:pickFiles', startIn),
+    listApps: (): Promise<string[]> => ipcRenderer.invoke('settings:listApps'),
+    pickApp: (): Promise<string | null> => ipcRenderer.invoke('settings:pickApp'),
     onChanged: (handler: (settings: Settings) => void): (() => void) =>
       subscribe('settings:changed', handler as (...args: never[]) => void)
   },

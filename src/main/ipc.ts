@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron'
 import { pathsInWorkspace, pinWorkspace, workspaceDir } from '@core/config.js'
 import {
@@ -674,6 +674,22 @@ export function registerIpcHandlers(): void {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 
+  ipcMain.handle('settings:listApps', () => listInstalledApps())
+
+  ipcMain.handle('settings:pickApp', async (event) => {
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const options: OpenDialogOptions = {
+      properties: ['openFile'],
+      defaultPath: '/Applications',
+      filters: [{ name: 'Applications', extensions: ['app'] }]
+    }
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options)
+    const picked = result.canceled ? undefined : result.filePaths[0]
+    return picked ? basename(picked, '.app') : null
+  })
+
   ipcMain.handle('settings:pickFiles', async (event, startIn?: string) => {
     const parent = BrowserWindow.fromWebContents(event.sender)
     const options: OpenDialogOptions = {
@@ -755,6 +771,21 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle('terminal:revealDirectory', (_event, path: string) => openPathWith(path))
   ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
+}
+
+/** Names of the apps installed in the usual macOS folders, for the "Open files with" picker. */
+function listInstalledApps(): string[] {
+  const names = new Set<string>()
+  for (const dir of ['/Applications', '/System/Applications', join(homedir(), 'Applications')]) {
+    try {
+      for (const entry of readdirSync(dir)) {
+        if (entry.endsWith('.app')) names.add(entry.slice(0, -4))
+      }
+    } catch {
+      // The folder may not exist.
+    }
+  }
+  return [...names].sort((a, b) => a.localeCompare(b))
 }
 
 /**
