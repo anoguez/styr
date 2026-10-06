@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { applyDoneCap } from '@core/doneCap.js'
+import { applyDoneCap, sortDoneNewestFirst } from '@core/doneCap.js'
 import { TASK_STATUSES, type DoneCap, type Task, type TaskStatus } from '@core/types.js'
 
 export type TaskBoard = Record<TaskStatus, Task[]>
@@ -61,6 +61,7 @@ export function useTasks(
     for (const status of TASK_STATUSES) {
       grouped[status] = active.filter((task) => task.status === status)
     }
+    grouped.done = sortDoneNewestFirst(grouped.done)
     const { visible, hidden } = applyDoneCap(grouped.done, doneCap)
     if (!showAllDone) grouped.done = visible
     return { board: grouped, hiddenDone: hidden.length }

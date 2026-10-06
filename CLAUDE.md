@@ -725,7 +725,7 @@ that TS 7 no longer ships.
 ## Done cap and archive
 
 `Settings.doneCap` (`maxCount`, `maxAgeDays`, 0 = off; a workspace setting) hides old Done tasks from the board. The rule
-is `applyDoneCap` in `core/doneCap.ts` — pure, shared by the renderer, applied in `useTasks`. It only
+is `applyDoneCap` in `core/doneCap.ts` — pure, shared by the renderer, applied in `useTasks`. The Done column is ordered by `finishedAt`, newest first (`sortDoneNewestFirst`), never by manual `order`; the board skips reorder drops there. The cap only
 **hides**: nothing is written, "Show all" in the Done column brings them back. Recency decides who is
 hidden, using `Task.doneAt` (stamped by `taskStore` when a task enters Done, dropped on leaving) and
 falling back to `updatedAt` for hand-edited files.

@@ -69,6 +69,9 @@ export function Board({
     const to = statusOf(board, String(over.id))
     if (!from || !to) return
 
+    // Done is ordered by completion date, so there is no manual position to set there.
+    if (from === to && to === 'done') return
+
     if (from === to) {
       const ids = board[to].map((task) => task.id)
       const oldIndex = ids.indexOf(activeId)
@@ -84,7 +87,7 @@ export function Board({
       : Math.max(targetIds.indexOf(String(over.id)), 0)
     targetIds.splice(insertAt, 0, activeId)
 
-    await window.api.tasks.reorder(to, targetIds)
+    if (to !== 'done') await window.api.tasks.reorder(to, targetIds)
     await window.api.tasks.reorder(
       from,
       board[from].filter((task) => task.id !== activeId).map((task) => task.id)

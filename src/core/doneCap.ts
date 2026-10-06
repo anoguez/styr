@@ -6,9 +6,16 @@ export function finishedAt(task: Task): string {
   return task.doneAt ?? task.updatedAt
 }
 
+/** Done column order: most recently finished first. Ties break on id so the order is stable. */
+export function sortDoneNewestFirst(done: Task[]): Task[] {
+  return [...done].sort(
+    (a, b) => finishedAt(b).localeCompare(finishedAt(a)) || b.id.localeCompare(a.id)
+  )
+}
+
 /**
  * Splits the Done column into what the board shows and what the cap hides. Recency decides who is
- * hidden (the newest finished work stays), while `visible` keeps the board order the user arranged.
+ * hidden (the newest finished work stays), while `visible` keeps the order it was given (`useTasks` sorts first).
  * Pure so the rule is testable without a renderer; a limit of 0 is off.
  */
 export function applyDoneCap(
@@ -16,7 +23,7 @@ export function applyDoneCap(
   cap: DoneCap,
   now: number = Date.now()
 ): { visible: Task[]; hidden: Task[] } {
-  const newestFirst = [...done].sort((a, b) => finishedAt(b).localeCompare(finishedAt(a)))
+  const newestFirst = sortDoneNewestFirst(done)
   const hiddenIds = new Set<string>()
   newestFirst.forEach((task, index) => {
     const finished = Date.parse(finishedAt(task))
