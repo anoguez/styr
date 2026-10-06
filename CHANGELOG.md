@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0](https://github.com/anoguez/styr/compare/v0.15.0...v0.16.0) (2026-10-06)
+
+
+### Features
+
+* allow folders as task context ([#54](https://github.com/anoguez/styr/issues/54)) ([608f5b1](https://github.com/anoguez/styr/commit/608f5b18882f932151db606e80679fabed052e9e))
+* choose the app that opens files; open branch checkout in VS Code ([#53](https://github.com/anoguez/styr/issues/53)) ([fbb6277](https://github.com/anoguez/styr/commit/fbb6277493115255a99d4d3af39401e393af5e5a))
+
+
+### Bug Fixes
+
+* open terminal links externally and accept dropped files and folders ([#51](https://github.com/anoguez/styr/issues/51)) ([9c25d9c](https://github.com/anoguez/styr/commit/9c25d9c05786505c83602da39dc377723c1267bd))
+
 ## [0.15.0](https://github.com/anoguez/styr/compare/v0.14.0...v0.15.0) (2026-10-05)
 
 
