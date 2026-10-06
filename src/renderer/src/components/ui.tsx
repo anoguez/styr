@@ -250,7 +250,7 @@ export function Modal({
   flush?: boolean
   /** Draw only the overlay and panel. The child brings its own header and footer. */
   bare?: boolean
-  /** With `bare`: the large, fixed-height size for two-pane viewers. */
+  /** With `bare`: the large size (820px / 1320px minimum, growing with the window) for two-pane viewers. */
   xl?: boolean
   /** Clicking the dimmed backdrop closes the dialog. Turn off where a stray click would lose edits. */
   backdropCloses?: boolean
@@ -274,7 +274,7 @@ export function Modal({
     >
       <div
         aria-label={bare ? title : undefined}
-        className={`flex ${bare ? (xl ? 'h-[min(820px,88vh)]' : 'h-[min(700px,88vh)]') : 'max-h-[88vh]'} w-full ${bare ? (xl ? 'max-w-[1320px]' : 'max-w-[960px]') : wide ? 'max-w-3xl' : 'max-w-xl'} flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]`}
+        className={`flex ${bare ? (xl ? 'h-[min(88vh,max(820px,75vh))]' : 'h-[min(700px,88vh)]') : 'max-h-[88vh]'} w-full ${bare ? (xl ? 'max-w-[min(2200px,94vw,max(1320px,80vw))]' : 'max-w-[960px]') : wide ? 'max-w-3xl' : 'max-w-xl'} flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         {bare ? null : (
