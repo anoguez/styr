@@ -128,6 +128,7 @@ export function shippedSettings(): Settings {
     updates: { checkAutomatically: true },
     taskDefaults: { orchestrate: true, useWorktree: false },
     doneCap: DEFAULT_DONE_CAP,
+    sources: [],
     theme: DEFAULT_THEME,
     shortcuts: DEFAULT_SHORTCUTS,
     promptRouting: {

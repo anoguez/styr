@@ -18,7 +18,24 @@ export const taskReadinessSchema = z.enum(TASK_READINESS)
 export const externalRefSchema = z.object({
   provider: z.string(),
   id: z.string(),
-  url: z.string().optional()
+  url: z.string().optional(),
+  sourceId: z.string().optional(),
+  remoteUpdatedAt: z.string().optional(),
+  syncedHash: z.string().optional()
+})
+
+export const sourceConfigSchema = z.object({
+  id: z.string().min(1),
+  provider: z.string().min(1),
+  name: z.string().default(''),
+  access: z.enum(['read', 'read_write']).default('read'),
+  enabled: z.boolean().default(true),
+  pollMinutes: z.number().int().min(0).max(1440).default(5),
+  repo: z.string().default(''),
+  labels: z.array(z.string()).default([]),
+  includeClosed: z.boolean().default(false),
+  mirrorStatus: z.boolean().default(false),
+  commentOnReview: z.boolean().default(false)
 })
 
 export const taskSessionRefSchema = z.object({
@@ -181,7 +198,8 @@ export const settingsSchema = z.object({
       maxCount: z.number().int().min(0).max(1000).default(DEFAULT_DONE_CAP.maxCount),
       maxAgeDays: z.number().int().min(0).max(365).default(DEFAULT_DONE_CAP.maxAgeDays)
     })
-    .default(DEFAULT_DONE_CAP)
+    .default(DEFAULT_DONE_CAP),
+  sources: z.array(sourceConfigSchema).default([])
 })
 
 const GLOBAL_KEY_MASK = {

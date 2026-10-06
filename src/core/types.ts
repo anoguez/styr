@@ -203,6 +203,44 @@ export interface ExternalRef {
   provider: string
   id: string
   url?: string
+  /** Which configured source (`SourceConfig.id`) the item came from; unset for a hand-made link. */
+  sourceId?: string
+  /** The remote item's last-update stamp at the last sync, for change detection. */
+  remoteUpdatedAt?: string
+  /** Hash of the title and body as last imported, to tell a local edit from the remote one. */
+  syncedHash?: string
+}
+
+/** READ never changes anything in the source; READ/WRITE lets Styr push updates back. */
+export type SourceAccess = 'read' | 'read_write'
+
+export interface SourceConfig {
+  /** Stable, generated, never changes after creation. */
+  id: string
+  provider: string
+  name: string
+  access: SourceAccess
+  enabled: boolean
+  /** Minutes between automatic syncs; 0 turns polling off. */
+  pollMinutes: number
+  /** GitHub: `owner/name`. */
+  repo: string
+  /** Only issues carrying all of these labels; empty means all. */
+  labels: string[]
+  includeClosed: boolean
+  /** Write-side options; ignored unless `access` is `read_write`. */
+  mirrorStatus: boolean
+  commentOnReview: boolean
+}
+
+export interface RemoteItem {
+  id: string
+  url: string
+  title: string
+  body: string
+  state: 'open' | 'closed'
+  labels: string[]
+  updatedAt: string
 }
 
 export interface ActivityEntry {
@@ -324,6 +362,7 @@ export interface Settings {
   updates: UpdateSettings
   taskDefaults: TaskDefaults
   doneCap: DoneCap
+  sources: SourceConfig[]
 }
 
 /**
@@ -357,7 +396,8 @@ export const WORKSPACE_SETTING_KEYS = [
   'orchestration',
   'theme',
   'taskDefaults',
-  'doneCap'
+  'doneCap',
+  'sources'
 ] as const satisfies readonly (keyof Settings)[]
 
 export type GlobalSettingKey = (typeof GLOBAL_SETTING_KEYS)[number]
