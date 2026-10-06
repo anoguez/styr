@@ -540,6 +540,7 @@ export default function App(): ReactNode {
     return entries
   }, [
     board,
+    settings?.experimental,
     archived.length,
     diffStats,
     agentRows,
