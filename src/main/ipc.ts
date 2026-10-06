@@ -13,7 +13,6 @@ import {
   settingsFilePath
 } from '@core/settingsStore.js'
 import { clearAgentStatus, readAllAgentStatuses, recordAgentEvent } from '@core/agentStore.js'
-import { agentKey, isAgentArchived } from '@core/agentState.js'
 import type { AgentStatus } from '@core/agentState.js'
 import { planLaunch, renderPrompt, workingDirFor } from '@core/launch.js'
 import { providerFor } from '@core/providers/index.js'
@@ -30,6 +29,7 @@ import {
 } from '@core/worktree.js'
 import { taskDiff, taskFilePatch, workingTreeSummary } from '@core/worktreeDiff.js'
 import { createSessionLifecycle, monitorKey } from '@core/sessionLifecycle.js'
+import { buildTrayModel, createWorkspaceSession } from '@core/workspaceSession.js'
 import {
   createWorkspace,
   listWorkspaces,
@@ -39,7 +39,6 @@ import {
 } from '@core/workspaces.js'
 import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
 import {
-  DEFAULT_WORKSPACE_ID,
   globalSettingsFor,
   workspaceSettingsFor,
   worktreeKey,
@@ -169,28 +168,14 @@ export function notifyAgentsChanged(): void {
   broadcast('agents:changed', statuses)
 
   const settings = loadSettings()
-  const workspaces = listWorkspaces(settings)
-  const active = workspaces.find((workspace) => workspace.id === settings.activeWorkspaceId)
-  // Always tagged, so a key never changes when another workspace appears; named only when there
-  // is more than one, because a lone "Default" in every menu entry is noise.
-  const label = workspaces.length > 1 ? active?.name : undefined
-  const tasks = new Map(queryTasks().map((task) => [task.id, task]))
-  const background = readBackgroundAgents(settings, settings.activeWorkspaceId)
-  const listed = statuses
-    .filter((status) => {
-      const task = tasks.get(status.taskId)
-      return task ? !isAgentArchived(task) : false
-    })
-    .map((status) => ({
-      ...status,
-      workspaceId: settings.activeWorkspaceId,
-      ...(label ? { workspaceName: label } : {})
-    }))
-  const titles = new Map(
-    listed.map((status) => [agentKey(status), tasks.get(status.taskId)?.title ?? status.taskId])
+  const model = buildTrayModel(
+    settings,
+    listWorkspaces(settings),
+    statuses,
+    queryTasks(),
+    readBackgroundAgents(settings, settings.activeWorkspaceId)
   )
-  for (const [key, title] of background.titles) titles.set(key, title)
-  updateTray([...listed, ...background.statuses], titles)
+  updateTray(model.statuses, model.titles)
 }
 
 let diffStatsRun: Promise<Record<string, DiffStat>> | undefined
@@ -303,32 +288,25 @@ function summarisePlan(): OrchestrationSummary {
   }
 }
 
-/**
- * Opens the index and watchers on the active workspace's folders. They are created once at start,
- * so a switch has to close them and begin again — the watchers' own `close` clears its handle
- * before awaiting, which is what makes restarting them here safe.
- */
-function repoint(): void {
-  resetSourceObserver()
-  restartSourcePolling()
-  closeIndex()
-  startWatching(() => notifyTasksChanged())
-  startWatchingAgents(() => notifyAgentsChanged())
-  notifyTasksChanged()
-  notifyAgentsChanged()
-}
+const workspaceSession = createWorkspaceSession({
+  loadSettings,
+  listWorkspaces,
+  workspaceDir,
+  saveActiveWorkspace: (settings, id) =>
+    saveGlobalSettings({ ...globalSettingsFor(settings), activeWorkspaceId: id }),
+  resetSources: resetSourceObserver,
+  restartSourcePolling,
+  closeIndex,
+  startTaskWatcher: () => startWatching(() => notifyTasksChanged()),
+  startAgentWatcher: () => startWatchingAgents(() => notifyAgentsChanged()),
+  notifyTasks: notifyTasksChanged,
+  notifyAgents: notifyAgentsChanged,
+  broadcast,
+  hasLiveSessions: (id) => listSessions().some((session) => session.workspaceId === id),
+  trash: (path) => shell.trashItem(path)
+})
 
-/**
- * Brings the index, watchers and renderer in line with whatever reached the disk — after a save
- * that failed partway too, so the app never reads from one storage folder while writing another.
- */
-function refreshAfterSettingsSave(folderBefore: string, savedWorkspaceId: string): void {
-  const saved = loadSettings()
-  if (workspaceDir(saved) !== folderBefore) repoint()
-  else if (savedWorkspaceId === saved.activeWorkspaceId) notifyTasksChanged()
-  restartSourcePolling()
-  broadcast('settings:changed', saved)
-}
+export const switchWorkspace = workspaceSession.switchWorkspace
 
 function brokenSettingsFiles(): BrokenSettingsFile[] {
   const settings = loadSettings()
@@ -351,39 +329,6 @@ function workspaceOverview(): WorkspaceOverview {
       liveSessions: sessions.filter((session) => session.workspaceId === workspace.id).length
     }))
   }
-}
-
-/**
- * Makes another workspace the one the board shows. Runs to completion synchronously, so two quick
- * switches are applied in order and a stale one cannot overwrite a newer.
- */
-export function switchWorkspace(id: string): void {
-  const settings = loadSettings()
-  if (!listWorkspaces(settings).some((workspace) => workspace.id === id)) {
-    throw new Error('That workspace no longer exists.')
-  }
-  if (settings.activeWorkspaceId === id) return
-  saveGlobalSettings({ ...globalSettingsFor(settings), activeWorkspaceId: id })
-  repoint()
-  broadcast('settings:changed', loadSettings())
-  broadcast('workspaces:changed')
-}
-
-/** Removes the folder to the Trash — recoverable — and refuses while an agent is running in it. */
-async function deleteWorkspace(id: string): Promise<void> {
-  const settings = loadSettings()
-  if (id === DEFAULT_WORKSPACE_ID) throw new Error('The Default workspace cannot be deleted.')
-  if (!listWorkspaces(settings).some((workspace) => workspace.id === id)) {
-    throw new Error('That workspace no longer exists.')
-  }
-  if (listSessions().some((session) => session.workspaceId === id)) {
-    throw new Error('Close this workspace’s terminal tabs before deleting it.')
-  }
-  if (settings.activeWorkspaceId === id) switchWorkspace(DEFAULT_WORKSPACE_ID)
-  await shell.trashItem(workspaceDir(settings, id))
-  startWatchingAgents(() => notifyAgentsChanged())
-  notifyAgentsChanged()
-  broadcast('workspaces:changed')
 }
 
 export function registerIpcHandlers(): void {
@@ -544,7 +489,7 @@ export function registerIpcHandlers(): void {
     try {
       persistSettings(parsed)
     } finally {
-      refreshAfterSettingsSave(folderBefore, parsed.workspaceId)
+      workspaceSession.afterSettingsSave(folderBefore, parsed.workspaceId)
     }
     return loadSettings()
   })
@@ -568,7 +513,7 @@ export function registerIpcHandlers(): void {
     return workspaceOverview()
   })
   ipcMain.handle('workspaces:delete', async (_event, id: string) => {
-    await deleteWorkspace(id)
+    await workspaceSession.deleteWorkspace(id)
     return workspaceOverview()
   })
 

@@ -43,7 +43,7 @@ Sessions carry `workspaceId`; anything that finds "the session of task X" must m
 `<workspace>:<task>`). The renderer's board, titles and agent map describe only the active
 workspace, so `sessionLabel` and the tab dots check the session's workspace before using them.
 
-`switchWorkspace` (`ipc.ts`) saves the preference and `repoint()`s: close the index, restart both
+`core/workspaceSession.ts` holds the switch / delete / after-settings-save ordering behind injected ports (tested with a call log), and `buildTrayModel`, the pure tray list and label policy; `ipc.ts` only wires the real ports. `switchWorkspace` saves the preference and `repoint()`s: close the index, restart both
 watchers, re-sync. It is synchronous so quick switches apply in order. `settings:save` ignores the
 `activeWorkspaceId` a Settings draft carries — only a switch changes it, or a stale dialog would
 undo a workspace created or deleted since. The agents watcher covers every workspace's `agents/`
