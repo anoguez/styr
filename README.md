@@ -25,7 +25,7 @@ a board you can see, and in plain files you can read.
 - **The prompt follows the column.** A task that needs a spec gets a spec prompt, a task in Backlog
   gets an implementation prompt, and a task in Review gets a fresh reviewer that is not the session
   that wrote the code.
-- **Live agent state.** Each task shows Working, Waiting on you, Finished or Stopped in the board,
+- **Live agent state.** Each task shows Working, Waiting on you, Idle or Stopped in the board,
   the sidebar, the macOS menu bar and notifications, for Claude Code and Codex alike. Waiting always
   sorts first.
 - **Isolated worktrees.** Tick one box and a task runs on its own branch in its own checkout, so

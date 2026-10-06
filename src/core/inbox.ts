@@ -66,7 +66,7 @@ export function classifyTask(
     return {
       group: 'needs',
       kind: 'review',
-      reason: agent.lastMessage ?? 'Finished — ready for your review.',
+      reason: agent.lastMessage ?? 'Idle — ready for your review.',
       at
     }
   }
