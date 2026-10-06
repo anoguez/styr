@@ -3,7 +3,8 @@ import { app } from 'electron'
 import { SampleBuffer, type DiagnosticsSnapshot } from '@core/diagnostics.js'
 
 const notifyDurations = new SampleBuffer(20)
-const loopDelay = monitorEventLoopDelay({ resolution: 10 })
+const RESOLUTION_MS = 10
+const loopDelay = monitorEventLoopDelay({ resolution: RESOLUTION_MS })
 let sampling = false
 
 /** Times one `notifyTasksChanged` run. Cheap enough to leave on: one clock read per change. */
@@ -19,7 +20,8 @@ export function takeSnapshot(counts: {
   terminals: number
   taskCount: number
 }): DiagnosticsSnapshot {
-  const nanos = (value: number): number => value / 1e6
+  // The histogram samples a timer every RESOLUTION_MS, so an idle loop reads about that; the excess is real delay.
+  const nanos = (value: number): number => Math.max(0, value / 1e6 - RESOLUTION_MS)
   const eventLoopMs =
     sampling && loopDelay.count > 0
       ? {
