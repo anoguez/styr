@@ -737,6 +737,11 @@ yarn build          # typechecks tsconfig.node.json + tsconfig.web.json, then bu
 CI runs all three on every PR. The pre-commit hook runs lint-staged (ESLint and Prettier on staged
 files) and the typecheck.
 
+The README coverage badge is refreshed by the pre-commit hook (`yarn coverage:badge`, staged
+automatically) and by the release workflow when release-please cuts a release. CI's
+`coverage:check` fails only when coverage falls more than half a point below the badge — a rise
+never fails.
+
 TypeScript 7 (`@typescript/native`) is the compiler; the `typescript` package name is the TS 6
 compatibility build (`@typescript/typescript6`), because typescript-eslint needs the compiler API
 that TS 7 no longer ships.

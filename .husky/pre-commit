@@ -1,4 +1,5 @@
 yarn lint-staged
 yarn tsc --noEmit -p tsconfig.node.json
 yarn tsc --noEmit -p tsconfig.web.json
-yarn test
+yarn coverage:badge
+git add README.md

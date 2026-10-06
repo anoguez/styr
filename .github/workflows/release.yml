@@ -33,6 +33,36 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+  # Refreshes the README coverage badge when a release is cut, not on ordinary merges: CI only
+  # fails when coverage falls, so the badge is allowed to lag until then.
+  coverage-badge:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+      - run: yarn coverage:badge
+
+      - name: Commit the badge
+        run: |
+          if git diff --quiet README.md; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: refresh coverage badge" README.md
+          git pull --rebase origin main
+          git push origin HEAD:main
+
   build-macos:
     needs: release-please
     # always() lets a manual run proceed although release-please was skipped.

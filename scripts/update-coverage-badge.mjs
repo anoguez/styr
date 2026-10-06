@@ -34,14 +34,15 @@ const readme = readFileSync(README_FILE, 'utf8')
 
 if (!BADGE_PATTERN.test(readme)) throw new Error(`Test coverage badge not found in ${README_FILE}`)
 
-// `--check` fails when the README badge has drifted from the measured coverage, so CI makes the
-// author refresh it (within half a point, so platform noise does not flake CI) (`yarn coverage:badge`) instead of it going stale.
+// `--check` fails only when coverage has fallen below the README badge (within half a point, so
+// platform noise does not flake CI). A rise is good news and never fails: the pre-commit hook and
+// the release workflow refresh the badge (`yarn coverage:badge`).
 if (process.argv.includes('--check')) {
   const current = readme.match(BADGE_PATTERN)[0]
   const recorded = Number(current.match(/coverage-([\d.]+)%25/)[1])
-  if (Math.abs(recorded - coverage) > 0.5) {
+  if (coverage < recorded - 0.5) {
     console.error(
-      `README coverage badge is stale.\n  found:    ${current}\n  expected: ${badge}\nRun \`yarn coverage:badge\` and commit README.md.`
+      `Test coverage fell: the README badge says ${recorded}% but it is now ${coverage.toFixed(2)}%.\nAdd tests, or if the drop is deliberate run \`yarn coverage:badge\` and commit README.md.`
     )
     process.exit(1)
   }
