@@ -203,8 +203,10 @@ export interface ExternalRef {
   provider: string
   id: string
   url?: string
-  /** Which configured source (`SourceConfig.id`) the item came from; unset for a hand-made link. */
+  /** Which source (`SourceConfig.id`) the item came from. */
   sourceId?: string
+  /** Which repository of that source, e.g. `owner/name`; item ids repeat across repositories. */
+  target?: string
   /** The remote item's last-update stamp at the last sync, for change detection. */
   remoteUpdatedAt?: string
   /** Hash of the title and body as last imported, to tell a local edit from the remote one. */
@@ -214,23 +216,31 @@ export interface ExternalRef {
 /** READ never changes anything in the source; READ/WRITE lets Styr push updates back. */
 export type SourceAccess = 'read' | 'read_write'
 
+/**
+ * One integration, switched on and configured for the workspace. There is one per provider and no
+ * repository in it: the repositories come from the tasks' own `repoPath`s.
+ */
 export interface SourceConfig {
-  /** Stable, generated, never changes after creation. */
+  /** The provider's name; there is one source per provider. */
   id: string
   provider: string
-  name: string
   access: SourceAccess
   enabled: boolean
   /** Minutes between automatic syncs; 0 turns polling off. */
   pollMinutes: number
-  /** GitHub: `owner/name`. */
-  repo: string
-  /** Only issues carrying all of these labels; empty means all. */
+  /** Only items carrying all of these labels; empty means all. */
   labels: string[]
   includeClosed: boolean
   /** Write-side options; ignored unless `access` is `read_write`. */
   mirrorStatus: boolean
   commentOnReview: boolean
+}
+
+/** A repository found in a task's checkout, and the folder it was found in. */
+export interface SourceTarget {
+  /** GitHub: `owner/name`. */
+  target: string
+  repoPath: string
 }
 
 export interface RemoteItem {
@@ -559,5 +569,3 @@ export type CliStatus =
   | { state: 'outdated'; version: string; minimum: string }
   | { state: 'unauthenticated'; version: string }
   | { state: 'ready'; version: string; account?: string }
-
-export type SourceCheck = { ok: true; account?: string } | { ok: false; reason: string }

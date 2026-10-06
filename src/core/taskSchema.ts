@@ -20,6 +20,7 @@ export const externalRefSchema = z.object({
   id: z.string(),
   url: z.string().optional(),
   sourceId: z.string().optional(),
+  target: z.string().optional(),
   remoteUpdatedAt: z.string().optional(),
   syncedHash: z.string().optional()
 })
@@ -27,11 +28,9 @@ export const externalRefSchema = z.object({
 export const sourceConfigSchema = z.object({
   id: z.string().min(1),
   provider: z.string().min(1),
-  name: z.string().default(''),
   access: z.enum(['read', 'read_write']).default('read'),
   enabled: z.boolean().default(true),
   pollMinutes: z.number().int().min(0).max(1440).default(5),
-  repo: z.string().default(''),
   labels: z.array(z.string()).default([]),
   includeClosed: z.boolean().default(false),
   mirrorStatus: z.boolean().default(false),

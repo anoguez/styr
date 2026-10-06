@@ -733,18 +733,23 @@ is `App` state remembered in the renderer's `localStorage` (`styr:view`) — a p
 ## External sources
 
 A **source** is an optional external system (GitHub Issues first) whose items are imported as tasks
-and linked by `Task.externalRef` (`provider`, `id`, `url`, plus `sourceId`, `remoteUpdatedAt` and
-`syncedHash`). Sources are the workspace setting `Settings.sources` (`SourceConfig`). The task
+and linked by `Task.externalRef` (`provider`, `id`, `url`, plus `sourceId`, `target`,
+`remoteUpdatedAt` and `syncedHash`). Sources are the workspace setting `Settings.sources`
+(`SourceConfig`): one per provider (`id` is the provider), switched on and given an access level —
+there is no repository in it. The repositories are **detected** from the tasks' own `repoPath`s and
+`Settings.defaultRepoPath` (`adapter.detectTarget`, the git remote; `sourceTargets` dedupes), so an
+item's identity is source + `target` + id: issue numbers repeat across repositories. Imported tasks
+get the checkout's `repoPath`. The task
 markdown stays the only source of truth: a sync copies an item into a task file through
 `taskStore`, and nothing renders from the remote live.
 
 Everything provider-specific sits behind `SourceAdapter` in `src/core/sources/` (`adapterFor` is the
 one place one is chosen; `github.ts` shells out to the `gh` CLI, so Styr stores no token). The pure
 rules are in `sync.ts` — `planSync` (create / update / note) and `planPush` (what a status change
-should do remotely) — and are what the tests cover. Adapters take an injected `CommandRunner`.
+should do remotely) — and are what the tests cover. Adapters take an injected `CommandRunner`; every call also takes the `target` repository.
 
 **Read-only is structural.** An adapter has no write methods of its own; `SourceAdapter.writer`
-returns them, and the only caller is `writableSource(sourceId)`, which looks the source up again
+returns them, and the only caller is `writableSource(sourceId, target)`, which looks the source up again
 on every call and throws `SourceReadOnlyError` unless it is `read_write` and enabled. Never call
 `adapter.writer` anywhere else, and never add a write method to the read half. Sync, linking and
 refreshing only read. `mirrorStatus` / `commentOnReview` do nothing without `read_write`.
@@ -762,6 +767,8 @@ first and disables adding, testing and syncing until ready. `gh` is run with a P
 Homebrew's directories because a Finder-launched app has a bare one.
 
 Settings has an **Integrations** nav group (`group: 'integrations'` on a `SECTIONS` entry; the
-Claude/Codex section is `agents`). Sync and Test act on the saved, active workspace's settings, so
-the pane disables Sync while a source has unsaved changes. The MCP server has `list_sources` and a
-guarded `comment_on_source_item`.
+Claude/Codex section is `agents`). The pane is one switch, an access control and the detected
+repositories, with no list to maintain. Sync acts on the saved, active workspace's settings, so the
+pane disables it while there are unsaved changes. A bare `#12` in the task dialog's Issue row means
+the task's own repository; a pasted URL names its own. The MCP server has `list_sources` and a
+guarded `comment_on_source_item` (which takes the repository).

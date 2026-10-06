@@ -1,5 +1,5 @@
 import { loadSettings } from '../settingsStore.js'
-import type { SourceConfig } from '../types.js'
+import type { SourceConfig, SourceTarget } from '../types.js'
 import { githubAdapter, runCommand } from './github.js'
 import type { CommandRunner, SourceAdapter, SourceWriter } from './types.js'
 
@@ -36,14 +36,27 @@ export function currentSources(): SourceConfig[] {
  */
 export function writableSource(
   sourceId: string,
+  target: string,
   run: CommandRunner = runCommand,
   sources: () => SourceConfig[] = currentSources
 ): SourceWriter {
   const config = sources().find((source) => source.id === sourceId)
-  if (!config) throw new Error(`Source ${sourceId} no longer exists.`)
+  if (!config) throw new Error(`Source ${sourceId} is not set up.`)
   if (config.access !== 'read_write' || !config.enabled)
-    throw new SourceReadOnlyError(config.name || config.repo)
+    throw new SourceReadOnlyError(config.provider)
   const adapter = adapterFor(config.provider)
   if (!adapter) throw new Error(`No adapter for ${config.provider}.`)
-  return adapter.writer(config, run)
+  return adapter.writer(target, run)
+}
+
+/** The repositories the workspace's tasks (and default repo path) live in, one entry per repository. */
+export function sourceTargets(adapter: SourceAdapter, repoPaths: string[]): SourceTarget[] {
+  const found = new Map<string, SourceTarget>()
+  for (const repoPath of repoPaths) {
+    if (!repoPath) continue
+    const target = adapter.detectTarget(repoPath)
+    if (target && !found.has(target.toLowerCase()))
+      found.set(target.toLowerCase(), { target, repoPath })
+  }
+  return [...found.values()]
 }

@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto'
-import type { ExternalRef, RemoteItem, SourceConfig, Task, TaskDraft, TaskPatch } from '../types.js'
+import type {
+  ExternalRef,
+  RemoteItem,
+  SourceConfig,
+  SourceTarget,
+  Task,
+  TaskDraft,
+  TaskPatch
+} from '../types.js'
 
 /** The first import never pulls more than this many issues. */
 export const IMPORT_LIMIT = 200
@@ -20,12 +28,13 @@ export interface SyncPlan {
   unchanged: number
 }
 
-function refFor(source: SourceConfig, item: RemoteItem, hash: string): ExternalRef {
+function refFor(source: SourceConfig, target: string, item: RemoteItem, hash: string): ExternalRef {
   return {
     provider: source.provider,
     id: item.id,
     url: item.url,
     sourceId: source.id,
+    target,
     remoteUpdatedAt: item.updatedAt,
     syncedHash: hash
   }
@@ -41,9 +50,18 @@ function mergeTags(current: string[], prefix: string, item: RemoteItem): string[
   return [...current.filter((tag) => !tag.startsWith(own)), ...tagsFor(prefix, item)]
 }
 
-export function linkedTask(tasks: Task[], sourceId: string, itemId: string): Task | undefined {
+/** Item ids repeat across repositories, so a link is the source, the repository and the id. */
+export function linkedTask(
+  tasks: Task[],
+  sourceId: string,
+  target: string,
+  itemId: string
+): Task | undefined {
   return tasks.find(
-    (task) => task.externalRef?.sourceId === sourceId && task.externalRef.id === itemId
+    (task) =>
+      task.externalRef?.sourceId === sourceId &&
+      task.externalRef.target === target &&
+      task.externalRef.id === itemId
   )
 }
 
@@ -56,12 +74,14 @@ export function planSync(
   tasks: Task[],
   items: RemoteItem[],
   source: SourceConfig,
-  tagPrefix: string
+  tagPrefix: string,
+  where: SourceTarget
 ): SyncPlan {
+  const { target } = where
   const plan: SyncPlan = { actions: [], created: 0, updated: 0, unchanged: 0 }
 
   for (const item of items) {
-    const task = linkedTask(tasks, source.id, item.id)
+    const task = linkedTask(tasks, source.id, target, item.id)
 
     if (!task) {
       if (item.state === 'closed' && !source.includeClosed) continue
@@ -73,7 +93,8 @@ export function planSync(
           status: item.state === 'closed' ? 'done' : 'backlog',
           readiness: 'needs_spec',
           tags: tagsFor(tagPrefix, item),
-          externalRef: refFor(source, item, contentHash(item.title, item.body))
+          repoPath: where.repoPath,
+          externalRef: refFor(source, target, item, contentHash(item.title, item.body))
         }
       })
       plan.created++
@@ -94,7 +115,7 @@ export function planSync(
 
     if (edited) {
       notes.push(
-        `${source.name || source.repo} #${item.id} changed remotely; your edited title and description were kept.`
+        `${target}#${item.id} changed remotely; your edited title and description were kept.`
       )
     } else {
       patch.title = item.title
@@ -105,10 +126,10 @@ export function planSync(
 
     if (item.state === 'closed' && task.status !== 'done' && !task.archivedAt) {
       if (task.status === 'in_progress') {
-        notes.push(`#${item.id} was closed on ${source.name || source.provider}; left in progress.`)
+        notes.push(`${target}#${item.id} was closed remotely; left in progress.`)
       } else {
         patch.status = 'done'
-        notes.push(`#${item.id} was closed on ${source.name || source.provider}.`)
+        notes.push(`${target}#${item.id} was closed remotely.`)
       }
     }
 
@@ -140,20 +161,20 @@ export type PushAction =
  */
 export function planPush(before: Task, after: Task, source: SourceConfig): PushAction[] {
   const ref = after.externalRef
-  if (!ref || ref.sourceId !== source.id || before.status === after.status) return []
+  if (!ref?.target || ref.sourceId !== source.id || before.status === after.status) return []
   const actions: PushAction[] = []
   if (source.mirrorStatus) {
     if (after.status === 'done') {
       actions.push({
         kind: 'close',
         itemId: ref.id,
-        note: `Closed #${ref.id} on ${source.name || source.provider}.`
+        note: `Closed ${ref.target}#${ref.id} on ${source.provider}.`
       })
     } else if (before.status === 'done') {
       actions.push({
         kind: 'reopen',
         itemId: ref.id,
-        note: `Reopened #${ref.id} on ${source.name || source.provider}.`
+        note: `Reopened ${ref.target}#${ref.id} on ${source.provider}.`
       })
     }
   }
@@ -162,7 +183,7 @@ export function planPush(before: Task, after: Task, source: SourceConfig): PushA
       kind: 'comment',
       itemId: ref.id,
       body: `Ready for review in Styr (${after.id}): ${after.prUrl}`,
-      note: `Commented on #${ref.id} on ${source.name || source.provider}.`
+      note: `Commented on ${ref.target}#${ref.id} on ${source.provider}.`
     })
   }
   return actions

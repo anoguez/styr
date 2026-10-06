@@ -8,9 +8,8 @@ import type {
   OrchestrationSummary,
   Settings,
   SettingsChange,
-  SourceCheck,
-  SourceConfig,
   SourceSyncState,
+  SourceTarget,
   Task,
   TaskDraft,
   TaskFilter,
@@ -100,12 +99,12 @@ const api = {
       ipcRenderer.invoke('sources:providers'),
     ghStatus: (): Promise<CliStatus> => ipcRenderer.invoke('sources:ghStatus'),
     state: (): Promise<Record<string, SourceSyncState>> => ipcRenderer.invoke('sources:state'),
-    test: (config: SourceConfig): Promise<SourceCheck> =>
-      ipcRenderer.invoke('sources:test', config),
+    targets: (sourceId: string): Promise<SourceTarget[]> =>
+      ipcRenderer.invoke('sources:targets', sourceId),
     sync: (sourceId: string): Promise<SourceSyncState> =>
       ipcRenderer.invoke('sources:sync', sourceId),
-    link: (taskId: string, sourceId: string, text: string): Promise<Task> =>
-      ipcRenderer.invoke('sources:link', taskId, sourceId, text),
+    link: (taskId: string, text: string): Promise<Task> =>
+      ipcRenderer.invoke('sources:link', taskId, text),
     unlink: (taskId: string): Promise<Task> => ipcRenderer.invoke('sources:unlink', taskId),
     refresh: (taskId: string): Promise<Task> => ipcRenderer.invoke('sources:refresh', taskId),
     onState: (handler: (states: Record<string, SourceSyncState>) => void): (() => void) =>

@@ -16,12 +16,10 @@ export function SourceLink({
   onTask: (task: Task) => void
 }): ReactNode {
   const [text, setText] = useState('')
-  const [sourceId, setSourceId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const ref = task.externalRef
-  const sources = settings.sources.filter((source) => source.enabled)
-  const chosen = sourceId || sources[0]?.id || ''
+  const enabled = settings.sources.some((source) => source.enabled)
 
   async function run(action: () => Promise<Task>): Promise<void> {
     setBusy(true)
@@ -41,7 +39,7 @@ export function SourceLink({
     }
   }
 
-  if (!ref && sources.length === 0) return null
+  if (!ref && !enabled) return null
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -55,7 +53,7 @@ export function SourceLink({
               rel="noreferrer"
               className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--color-accent-text)] hover:underline"
             >
-              {ref.provider === 'github' ? 'GitHub' : ref.provider} #{ref.id}
+              {ref.target ?? ref.provider}#{ref.id}
             </a>
             {ref.sourceId ? (
               <Button
@@ -76,31 +74,17 @@ export function SourceLink({
           </div>
         ) : (
           <div className="flex min-w-0 items-center gap-1.5">
-            {sources.length > 1 ? (
-              <select
-                aria-label="Source"
-                value={chosen}
-                onChange={(event) => setSourceId(event.target.value)}
-                className={`${inputBase} h-7 max-w-[110px] px-1.5 text-[12px]`}
-              >
-                {sources.map((source) => (
-                  <option key={source.id} value={source.id}>
-                    {source.name || source.repo}
-                  </option>
-                ))}
-              </select>
-            ) : null}
             <input
               aria-label="Issue number or URL"
               value={text}
-              placeholder="#12 or URL"
+              placeholder="#12 or issue URL"
               onChange={(event) => setText(event.target.value)}
               className={`${inputBase} h-7 min-w-0 flex-1 px-2 text-[12.5px]`}
             />
             <Button
               variant="subtle"
               disabled={busy || !text.trim()}
-              onClick={() => void run(() => window.api.sources.link(task.id, chosen, text))}
+              onClick={() => void run(() => window.api.sources.link(task.id, text))}
             >
               Link
             </Button>

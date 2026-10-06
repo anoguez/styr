@@ -76,6 +76,7 @@ import { settleLandedTasks } from './landing.js'
 import {
   initSourceSync,
   linkTask,
+  listSourceTargets,
   observeTasks,
   refreshTask,
   resetSourceObserver,
@@ -85,7 +86,6 @@ import {
   unlinkTask
 } from './sourceSync.js'
 import { adapterFor, runCommand, sourceProviders } from '@core/sources/index.js'
-import { sourceConfigSchema } from '@core/taskSchema.js'
 import {
   taskDraftSchema,
   taskFilterSchema,
@@ -519,15 +519,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('sources:providers', () => sourceProviders())
   ipcMain.handle('sources:ghStatus', () => adapterFor('github')!.status(runCommand))
   ipcMain.handle('sources:state', () => sourceStates())
-  ipcMain.handle('sources:test', (_event, config: unknown) => {
-    const parsed = sourceConfigSchema.parse(config)
-    const adapter = adapterFor(parsed.provider)
-    if (!adapter) return { ok: false, reason: `Unknown provider ${parsed.provider}.` }
-    return adapter.check(parsed, runCommand)
-  })
+  ipcMain.handle('sources:targets', (_event, sourceId: string) =>
+    listSourceTargets(String(sourceId))
+  )
   ipcMain.handle('sources:sync', (_event, sourceId: string) => syncSource(String(sourceId)))
-  ipcMain.handle('sources:link', (_event, taskId: string, sourceId: string, text: string) =>
-    linkTask(String(taskId), String(sourceId), String(text))
+  ipcMain.handle('sources:link', (_event, taskId: string, text: string) =>
+    linkTask(String(taskId), String(text))
   )
   ipcMain.handle('sources:unlink', (_event, taskId: string) => unlinkTask(String(taskId)))
   ipcMain.handle('sources:refresh', (_event, taskId: string) => refreshTask(String(taskId)))

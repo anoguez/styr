@@ -174,17 +174,15 @@ server.registerTool(
   {
     title: 'List external sources',
     description:
-      'List the external sources (such as GitHub repositories) linked to this workspace, with ' +
+      'List the external integrations (such as GitHub) set up for this workspace, with ' +
       'their access level. A read-only source must never be changed.',
     inputSchema: {}
   },
   async () =>
     json(
-      currentSources().map(({ id, provider, name, repo, access, enabled }) => ({
+      currentSources().map(({ id, provider, access, enabled }) => ({
         id,
         provider,
-        name,
-        repo,
         access,
         enabled
       }))
@@ -198,11 +196,16 @@ server.registerTool(
     description:
       'Post a comment on an item (issue) of an external source. Fails with an error when the ' +
       'source is read-only or disabled; do not look for another way to write to it.',
-    inputSchema: { sourceId: z.string(), itemId: z.string(), body: z.string().min(1) }
+    inputSchema: {
+      sourceId: z.string(),
+      repo: z.string().describe('The repository, e.g. owner/name'),
+      itemId: z.string(),
+      body: z.string().min(1)
+    }
   },
-  async ({ sourceId, itemId, body }) => {
+  async ({ sourceId, repo, itemId, body }) => {
     try {
-      const writer = writableSource(sourceId)
+      const writer = writableSource(sourceId, repo)
       const provider = currentSources().find((source) => source.id === sourceId)?.provider ?? ''
       const status = await adapterFor(provider)?.status(runCommand)
       if (status && status.state !== 'ready') return json({ error: `The CLI is ${status.state}.` })

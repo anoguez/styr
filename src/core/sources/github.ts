@@ -1,5 +1,6 @@
-import { execFile } from 'node:child_process'
-import type { RemoteItem, SourceConfig } from '../types.js'
+import { execFile, execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import type { RemoteItem } from '../types.js'
 import type { CliStatus, CommandRunner, RunResult, SourceAdapter, SourceWriter } from './types.js'
 
 /** Oldest `gh` whose `issue list --json` and `issue close` we rely on. */
@@ -99,10 +100,9 @@ function fail(result: RunResult, what: string): never {
   throw new Error(`${what}: ${detail}`)
 }
 
-function repoOf(config: SourceConfig): string {
-  if (!REPO_RE.test(config.repo))
-    throw new Error(`"${config.repo}" is not an owner/name repository`)
-  return config.repo
+function checked(target: string): string {
+  if (!REPO_RE.test(target)) throw new Error(`"${target}" is not an owner/name repository`)
+  return target
 }
 
 function parseIssues(stdout: string): GhIssue[] {
@@ -111,8 +111,46 @@ function parseIssues(stdout: string): GhIssue[] {
   return parsed as GhIssue[]
 }
 
-function writer(config: SourceConfig, run: CommandRunner): SourceWriter {
-  const repo = repoOf(config)
+/** `owner/name` from a git remote URL (https or ssh) pointing at github.com, else null. */
+export function parseGithubRemote(url: string): string | null {
+  const match =
+    /^(?:https?:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(
+      url.trim()
+    )
+  return match ? `${match[1]}/${match[2]}` : null
+}
+
+/** The GitHub repository a checkout's `origin` (else its first remote) points at. */
+export function detectGithubRepo(repoPath: string): string | null {
+  if (!repoPath || !existsSync(repoPath)) return null
+  // a hook or an agent terminal may carry GIT_DIR and friends, which would point git elsewhere
+  const env = { ...process.env }
+  for (const key of Object.keys(env))
+    if (key.startsWith('GIT_') && key !== 'GIT_SSH_COMMAND') delete env[key]
+  const git = (args: string[]): string => {
+    try {
+      return execFileSync('git', args, {
+        cwd: repoPath,
+        env,
+        encoding: 'utf8',
+        timeout: 5000,
+        stdio: ['ignore', 'pipe', 'ignore']
+      }).trim()
+    } catch {
+      return ''
+    }
+  }
+  const origin = parseGithubRemote(git(['remote', 'get-url', 'origin']))
+  if (origin) return origin
+  for (const remote of git(['remote']).split('\n').filter(Boolean)) {
+    const found = parseGithubRemote(git(['remote', 'get-url', remote]))
+    if (found) return found
+  }
+  return null
+}
+
+function writer(target: string, run: CommandRunner): SourceWriter {
+  const repo = checked(target)
   const issue = async (verb: string[], id: string, what: string): Promise<void> => {
     const result = await run('gh', ['issue', ...verb, id, '-R', repo])
     if (result.code !== 0) fail(result, what)
@@ -132,39 +170,14 @@ export const githubAdapter: SourceAdapter = {
   label: 'GitHub',
   tagPrefix: 'github',
   status: checkGh,
+  detectTarget: detectGithubRepo,
 
-  async check(config, run) {
-    const status = await checkGh(run)
-    if (status.state === 'missing')
-      return { ok: false, reason: 'The GitHub CLI (gh) is not installed.' }
-    if (status.state === 'outdated') {
-      return {
-        ok: false,
-        reason: `gh ${status.version} is too old; ${status.minimum} or newer is needed.`
-      }
-    }
-    if (status.state === 'unauthenticated') {
-      return { ok: false, reason: 'gh is not logged in. Run `gh auth login`.' }
-    }
-    if (!REPO_RE.test(config.repo)) {
-      return { ok: false, reason: 'Enter the repository as owner/name.' }
-    }
-    const repo = await run('gh', ['repo', 'view', config.repo, '--json', 'name'])
-    if (repo.code !== 0) {
-      return {
-        ok: false,
-        reason: `Cannot reach ${config.repo}: ${repo.stderr.trim().split('\n')[0]}`
-      }
-    }
-    return { ok: true, ...(status.account ? { account: status.account } : {}) }
-  },
-
-  async list(config, run, { limit }) {
+  async list(config, run, target, { limit }) {
     const args = [
       'issue',
       'list',
       '-R',
-      repoOf(config),
+      checked(target),
       '--state',
       config.includeClosed ? 'all' : 'open',
       '--limit',
@@ -174,29 +187,30 @@ export const githubAdapter: SourceAdapter = {
     ]
     for (const label of config.labels) args.push('--label', label)
     const result = await run('gh', args)
-    if (result.code !== 0) fail(result, 'Could not list issues')
+    if (result.code !== 0) fail(result, `Could not list issues of ${target}`)
     return parseIssues(result.stdout).map(toItem)
   },
 
-  async get(config, run, id) {
+  async get(run, target, id) {
     const result = await run('gh', [
       'issue',
       'view',
       id,
       '-R',
-      repoOf(config),
+      checked(target),
       '--json',
       ISSUE_FIELDS
     ])
-    if (result.code !== 0) fail(result, `Could not read #${id}`)
+    if (result.code !== 0) fail(result, `Could not read ${target}#${id}`)
     return toItem(JSON.parse(result.stdout) as GhIssue)
   },
 
-  parseRef(config, text) {
+  parseRef(text, defaultTarget) {
     const trimmed = text.trim()
     const url = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)/.exec(trimmed)
-    if (url) return url[1]!.toLowerCase() === config.repo.toLowerCase() ? url[2]! : null
-    return /^#?(\d+)$/.exec(trimmed)?.[1] ?? null
+    if (url) return { target: url[1]!, id: url[2]! }
+    const id = /^#?(\d+)$/.exec(trimmed)?.[1]
+    return id && defaultTarget ? { target: defaultTarget, id } : null
   },
 
   writer

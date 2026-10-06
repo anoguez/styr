@@ -1,6 +1,6 @@
-import type { CliStatus, RemoteItem, SourceCheck, SourceConfig } from '../types.js'
+import type { CliStatus, RemoteItem, SourceConfig } from '../types.js'
 
-export type { CliStatus, SourceCheck }
+export type { CliStatus }
 
 export interface RunResult {
   code: number
@@ -31,10 +31,16 @@ export interface SourceAdapter {
   /** Short prefix for tags imported from the source's labels. */
   readonly tagPrefix: string
   status(run: CommandRunner): Promise<CliStatus>
-  check(config: SourceConfig, run: CommandRunner): Promise<SourceCheck>
-  list(config: SourceConfig, run: CommandRunner, options: ListOptions): Promise<RemoteItem[]>
-  get(config: SourceConfig, run: CommandRunner, id: string): Promise<RemoteItem>
-  /** Turns what a user pasted (`#42`, `42`, a URL) into an item id, or null. */
-  parseRef(config: SourceConfig, text: string): string | null
-  writer(config: SourceConfig, run: CommandRunner): SourceWriter
+  /** Which repository of this provider a checkout belongs to, or null (not a git repo, other host). */
+  detectTarget(repoPath: string): string | null
+  list(
+    config: SourceConfig,
+    run: CommandRunner,
+    target: string,
+    options: ListOptions
+  ): Promise<RemoteItem[]>
+  get(run: CommandRunner, target: string, id: string): Promise<RemoteItem>
+  /** Turns what a user pasted (`#42`, `42`, a URL) into an item; a URL names its own repository. */
+  parseRef(text: string, defaultTarget: string | null): { target: string; id: string } | null
+  writer(target: string, run: CommandRunner): SourceWriter
 }
