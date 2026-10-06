@@ -127,7 +127,8 @@ export function TerminalPanel({
   onNewSession,
   onCloseSession,
   onCreateTask,
-  onAskReview
+  onAskReview,
+  onAskFork
 }: {
   sessions: TerminalSessionInfo[]
   agents: Map<string, AgentStatus>
@@ -145,6 +146,7 @@ export function TerminalPanel({
   onCloseSession: (id: string) => void
   onCreateTask: (request: TerminalTaskRequest) => Promise<string>
   onAskReview: (taskId: string) => Promise<void>
+  onAskFork: (sessionId: string, question: string) => Promise<boolean>
 }): ReactNode {
   const runtimes = useTerminalRuntimes(sessions)
   const [fullscreen, setFullscreen] = useState<ReadonlySet<string>>(new Set())
@@ -309,6 +311,7 @@ export function TerminalPanel({
                     : undefined
                 }
                 onAskReview={onAskReview}
+                onAskFork={onAskFork}
               />
             </div>
           ))

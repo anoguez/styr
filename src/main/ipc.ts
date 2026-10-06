@@ -22,7 +22,8 @@ import {
   type LaunchOptions,
   type LaunchPlan
 } from '@core/launch.js'
-import { providerFor } from '@core/providers/index.js'
+import { askTitle, forkDescription } from '@core/askAgent.js'
+import { providerById, providerFor } from '@core/providers/index.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { z } from 'zod'
 import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
@@ -256,7 +257,8 @@ function launchPatch(
   task: Task,
   plan: Pick<LaunchPlan, 'provider' | 'worktreePath'>,
   templateId: string | undefined,
-  sessionId?: string
+  sessionId?: string,
+  sessionLabel?: string
 ): TaskPatch {
   const patch: TaskPatch = {}
   if (task.status === 'backlog') patch.status = 'in_progress'
@@ -275,7 +277,7 @@ function launchPatch(
         id: sessionId,
         provider: plan.provider,
         startedAt: new Date().toISOString(),
-        label: resolveTemplateFor(loadSettings(), task, templateId).name
+        label: sessionLabel ?? resolveTemplateFor(loadSettings(), task, templateId).name
       }
     ]
   }
@@ -286,9 +288,10 @@ function saveLaunchMetadata(
   task: Task,
   plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'warning'>,
   templateId: string | undefined,
-  sessionId?: string
+  sessionId?: string,
+  sessionLabel?: string
 ): void {
-  const patch = launchPatch(task, plan, templateId, sessionId)
+  const patch = launchPatch(task, plan, templateId, sessionId, sessionLabel)
   if (Object.keys(patch).length > 0) updateTask(task.id, patch)
   if (plan.warning) addNote(task.id, 'styr', plan.warning)
   if (Object.keys(patch).length > 0 || plan.warning) notifyTasksChanged()
@@ -338,7 +341,13 @@ async function startSessionForTask(
   // A fresh Codex thread is created by the TUI, so its id is only known once the daemon announces
   // it; the monitor saves it then. Every other session has its id up front.
   const awaitingThreadId = plan.provider === 'codex' && !plan.resumed
-  saveLaunchMetadata(task, plan, options.templateId, awaitingThreadId ? undefined : plan.sessionId)
+  saveLaunchMetadata(
+    task,
+    plan,
+    options.templateId,
+    awaitingThreadId ? undefined : plan.sessionId,
+    options.sessionLabel
+  )
 
   if (socketPath) {
     if (awaitingThreadId) {
@@ -763,6 +772,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:runtimeState', (_event, id: string) => terminalRuntimeState(id))
   ipcMain.handle('terminal:createPr', (_event, taskId: string) => askForPullRequest(taskId))
   ipcMain.handle('terminal:askReview', (_event, taskId: string) => askReview(taskId))
+  ipcMain.handle('terminal:askFork', (_event, sessionId: string, question: string) =>
+    askFork(sessionId, String(question ?? ''))
+  )
   ipcMain.handle('terminal:handOff', (_event, sessionId: string, output: string) =>
     handOffSession(sessionId, String(output ?? ''))
   )
@@ -902,6 +914,53 @@ async function askReview(taskId: string): Promise<TerminalSessionInfo> {
     fresh: true,
     provider: providerForLane(settings, 'review')
   })
+}
+
+/**
+ * Ask agent from a task session: a new task whose agent continues a copy of this one's chat, in the
+ * same checkout, so the question is answered with everything the agent already knows. The source
+ * session and task are left running as they were. Returns null when there is nothing to fork (no
+ * saved chat), and the renderer falls back to handing the terminal text to a fresh task.
+ */
+async function askFork(sessionId: string, question: string): Promise<TerminalSessionInfo | null> {
+  const info = listSessions().find((session) => session.id === sessionId)
+  if (!info) throw new Error('That terminal session is gone')
+  const settings = loadSettings()
+  if (!info.taskId || info.workspaceId !== settings.activeWorkspaceId) return null
+  const source = findTask(info.taskId)
+  const ref = source?.agentSession
+  if (!source || !ref || !providerById(ref.provider).sessionExists(ref.id)) return null
+
+  const task = createTask({
+    title: askTitle(question, `Ask: ${source.title}`),
+    description: forkDescription(question, source),
+    status: 'backlog',
+    priority: source.priority,
+    readiness: 'ready',
+    tags: ['ask'],
+    // The fork runs where the source does: Claude keys its transcripts by directory, and the
+    // answer should see the same files. An answer-only task has no use for a branch of its own.
+    repoPath: info.cwd,
+    useWorktree: false,
+    orchestrate: false,
+    contextFiles: [],
+    provider: ref.provider
+  })
+  addNote(source.id, 'styr', `Forked for a question as ${task.id}`)
+  notifyTasksChanged()
+  try {
+    return await launchSessionForTask(task.id, {
+      forkFrom: ref.id,
+      provider: ref.provider,
+      withPrompt: true,
+      sessionLabel: `Fork of ${source.id}`
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`${message} (the question is saved as ${task.id} in Backlog)`, {
+      cause: error
+    })
+  }
 }
 
 /**

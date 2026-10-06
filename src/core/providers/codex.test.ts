@@ -36,4 +36,18 @@ describe('codexCommand', () => {
     expect(command).toBe(`codex --remote unix:// --cd '/w' --approve-for-me Implement the task`)
     expect(command).not.toContain('--sandbox')
   })
+
+  it('forks a thread on the daemon with the same policy and the prompt', () => {
+    expect(
+      codexCommand(settings, {
+        sessionId: 'new',
+        resume: false,
+        forkFrom: 'src-thread',
+        cwd: '/w',
+        prompt: '"$P"'
+      })
+    ).toBe(
+      `codex fork --remote unix:// --cd '/w' --sandbox workspace-write --ask-for-approval on-request src-thread "$P"`
+    )
+  })
 })

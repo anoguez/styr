@@ -33,3 +33,28 @@ describe('firstLine', () => {
     expect(firstLine('\n  \n hello \nworld')).toBe('hello')
   })
 })
+
+describe('taskFromTerminal ask', () => {
+  const context = { cwd: '/r', command: 'pnpm test', exitCode: 1, text: 'boom' }
+
+  it('titles the task with the question and leads the description with it', () => {
+    const task = taskFromTerminal('ask', { ...context, question: 'why does this fail?\nmore' })
+    expect(task.title).toBe('why does this fail?')
+    expect(task.description.startsWith('why does this fail?\nmore')).toBe(true)
+    expect(task.description).toContain('boom')
+    expect(task.tags).toEqual(['ask'])
+    expect(task.ready).toBe(true)
+  })
+
+  it('falls back to the command, then to the terminal, when nothing was asked', () => {
+    expect(taskFromTerminal('ask', context).title).toBe('Ask: pnpm test')
+    expect(taskFromTerminal('ask', { cwd: '/r', text: '' }).title).toBe('Ask: terminal')
+    expect(taskFromTerminal('ask', context).description).toContain('tell me what is going on')
+  })
+
+  it('leaves the other kinds as they were', () => {
+    const task = taskFromTerminal('explain', context)
+    expect(task.title).toBe('Explain: pnpm test')
+    expect(task.tags).toBeUndefined()
+  })
+})

@@ -96,6 +96,10 @@ export interface LaunchOptions {
   fresh?: boolean
   /** Resume one specific past conversation, for looking back at what a run did. */
   resume?: string
+  /** Start as a copy of this conversation (Ask agent from a task session). Always sends the prompt. */
+  forkFrom?: string
+  /** Names the chat in the task's history; defaults to the prompt template's name. */
+  sessionLabel?: string
 }
 
 export function planLaunch(
@@ -103,7 +107,7 @@ export function planLaunch(
   task: Task,
   options: LaunchOptions = {}
 ): LaunchPlan {
-  const { templateId, homeRoot, withPrompt = false, fresh = false, resume } = options
+  const { templateId, homeRoot, withPrompt = false, fresh = false, resume, forkFrom } = options
   const provider = options.provider ? providerById(options.provider) : providerFor(settings, task)
   const checkout = checkoutFor(settings, task)
   const existing = task.agentSession?.provider === provider.id ? task.agentSession.id : undefined
@@ -117,9 +121,9 @@ export function planLaunch(
   }
 
   const wanted = resume ?? options.sessionId ?? existing
-  const resumable = Boolean(
-    options.sessionId || (!fresh && wanted && provider.sessionExists(wanted, homeRoot))
-  )
+  const resumable =
+    !forkFrom &&
+    Boolean(options.sessionId || (!fresh && wanted && provider.sessionExists(wanted, homeRoot)))
   const sessionId =
     resumable && wanted
       ? wanted
@@ -135,6 +139,7 @@ export function planLaunch(
       taskId: task.id,
       sessionId,
       resume: resumable,
+      forkFrom,
       cwd: checkout.cwd,
       prompt
     }),

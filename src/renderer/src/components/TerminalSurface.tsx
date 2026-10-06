@@ -19,6 +19,7 @@ import {
   type TerminalContext,
   type TerminalTaskKind
 } from '../lib/terminalContext.js'
+import { AskPrompt } from './AskPrompt.js'
 import { DirectoryPicker } from './DirectoryPicker.js'
 import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
 import { TerminalBlocks, type BlockActions } from './TerminalBlocks.js'
@@ -36,6 +37,13 @@ const agentButton =
 export interface TerminalTaskRequest {
   title: string
   description: string
+  tags?: string[]
+  /** Specified well enough to run as it is, so it skips the spec lane. */
+  ready?: boolean
+  /** Start an agent on the task straight away (Ask agent). */
+  launch?: boolean
+  /** The repository the task works in, when the terminal is inside one. */
+  repoPath?: string
 }
 
 function useElapsedSeconds(startedAt: number | undefined): string | undefined {
@@ -432,6 +440,7 @@ export function TerminalSurface({
   taskStatus,
   taskPrUrl,
   onAskReview,
+  onAskFork,
   onFullscreenChange,
   onSplit,
   onCreateTask,
@@ -451,6 +460,8 @@ export function TerminalSurface({
   taskPrUrl?: string
   /** Start a fresh reviewer on the task (what Orchestrate does for the review lane). */
   onAskReview?: (taskId: string) => Promise<void>
+  /** Ask a question in a copy of this task session's chat; false when there is no saved chat to copy. */
+  onAskFork?: (sessionId: string, question: string) => Promise<boolean>
   /** A full-screen program took over (or gave back) the panel. */
   onFullscreenChange?: (sessionId: string, fullscreen: boolean) => void
   /** Open another shell tab starting in this directory. */
@@ -539,15 +550,65 @@ export function TerminalSurface({
       context?: TerminalContext
     ): Promise<void> => {
       if (!onCreateTask) return
-      const request = taskFromTerminal(kind, context ?? contextFor(preferSelection))
+      const request: TerminalTaskRequest = taskFromTerminal(
+        kind,
+        context ?? contextFor(preferSelection)
+      )
+      if (kind === 'ask') Object.assign(request, { launch: true, repoPath: git.root ?? undefined })
       setSelection(null)
       try {
-        setNotice(`Created ${await onCreateTask(request)} — find it in Backlog`)
+        const id = await onCreateTask(request)
+        setNotice(
+          request.launch ? `Asking the agent in ${id}` : `Created ${id} — find it in Backlog`
+        )
       } catch (reason) {
         setNotice(reason instanceof Error ? reason.message : 'Could not create the task')
       }
     },
-    [contextFor, onCreateTask]
+    [contextFor, onCreateTask, git.root]
+  )
+
+  // The context is captured when the prompt opens: focusing its field can clear the selection.
+  const [asking, setAsking] = useState<{ context: TerminalContext; attached: string } | null>(null)
+  const openAsk = useCallback(
+    (preferSelection: boolean) => {
+      if (!onCreateTask) return
+      const context = contextFor(preferSelection)
+      const attached =
+        preferSelection && selection
+          ? 'Your selection'
+          : context.command
+            ? `Output of ${context.command}`
+            : 'This terminal'
+      setAsking({ context, attached })
+    },
+    [contextFor, onCreateTask, selection]
+  )
+  const closeAsk = useCallback(() => {
+    setAsking(null)
+    handle.current?.focus()
+  }, [])
+  const submitAsk = useCallback(
+    async (question: string): Promise<void> => {
+      const pending = asking
+      if (!pending) return
+      closeAsk()
+      if (session.taskId && onAskFork) {
+        try {
+          if (await onAskFork(session.id, question)) {
+            setSelection(null)
+            setNotice('Asked a copy of this chat — it is open in a new tab')
+            return
+          }
+        } catch (reason) {
+          setNotice(reason instanceof Error ? reason.message : 'Could not ask the agent')
+          return
+        }
+      }
+      // Nothing to fork (a shell, or a chat that was never saved): hand over the terminal text.
+      await sendToAgent('ask', false, { ...pending.context, question })
+    },
+    [asking, closeAsk, onAskFork, session.id, session.taskId, sendToAgent]
   )
 
   const reviewable =
@@ -656,7 +717,7 @@ export function TerminalSurface({
           if (canChange) setPicking((open) => !open)
           return
         case 'terminalAskAgent':
-          return void sendToAgent('ask', true)
+          return openAsk(true)
         case 'terminalCopyOutput':
           return copyAll()
         case 'terminalRetry':
@@ -676,6 +737,7 @@ export function TerminalSurface({
     canChange,
     canHandOff,
     sendToAgent,
+    openAsk,
     handOffWork,
     askReview,
     createPr,
@@ -760,7 +822,16 @@ export function TerminalSurface({
               setSelection(null)
             }}
             onExplain={() => void sendToAgent('explain', true)}
-            onAsk={() => void sendToAgent('ask', true)}
+            onAsk={() => openAsk(true)}
+          />
+        ) : null}
+        {asking ? (
+          <AskPrompt
+            attached={asking.attached}
+            forking={Boolean(session.taskId && onAskFork)}
+            sendHint="↵"
+            onSubmit={(question) => void submitAsk(question)}
+            onCancel={closeAsk}
           />
         ) : null}
         {notice ? (
@@ -815,7 +886,7 @@ export function TerminalSurface({
           }}
           onChoose={changeDirectory}
           onInterrupt={() => write(INTERRUPT)}
-          onAsk={() => void sendToAgent('ask')}
+          onAsk={() => openAsk(false)}
           onReview={reviewable ? () => void askReview() : undefined}
           onCreatePr={canCreatePr ? () => void createPr() : undefined}
           onHandOff={canHandOff ? () => void handOffWork() : undefined}
