@@ -68,6 +68,7 @@ function boardProtocol(task: Task, workspaceId?: string): string {
     '  that is merely approved or committed on a branch stays `in_review`.',
     '- If you open a pull or merge request (any host), record its URL as `prUrl:` in the frontmatter so the card links to it.',
     '- Set `readiness: ready` once the task is specified well enough to be worked on.',
+    '- If you finish writing a spec and stop, set `status: backlog` with `readiness: ready` so the task can be picked up.',
     '- Append progress notes as `- ` bullets under `## Activity` at the end of the file.',
     '- Change only those lines; leave the rest of the frontmatter as it is.',
     '',

@@ -513,7 +513,9 @@ without launching anything; `ipc.ts` only performs the launches.
 the template it will actually run. Change one and change the other.
 
 Only Backlog and In Review are dispatchable. In Progress is deliberately excluded: a dead session
-there does not mean the work is free to restart.
+there does not mean the work is free to restart. So a spec run that stops after specifying must hand
+the task back to Backlog with `readiness: ready` (the spec template and `boardProtocol` say so);
+left in In Progress it is invisible to Orchestrate.
 
 `Task.sessions` is the append-only chat history; `Task.agentSession` is which of them the next
 run continues. They look redundant but are not — Forget clears the pointer while keeping the
