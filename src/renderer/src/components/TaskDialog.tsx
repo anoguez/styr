@@ -10,10 +10,18 @@ import {
   type Task,
   type TaskPriority,
   type TaskReadiness,
+  type TaskPreset,
   type TaskStatus
 } from '@core/types.js'
 import type { TaskDiff } from '@core/diff.js'
 import { resolveTemplateFor } from '@core/prompt.js'
+import {
+  canAddPreset,
+  matchesPreset,
+  newPresetId,
+  presetFields,
+  presetFromFields
+} from '@core/taskPreset.js'
 import { Button, Chip, DiffCount, Modal, Select } from './ui.js'
 import { SourceLink } from './SourceLink.js'
 
@@ -54,6 +62,27 @@ function toForm(task: Task | null, settings: Settings): FormState {
     promptTemplateId: task?.promptTemplateId ?? '',
     provider: task?.provider ?? settings.defaultProvider,
     description: task?.description ?? ''
+  }
+}
+
+/** The form with a preset's values laid over it; an empty preset title keeps what was typed. */
+function withPreset(form: FormState, preset: TaskPreset, settings: Settings): FormState {
+  const fields = presetFields(preset, settings)
+  return { ...form, ...fields, title: fields.title || form.title }
+}
+
+function formPresetFields(form: FormState): ReturnType<typeof presetFields> {
+  return {
+    title: form.title,
+    description: form.description,
+    tags: form.tags,
+    priority: form.priority,
+    readiness: form.readiness,
+    useWorktree: form.useWorktree,
+    orchestrate: form.orchestrate,
+    provider: form.provider,
+    promptTemplateId: form.promptTemplateId,
+    baseBranch: form.baseBranch
   }
 }
 
@@ -287,10 +316,15 @@ export function TaskDialog({
   onClose,
   onLaunch,
   onResumeSession,
-  onShowChanges
+  onShowChanges,
+  presetId,
+  onSavePresets
 }: {
   task: Task | null
   settings: Settings
+  /** A preset to start from, for a new task. */
+  presetId?: string
+  onSavePresets: (presets: TaskPreset[]) => Promise<void>
   onClose: () => void
   onLaunch: (taskId: string, templateId?: string, provider?: 'claude' | 'codex') => void
   onResumeSession: (taskId: string, sessionId: string) => void
@@ -307,7 +341,13 @@ export function TaskDialog({
       cancelled = true
     }
   }, [task])
-  const [form, setForm] = useState<FormState>(() => toForm(task, settings))
+  const startPreset = task ? undefined : settings.taskPresets.find((p) => p.id === presetId)
+  const [form, setForm] = useState<FormState>(() => {
+    const base = toForm(task, settings)
+    return startPreset ? withPreset(base, startPreset, settings) : base
+  })
+  const [appliedPresetId, setAppliedPresetId] = useState(startPreset?.id ?? '')
+  const [presetName, setPresetName] = useState<string | null>(null)
   const [linkedTask, setLinkedTask] = useState<Task | null>(null)
   const [tab, setTab] = useState<TabKey>('brief')
   const [branchInfo, setBranchInfo] = useState<{ branches: string[]; current?: string }>({
@@ -335,6 +375,50 @@ export function TaskDialog({
 
   const patch = (changes: Partial<FormState>): void =>
     setForm((current) => ({ ...current, ...changes }))
+
+  function applyPreset(id: string): void {
+    const previous = settings.taskPresets.find((p) => p.id === appliedPresetId)
+    const untouched = previous
+      ? matchesPreset(formPresetFields(form), previous, settings)
+      : !form.title.trim() && !form.description.trim()
+    const next = settings.taskPresets.find((p) => p.id === id)
+    if (!next) {
+      // Back to None: clear only what the previous preset put there.
+      if (previous && untouched)
+        setForm(toForm(null, { ...settings, defaultRepoPath: form.repoPath }))
+      setAppliedPresetId('')
+      return
+    }
+    const typed = (form.title.trim() || form.description.trim()) && !untouched
+    if (typed && !window.confirm("Replace what you've typed with this preset?")) return
+    setForm((current) => withPreset(current, next, settings))
+    setAppliedPresetId(next.id)
+  }
+
+  async function savePreset(): Promise<void> {
+    const name = (presetName ?? '').trim()
+    if (!name) return
+    const existing = settings.taskPresets.find(
+      (p) => p.name.trim().toLowerCase() === name.toLowerCase()
+    )
+    if (existing && !window.confirm(`Replace the existing "${existing.name}" preset?`)) return
+    if (!existing && !canAddPreset(settings.taskPresets)) {
+      window.alert('This workspace already has the maximum number of presets.')
+      return
+    }
+    const made = presetFromFields(
+      existing?.id ?? newPresetId(settings.taskPresets, name),
+      name,
+      formPresetFields(form)
+    )
+    await onSavePresets(
+      existing
+        ? settings.taskPresets.map((p) => (p.id === existing.id ? made : p))
+        : [...settings.taskPresets, made]
+    )
+    setAppliedPresetId(made.id)
+    setPresetName(null)
+  }
 
   const routedName = resolveTemplateFor(settings, {
     status: form.status,
@@ -461,9 +545,28 @@ export function TaskDialog({
                     <span className="truncate">{task.filePath}</span>
                   </>
                 ) : (
-                  <span className="font-[family-name:var(--font-ui)] text-[11.5px]">
-                    New task · saved to the board as a markdown file
-                  </span>
+                  <>
+                    <span className="font-[family-name:var(--font-ui)] text-[11.5px]">
+                      New task · saved to the board as a markdown file
+                    </span>
+                    {settings.taskPresets.length > 0 ? (
+                      <span className="ml-2 w-44 font-[family-name:var(--font-ui)]">
+                        <Select
+                          compact
+                          aria-label="Preset"
+                          value={appliedPresetId}
+                          onChange={(event) => applyPreset(event.target.value)}
+                        >
+                          <option value="">Preset: none</option>
+                          {settings.taskPresets.map((preset) => (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </span>
+                    ) : null}
+                  </>
                 )}
                 {form.useWorktree ? (
                   <span className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded-md bg-accent/15 px-1.5 text-[var(--color-accent-text)]">
@@ -994,7 +1097,48 @@ export function TaskDialog({
                   </Icon>
                 </button>
               </div>
-            ) : null}
+            ) : presetName === null ? (
+              <button
+                type="button"
+                className={`${GHOST_BTN} h-7`}
+                onClick={() => setPresetName('')}
+              >
+                Save as preset…
+              </button>
+            ) : (
+              <form
+                className="flex items-center gap-1.5"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void savePreset()
+                }}
+              >
+                <input
+                  autoFocus
+                  aria-label="Preset name"
+                  placeholder="Preset name"
+                  value={presetName}
+                  onChange={(event) => setPresetName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.stopPropagation()
+                      setPresetName(null)
+                    }
+                  }}
+                  className="h-7 w-40 rounded-[7px] border border-edge-strong bg-chrome px-2 text-[12px] text-ink outline-none focus:border-accent"
+                />
+                <button type="submit" disabled={!presetName.trim()} className={`${GHOST_BTN} h-7`}>
+                  Save preset
+                </button>
+                <button
+                  type="button"
+                  className={`${GHOST_BTN} h-7`}
+                  onClick={() => setPresetName(null)}
+                >
+                  Cancel
+                </button>
+              </form>
+            )}
             <div className="flex-1" />
             <button
               type="button"

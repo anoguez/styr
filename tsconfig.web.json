@@ -17,6 +17,7 @@
     "src/core/handoff.ts",
     "src/core/askAgent.ts",
     "src/core/derivedTask.ts",
+    "src/core/taskPreset.ts",
     "src/core/diagnostics.ts"
   ],
   "compilerOptions": {
