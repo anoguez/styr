@@ -34,4 +34,17 @@ const readme = readFileSync(README_FILE, 'utf8')
 
 if (!BADGE_PATTERN.test(readme)) throw new Error(`Test coverage badge not found in ${README_FILE}`)
 
-writeFileSync(README_FILE, readme.replace(BADGE_PATTERN, badge))
+// `--check` fails when the README badge has drifted from the measured coverage, so CI makes the
+// author refresh it (within half a point, so platform noise does not flake CI) (`yarn coverage:badge`) instead of it going stale.
+if (process.argv.includes('--check')) {
+  const current = readme.match(BADGE_PATTERN)[0]
+  const recorded = Number(current.match(/coverage-([\d.]+)%25/)[1])
+  if (Math.abs(recorded - coverage) > 0.5) {
+    console.error(
+      `README coverage badge is stale.\n  found:    ${current}\n  expected: ${badge}\nRun \`yarn coverage:badge\` and commit README.md.`
+    )
+    process.exit(1)
+  }
+} else {
+  writeFileSync(README_FILE, readme.replace(BADGE_PATTERN, badge))
+}

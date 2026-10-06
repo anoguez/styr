@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "coverage:badge": "yarn test:coverage && node scripts/update-coverage-badge.mjs",
+    "coverage:check": "node scripts/update-coverage-badge.mjs --check",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
