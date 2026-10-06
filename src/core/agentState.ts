@@ -7,7 +7,7 @@ export const AGENT_STATE_LABELS: Record<AgentState, string> = {
   ready: 'Ready',
   working: 'Working',
   waiting: 'Waiting on you',
-  idle: 'Finished',
+  idle: 'Idle',
   exited: 'Stopped'
 }
 

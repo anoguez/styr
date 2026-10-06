@@ -478,6 +478,8 @@ Launches register Claude Code hooks via `--settings` (documented as
 loading _additional_ settings, so the user's own hooks survive). Hooks write
 `<workspace>/.styr/agents/<taskId>.json`; a chokidar watcher re-reads and broadcasts.
 
+`idle` (label "Idle", from `Stop`) means the turn ended with the session still open — never "task complete", which is the task's status. Do not label it Finished.
+
 `SessionStart` maps to `ready`, never `working` — a resume fires it with no turn in flight, and
 calling that "Working" is a lie the user will notice immediately. `PreToolUse` is registered purely
 so state recovers from `waiting` once a permission prompt is answered; without it a session stays

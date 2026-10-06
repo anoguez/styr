@@ -1430,7 +1430,7 @@ export function SettingsDialog({
                     </div>
                     <Hint>
                       Column colours also tint agent states: In Progress is Working, In Review is
-                      Waiting on you, Done is Finished.
+                      Waiting on you, Done is Idle.
                     </Hint>
                   </div>
 
