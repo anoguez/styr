@@ -4,11 +4,11 @@ import { codexCommand } from './codex.js'
 const settings = { codexCommand: 'codex', codexApprovalReviewer: 'user' as const }
 
 describe('codexCommand', () => {
-  it('starts on the shared daemon with a workspace-write sandbox and on-request approvals', () => {
+  it('starts on the shared daemon with a workspace-write sandbox and on-request -c sandbox_workspace_write.network_access=true approvals', () => {
     expect(
       codexCommand(settings, { sessionId: 'id', resume: false, cwd: '/work/styr', prompt: '"$P"' })
     ).toBe(
-      `codex --remote unix:// --cd '/work/styr' --sandbox workspace-write --ask-for-approval on-request "$P"`
+      `codex --remote unix:// --cd '/work/styr' --sandbox workspace-write --ask-for-approval on-request -c sandbox_workspace_write.network_access=true "$P"`
     )
   })
 
@@ -33,7 +33,9 @@ describe('codexCommand', () => {
       { ...settings, codexApprovalReviewer: 'auto_review' },
       { sessionId: 'id', resume: false, cwd: '/w', prompt: 'Implement the task' }
     )
-    expect(command).toBe(`codex --remote unix:// --cd '/w' --approve-for-me Implement the task`)
+    expect(command).toBe(
+      `codex --remote unix:// --cd '/w' --approve-for-me -c sandbox_workspace_write.network_access=true Implement the task`
+    )
     expect(command).not.toContain('--sandbox')
   })
 
@@ -47,7 +49,7 @@ describe('codexCommand', () => {
         prompt: '"$P"'
       })
     ).toBe(
-      `codex fork --remote unix:// --cd '/w' --sandbox workspace-write --ask-for-approval on-request src-thread "$P"`
+      `codex fork --remote unix:// --cd '/w' --sandbox workspace-write --ask-for-approval on-request -c sandbox_workspace_write.network_access=true src-thread "$P"`
     )
   })
 })

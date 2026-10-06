@@ -192,6 +192,10 @@ Resumes bind the stored id up front. `prepareCodex` runs before anything is writ
 launch (CLI < 0.159.3, daemon missing/older) with an error naming the fix. The control socket
 speaks WebSocket, not raw JSON lines, so `codex app-server proxy` is of no use as a transport.
 
+Fresh and fork launches pass `-c sandbox_workspace_write.network_access=true`: the sandbox has network off
+by default, which made `gh` report an invalid token and `git push` fail. Resumed threads keep the sandbox
+they started with. Whether the daemon honours the override is unverified against a real daemon.
+
 The MCP install command for Codex sets `STYR_MCP_AUTHOR=codex` so board notes are attributed.
 
 ## Launching Claude
