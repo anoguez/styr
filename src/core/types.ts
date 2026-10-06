@@ -124,6 +124,7 @@ export interface OrchestrationSummary {
   capacity: OrchestrationCapacity
   eligible: OrchestrationCapacity
   optedOut: number
+  blocked: number
   missingWorkingDir: number
   idleSessions: number
 }
@@ -182,6 +183,8 @@ export interface Task {
   /** Branch the worktree starts from; unset means the main checkout's current branch. */
   baseBranch?: string
   worktreePath?: string
+  /** Ids of same-workspace tasks that must be Done first. Whether the task is blocked is derived. */
+  blockedBy: string[]
   contextFiles: string[]
   promptTemplateId?: string
   provider?: 'claude' | 'codex'

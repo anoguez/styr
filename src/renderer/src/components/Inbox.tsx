@@ -44,7 +44,7 @@ const STATUS_DOT: Record<TaskStatus, string> = {
 
 function itemDot(item: InboxItem): string {
   if (item.agent) return AGENT_TONE[item.agent.state]
-  if (item.kind === 'spec') return 'text-[var(--color-col-review-text)]'
+  if (item.kind === 'spec' || item.kind === 'blocked') return 'text-[var(--color-col-review-text)]'
   if (item.kind === 'done') return 'text-[var(--color-col-done)]'
   return 'text-edge-strong'
 }
@@ -52,6 +52,7 @@ function itemDot(item: InboxItem): string {
 function itemStatus(item: InboxItem): string {
   if (item.agent) return AGENT_STATE_LABELS[item.agent.state]
   if (item.kind === 'spec') return 'Needs a spec'
+  if (item.kind === 'blocked') return 'Blocked'
   if (item.kind === 'done') return 'Done'
   return 'Idle'
 }
@@ -107,6 +108,11 @@ function actionsFor(
       }
     case 'finished':
       return { primary: terminal, secondary: [open] }
+    case 'blocked':
+      return {
+        primary: { label: 'Open task', run: () => h.onOpen(task) },
+        secondary: [{ label: 'Start anyway', run: () => h.onLaunch(task) }]
+      }
     case 'queued':
     case 'idle':
       return {
@@ -342,18 +348,24 @@ function Detail({
  */
 export function Inbox({
   tasks,
+  allTasks,
   agents,
   queued,
   diffStats,
   ...handlers
 }: {
   tasks: Task[]
+  /** Every task in the workspace, for looking blockers up. */
+  allTasks: Task[]
   agents: Map<string, AgentStatus>
   /** Orchestrate queue positions, 1-based, by task id. */
   queued: Map<string, number>
   diffStats: Map<string, DiffStat>
 } & InboxHandlers): ReactNode {
-  const groups = useMemo(() => buildInbox(tasks, agents, queued), [tasks, agents, queued])
+  const groups = useMemo(
+    () => buildInbox(tasks, agents, queued, allTasks),
+    [tasks, agents, queued, allTasks]
+  )
   const [filter, setFilter] = useState<InboxGroup | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 

@@ -283,6 +283,7 @@ function summarisePlan(): OrchestrationSummary {
     capacity: plan.capacity,
     eligible: plan.eligible,
     optedOut: plan.optedOut,
+    blocked: plan.blocked,
     missingWorkingDir: plan.missingWorkingDir,
     idleSessions: plan.idleSessions
   }

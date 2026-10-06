@@ -9,6 +9,7 @@ function task(id: string, extra: Partial<Task> = {}): Task {
     title: id,
     status: 'backlog',
     readiness: 'ready',
+    blockedBy: [],
     updatedAt: '2026-01-01T00:00:00Z',
     ...extra
   } as unknown as Task
@@ -52,6 +53,38 @@ describe('buildInbox', () => {
     )
     expect(inbox.next.map((i) => i.kind).sort()).toEqual(['idle', 'queued', 'resumable'])
     expect(inbox.next.find((i) => i.task.id === 'Q')?.reason).toBe('Queued #1 for Orchestrate')
+  })
+
+  it('puts a blocked task in Up next after the others, and frees it once the blocker is Done', () => {
+    const blocked = task('B', { blockedBy: ['A'] })
+    const free = task('F')
+    const held = buildInbox([task('A', { status: 'in_progress' }), blocked, free], new Map())
+    expect(ids(held.next)).toEqual(['A', 'F', 'B'])
+    const item = held.next.find((i) => i.task.id === 'B')
+    expect(item).toMatchObject({ kind: 'blocked', blockers: ['A'], reason: 'Blocked by A' })
+
+    const freed = buildInbox([task('A', { status: 'done' }), blocked], new Map())
+    expect(freed.next.map((i) => i.kind)).toEqual(['idle'])
+  })
+
+  it('looks blockers up in the full list when the board shows fewer tasks', () => {
+    const blocked = task('B', { blockedBy: ['A'] })
+    const inbox = buildInbox([blocked], new Map(), new Map(), [
+      task('A', { status: 'in_progress' }),
+      blocked
+    ])
+    expect(inbox.next[0]?.kind).toBe('blocked')
+  })
+
+  it('still asks for a spec on a blocked task that has none', () => {
+    const inbox = buildInbox(
+      [
+        task('A', { status: 'in_progress' }),
+        task('B', { blockedBy: ['A'], readiness: 'needs_spec' })
+      ],
+      new Map()
+    )
+    expect(inbox.needs.map((i) => i.kind)).toEqual(['spec'])
   })
 
   it('lists done tasks but drops archived ones', () => {
