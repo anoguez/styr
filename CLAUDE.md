@@ -597,6 +597,19 @@ wins when both exist, and serialising always writes the marker.
 `renderActivity` writes those back bare. That is what makes a hand-written note survive a later
 programmatic write.
 
+## Ask agent
+
+"Ask agent" (✦ button, selection toolbar, `terminalAskAgent`) opens `AskPrompt` first; nothing is
+created until a question is sent. The terminal context is captured when the prompt opens, because
+focusing its field can clear the xterm selection. In a shell it creates a `ready`, `ask`-tagged,
+non-worktree task titled from the question (`taskFromTerminal`) and launches it. In a task session
+`terminal:askFork` (`askFork` in `ipc.ts`) creates the same kind of task but starts its agent as a
+copy of the source chat (`forkFrom` on `planLaunch`/`AgentProvider.buildCommand`: Claude
+`--resume <src> --fork-session --session-id <new>`, Codex `codex fork`), in the source's own
+directory since Claude keys transcripts by directory. It returns null when the source has no saved
+chat and the renderer falls back to the shell behaviour. The Codex fork path reuses
+`ThreadBindings.expect` and is untested against a real daemon.
+
 ## Command palette
 
 `CommandPalette.tsx` renders a flat, pre-ranked list; `App.tsx` owns the entries. Every entry is a

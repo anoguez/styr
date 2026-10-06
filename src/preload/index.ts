@@ -136,6 +136,8 @@ const api = {
     createPr: (taskId: string): Promise<void> => ipcRenderer.invoke('terminal:createPr', taskId),
     askReview: (taskId: string): Promise<TerminalSessionInfo> =>
       ipcRenderer.invoke('terminal:askReview', taskId),
+    askFork: (sessionId: string, question: string): Promise<TerminalSessionInfo | null> =>
+      ipcRenderer.invoke('terminal:askFork', sessionId, question),
     handOff: (
       sessionId: string,
       output: string

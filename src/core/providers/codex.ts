@@ -25,6 +25,8 @@ function transcript(id: string, root = homedir()): string | undefined {
 export interface CodexCommandInput {
   sessionId: string
   resume: boolean
+  /** Fork this thread into a new one. The TUI creates the new thread, so its id is learned later. */
+  forkFrom?: string
   /** The directory the thread works in. A remote TUI does not inherit the shell's. */
   cwd: string
   prompt?: string
@@ -37,7 +39,7 @@ export interface CodexCommandInput {
  */
 export function codexCommand(
   settings: Pick<Settings, 'codexCommand' | 'codexApprovalReviewer'>,
-  { sessionId, resume, cwd, prompt }: CodexCommandInput
+  { sessionId, resume, forkFrom, cwd, prompt }: CodexCommandInput
 ): string {
   const daemonArgs = `--remote unix:// --cd '${shellQuote(cwd)}'`
   if (resume)
@@ -48,6 +50,8 @@ export function codexCommand(
     settings.codexApprovalReviewer === 'auto_review'
       ? '--approve-for-me'
       : '--sandbox workspace-write --ask-for-approval on-request'
+  if (forkFrom)
+    return `${settings.codexCommand} fork ${daemonArgs} ${policy} ${forkFrom}${prompt ? ` ${prompt}` : ''}`
   return `${settings.codexCommand} ${daemonArgs} ${policy} ${prompt ?? `''`}`
 }
 
@@ -55,8 +59,8 @@ export const codexProvider: AgentProvider = {
   id: 'codex',
   label: 'Codex',
   newSessionId: () => randomUUID(),
-  buildCommand({ settings, sessionId, resume, cwd, prompt }) {
-    return codexCommand(settings, { sessionId, resume, cwd, prompt })
+  buildCommand({ settings, sessionId, resume, forkFrom, cwd, prompt }) {
+    return codexCommand(settings, { sessionId, resume, forkFrom, cwd, prompt })
   },
   sessionExists: (id, root) => transcript(id, root) !== undefined,
   sessionTime: (id, root) => {

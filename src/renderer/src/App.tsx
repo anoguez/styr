@@ -21,6 +21,7 @@ import { ArchiveDialog } from './components/ArchiveDialog.js'
 import { ChangesDialog } from './components/ChangesDialog.js'
 import { Board } from './components/Board.js'
 import { Inbox } from './components/Inbox.js'
+import type { TerminalTaskRequest } from './components/TerminalSurface.js'
 import { buildInbox } from '@core/inbox.js'
 import { OrchestrateDialog } from './components/OrchestrateDialog.js'
 import { CommandPalette, type CommandEntry } from './components/CommandPalette.js'
@@ -221,28 +222,15 @@ export default function App(): ReactNode {
     [adoptSession]
   )
 
-  /** Output the user wants an agent to look at becomes a Backlog task that carries it. */
-  const createTaskFromTerminal = useCallback(
-    async (request: { title: string; description: string }): Promise<string> => {
-      if (!settings) throw new Error('Settings have not loaded yet')
-      const task = await window.api.tasks.create({
-        title: request.title,
-        description: request.description,
-        status: 'backlog',
-        priority: 'medium',
-        readiness: 'needs_spec',
-        tags: [],
-        repoPath: settings.defaultRepoPath.trim() || undefined,
-        useWorktree: settings.taskDefaults.useWorktree,
-        // Not orchestrated: a task made from a click in a terminal should wait for the user, not be
-        // picked up and started by the next Orchestrate run.
-        orchestrate: false,
-        contextFiles: [],
-        provider: settings.defaultProvider
-      })
-      return task.id
+  /** Ask in a copy of a task session's chat; false when that session has no saved chat to copy. */
+  const askFork = useCallback(
+    async (sessionId: string, question: string): Promise<boolean> => {
+      const session = await window.api.terminal.askFork(sessionId, question)
+      if (!session) return false
+      adoptSession(session)
+      return true
     },
-    [settings]
+    [adoptSession]
   )
 
   const launchAgent = useCallback(
@@ -256,6 +244,32 @@ export default function App(): ReactNode {
       }
     },
     [adoptSession]
+  )
+
+  /** Output the user wants an agent to look at becomes a Backlog task that carries it. */
+  const createTaskFromTerminal = useCallback(
+    async (request: TerminalTaskRequest): Promise<string> => {
+      if (!settings) throw new Error('Settings have not loaded yet')
+      const task = await window.api.tasks.create({
+        title: request.title,
+        description: request.description,
+        status: 'backlog',
+        priority: 'medium',
+        readiness: request.ready ? 'ready' : 'needs_spec',
+        tags: request.tags ?? [],
+        repoPath: request.repoPath || settings.defaultRepoPath.trim() || undefined,
+        // A question needs no branch of its own.
+        useWorktree: request.launch ? false : settings.taskDefaults.useWorktree,
+        // Not orchestrated: a task made from a click in a terminal should wait for the user, not be
+        // picked up and started by the next Orchestrate run.
+        orchestrate: false,
+        contextFiles: [],
+        provider: settings.defaultProvider
+      })
+      if (request.launch) await launchAgent(task.id)
+      return task.id
+    },
+    [settings, launchAgent]
   )
 
   const activateTask = useCallback(
@@ -870,6 +884,7 @@ export default function App(): ReactNode {
                   taskTitles={taskTitles}
                   taskStates={taskStates}
                   onAskReview={askReview}
+                  onAskFork={askFork}
                   workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
                   onToggleExpand={() => setTerminalExpanded((open) => !open)}
                   onSelect={setActiveSession}

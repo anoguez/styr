@@ -13,7 +13,8 @@
     "src/core/inbox.ts",
     "src/core/diff.ts",
     "src/core/diffView.ts",
-    "src/core/handoff.ts"
+    "src/core/handoff.ts",
+    "src/core/askAgent.ts"
   ],
   "compilerOptions": {
     "composite": true,

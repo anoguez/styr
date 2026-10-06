@@ -1,3 +1,5 @@
+import { askTitle } from '@core/askAgent.js'
+
 export type TerminalTaskKind = 'ask' | 'explain' | 'fix' | 'output'
 
 export interface TerminalContext {
@@ -6,6 +8,8 @@ export interface TerminalContext {
   exitCode?: number
   /** What the user selected, when they did; otherwise the command's output. */
   text: string
+  /** What the user typed into the Ask agent prompt. Only the `ask` kind uses it. */
+  question?: string
 }
 
 const MAX_TITLE = 80
@@ -34,23 +38,27 @@ export function firstLine(text: string): string {
 export function taskFromTerminal(
   kind: TerminalTaskKind,
   context: TerminalContext
-): { title: string; description: string } {
+): { title: string; description: string; tags?: string[]; ready?: boolean } {
   const subject = context.command ? `\`${context.command}\`` : 'terminal output'
   const verbs: Record<TerminalTaskKind, string> = {
     fix: `Fix: ${context.command ?? 'terminal failure'}`,
     explain: `Explain: ${context.command ?? 'terminal output'}`,
-    ask: `Look at ${context.command ?? 'terminal output'}`,
+    ask: askTitle(context.question ?? '', `Ask: ${context.command ?? 'terminal'}`),
     output: `Terminal: ${context.command ?? 'output'}`
   }
   const intro: Record<TerminalTaskKind, string> = {
     fix: `${subject} failed${context.exitCode === undefined ? '' : ` with exit code ${context.exitCode}`}. Find the cause and fix it.`,
     explain: `Explain what ${subject} printed and what, if anything, needs to change.`,
-    ask: `Look at this terminal and tell me what is going on.`,
+    ask: context.question?.trim() || 'Look at this terminal and tell me what is going on.',
     output: `Output captured from the terminal.`
   }
   const lines = [intro[kind], '', `Directory: \`${context.cwd}\``]
   if (context.command) lines.push(`Command: \`${context.command}\``)
   if (context.exitCode !== undefined) lines.push(`Exit code: ${context.exitCode}`)
   lines.push('', '```', clip(context.text) || '(no output captured)', '```')
-  return { title: shortTitle(verbs[kind]), description: lines.join('\n') }
+  return {
+    title: shortTitle(verbs[kind]),
+    description: lines.join('\n'),
+    ...(kind === 'ask' ? { tags: ['ask'], ready: true } : {})
+  }
 }

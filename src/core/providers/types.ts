@@ -11,6 +11,8 @@ export interface ProviderCommandInput {
   resume: boolean
   /** Where the agent will run. Providers whose CLI cannot infer it from the shell need it. */
   cwd: string
+  /** Start `sessionId` as a copy of this conversation instead of a blank one (an Ask fork). */
+  forkFrom?: string
   /** A shell expression that expands to the prompt, or undefined to submit nothing. */
   prompt?: string
 }

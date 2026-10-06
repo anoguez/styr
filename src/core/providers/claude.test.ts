@@ -35,3 +35,23 @@ describe('claude approval mode', () => {
     expect(settingsSchema.shape.claudeApprovalMode.parse(undefined)).toBe('user')
   })
 })
+
+describe('claude fork', () => {
+  it('resumes the source as a copy under the new session id', () => {
+    const command = claudeProvider.buildCommand({
+      settings: {
+        storageDir: workspace,
+        activeWorkspaceId: 'default',
+        claudeCommand: 'claude',
+        claudeApprovalMode: 'user'
+      } as never,
+      taskId: 'T',
+      sessionId: 'new-id',
+      resume: false,
+      forkFrom: 'src-id',
+      cwd: '/w',
+      prompt: '"$P"'
+    })
+    expect(command).toMatch(/--resume src-id --fork-session --session-id new-id "\$P"$/)
+  })
+})
