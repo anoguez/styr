@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/anoguez/styr/compare/v0.18.0...v0.18.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* label the idle agent state Idle, not Finished ([#78](https://github.com/anoguez/styr/issues/78)) ([40a526a](https://github.com/anoguez/styr/commit/40a526aaf6240c3f8b3c672eb9c30ab34486b743))
+
 ## [0.18.0](https://github.com/anoguez/styr/compare/v0.17.1...v0.18.0) (2026-10-06)
 
 
