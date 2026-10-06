@@ -43,7 +43,7 @@ Sessions carry `workspaceId`; anything that finds "the session of task X" must m
 `<workspace>:<task>`). The renderer's board, titles and agent map describe only the active
 workspace, so `sessionLabel` and the tab dots check the session's workspace before using them.
 
-`switchWorkspace` (`ipc.ts`) saves the preference and `repoint()`s: close the index, restart both
+`core/workspaceSession.ts` holds the switch / delete / after-settings-save ordering behind injected ports (tested with a call log), and `buildTrayModel`, the pure tray list and label policy; `ipc.ts` only wires the real ports. `switchWorkspace` saves the preference and `repoint()`s: close the index, restart both
 watchers, re-sync. It is synchronous so quick switches apply in order. `settings:save` ignores the
 `activeWorkspaceId` a Settings draft carries — only a switch changes it, or a stale dialog would
 undo a workspace created or deleted since. The agents watcher covers every workspace's `agents/`
@@ -736,6 +736,11 @@ yarn build          # typechecks tsconfig.node.json + tsconfig.web.json, then bu
 
 CI runs all three on every PR. The pre-commit hook runs lint-staged (ESLint and Prettier on staged
 files) and the typecheck.
+
+The README coverage badge is refreshed by the pre-commit hook (`yarn coverage:badge`, staged
+automatically) and by the release workflow when release-please cuts a release. CI's
+`coverage:check` fails only when coverage falls more than half a point below the badge — a rise
+never fails.
 
 TypeScript 7 (`@typescript/native`) is the compiler; the `typescript` package name is the TS 6
 compatibility build (`@typescript/typescript6`), because typescript-eslint needs the compiler API
