@@ -60,28 +60,45 @@ export function branchLanding({ repoPath, key, baseBranch }: Checkout): Landing 
 
   const bases = [base, `origin/${base}`].filter((ref) => refExists(repoPath, ref))
   if (bases.length === 0) return undefined
-  let ahead = Math.min(...bases.map((ref) => countAhead(repoPath, ref, branch)))
+  // Everything below measures this one commit. The answer is computed from several git calls, and
+  // an agent committing in between used to mix "0 ahead" (old tip) with "has own commits" (new
+  // tip), which reads as a fast-forward merge and sent unlanded work to Done.
+  const tip = branchTip(repoPath, branch)
+  if (!tip) return undefined
+  let ahead = Infinity
   let landed = false
   for (const ref of bases) {
-    const count = countAhead(repoPath, ref, branch)
+    const count = countAhead(repoPath, ref, tip)
     ahead = Math.min(ahead, count)
-    if (count === 0 || contentLanded(repoPath, ref, branch)) landed = true
+    if (count === 0 || contentLanded(repoPath, ref, tip)) landed = true
   }
-  if (landed && ahead === 0 && !hasOwnCommits(repoPath, branch)) landed = false
+  if (landed && ahead === 0 && !hasOwnCommits(repoPath, branch, tip)) landed = false
+  // The branch moved while it was being measured: whatever was decided describes a state that no
+  // longer exists, so say "not landed" and let the next pass look again.
+  if (landed && branchTip(repoPath, branch) !== tip) landed = false
   return { branch, base, ahead, landed }
+}
+
+function branchTip(repoPath: string, branch: string): string | undefined {
+  try {
+    return git(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`], repoPath)
+  } catch {
+    return undefined
+  }
 }
 
 /**
  * A fresh branch with no commits is trivially "on the base"; that is not landed work. The reflog
  * remembers the commit the branch was created at, so a tip that never moved is told apart from one
- * that was fast-forward merged. Without a reflog the branch is not assumed to have landed.
+ * that was fast-forward merged. Without a reflog the branch is not assumed to have landed. The
+ * newest entry must be the tip being measured, or the reflog describes a different state.
  */
-function hasOwnCommits(repoPath: string, branch: string): boolean {
+function hasOwnCommits(repoPath: string, branch: string, tip: string): boolean {
   try {
     const entries = git(['reflog', 'show', '--format=%H', `refs/heads/${branch}`], repoPath)
       .split('\n')
       .filter(Boolean)
-    return entries.length > 1 && entries[0] !== entries[entries.length - 1]
+    return entries.length > 1 && entries[0] === tip && entries[0] !== entries[entries.length - 1]
   } catch {
     return false
   }
