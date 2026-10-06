@@ -6,7 +6,7 @@ import {
   type TerminalPalette,
   type ThemeSettings
 } from '@core/types.js'
-import { backgroundGradient, legibleOn, onColor, surfaceRamp } from '../lib/palette.js'
+import { backgroundGradient, isLightBase, legibleOn, onColor, surfaceRamp } from '../lib/palette.js'
 
 export const UI_FONTS: { id: string; label: string; stack: string }[] = [
   {
@@ -133,6 +133,17 @@ export function useTheme(theme: ThemeSettings): void {
     root.style.setProperty('--color-faint', ramp.faint)
     root.style.setProperty('--color-accent', theme.accent)
     root.style.setProperty('--color-on-accent', onColor(theme.accent))
+    // The accent tints are written for dark surfaces (mixed toward white); on a light theme they
+    // mix toward the ink instead so agent actions stay readable.
+    const toward = isLightBase(theme.base) ? 'black' : 'white'
+    root.style.setProperty(
+      '--color-accent-ink',
+      `color-mix(in oklab, var(--color-accent) ${toward === 'white' ? 35 : 60}%, ${toward})`
+    )
+    root.style.setProperty(
+      '--color-accent-soft',
+      `color-mix(in oklab, var(--color-accent) ${toward === 'white' ? 70 : 85}%, ${toward})`
+    )
     root.style.setProperty('--color-accent-text', legibleOn(theme.accent, ramp.surface))
     for (const status of TASK_STATUSES) {
       const key = status === 'in_progress' ? 'progress' : status === 'in_review' ? 'review' : status
