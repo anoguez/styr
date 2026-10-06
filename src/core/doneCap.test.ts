@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyDoneCap } from './doneCap.js'
+import { applyDoneCap, sortDoneNewestFirst } from './doneCap.js'
 import type { Task } from './types.js'
 
 const NOW = Date.parse('2026-10-03T00:00:00Z')
@@ -43,5 +43,24 @@ describe('applyDoneCap', () => {
       'a',
       'b'
     ])
+  })
+})
+
+describe('sortDoneNewestFirst', () => {
+  it('orders by completion date, newest first, without mutating', () => {
+    const tasks = [done('a', 5), done('b', 1), done('c', 3)]
+    expect(ids(sortDoneNewestFirst(tasks))).toEqual(['b', 'c', 'a'])
+    expect(ids(tasks)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('falls back to updatedAt when doneAt is missing', () => {
+    const old = { id: 'old', updatedAt: '2026-01-01T00:00:00Z' } as unknown as Task
+    expect(ids(sortDoneNewestFirst([old, done('new', 1)]))).toEqual(['new', 'old'])
+  })
+
+  it('breaks ties on id, descending', () => {
+    const a = { id: 'TASK-1', doneAt: '2026-10-01T00:00:00Z' } as unknown as Task
+    const b = { id: 'TASK-2', doneAt: '2026-10-01T00:00:00Z' } as unknown as Task
+    expect(ids(sortDoneNewestFirst([a, b]))).toEqual(['TASK-2', 'TASK-1'])
   })
 })
