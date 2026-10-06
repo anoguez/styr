@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AGENT_STATE_LABELS, isAgentArchived, type AgentState } from '@core/agentState.js'
+import { openTaskCounts } from '@core/boardCounts.js'
 import { sortColumn } from '@core/boardOrder.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { commandForEvent, SHORTCUT_LABELS, shortcutHint } from '@core/shortcuts.js'
@@ -175,10 +176,7 @@ export default function App(): ReactNode {
 
   const counts = useMemo(
     () => ({
-      total: Object.values(board).reduce((sum, list) => sum + list.length, 0),
-      needsSpec: Object.values(board)
-        .flat()
-        .filter((task) => task.readiness === 'needs_spec').length,
+      ...openTaskCounts(board),
       waiting: agentRows.filter((row) => row.agent?.state === 'waiting').length,
       working: agentRows.filter((row) => row.agent?.state === 'working').length
     }),
