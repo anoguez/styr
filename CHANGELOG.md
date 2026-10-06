@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/anoguez/styr/compare/v0.17.0...v0.17.1) (2026-10-06)
+
+
+### Performance
+
+* stop re-checking landed worktrees on every task write; add Performance panel ([#61](https://github.com/anoguez/styr/issues/61)) ([4cc2daf](https://github.com/anoguez/styr/commit/4cc2daff8914e89847089d8112675958133d6239))
+
 ## [0.17.0](https://github.com/anoguez/styr/compare/v0.16.0...v0.17.0) (2026-10-06)
 
 
