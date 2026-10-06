@@ -143,6 +143,8 @@ const api = {
       ipcRenderer.invoke('terminal:handOff', sessionId, output),
     gitContext: (path: string): Promise<{ root: string | null; branch: string | null }> =>
       ipcRenderer.invoke('terminal:gitContext', path),
+    openInCode: (path: string): Promise<'code' | 'folder' | 'failed'> =>
+      ipcRenderer.invoke('terminal:openInCode', path),
     revealDirectory: (path: string): Promise<string> =>
       ipcRenderer.invoke('terminal:revealDirectory', path),
     listDirectories: (

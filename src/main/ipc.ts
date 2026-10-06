@@ -770,6 +770,14 @@ export function registerIpcHandlers(): void {
     const root = findGitRoot(path)
     return { root: root ?? null, branch: (root && readGitBranch(root)) ?? null }
   })
+  ipcMain.handle('terminal:openInCode', async (_event, path: string) => {
+    const opened = await new Promise<boolean>((resolve) =>
+      execFile('open', ['-a', 'Visual Studio Code', path], (error) => resolve(!error))
+    )
+    if (opened) return 'code'
+    // VS Code is optional, so fall back to the folder rather than failing.
+    return (await shell.openPath(path)) ? 'failed' : 'folder'
+  })
   ipcMain.handle('terminal:revealDirectory', (_event, path: string) => openPathWith(path))
   ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
 }
