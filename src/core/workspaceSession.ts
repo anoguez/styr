@@ -112,19 +112,19 @@ export function buildTrayModel(
   const active = workspaces.find((workspace) => workspace.id === settings.activeWorkspaceId)
   const label = workspaces.length > 1 ? active?.name : undefined
   const byId = new Map(tasks.map((task) => [task.id, task]))
-  const listed = statuses
-    .filter((status) => {
-      const task = byId.get(status.taskId)
-      return task ? !isAgentArchived(task) : false
-    })
-    .map((status) => ({
+  const listed: AgentStatus[] = []
+  const titles = new Map<string, string>()
+  for (const status of statuses) {
+    const task = byId.get(status.taskId)
+    if (!task || isAgentArchived(task)) continue
+    const tagged = {
       ...status,
       workspaceId: settings.activeWorkspaceId,
       ...(label ? { workspaceName: label } : {})
-    }))
-  const titles = new Map(
-    listed.map((status) => [agentKey(status), byId.get(status.taskId)?.title ?? status.taskId])
-  )
+    }
+    listed.push(tagged)
+    titles.set(agentKey(tagged), task.title)
+  }
   for (const [key, title] of background.titles) titles.set(key, title)
   return { statuses: [...listed, ...background.statuses], titles }
 }
