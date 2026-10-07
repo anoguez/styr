@@ -125,28 +125,11 @@ export function StatusBar({
   return (
     <footer className="flex h-[26px] shrink-0 items-stretch border-t border-edge bg-chrome text-dim">
       <StatusItem
-        icon={ICONS.agents}
-        label="Agents"
-        active={agentsOpen}
-        count={agentCount}
-        badge={waitingCount}
-        title={
-          waitingCount > 0
-            ? `${waitingCount} agent${waitingCount === 1 ? '' : 's'} waiting on you`
-            : withKeys('Toggle the agents sidebar', 'toggleAgents')
-        }
-        onClick={onToggleAgents}
+        icon={ICONS.settings}
+        label="Settings"
+        title={withKeys('Settings', 'settings')}
+        onClick={onOpenSettings}
       />
-      <StatusItem
-        icon={ICONS.terminal}
-        label="Terminal"
-        active={terminalOpen}
-        count={sessionCount}
-        title={withKeys('Toggle the terminal panel', 'toggleTerminal')}
-        onClick={onToggleTerminal}
-      />
-
-      <div className="flex-1" />
 
       <span className="flex items-center px-2.5 text-[11px] text-faint">{summary}</span>
 
@@ -160,11 +143,29 @@ export function StatusBar({
         />
       ) : null}
 
+      <div className="flex-1" />
+
       <StatusItem
-        icon={ICONS.settings}
-        label="Settings"
-        title={withKeys('Settings', 'settings')}
-        onClick={onOpenSettings}
+        icon={ICONS.terminal}
+        label="Terminal"
+        active={terminalOpen}
+        count={sessionCount}
+        title={withKeys('Toggle the terminal panel', 'toggleTerminal')}
+        onClick={onToggleTerminal}
+      />
+
+      <StatusItem
+        icon={ICONS.agents}
+        label="Agents"
+        active={agentsOpen}
+        count={agentCount}
+        badge={waitingCount}
+        title={
+          waitingCount > 0
+            ? `${waitingCount} agent${waitingCount === 1 ? '' : 's'} waiting on you`
+            : withKeys('Toggle the agents sidebar', 'toggleAgents')
+        }
+        onClick={onToggleAgents}
       />
     </footer>
   )

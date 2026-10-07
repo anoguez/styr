@@ -720,7 +720,7 @@ export default function App(): ReactNode {
               </span>
               <input
                 ref={searchRef}
-                className={`${inputClass} py-1.5 pl-8 pr-12`}
+                className={`${inputClass} h-7 py-0 pl-8 pr-12`}
                 value={query}
                 placeholder="Search tasks"
                 onChange={(event) => setQuery(event.target.value)}
@@ -735,7 +735,7 @@ export default function App(): ReactNode {
                   ✕
                 </button>
               ) : (
-                <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-edge-strong px-1 py-[1px] font-mono text-[10px] text-faint">
+                <kbd className="pointer-events-none absolute right-2 top-1/2 inline-flex h-[18px] -translate-y-1/2 items-center rounded border border-edge-strong px-[5px] font-mono text-[10.5px] text-faint">
                   ⌘F
                 </kbd>
               )}
