@@ -304,6 +304,8 @@ function ContextBar({
 
       <span className="flex-1" />
 
+      {usage}
+
       {fresh ? (
         <span className="hidden items-center gap-2.5 text-[11.5px] text-faint @md:flex">
           {askHint ? (
@@ -399,7 +401,6 @@ function ContextBar({
           Hand off
         </button>
       ) : null}
-      {usage}
       <button
         type="button"
         title={`Ask agent about this terminal${askHint ? ` (${askHint})` : ''}`}
