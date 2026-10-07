@@ -298,7 +298,15 @@ export function stripLegacyWorkspaceKeys(): void {
 export function persistSettings(change: SettingsChange): void {
   const current = loadSettings()
   const global = { ...change.global, activeWorkspaceId: current.activeWorkspaceId }
-  const destination = settingsSchema.parse({ ...current, ...change.workspace, ...global })
+  // Auto-run is switched from the Dispatch dialog, never from a draft: an open dialog must not
+  // undo a Stop (or a limit pause) that happened since it was opened.
+  const keptAutoDispatch = loadSettings(change.workspaceId).autoDispatch
+  const destination = settingsSchema.parse({
+    ...current,
+    ...change.workspace,
+    autoDispatch: keptAutoDispatch,
+    ...global
+  })
   if (resolveWorkspaceId(destination, change.workspaceId) !== change.workspaceId) {
     throw new Error('That workspace does not exist in the storage folder being saved.')
   }

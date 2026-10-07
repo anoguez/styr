@@ -2,7 +2,15 @@ import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Notification,
+  shell,
+  type OpenDialogOptions
+} from 'electron'
 import { opensTextFiles, type AppInfo } from '@core/appFilter.js'
 import { pathsInWorkspace, pinWorkspace, workspaceDir } from '@core/config.js'
 import {
@@ -10,6 +18,7 @@ import {
   loadSettings,
   persistSettings,
   saveGlobalSettings,
+  saveWorkspaceSettings,
   settingsFilePath
 } from '@core/settingsStore.js'
 import { clearAgentStatus, readAllAgentStatuses, recordAgentEvent } from '@core/agentStore.js'
@@ -37,13 +46,17 @@ import {
   renameWorkspace,
   workspaceTaskCount
 } from '@core/workspaces.js'
+import { createAutoDispatch } from '@core/autoDispatchRunner.js'
 import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
 import {
   globalSettingsFor,
   workspaceSettingsFor,
   worktreeKey,
+  type AutoDispatchPause,
   type BrokenSettingsFile,
+  type OrchestrationLane,
   type OrchestrationSummary,
+  type TerminalSessionInfo,
   type WorkspaceOverview
 } from '@core/types.js'
 import {
@@ -176,6 +189,7 @@ export function notifyAgentsChanged(): void {
     readBackgroundAgents(settings, settings.activeWorkspaceId)
   )
   updateTray(model.statuses, model.titles)
+  autoDispatch.request()
 }
 
 let diffStatsRun: Promise<Record<string, DiffStat>> | undefined
@@ -217,6 +231,7 @@ export function notifyTasksChanged(): void {
   observeTasks(queryTasks())
   recordNotifyDuration(performance.now() - started)
   broadcast('tasks:changed')
+  autoDispatch.request()
 }
 
 const lifecycle = createSessionLifecycle({
@@ -257,7 +272,7 @@ const lifecycle = createSessionLifecycle({
 
 const launchSessionForTask = lifecycle.startForTask
 
-function buildPlan(): OrchestrationPlan {
+function buildPlan(skip?: ReadonlySet<string>): OrchestrationPlan {
   const active = loadSettings().activeWorkspaceId
   const liveTaskIds = new Set(
     listSessions()
@@ -266,7 +281,62 @@ function buildPlan(): OrchestrationPlan {
       .filter(Boolean) as string[]
   )
   const agents = new Map(agentStatuses().map((status) => [status.taskId, status.state]))
-  return planOrchestration(loadSettings(), queryTasks(), { liveTaskIds, agents })
+  return planOrchestration(loadSettings(), queryTasks(), { liveTaskIds, agents, skip })
+}
+
+/** Starts one planned task the way Dispatch does, whether a person or Auto-run asked. */
+function dispatchTask(task: Task, lane: OrchestrationLane): Promise<TerminalSessionInfo> {
+  return launchSessionForTask(task.id, {
+    withPrompt: true,
+    fresh: lane === 'review',
+    provider: providerForLane(loadSettings(), lane)
+  })
+}
+
+const PAUSE_MESSAGES: Record<AutoDispatchPause, string> = {
+  limit: 'Auto-run started too many tasks in an hour and has switched itself off.',
+  failures: 'Auto-run switched itself off after three launches in a row failed.'
+}
+
+/** The flag is a workspace setting, so it is written to the active workspace's own file. */
+function writeAutoDispatchFlag(on: boolean): void {
+  const settings = loadSettings()
+  if (settings.autoDispatch === on) return
+  saveWorkspaceSettings({ ...settings, autoDispatch: on }, settings.activeWorkspaceId)
+  broadcast('settings:changed', loadSettings())
+}
+
+const autoDispatch = createAutoDispatch({
+  enabled: () => loadSettings().autoDispatch,
+  setEnabled: writeAutoDispatchFlag,
+  workspaceId: () => loadSettings().activeWorkspaceId,
+  snapshot: (skip) => ({ plan: buildPlan(skip), tasks: queryTasks() }),
+  launch: async (task, lane) => {
+    // The renderer only learns of sessions it asked for, so tell it about this one.
+    broadcast('orchestrate:autoStarted', await dispatchTask(task, lane))
+  },
+  noteFailure: (task, error) => {
+    const message = error instanceof Error ? error.message : String(error)
+    try {
+      addNote(task.id, 'styr', `Auto-run could not start this task: ${message}`)
+    } catch {
+      // The task may have been deleted meanwhile; there is nothing to note it on.
+    }
+  },
+  paused: (reason) => {
+    if (Notification.isSupported()) {
+      new Notification({ title: 'Styr', body: PAUSE_MESSAGES[reason] }).show()
+    }
+  },
+  stateChanged: (state) => broadcast('orchestrate:autoState', state),
+  now: () => Date.now(),
+  setTimer: (run, ms) => setTimeout(run, ms),
+  clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+})
+
+/** Called once the window is up: after the startup grace Auto-run evaluates the board. */
+export function startAutoDispatch(): void {
+  autoDispatch.start()
 }
 
 /** The plan without the task objects, which the renderer does not need. */
@@ -472,13 +542,16 @@ export function registerIpcHandlers(): void {
         .map(async ({ task, lane }) => ({
           lane,
           taskId: task.id,
-          session: await launchSessionForTask(task.id, {
-            withPrompt: true,
-            fresh: lane === 'review',
-            provider: providerForLane(loadSettings(), lane)
-          })
+          session: await dispatchTask(task, lane)
         }))
     )
+  })
+
+  ipcMain.handle('orchestrate:autoState', () => autoDispatch.state())
+  ipcMain.handle('orchestrate:autoSet', (_event, on: unknown) => {
+    writeAutoDispatchFlag(z.boolean().parse(on))
+    autoDispatch.enabledChanged()
+    return autoDispatch.state()
   })
 
   ipcMain.handle('settings:get', (_event, workspaceId: unknown) =>
@@ -491,6 +564,7 @@ export function registerIpcHandlers(): void {
       persistSettings(parsed)
     } finally {
       workspaceSession.afterSettingsSave(folderBefore, parsed.workspaceId)
+      autoDispatch.enabledChanged()
     }
     return loadSettings()
   })
@@ -503,7 +577,11 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle('workspaces:create', (_event, name: string) => {
     const settings = loadSettings()
-    const created = createWorkspace(settings, String(name), workspaceSettingsFor(settings))
+    // A new board starts with Auto-run off whatever the one it was copied from does.
+    const created = createWorkspace(settings, String(name), {
+      ...workspaceSettingsFor(settings),
+      autoDispatch: false
+    })
     switchWorkspace(created.id)
     return workspaceOverview()
   })

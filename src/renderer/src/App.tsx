@@ -11,6 +11,7 @@ import {
   DEFAULT_SHORTCUTS,
   DEFAULT_THEME,
   SHORTCUT_COMMANDS,
+  ORCHESTRATION_LANES,
   TASK_STATUS_LABELS,
   globalSettingsFor,
   workspaceSettingsFor,
@@ -28,6 +29,7 @@ import { Board } from './components/Board.js'
 import { Inbox } from './components/Inbox.js'
 import type { TerminalTaskRequest } from './components/TerminalSurface.js'
 import { buildInbox } from '@core/inbox.js'
+import { useAutoDispatch } from './hooks/useAutoDispatch.js'
 import { OrchestrateDialog } from './components/OrchestrateDialog.js'
 import { CommandPalette, type CommandEntry, type PaletteMode } from './components/CommandPalette.js'
 import { StatusBar } from './components/StatusBar.js'
@@ -344,6 +346,8 @@ export default function App(): ReactNode {
   )
   const isDispatching = dispatching.size > 0
 
+  const autoDispatch = useAutoDispatch(activeWorkspaceId)
+  useEffect(() => window.api.orchestrate.onAutoStarted(adoptSession), [adoptSession])
   const orchestrateTitle = useMemo(() => orchestrateHint(orchestration), [orchestration])
 
   const openSettings = useCallback((section?: SectionId) => {
@@ -378,6 +382,8 @@ export default function App(): ReactNode {
           return setAgentsOpen((open) => !open)
         case 'orchestrate':
           return setConfirmingOrchestrate(true)
+        case 'toggleAutoDispatch':
+          return autoDispatch.setOn(!autoDispatch.state.on)
         case 'newShell':
           return void newShell()
         case 'closeShell':
@@ -413,6 +419,7 @@ export default function App(): ReactNode {
       }
     },
     [
+      autoDispatch,
       openSettings,
       newShell,
       closeSession,
@@ -428,10 +435,14 @@ export default function App(): ReactNode {
     const dynamicLabels: Partial<Record<ShortcutCommand, string>> = {
       toggleTerminal: terminalOpen ? 'Hide terminal' : 'Show terminal',
       toggleAgents: agentsOpen ? 'Hide agents sidebar' : 'Show agents sidebar',
-      orchestrate: 'Dispatch — start waiting work'
+      orchestrate: 'Dispatch — start waiting work',
+      toggleAutoDispatch: autoDispatch.state.on
+        ? 'Stop Dispatch auto-run'
+        : 'Start Dispatch auto-run'
     }
     const keywords: Partial<Record<ShortcutCommand, string>> = {
       orchestrate: 'orchestrate run agents',
+      toggleAutoDispatch: 'orchestrate dispatch auto-run stop pause keep running',
       newShell: 'terminal session',
       closeShell: 'terminal session kill',
       settings: 'preferences options',
@@ -570,6 +581,7 @@ export default function App(): ReactNode {
     return entries
   }, [
     board,
+    autoDispatch.state.on,
     settings?.experimental,
     settings?.taskPresets,
     archived.length,
@@ -794,7 +806,7 @@ export default function App(): ReactNode {
               <span aria-hidden className="h-[18px] w-px bg-edge" />
               <Button
                 onClick={() => setConfirmingOrchestrate(true)}
-                disabled={orchestration === null || orchestration.dispatch.length === 0}
+                disabled={orchestration === null}
                 title={isDispatching ? 'Dispatch is running' : orchestrateTitle}
                 className={isDispatching ? 'dispatch-running disabled:opacity-100' : ''}
               >
@@ -826,6 +838,18 @@ export default function App(): ReactNode {
                   </span>
                 ) : null}
               </Button>
+              {autoDispatch.state.on ? (
+                <Button
+                  onClick={() => autoDispatch.setOn(false)}
+                  title="Stop Auto-run: no new tasks start; running agents finish"
+                >
+                  Auto-run
+                  {orchestration
+                    ? ` · ${ORCHESTRATION_LANES.reduce((n, lane) => n + orchestration.occupied[lane], 0)} running`
+                    : ''}{' '}
+                  · Stop
+                </Button>
+              ) : null}
               <Button variant="primary" onClick={() => setCreating(true)}>
                 New task
               </Button>
@@ -1023,9 +1047,11 @@ export default function App(): ReactNode {
             />
           ) : null}
 
-          {confirmingOrchestrate && orchestration && orchestration.dispatch.length > 0 ? (
+          {confirmingOrchestrate && orchestration ? (
             <OrchestrateDialog
               summary={orchestration}
+              auto={autoDispatch.state}
+              onAutoChange={autoDispatch.setOn}
               onClose={() => setConfirmingOrchestrate(false)}
               onConfirm={() =>
                 void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))

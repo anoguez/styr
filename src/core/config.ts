@@ -127,6 +127,7 @@ export function shippedSettings(): Settings {
       { id: 'followup', name: 'Follow up', template: FOLLOWUP_TEMPLATE }
     ],
     orchestration: { spec: 1, implement: 2, review: 1 },
+    autoDispatch: false,
     updates: { checkAutomatically: true },
     experimental: { externalSources: false },
     taskDefaults: { orchestrate: true, useWorktree: false },
