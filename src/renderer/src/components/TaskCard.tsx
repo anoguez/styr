@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react'
+import { useContext, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -12,6 +12,7 @@ import {
   type TaskPriority
 } from '@core/types.js'
 import type { DiffStat } from '@core/diff.js'
+import { DispatchingContext } from '../lib/dispatchRun.js'
 import { describeBlockers, useOpenBlockers } from '../lib/blockerContext.js'
 import { Chip, DiffCount, DiffStatButton } from './ui.js'
 
@@ -105,6 +106,7 @@ export function TaskCardBody({
   onShowChanges?: () => void
 }): ReactNode {
   const blockers = useOpenBlockers(task)
+  const dispatching = useContext(DispatchingContext).has(task.id)
   const loud = task.priority === 'high' || task.priority === 'urgent'
   const files = task.contextFiles.length
   const notes = task.activity.length
@@ -197,6 +199,28 @@ export function TaskCardBody({
 
       <div className="mt-2.5 flex min-w-0 items-center gap-2.5 text-[10.5px] text-faint">
         <span className="shrink-0 whitespace-nowrap font-mono tracking-tight">{task.id}</span>
+        {dispatching ? (
+          <span
+            title="Picked up by Dispatch"
+            className="inline-flex h-[18px] shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-accent/20 px-1.5 font-medium text-[var(--color-accent-text)]"
+          >
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M13.5 2.5 2.5 7l4.5 2 2 4.5z" />
+              <path d="M13.5 2.5 7 9" />
+            </svg>
+            Dispatching
+          </span>
+        ) : null}
         {blockers.length > 0 ? (
           <span
             className="shrink-0 whitespace-nowrap font-medium text-[var(--color-col-review-text)]"

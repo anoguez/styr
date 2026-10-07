@@ -40,6 +40,7 @@ import { TaskDialog } from './components/TaskDialog.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
 import { sessionLabel } from './lib/sessionLabel.js'
 import { orchestrateHint } from './lib/orchestrateHint.js'
+import { DispatchingContext, dispatchingIds } from './lib/dispatchRun.js'
 import { useTerminalSessions } from './hooks/useTerminalSessions.js'
 import { Button, Chip, Modal, inputClass } from './components/ui.js'
 import { useSettings } from './hooks/useSettings.js'
@@ -116,6 +117,8 @@ export default function App(): ReactNode {
     update?.kind === 'ready' || update?.kind === 'downloading' ? update.version : undefined
   const [orchestration, setOrchestration] = useState<OrchestrationSummary | null>(null)
   const [confirmingOrchestrate, setConfirmingOrchestrate] = useState(false)
+  /** Task ids the last Dispatch run started. */
+  const [dispatchRun, setDispatchRun] = useState<string[]>([])
   const [removingAgent, setRemovingAgent] = useState<AgentRow | null>(null)
 
   const [editing, setEditing] = useState<Task | null>(null)
@@ -327,10 +330,19 @@ export default function App(): ReactNode {
       setConfirmingOrchestrate(false)
       const started = await window.api.orchestrate.run(taskIds)
       for (const entry of started) adoptSession(entry.session)
+      setDispatchRun(started.map((entry) => entry.taskId))
       refreshOrchestration()
     },
     [adoptSession, refreshOrchestration]
   )
+
+  // Task ids repeat across workspaces, so a run belongs to the workspace it started in.
+  useEffect(() => setDispatchRun([]), [activeWorkspaceId])
+  const dispatching = useMemo(
+    () => dispatchingIds(dispatchRun, agents, sessions, activeWorkspaceId),
+    [dispatchRun, agents, sessions, activeWorkspaceId]
+  )
+  const isDispatching = dispatching.size > 0
 
   const orchestrateTitle = useMemo(() => orchestrateHint(orchestration), [orchestration])
 
@@ -653,436 +665,455 @@ export default function App(): ReactNode {
 
   return (
     <TaskLookupContext.Provider value={lookup}>
-      <div className="flex h-full flex-col">
-        <header className="flex h-[44px] shrink-0 items-center gap-3 border-b border-edge bg-chrome pl-[86px] pr-3 [-webkit-app-region:drag]">
-          <span
-            aria-hidden
-            className="grid size-[22px] shrink-0 place-items-center rounded-[6px] bg-accent/15"
-          >
-            {/* The app icon's rune. Its gradient runs between theme colours rather than the icon's
+      <DispatchingContext.Provider value={dispatching}>
+        <div className="flex h-full flex-col">
+          <header className="relative flex h-[44px] shrink-0 items-center gap-3 border-b border-edge bg-chrome pl-[86px] pr-3 [-webkit-app-region:drag]">
+            <span
+              aria-hidden
+              className="grid size-[22px] shrink-0 place-items-center rounded-[6px] bg-accent/15"
+            >
+              {/* The app icon's rune. Its gradient runs between theme colours rather than the icon's
               fixed ones, which match them at the default theme, so it follows a re-theme. */}
-            <svg viewBox="0 0 16 16" className="size-[15px]">
-              <defs>
-                <linearGradient id="styr-mark" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" style={{ stopColor: 'var(--color-accent-text)' }} />
-                  <stop offset="1" style={{ stopColor: 'var(--color-col-progress)' }} />
-                </linearGradient>
-              </defs>
-              <polyline
-                points="5.6,2.6 5.6,8.4 10.4,7 10.4,13.4"
-                transform="rotate(30 8 8)"
-                fill="none"
-                stroke="url(#styr-mark)"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </span>
-          <span className="font-wordmark -ml-1 text-[13.5px] font-semibold tracking-[0.02em] text-ink">
-            Styr
-          </span>
-          {appInfo ? (
-            <button
-              type="button"
-              className={`text-[11px] [-webkit-app-region:no-drag] ${
-                newVersion ? 'font-medium text-accent hover:underline' : 'text-faint hover:text-dim'
-              }`}
-              title={
-                newVersion
-                  ? `Styr ${newVersion} is ${update?.kind === 'ready' ? 'ready to install' : 'downloading'} — open Settings`
-                  : 'Updates'
-              }
-              onClick={() => openSettings('updates')}
-            >
-              v{appInfo.version}
-            </button>
-          ) : null}
-          {appInfo && !appInfo.isPackaged ? (
-            <Chip tone="warn" title={`Running from source · v${appInfo.version}`}>
-              DEV
-            </Chip>
-          ) : null}
-
-          <WorkspaceSwitcher
-            overview={overview}
-            open={switcherOpen}
-            onOpenChange={setSwitcherOpen}
-            onSwitch={(id) => void switchWorkspace(id)}
-            onNew={() => setCreatingWorkspace(true)}
-            onManage={() => openSettings('workspaces')}
-          />
-
-          <div className="flex flex-1 justify-center">
-            <div className="relative w-full max-w-md [-webkit-app-region:no-drag]">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint">
-                ⌕
-              </span>
-              <input
-                ref={searchRef}
-                className={`${inputClass} h-7 py-0 pl-8 pr-12`}
-                value={query}
-                placeholder="Search tasks"
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              {query ? (
-                <button
-                  type="button"
-                  aria-label="Clear search"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-faint hover:text-ink"
-                  onClick={() => setQuery('')}
-                >
-                  ✕
-                </button>
-              ) : (
-                <kbd className="pointer-events-none absolute right-2 top-1/2 inline-flex h-[18px] -translate-y-1/2 items-center rounded border border-edge-strong px-[5px] font-mono text-[10.5px] text-faint">
-                  ⌘F
-                </kbd>
-              )}
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
-            <div
-              role="tablist"
-              aria-label="View"
-              className="flex h-7 items-center gap-0.5 rounded-lg border border-edge-strong bg-chrome p-0.5"
-            >
-              {(
-                [
-                  { id: 'board', label: 'Board', command: 'viewBoard' },
-                  { id: 'inbox', label: 'Inbox', command: 'viewInbox' }
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === tab.id}
-                  title={`${tab.label} view ${shortcutHint(bindings, tab.command)}`.trim()}
-                  onClick={() => setView(tab.id)}
-                  className={`inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors ${
-                    view === tab.id
-                      ? 'border-edge-strong bg-raised text-ink'
-                      : 'border-transparent text-dim hover:text-ink'
-                  }`}
-                >
-                  {tab.label}
-                  {tab.id === 'inbox' && needsYou > 0 ? (
-                    <span className="rounded-[5px] bg-[var(--color-col-review)]/15 px-[5px] font-mono text-[10.5px] font-semibold leading-4 text-[var(--color-col-review-text)]">
-                      {needsYou}
-                    </span>
-                  ) : null}
-                </button>
-              ))}
-            </div>
-            <span aria-hidden className="h-[18px] w-px bg-edge" />
-            <Button
-              onClick={() => setConfirmingOrchestrate(true)}
-              disabled={orchestration === null || orchestration.dispatch.length === 0}
-              title={orchestrateTitle}
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <path d="M13.5 2.5 2.5 7l4.5 2 2 4.5z" />
-                <path d="M13.5 2.5 7 9" />
+              <svg viewBox="0 0 16 16" className="size-[15px]">
+                <defs>
+                  <linearGradient id="styr-mark" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" style={{ stopColor: 'var(--color-accent-text)' }} />
+                    <stop offset="1" style={{ stopColor: 'var(--color-col-progress)' }} />
+                  </linearGradient>
+                </defs>
+                <polyline
+                  points="5.6,2.6 5.6,8.4 10.4,7 10.4,13.4"
+                  transform="rotate(30 8 8)"
+                  fill="none"
+                  stroke="url(#styr-mark)"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
-              Dispatch
-              {orchestration && orchestration.dispatch.length > 0 ? (
-                <span className="inline-flex h-[18px] items-center rounded-md bg-accent/20 px-1.5 font-mono text-[10.5px] font-semibold text-[var(--color-accent-text)]">
-                  {orchestration.dispatch.length}
+            </span>
+            <span className="font-wordmark -ml-1 text-[13.5px] font-semibold tracking-[0.02em] text-ink">
+              Styr
+            </span>
+            {appInfo ? (
+              <button
+                type="button"
+                className={`text-[11px] [-webkit-app-region:no-drag] ${
+                  newVersion
+                    ? 'font-medium text-accent hover:underline'
+                    : 'text-faint hover:text-dim'
+                }`}
+                title={
+                  newVersion
+                    ? `Styr ${newVersion} is ${update?.kind === 'ready' ? 'ready to install' : 'downloading'} — open Settings`
+                    : 'Updates'
+                }
+                onClick={() => openSettings('updates')}
+              >
+                v{appInfo.version}
+              </button>
+            ) : null}
+            {appInfo && !appInfo.isPackaged ? (
+              <Chip tone="warn" title={`Running from source · v${appInfo.version}`}>
+                DEV
+              </Chip>
+            ) : null}
+
+            <WorkspaceSwitcher
+              overview={overview}
+              open={switcherOpen}
+              onOpenChange={setSwitcherOpen}
+              onSwitch={(id) => void switchWorkspace(id)}
+              onNew={() => setCreatingWorkspace(true)}
+              onManage={() => openSettings('workspaces')}
+            />
+
+            <div className="flex flex-1 justify-center">
+              <div className="relative w-full max-w-md [-webkit-app-region:no-drag]">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint">
+                  ⌕
                 </span>
-              ) : null}
-            </Button>
-            <Button variant="primary" onClick={() => setCreating(true)}>
-              New task
-            </Button>
-          </div>
-        </header>
-
-        {problems.length > 0 ? (
-          <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2">
-            <p className="text-[12px] text-amber-200">
-              {problems.length} task file{problems.length === 1 ? '' : 's'} could not be read and{' '}
-              {problems.length === 1 ? 'is' : 'are'} hidden from the board. Nothing was changed on
-              disk — fix the frontmatter and {problems.length === 1 ? 'it' : 'they'} will reappear.
-            </p>
-            <ul className="mt-1 flex flex-col gap-0.5">
-              {problems.map((problem) => (
-                <li key={problem.filePath} className="font-mono text-[10px] text-amber-200/70">
-                  {problem.filePath.split('/').pop()} — {problem.reason.split('\n')[0]}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        <div className="flex min-h-0 flex-1">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <main
-              className="flex min-h-0 flex-1 flex-col"
-              hidden={terminalOpen && terminalExpanded}
-            >
-              {loading ? (
-                <p className="p-6 text-dim">Loading board…</p>
-              ) : view === 'inbox' ? (
-                <Inbox
-                  tasks={Object.values(board).flat()}
-                  allTasks={allTasks}
-                  agents={agents}
-                  queued={queuedPositions}
-                  diffStats={diffStats}
-                  onOpen={setEditing}
-                  onLaunch={(task) => void launchAgent(task.id)}
-                  onActivate={(task) => activateTask(task.id)}
-                  onShowChanges={setChangesTask}
-                  onMove={(task, status) => void window.api.tasks.update(task.id, { status })}
-                  onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
+                <input
+                  ref={searchRef}
+                  className={`${inputClass} h-7 py-0 pl-8 pr-12`}
+                  value={query}
+                  placeholder="Search tasks"
+                  onChange={(event) => setQuery(event.target.value)}
                 />
-              ) : (
-                <Board
-                  board={board}
-                  agents={agents}
-                  queued={queued}
-                  onOpen={setEditing}
-                  onLaunch={(task) => void launchAgent(task.id)}
-                  onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
-                  onShowChanges={setChangesTask}
-                  onOpenTerminal={(task) =>
-                    void window.api.terminal
-                      .create({ cwd: task.worktreePath || task.repoPath, title: task.id })
-                      .then(adoptSession)
-                  }
-                  diffStats={diffStats}
-                  onQuickAdd={() => setQuickAdding(true)}
-                  doneFooter={
-                    hiddenDone > 0 || showAllDone || archived.length > 0 ? (
-                      <div className="mt-auto flex shrink-0 flex-col items-center gap-1 pt-1 text-[11px] text-faint">
-                        {hiddenDone > 0 || showAllDone ? (
-                          <button
-                            type="button"
-                            className="hover:text-ink"
-                            onClick={() => setShowAllDone((open) => !open)}
-                          >
-                            {showAllDone ? 'Show fewer' : `${hiddenDone} older hidden — Show all`}
-                          </button>
-                        ) : null}
-                        {archived.length > 0 ? (
-                          <button
-                            type="button"
-                            className="hover:text-ink"
-                            onClick={() => setArchiveOpen(true)}
-                          >
-                            {archived.length} archived — View
-                          </button>
-                        ) : null}
-                      </div>
-                    ) : undefined
-                  }
-                  templateNameFor={(task) => resolveTemplateFor(settings, task).name}
-                />
-              )}
-            </main>
+                {query ? (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-faint hover:text-ink"
+                    onClick={() => setQuery('')}
+                  >
+                    ✕
+                  </button>
+                ) : (
+                  <kbd className="pointer-events-none absolute right-2 top-1/2 inline-flex h-[18px] -translate-y-1/2 items-center rounded border border-edge-strong px-[5px] font-mono text-[10.5px] text-faint">
+                    ⌘F
+                  </kbd>
+                )}
+              </div>
+            </div>
 
-            {terminalOpen ? (
-              <>
-                {terminalExpanded ? null : (
-                  <div
-                    className="h-1 shrink-0 cursor-row-resize bg-edge/60 hover:bg-accent/60"
-                    onMouseDown={() => {
-                      dragging.current = true
-                    }}
+            <div className="flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
+              <div
+                role="tablist"
+                aria-label="View"
+                className="flex h-7 items-center gap-0.5 rounded-lg border border-edge-strong bg-chrome p-0.5"
+              >
+                {(
+                  [
+                    { id: 'board', label: 'Board', command: 'viewBoard' },
+                    { id: 'inbox', label: 'Inbox', command: 'viewInbox' }
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={view === tab.id}
+                    title={`${tab.label} view ${shortcutHint(bindings, tab.command)}`.trim()}
+                    onClick={() => setView(tab.id)}
+                    className={`inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors ${
+                      view === tab.id
+                        ? 'border-edge-strong bg-raised text-ink'
+                        : 'border-transparent text-dim hover:text-ink'
+                    }`}
+                  >
+                    {tab.label}
+                    {tab.id === 'inbox' && needsYou > 0 ? (
+                      <span className="rounded-[5px] bg-[var(--color-col-review)]/15 px-[5px] font-mono text-[10.5px] font-semibold leading-4 text-[var(--color-col-review-text)]">
+                        {needsYou}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+              <span aria-hidden className="h-[18px] w-px bg-edge" />
+              <Button
+                onClick={() => setConfirmingOrchestrate(true)}
+                disabled={orchestration === null || orchestration.dispatch.length === 0}
+                title={isDispatching ? 'Dispatch is running' : orchestrateTitle}
+                className={isDispatching ? 'dispatch-running' : ''}
+              >
+                {isDispatching ? (
+                  <span
+                    aria-hidden
+                    className="size-[7px] shrink-0 animate-pulse rounded-full bg-[var(--color-accent-text)]"
+                  />
+                ) : (
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M13.5 2.5 2.5 7l4.5 2 2 4.5z" />
+                    <path d="M13.5 2.5 7 9" />
+                  </svg>
+                )}
+                {isDispatching ? 'Dispatching' : 'Dispatch'}
+                {!isDispatching && orchestration && orchestration.dispatch.length > 0 ? (
+                  <span className="inline-flex h-[18px] items-center rounded-md bg-accent/20 px-1.5 font-mono text-[10.5px] font-semibold text-[var(--color-accent-text)]">
+                    {orchestration.dispatch.length}
+                  </span>
+                ) : null}
+              </Button>
+              <Button variant="primary" onClick={() => setCreating(true)}>
+                New task
+              </Button>
+            </div>
+            {isDispatching ? (
+              <span
+                aria-hidden
+                className="dispatch-sweep pointer-events-none absolute inset-x-0 -bottom-px h-0.5"
+              />
+            ) : null}
+          </header>
+
+          {problems.length > 0 ? (
+            <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2">
+              <p className="text-[12px] text-amber-200">
+                {problems.length} task file{problems.length === 1 ? '' : 's'} could not be read and{' '}
+                {problems.length === 1 ? 'is' : 'are'} hidden from the board. Nothing was changed on
+                disk — fix the frontmatter and {problems.length === 1 ? 'it' : 'they'} will
+                reappear.
+              </p>
+              <ul className="mt-1 flex flex-col gap-0.5">
+                {problems.map((problem) => (
+                  <li key={problem.filePath} className="font-mono text-[10px] text-amber-200/70">
+                    {problem.filePath.split('/').pop()} — {problem.reason.split('\n')[0]}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="flex min-h-0 flex-1">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <main
+                className="flex min-h-0 flex-1 flex-col"
+                hidden={terminalOpen && terminalExpanded}
+              >
+                {loading ? (
+                  <p className="p-6 text-dim">Loading board…</p>
+                ) : view === 'inbox' ? (
+                  <Inbox
+                    tasks={Object.values(board).flat()}
+                    allTasks={allTasks}
+                    agents={agents}
+                    queued={queuedPositions}
+                    diffStats={diffStats}
+                    onOpen={setEditing}
+                    onLaunch={(task) => void launchAgent(task.id)}
+                    onActivate={(task) => activateTask(task.id)}
+                    onShowChanges={setChangesTask}
+                    onMove={(task, status) => void window.api.tasks.update(task.id, { status })}
+                    onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
+                  />
+                ) : (
+                  <Board
+                    board={board}
+                    agents={agents}
+                    queued={queued}
+                    onOpen={setEditing}
+                    onLaunch={(task) => void launchAgent(task.id)}
+                    onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
+                    onShowChanges={setChangesTask}
+                    onOpenTerminal={(task) =>
+                      void window.api.terminal
+                        .create({ cwd: task.worktreePath || task.repoPath, title: task.id })
+                        .then(adoptSession)
+                    }
+                    diffStats={diffStats}
+                    onQuickAdd={() => setQuickAdding(true)}
+                    doneFooter={
+                      hiddenDone > 0 || showAllDone || archived.length > 0 ? (
+                        <div className="mt-auto flex shrink-0 flex-col items-center gap-1 pt-1 text-[11px] text-faint">
+                          {hiddenDone > 0 || showAllDone ? (
+                            <button
+                              type="button"
+                              className="hover:text-ink"
+                              onClick={() => setShowAllDone((open) => !open)}
+                            >
+                              {showAllDone ? 'Show fewer' : `${hiddenDone} older hidden — Show all`}
+                            </button>
+                          ) : null}
+                          {archived.length > 0 ? (
+                            <button
+                              type="button"
+                              className="hover:text-ink"
+                              onClick={() => setArchiveOpen(true)}
+                            >
+                              {archived.length} archived — View
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : undefined
+                    }
+                    templateNameFor={(task) => resolveTemplateFor(settings, task).name}
                   />
                 )}
-                <div
-                  className={terminalExpanded ? 'min-h-0 flex-1' : 'shrink-0'}
-                  style={terminalExpanded ? undefined : { height: terminalHeight }}
-                >
-                  <TerminalPanel
-                    sessions={sessions}
-                    agents={agents}
-                    activeId={activeSession}
-                    expanded={terminalExpanded}
-                    theme={activeTheme}
-                    bindings={bindings}
-                    taskTitles={taskTitles}
-                    taskStates={taskStates}
-                    onAskReview={askReview}
-                    onAskFork={askFork}
-                    workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
-                    onToggleExpand={() => setTerminalExpanded((open) => !open)}
-                    onSelect={setActiveSession}
-                    onReorder={reorderSessions}
-                    onNewSession={(cwd) => void newShell(cwd)}
-                    onCreateTask={createTaskFromTerminal}
-                    onCloseSession={(id) => void closeSession(id)}
-                  />
-                </div>
-              </>
+              </main>
+
+              {terminalOpen ? (
+                <>
+                  {terminalExpanded ? null : (
+                    <div
+                      className="h-1 shrink-0 cursor-row-resize bg-edge/60 hover:bg-accent/60"
+                      onMouseDown={() => {
+                        dragging.current = true
+                      }}
+                    />
+                  )}
+                  <div
+                    className={terminalExpanded ? 'min-h-0 flex-1' : 'shrink-0'}
+                    style={terminalExpanded ? undefined : { height: terminalHeight }}
+                  >
+                    <TerminalPanel
+                      sessions={sessions}
+                      agents={agents}
+                      activeId={activeSession}
+                      expanded={terminalExpanded}
+                      theme={activeTheme}
+                      bindings={bindings}
+                      taskTitles={taskTitles}
+                      taskStates={taskStates}
+                      onAskReview={askReview}
+                      onAskFork={askFork}
+                      workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
+                      onToggleExpand={() => setTerminalExpanded((open) => !open)}
+                      onSelect={setActiveSession}
+                      onReorder={reorderSessions}
+                      onNewSession={(cwd) => void newShell(cwd)}
+                      onCreateTask={createTaskFromTerminal}
+                      onCloseSession={(id) => void closeSession(id)}
+                    />
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {agentsOpen ? (
+              <AgentsSidebar
+                rows={agentRows}
+                diffStats={diffStats}
+                onShowChanges={setChangesTask}
+                onOpenTask={setEditing}
+                onRemove={setRemovingAgent}
+                onClose={() => setAgentsOpen(false)}
+                onActivate={(row) => activateTask(row.task.id)}
+              />
             ) : null}
           </div>
 
-          {agentsOpen ? (
-            <AgentsSidebar
-              rows={agentRows}
-              diffStats={diffStats}
+          <StatusBar
+            agentsOpen={agentsOpen}
+            terminalOpen={terminalOpen}
+            agentCount={agentRows.length}
+            waitingCount={counts.waiting}
+            sessionCount={sessions.length}
+            summary={`${counts.total} task${counts.total === 1 ? '' : 's'}${
+              counts.needsSpec > 0
+                ? ` · ${counts.needsSpec} need${counts.needsSpec === 1 ? 's' : ''} a spec`
+                : ''
+            }${counts.working > 0 ? ` · ${counts.working} running` : ''}`}
+            bindings={bindings}
+            readyUpdate={update?.kind === 'ready' ? update.version : undefined}
+            onToggleAgents={() => runCommand('toggleAgents')}
+            onToggleTerminal={() => runCommand('toggleTerminal')}
+            onOpenSettings={() => openSettings()}
+            onInstallUpdate={() => void window.api.updates.install()}
+          />
+
+          {creatingWorkspace ? (
+            <NewWorkspaceDialog
+              onCreate={async (name) => applyWorkspaces(await window.api.workspaces.create(name))}
+              onClose={() => setCreatingWorkspace(false)}
+            />
+          ) : null}
+
+          {paletteMode ? (
+            <CommandPalette
+              // a different mode is a fresh palette, so the query starts empty
+              key={paletteMode}
+              entries={commandEntries}
+              initialMode={paletteMode}
+              onClose={() => setPaletteMode(null)}
+            />
+          ) : null}
+
+          {performanceOpen ? <PerformanceDialog onClose={() => setPerformanceOpen(false)} /> : null}
+
+          {archiveOpen ? (
+            <ArchiveDialog
+              tasks={archived}
+              onOpen={(task) => {
+                setArchiveOpen(false)
+                setEditing(task)
+              }}
+              onClose={() => setArchiveOpen(false)}
+            />
+          ) : null}
+
+          {confirmingOrchestrate && orchestration && orchestration.dispatch.length > 0 ? (
+            <OrchestrateDialog
+              summary={orchestration}
+              onClose={() => setConfirmingOrchestrate(false)}
+              onConfirm={() =>
+                void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))
+              }
+            />
+          ) : null}
+
+          {removingAgent ? (
+            <Modal
+              title="Remove this agent?"
+              subtitle={`${removingAgent.task.id} · ${removingAgent.task.title}`}
+              onClose={() => setRemovingAgent(null)}
+              footer={
+                <>
+                  <Button onClick={() => setRemovingAgent(null)}>Cancel</Button>
+                  <Button
+                    variant="danger"
+                    onClick={() => {
+                      const { task } = removingAgent
+                      setRemovingAgent(null)
+                      void window.api.agents.remove(task.id)
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </>
+              }
+            >
+              <p className="text-[12.5px] text-dim">
+                {removingAgent.session
+                  ? 'Its terminal is closed and the chat is forgotten. '
+                  : 'The chat is forgotten. '}
+                The task and its worktree are kept, and you can start a new agent on it later.
+              </p>
+            </Modal>
+          ) : null}
+
+          {quickAdding && settings ? (
+            <QuickTaskDialog settings={settings} onClose={() => setQuickAdding(false)} />
+          ) : null}
+
+          {creating || editing ? (
+            <TaskDialog
+              task={editing}
+              allTasks={allTasks}
+              settings={settings}
+              presetId={creatingPreset}
+              onSavePresets={(taskPresets) =>
+                save({
+                  workspaceId: settings.activeWorkspaceId,
+                  workspace: { ...workspaceSettingsFor(settings), taskPresets },
+                  global: globalSettingsFor(settings)
+                })
+              }
+              onClose={() => {
+                setCreating(false)
+                setCreatingPreset(undefined)
+                setEditing(null)
+              }}
+              onLaunch={(taskId, templateId, provider) =>
+                void launchAgent(taskId, templateId, provider)
+              }
+              onResumeSession={(taskId, sessionId) => {
+                void window.api.terminal.resumeSession(taskId, sessionId).then(adoptSession)
+              }}
               onShowChanges={setChangesTask}
-              onOpenTask={setEditing}
-              onRemove={setRemovingAgent}
-              onClose={() => setAgentsOpen(false)}
-              onActivate={(row) => activateTask(row.task.id)}
+            />
+          ) : null}
+
+          {changesTask ? (
+            <ChangesDialog task={changesTask} onClose={() => setChangesTask(null)} />
+          ) : null}
+
+          {showSettings ? (
+            <SettingsDialog
+              settings={settings}
+              workspaces={workspaces}
+              initialSection={settingsSection}
+              onSave={save}
+              onPreviewTheme={setPreviewTheme}
+              onClose={() => {
+                setPreviewTheme(null)
+                setShowSettings(false)
+              }}
             />
           ) : null}
         </div>
-
-        <StatusBar
-          agentsOpen={agentsOpen}
-          terminalOpen={terminalOpen}
-          agentCount={agentRows.length}
-          waitingCount={counts.waiting}
-          sessionCount={sessions.length}
-          summary={`${counts.total} task${counts.total === 1 ? '' : 's'}${
-            counts.needsSpec > 0
-              ? ` · ${counts.needsSpec} need${counts.needsSpec === 1 ? 's' : ''} a spec`
-              : ''
-          }${counts.working > 0 ? ` · ${counts.working} running` : ''}`}
-          bindings={bindings}
-          readyUpdate={update?.kind === 'ready' ? update.version : undefined}
-          onToggleAgents={() => runCommand('toggleAgents')}
-          onToggleTerminal={() => runCommand('toggleTerminal')}
-          onOpenSettings={() => openSettings()}
-          onInstallUpdate={() => void window.api.updates.install()}
-        />
-
-        {creatingWorkspace ? (
-          <NewWorkspaceDialog
-            onCreate={async (name) => applyWorkspaces(await window.api.workspaces.create(name))}
-            onClose={() => setCreatingWorkspace(false)}
-          />
-        ) : null}
-
-        {paletteMode ? (
-          <CommandPalette
-            // a different mode is a fresh palette, so the query starts empty
-            key={paletteMode}
-            entries={commandEntries}
-            initialMode={paletteMode}
-            onClose={() => setPaletteMode(null)}
-          />
-        ) : null}
-
-        {performanceOpen ? <PerformanceDialog onClose={() => setPerformanceOpen(false)} /> : null}
-
-        {archiveOpen ? (
-          <ArchiveDialog
-            tasks={archived}
-            onOpen={(task) => {
-              setArchiveOpen(false)
-              setEditing(task)
-            }}
-            onClose={() => setArchiveOpen(false)}
-          />
-        ) : null}
-
-        {confirmingOrchestrate && orchestration && orchestration.dispatch.length > 0 ? (
-          <OrchestrateDialog
-            summary={orchestration}
-            onClose={() => setConfirmingOrchestrate(false)}
-            onConfirm={() =>
-              void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))
-            }
-          />
-        ) : null}
-
-        {removingAgent ? (
-          <Modal
-            title="Remove this agent?"
-            subtitle={`${removingAgent.task.id} · ${removingAgent.task.title}`}
-            onClose={() => setRemovingAgent(null)}
-            footer={
-              <>
-                <Button onClick={() => setRemovingAgent(null)}>Cancel</Button>
-                <Button
-                  variant="danger"
-                  onClick={() => {
-                    const { task } = removingAgent
-                    setRemovingAgent(null)
-                    void window.api.agents.remove(task.id)
-                  }}
-                >
-                  Remove
-                </Button>
-              </>
-            }
-          >
-            <p className="text-[12.5px] text-dim">
-              {removingAgent.session
-                ? 'Its terminal is closed and the chat is forgotten. '
-                : 'The chat is forgotten. '}
-              The task and its worktree are kept, and you can start a new agent on it later.
-            </p>
-          </Modal>
-        ) : null}
-
-        {quickAdding && settings ? (
-          <QuickTaskDialog settings={settings} onClose={() => setQuickAdding(false)} />
-        ) : null}
-
-        {creating || editing ? (
-          <TaskDialog
-            task={editing}
-            allTasks={allTasks}
-            settings={settings}
-            presetId={creatingPreset}
-            onSavePresets={(taskPresets) =>
-              save({
-                workspaceId: settings.activeWorkspaceId,
-                workspace: { ...workspaceSettingsFor(settings), taskPresets },
-                global: globalSettingsFor(settings)
-              })
-            }
-            onClose={() => {
-              setCreating(false)
-              setCreatingPreset(undefined)
-              setEditing(null)
-            }}
-            onLaunch={(taskId, templateId, provider) =>
-              void launchAgent(taskId, templateId, provider)
-            }
-            onResumeSession={(taskId, sessionId) => {
-              void window.api.terminal.resumeSession(taskId, sessionId).then(adoptSession)
-            }}
-            onShowChanges={setChangesTask}
-          />
-        ) : null}
-
-        {changesTask ? (
-          <ChangesDialog task={changesTask} onClose={() => setChangesTask(null)} />
-        ) : null}
-
-        {showSettings ? (
-          <SettingsDialog
-            settings={settings}
-            workspaces={workspaces}
-            initialSection={settingsSection}
-            onSave={save}
-            onPreviewTheme={setPreviewTheme}
-            onClose={() => {
-              setPreviewTheme(null)
-              setShowSettings(false)
-            }}
-          />
-        ) : null}
-      </div>
+      </DispatchingContext.Provider>
     </TaskLookupContext.Provider>
   )
 }
