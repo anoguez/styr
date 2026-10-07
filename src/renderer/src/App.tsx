@@ -27,7 +27,7 @@ import { Inbox } from './components/Inbox.js'
 import type { TerminalTaskRequest } from './components/TerminalSurface.js'
 import { buildInbox } from '@core/inbox.js'
 import { OrchestrateDialog } from './components/OrchestrateDialog.js'
-import { CommandPalette, type CommandEntry } from './components/CommandPalette.js'
+import { CommandPalette, type CommandEntry, type PaletteMode } from './components/CommandPalette.js'
 import { StatusBar } from './components/StatusBar.js'
 import { useUpdates } from './hooks/useUpdates.js'
 import { isTerminalTarget } from './lib/terminalKeys.js'
@@ -121,7 +121,7 @@ export default function App(): ReactNode {
   const [quickAdding, setQuickAdding] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
-  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [paletteMode, setPaletteMode] = useState<PaletteMode | null>(null)
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [performanceOpen, setPerformanceOpen] = useState(false)
   const [view, setView] = useState<View>(savedView)
@@ -342,8 +342,10 @@ export default function App(): ReactNode {
           return setCreating(true)
         case 'quickTask':
           return setQuickAdding(true)
+        case 'quickOpen':
+          return setPaletteMode((mode) => (mode === 'go' ? null : 'go'))
         case 'commandPalette':
-          return setPaletteOpen((open) => !open)
+          return setPaletteMode((mode) => (mode === 'command' ? null : 'command'))
         case 'focusSearch':
           searchRef.current?.focus()
           return searchRef.current?.select()
@@ -422,6 +424,7 @@ export default function App(): ReactNode {
       id: `cmd:${command}`,
       label: dynamicLabels[command] ?? SHORTCUT_LABELS[command],
       group: 'Actions',
+      mode: 'command',
       hint: shortcutHint(bindings, command),
       keywords: keywords[command],
       run: () => runCommand(command)
@@ -433,6 +436,7 @@ export default function App(): ReactNode {
         id: `workspace:${workspace.id}`,
         label: `Switch to ${workspace.name}`,
         group: 'Workspaces',
+        mode: 'command',
         hint: `${workspace.taskCount} task${workspace.taskCount === 1 ? '' : 's'}`,
         keywords: 'workspace board switch',
         run: () => void switchWorkspace(workspace.id)
@@ -442,6 +446,7 @@ export default function App(): ReactNode {
       id: 'view:performance',
       label: 'Show performance',
       group: 'Actions',
+      mode: 'command',
       keywords: 'slow cpu memory profile diagnostics usage lag',
       run: () => setPerformanceOpen(true)
     })
@@ -449,6 +454,7 @@ export default function App(): ReactNode {
       id: 'view:archive',
       label: `View archive (${archived.length})`,
       group: 'Actions',
+      mode: 'command',
       keywords: 'archived unarchive restore',
       run: () => setArchiveOpen(true)
     })
@@ -459,6 +465,7 @@ export default function App(): ReactNode {
           id: `archive:${task.id}`,
           label: `Archive — ${task.title}`,
           group: 'Tasks',
+          mode: 'command',
           hint: task.id,
           keywords: 'archive hide done',
           run: () => void window.api.tasks.archive(task.id, true)
@@ -469,6 +476,7 @@ export default function App(): ReactNode {
           id: `changes:${task.id}`,
           label: `View changes — ${task.title}`,
           group: 'Tasks',
+          mode: 'command',
           hint: task.id,
           keywords: 'diff changes git files review',
           run: () => setChangesTask(task)
@@ -478,6 +486,7 @@ export default function App(): ReactNode {
         id: `task:${task.id}`,
         label: task.title,
         group: 'Tasks',
+        mode: 'go',
         hint: task.id,
         keywords: `${task.status} ${task.project ?? ''} ${task.tags.join(' ')}`,
         run: () => setEditing(task),
@@ -492,6 +501,7 @@ export default function App(): ReactNode {
         id: `agent:${row.task.id}`,
         label: `${state} — ${row.task.title}`,
         group: 'Agents',
+        mode: 'go',
         hint: row.task.id,
         keywords: 'agent claude session',
         run: () => activateTask(row.task.id)
@@ -508,6 +518,7 @@ export default function App(): ReactNode {
         label: name,
         hint: detail || undefined,
         group: 'Terminals',
+        mode: 'go',
         keywords: 'terminal tab session',
         run: () => setActiveSession(session.id)
       })
@@ -519,6 +530,7 @@ export default function App(): ReactNode {
         id: `settings:${section.id}`,
         label: `Settings — ${section.label}`,
         group: 'Settings',
+        mode: 'command',
         keywords: section.blurb,
         run: () => openSettings(section.id)
       })
@@ -574,7 +586,7 @@ export default function App(): ReactNode {
         setEditing(null)
         setShowSettings(false)
         setConfirmingOrchestrate(false)
-        setPaletteOpen(false)
+        setPaletteMode(null)
         setSwitcherOpen(false)
         setCreatingWorkspace(false)
         setArchiveOpen(false)
@@ -924,8 +936,14 @@ export default function App(): ReactNode {
           />
         ) : null}
 
-        {paletteOpen ? (
-          <CommandPalette entries={commandEntries} onClose={() => setPaletteOpen(false)} />
+        {paletteMode ? (
+          <CommandPalette
+            // a different mode is a fresh palette, so the query starts empty
+            key={paletteMode}
+            entries={commandEntries}
+            initialMode={paletteMode}
+            onClose={() => setPaletteMode(null)}
+          />
         ) : null}
 
         {performanceOpen ? <PerformanceDialog onClose={() => setPerformanceOpen(false)} /> : null}
