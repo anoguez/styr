@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { spawn, type IPty } from 'node-pty'
 import { nanoid } from 'nanoid'
+import { usageEnv } from '../usage.js'
 import { withoutSessionMarkers } from '@core/providers/index.js'
 import type {
   TerminalMark,
@@ -83,7 +84,13 @@ function sanitisedEnv(extra?: Record<string, string>): Record<string, string> {
   // xterm.js renders 24-bit colour, but programs only use it when COLORTERM says so. Without it,
   // TUIs such as Codex quantise their colours to the 256-colour palette, which turns a background
   // blended from the theme into flat grey.
-  return { ...withoutSessionMarkers(env), ...extra, TERM: 'xterm-256color', COLORTERM: 'truecolor' }
+  return {
+    ...withoutSessionMarkers(env),
+    ...usageEnv(env.CLAUDE_CODE_PLUGIN_DIRS),
+    ...extra,
+    TERM: 'xterm-256color',
+    COLORTERM: 'truecolor'
+  }
 }
 
 export function onTerminalData(listener: DataListener): void {

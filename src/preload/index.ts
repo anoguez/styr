@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { AgentStatus } from '../core/agentState.js'
 import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
+import type { ProviderUsage } from '../core/usage.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
   AppInfo,
@@ -78,6 +79,11 @@ const api = {
     install: (): Promise<boolean> => ipcRenderer.invoke('updates:install'),
     onState: (handler: (state: UpdateState) => void): (() => void) =>
       subscribe('updates:state', handler as (...args: never[]) => void)
+  },
+  usage: {
+    claude: (): Promise<ProviderUsage | null> => ipcRenderer.invoke('usage:claude'),
+    onClaude: (handler: (usage: ProviderUsage | null) => void): (() => void) =>
+      subscribe('usage:claude', handler as (...args: never[]) => void)
   },
   orchestrate: {
     plan: (): Promise<OrchestrationSummary> => ipcRenderer.invoke('orchestrate:plan'),
