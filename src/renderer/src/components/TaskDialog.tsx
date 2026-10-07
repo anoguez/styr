@@ -820,7 +820,7 @@ export function TaskDialog({
             <aside className="flex min-h-0 flex-col gap-5 overflow-y-auto border-l border-edge bg-chrome/50 p-4">
               {!task && settings.taskPresets.length > 0 ? (
                 <div className="flex flex-col gap-1.5">
-                  <span className={SECTION_LABEL}>Start from</span>
+                  <span className={SECTION_LABEL}>Preset</span>
                   <Select
                     compact
                     aria-label="Preset"
@@ -834,6 +834,9 @@ export function TaskDialog({
                       </option>
                     ))}
                   </Select>
+                  <span className="text-[11px] leading-[1.4] text-faint">
+                    Fills in this form from a saved starting point. The task keeps no link to it.
+                  </span>
                 </div>
               ) : null}
               <div className="flex flex-col gap-2">
@@ -992,7 +995,7 @@ export function TaskDialog({
                   </Select>
                 </div>
                 <div className="flex flex-col gap-[5px]">
-                  <span className="text-[12px] text-dim">Prompt template</span>
+                  <span className="text-[12px] text-dim">Agent prompt</span>
                   <Select
                     aria-label="Prompt template"
                     className={`${BOXED_CONTROL} !h-[30px] !py-0 !text-[12.5px]`}
