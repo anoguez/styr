@@ -52,7 +52,7 @@ describe('buildInbox', () => {
       new Map([['Q', 1]])
     )
     expect(inbox.next.map((i) => i.kind).sort()).toEqual(['idle', 'queued', 'resumable'])
-    expect(inbox.next.find((i) => i.task.id === 'Q')?.reason).toBe('Queued #1 for Orchestrate')
+    expect(inbox.next.find((i) => i.task.id === 'Q')?.reason).toBe('Queued #1 for Dispatch')
   })
 
   it('puts a blocked task in Up next after the others, and frees it once the blocker is Done', () => {

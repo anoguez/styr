@@ -364,7 +364,7 @@ function ContextBar({
       {onReview ? (
         <button
           type="button"
-          title={`Close this session and start a fresh reviewer, as Orchestrate would${reviewHint ? ` (${reviewHint})` : ''}`}
+          title={`Close this session and start a fresh reviewer, as Dispatch would${reviewHint ? ` (${reviewHint})` : ''}`}
           className={`${agentButton} h-[22px] px-2 text-[11.5px]`}
           onClick={onReview}
         >

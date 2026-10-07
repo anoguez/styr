@@ -183,7 +183,7 @@ function hintFor(group: InboxGroup, items: InboxItem[]): string {
     case 'running':
       return items.length > 0 ? 'Agents at work' : 'No agent is working'
     case 'next':
-      return count('queued') > 0 ? `${count('queued')} queued for Orchestrate` : 'Not started yet'
+      return count('queued') > 0 ? `${count('queued')} queued for Dispatch` : 'Not started yet'
     case 'done':
       return 'Shown on the board'
   }

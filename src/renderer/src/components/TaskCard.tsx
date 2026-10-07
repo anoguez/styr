@@ -165,7 +165,7 @@ export function TaskCardBody({
       <p className="line-clamp-3 pr-1 text-[13px] font-medium leading-[1.45] tracking-[-0.005em] text-ink">
         {queued ? (
           <span
-            title={`Orchestrate will start this — position ${queued.position}, ${ORCHESTRATION_LANE_LABELS[queued.lane].toLowerCase()}`}
+            title={`Dispatch will start this — position ${queued.position}, ${ORCHESTRATION_LANE_LABELS[queued.lane].toLowerCase()}`}
             className="mr-1.5 inline-flex size-[15px] items-center justify-center rounded-[5px] bg-accent align-[1px] font-mono text-[9.5px] font-semibold text-[var(--color-on-accent)]"
           >
             {queued.position}

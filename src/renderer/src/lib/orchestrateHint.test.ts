@@ -22,7 +22,7 @@ const summary = (over: Partial<OrchestrationSummary> = {}): OrchestrationSummary
 
 describe('orchestrateHint', () => {
   it('is plain before the plan loads', () => {
-    expect(orchestrateHint(null)).toBe('Orchestrate')
+    expect(orchestrateHint(null)).toBe('Dispatch')
   })
 
   it('lists what would start', () => {

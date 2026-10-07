@@ -1069,7 +1069,7 @@ export function TaskDialog({
                 <Toggle
                   checked={form.orchestrate}
                   onChange={(orchestrate) => patch({ orchestrate })}
-                  label="Orchestrate can start it"
+                  label="Dispatch can start it"
                   hint={
                     form.orchestrate
                       ? 'You can still start it yourself.'

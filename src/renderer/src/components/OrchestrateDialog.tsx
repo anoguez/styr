@@ -21,7 +21,7 @@ export function OrchestrateDialog({
       ? `${summary.idleSessions} skipped — a terminal tab is still open for them`
       : '',
     summary.blocked > 0 ? `${summary.blocked} held back — waiting on other tasks` : '',
-    summary.optedOut > 0 ? `${summary.optedOut} opted out of Orchestrate` : '',
+    summary.optedOut > 0 ? `${summary.optedOut} opted out of Dispatch` : '',
     summary.missingWorkingDir > 0
       ? `${summary.missingWorkingDir} skipped — no working directory`
       : ''

@@ -416,10 +416,10 @@ export default function App(): ReactNode {
     const dynamicLabels: Partial<Record<ShortcutCommand, string>> = {
       toggleTerminal: terminalOpen ? 'Hide terminal' : 'Show terminal',
       toggleAgents: agentsOpen ? 'Hide agents sidebar' : 'Show agents sidebar',
-      orchestrate: 'Orchestrate — start waiting work'
+      orchestrate: 'Dispatch — start waiting work'
     }
     const keywords: Partial<Record<ShortcutCommand, string>> = {
-      orchestrate: 'dispatch run agents',
+      orchestrate: 'orchestrate run agents',
       newShell: 'terminal session',
       closeShell: 'terminal session kill',
       settings: 'preferences options',
@@ -782,9 +782,23 @@ export default function App(): ReactNode {
               disabled={orchestration === null || orchestration.dispatch.length === 0}
               title={orchestrateTitle}
             >
-              Orchestrate
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M13.5 2.5 2.5 7l4.5 2 2 4.5z" />
+                <path d="M13.5 2.5 7 9" />
+              </svg>
+              Dispatch
               {orchestration && orchestration.dispatch.length > 0 ? (
-                <span className="rounded bg-accent/20 px-1 text-[10px] font-semibold text-[var(--color-accent-text)]">
+                <span className="inline-flex h-[18px] items-center rounded-md bg-accent/20 px-1.5 font-mono text-[10.5px] font-semibold text-[var(--color-accent-text)]">
                   {orchestration.dispatch.length}
                 </span>
               ) : null}

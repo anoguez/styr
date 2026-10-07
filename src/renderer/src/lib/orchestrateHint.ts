@@ -2,7 +2,7 @@ import { ORCHESTRATION_LANES, type OrchestrationSummary } from '@core/types.js'
 
 /** The Orchestrate button's tooltip: what a click would start, or why nothing would. */
 export function orchestrateHint(orchestration: OrchestrationSummary | null): string {
-  if (!orchestration) return 'Orchestrate'
+  if (!orchestration) return 'Dispatch'
   const { dispatch, occupied, capacity, optedOut, missingWorkingDir } = orchestration
   if (dispatch.length > 0) {
     return `Start ${dispatch.length}: ${dispatch.map((d) => `${d.taskId} (${d.lane})`).join(', ')}`
