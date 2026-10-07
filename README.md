@@ -35,6 +35,11 @@ a board you can see, and in plain files you can read.
   start, and with which agent, before it starts anything.
 - **Task dependencies.** A task can wait on others (`blockedBy`). Dispatch skips it until every
   blocker is Done, the card and Inbox say what it is waiting on, and starting it by hand asks first.
+- **Beyond code.** Research, writing and other non-code work uses the same board. Give the task a
+  plain folder as its working directory and leave "Own git worktree" off: the agent is told to put
+  the result in that folder and set the task to In Review, and you move it to Done yourself (nothing
+  lands, so Styr never does it for you). The Research and Writing presets start that way. Parallel
+  agents in one folder share it.
 - **Chats you can resume.** Each task remembers its conversations, whichever agent ran them, and
   resumes each through its own CLI. Close the app, come back tomorrow, and pick up where the agent
   left off.
