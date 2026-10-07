@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.22.0](https://github.com/anoguez/styr/compare/v0.21.0...v0.22.0) (2026-10-07)
+
+
+### Features
+
+* GitHub sync imports blocked-by, worktree default and ready status ([#97](https://github.com/anoguez/styr/issues/97)) ([dd68aa0](https://github.com/anoguez/styr/commit/dd68aa012712e17b22f5eff598898249add42a48))
+* slash presets and ⌘↵ planning run in Quick add ([#99](https://github.com/anoguez/styr/issues/99)) ([750b4c5](https://github.com/anoguez/styr/commit/750b4c54b2b0acf76cf93e01827446425397a9f6))
+
+
+### Bug Fixes
+
+* focus the neighbouring terminal tab when closing the active one ([#100](https://github.com/anoguez/styr/issues/100)) ([3928510](https://github.com/anoguez/styr/commit/39285104c7cde9306fab692551f624544f3e542e))
+* tell the task dialog's Preset and Agent prompt apart ([#95](https://github.com/anoguez/styr/issues/95)) ([3e93b6c](https://github.com/anoguez/styr/commit/3e93b6c725e322a7b80fdb81dac00caac36fd314))
+
+
+### Documentation
+
+* slim CLAUDE.md to core rules and move area notes to docs/architecture ([#98](https://github.com/anoguez/styr/issues/98)) ([4f75233](https://github.com/anoguez/styr/commit/4f752338cf005eb04eacca0a4b634e9d0b6daaae))
+
 ## [0.21.0](https://github.com/anoguez/styr/compare/v0.20.0...v0.21.0) (2026-10-07)
 
 
