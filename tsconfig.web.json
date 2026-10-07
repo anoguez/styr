@@ -14,6 +14,7 @@
     "src/core/inbox.ts",
     "src/core/blocking.ts",
     "src/core/diff.ts",
+    "src/core/usage.ts",
     "src/core/diffView.ts",
     "src/core/handoff.ts",
     "src/core/askAgent.ts",

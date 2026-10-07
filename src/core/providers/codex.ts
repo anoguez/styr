@@ -18,7 +18,7 @@ function sessionFiles(path: string): string[] {
   })
 }
 
-function transcript(id: string, root = homedir()): string | undefined {
+export function codexTranscript(id: string, root = homedir()): string | undefined {
   return sessionFiles(sessionDirectory(root)).find((file) => file.includes(id))
 }
 
@@ -65,9 +65,9 @@ export const codexProvider: AgentProvider = {
   buildCommand({ settings, sessionId, resume, forkFrom, cwd, prompt }) {
     return codexCommand(settings, { sessionId, resume, forkFrom, cwd, prompt })
   },
-  sessionExists: (id, root) => transcript(id, root) !== undefined,
+  sessionExists: (id, root) => codexTranscript(id, root) !== undefined,
   sessionTime: (id, root) => {
-    const file = transcript(id, root)
+    const file = codexTranscript(id, root)
     return file ? new Date(statSync(file).mtimeMs).toISOString() : undefined
   },
   mcpInstallCommand: (entry) =>

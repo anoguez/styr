@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { AgentStatus } from '../core/agentState.js'
 import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
+import type { ContextUsage, ProviderUsage } from '../core/usage.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
   AppInfo,
@@ -78,6 +79,20 @@ const api = {
     install: (): Promise<boolean> => ipcRenderer.invoke('updates:install'),
     onState: (handler: (state: UpdateState) => void): (() => void) =>
       subscribe('updates:state', handler as (...args: never[]) => void)
+  },
+  usage: {
+    claude: (): Promise<ProviderUsage | null> => ipcRenderer.invoke('usage:claude'),
+    context: (terminalId: string): Promise<ContextUsage | null> =>
+      ipcRenderer.invoke('usage:context', terminalId),
+    onContext: (
+      handler: (update: { terminalId: string; context: ContextUsage | null }) => void
+    ): (() => void) => subscribe('usage:context', handler as (...args: never[]) => void),
+    codex: (
+      terminalId: string
+    ): Promise<{ usage: ProviderUsage | null; context: ContextUsage | null } | null> =>
+      ipcRenderer.invoke('usage:codex', terminalId),
+    onClaude: (handler: (usage: ProviderUsage | null) => void): (() => void) =>
+      subscribe('usage:claude', handler as (...args: never[]) => void)
   },
   orchestrate: {
     plan: (): Promise<OrchestrationSummary> => ipcRenderer.invoke('orchestrate:plan'),

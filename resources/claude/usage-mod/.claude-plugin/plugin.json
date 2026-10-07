@@ -1,0 +1,1 @@
+{ "name": "styr-usage", "version": "0.1.0", "description": "Writes the account's Claude rate-limit windows to the file Styr names, for its usage bar." }

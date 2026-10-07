@@ -946,6 +946,11 @@ export default function App(): ReactNode {
                       bindings={bindings}
                       taskTitles={taskTitles}
                       taskStates={taskStates}
+                      diffStats={diffStats}
+                      onShowChanges={(taskId) => {
+                        const task = allTasks.find((candidate) => candidate.id === taskId)
+                        if (task) setChangesTask(task)
+                      }}
                       onAskReview={askReview}
                       onAskFork={askFork}
                       workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
