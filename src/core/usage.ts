@@ -55,3 +55,31 @@ export function currentWindow(
   if (found.resetsAt && Date.parse(found.resetsAt) <= now) return null
   return found
 }
+
+/** How full one session's context window is, as the usage mod records it per terminal. */
+export interface ContextUsage {
+  /** 0 to 100. */
+  percent: number
+  tokens?: number
+  /** The model's context window, in tokens. */
+  window?: number
+}
+
+export function parseContextFile(text: string): ContextUsage | null {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (typeof raw !== 'object' || raw === null) return null
+  const context = (raw as { context?: unknown }).context
+  if (typeof context !== 'object' || context === null) return null
+  const { percent, tokens, window } = context as Record<string, unknown>
+  if (typeof percent !== 'number') return null
+  return {
+    percent,
+    ...(typeof tokens === 'number' ? { tokens } : {}),
+    ...(typeof window === 'number' ? { window } : {})
+  }
+}

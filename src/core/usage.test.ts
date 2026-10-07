@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currentWindow, parseUsageFile } from './usage.js'
+import { currentWindow, parseContextFile, parseUsageFile } from './usage.js'
 
 const file = JSON.stringify({
   at: '2026-10-07T10:00:00.000Z',
@@ -37,5 +37,19 @@ describe('currentWindow', () => {
   it('is null without usage or the window', () => {
     expect(currentWindow(null, 'five_hour', 0)).toBeNull()
     expect(currentWindow(usage, 'nope', 0)).toBeNull()
+  })
+})
+
+describe('parseContextFile', () => {
+  it('reads the fill, with tokens and window when present', () => {
+    expect(
+      parseContextFile('{"at":"x","context":{"percent":42,"tokens":84000,"window":200000}}')
+    ).toEqual({ percent: 42, tokens: 84000, window: 200000 })
+    expect(parseContextFile('{"context":{"percent":7}}')).toEqual({ percent: 7 })
+  })
+
+  it('returns null without a numeric percent', () => {
+    expect(parseContextFile('{"context":{}}')).toBeNull()
+    expect(parseContextFile('nope')).toBeNull()
   })
 })

@@ -21,7 +21,7 @@ import {
 import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
 import { createTray, destroyTray } from './tray.js'
 import { initUpdater } from './updater.js'
-import { initUsage } from './usage.js'
+import { forgetContext, initUsage } from './usage.js'
 
 /**
  * Electron's default menu binds ⌘W to Close Window, and a menu accelerator is handled before the
@@ -119,6 +119,7 @@ app.whenReady().then(() => {
   onTerminalData((id, output) => broadcast('terminal:data', { id, ...output }))
   onTerminalRuntimeState((state) => broadcast('terminal:runtimeState', state))
   onTerminalExit((id, exitCode) => {
+    forgetContext(id)
     const task = sessionTask(id)
     broadcast('terminal:exit', { id, exitCode })
     if (task) markAgentExited(task.taskId, task.workspaceId)

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { AgentStatus } from '../core/agentState.js'
 import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
-import type { ProviderUsage } from '../core/usage.js'
+import type { ContextUsage, ProviderUsage } from '../core/usage.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
   AppInfo,
@@ -82,6 +82,11 @@ const api = {
   },
   usage: {
     claude: (): Promise<ProviderUsage | null> => ipcRenderer.invoke('usage:claude'),
+    context: (terminalId: string): Promise<ContextUsage | null> =>
+      ipcRenderer.invoke('usage:context', terminalId),
+    onContext: (
+      handler: (update: { terminalId: string; context: ContextUsage | null }) => void
+    ): (() => void) => subscribe('usage:context', handler as (...args: never[]) => void),
     onClaude: (handler: (usage: ProviderUsage | null) => void): (() => void) =>
       subscribe('usage:claude', handler as (...args: never[]) => void)
   },

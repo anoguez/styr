@@ -27,7 +27,8 @@ import type { BlockLayout, TrackedBlock } from '../lib/blockTracker.js'
 import { TerminalView, type TerminalHandle, type TerminalSelection } from './TerminalView.js'
 import { UsageMeter } from './UsageMeter.js'
 import { useClaudeUsage } from '../hooks/useClaudeUsage.js'
-import type { ProviderUsage } from '@core/usage.js'
+import { useContextUsage } from '../hooks/useContextUsage.js'
+import type { ContextUsage, ProviderUsage } from '@core/usage.js'
 
 const INTERRUPT = '\x03'
 const CLEAR = '\x0c'
@@ -190,6 +191,7 @@ function ContextBar({
   branch,
   repoRoot,
   claudeUsage,
+  contextUsage,
   onOpenBranch,
   picking,
   menuOpen,
@@ -219,6 +221,8 @@ function ContextBar({
   repoRoot: string | null
   /** Set only for a Claude session; the quota is the account's, so it is not per tab. */
   claudeUsage?: ProviderUsage | null
+  /** This terminal's own context-window fill. */
+  contextUsage?: ContextUsage | null
   onOpenBranch: () => void
   picking: boolean
   menuOpen: boolean
@@ -302,7 +306,9 @@ function ContextBar({
         </button>
       ) : null}
 
-      {claudeUsage !== undefined ? <UsageMeter usage={claudeUsage} /> : null}
+      {claudeUsage !== undefined ? (
+        <UsageMeter usage={claudeUsage} context={contextUsage ?? null} />
+      ) : null}
 
       <span className="flex-1" />
 
@@ -683,6 +689,7 @@ export function TerminalSurface({
   // Only a program on the alternate screen (vim, htop) owns the whole panel. Agent CLIs such as
   // Claude Code and Codex draw inline, so their sessions keep the bar.
   const claudeUsage = useClaudeUsage()
+  const contextUsage = useContextUsage(session.id)
   const isClaude =
     session.provider === 'claude' ||
     /^(\S*\/)?claude$/.test(runtime?.runningCommand?.command?.trim().split(/\s+/)[0] ?? '')
@@ -873,6 +880,7 @@ export function TerminalSurface({
           branch={git.branch}
           repoRoot={git.root}
           claudeUsage={isClaude ? claudeUsage : undefined}
+          contextUsage={contextUsage}
           onOpenBranch={() => {
             if (!git.root) return
             void window.api.terminal.openInCode(git.root).then((result) => {

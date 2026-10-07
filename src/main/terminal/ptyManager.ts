@@ -76,7 +76,7 @@ function resolveCwd(cwd?: string): string {
  * The app's environment for a new terminal, minus agent session markers it may have inherited (see
  * `withoutSessionMarkers`), plus `extra`, which is applied last so it is never stripped.
  */
-function sanitisedEnv(extra?: Record<string, string>): Record<string, string> {
+function sanitisedEnv(terminalId: string, extra?: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value
@@ -86,7 +86,7 @@ function sanitisedEnv(extra?: Record<string, string>): Record<string, string> {
   // blended from the theme into flat grey.
   return {
     ...withoutSessionMarkers(env),
-    ...usageEnv(env.CLAUDE_CODE_PLUGIN_DIRS),
+    ...usageEnv(env.CLAUDE_CODE_PLUGIN_DIRS, terminalId),
     ...extra,
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor'
@@ -109,7 +109,7 @@ export function createSession(options: SpawnOptions): TerminalSessionInfo {
   const id = nanoid(10)
   const cwd = resolveCwd(options.cwd)
   const shell = options.shell || process.env.SHELL || '/bin/zsh'
-  const environment = sanitisedEnv(options.env)
+  const environment = sanitisedEnv(id, options.env)
   const child = spawn(shell, ['-l'], {
     name: 'xterm-256color',
     cols: 100,
