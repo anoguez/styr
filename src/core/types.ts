@@ -81,6 +81,7 @@ export const SHORTCUT_COMMANDS = [
   'toggleTerminal',
   'toggleAgents',
   'orchestrate',
+  'toggleAutoDispatch',
   'newShell',
   'closeShell',
   'switchWorkspace',
@@ -112,6 +113,14 @@ export type ShortcutCommand = (typeof SHORTCUT_COMMANDS)[number]
  * than a sentinel string.
  */
 export type ShortcutBindings = Record<ShortcutCommand, string[]>
+
+/** Why Auto-run switched itself off; absent when the user turned it off. */
+export type AutoDispatchPause = 'limit' | 'failures'
+
+export interface AutoDispatchState {
+  on: boolean
+  paused?: AutoDispatchPause
+}
 
 /** What Orchestrate would do, without the task objects the renderer does not need. */
 export interface OrchestrationSummary {
@@ -431,6 +440,7 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   toggleTerminal: ['ctrl+`', 'mod+`'],
   toggleAgents: [],
   orchestrate: [],
+  toggleAutoDispatch: [],
   newShell: ['mod+t'],
   closeShell: ['mod+w'],
   switchWorkspace: [],
@@ -474,6 +484,8 @@ export interface Settings {
   promptTemplates: PromptTemplate[]
   promptRouting: PromptRouting
   orchestration: OrchestrationCapacity
+  /** Auto-run: keep starting eligible work as slots free up. Off until the user turns it on. */
+  autoDispatch: boolean
   theme: ThemeSettings
   shortcuts: ShortcutBindings
   updates: UpdateSettings
@@ -514,6 +526,7 @@ export const WORKSPACE_SETTING_KEYS = [
   'promptTemplates',
   'promptRouting',
   'orchestration',
+  'autoDispatch',
   'theme',
   'taskDefaults',
   'taskPresets',

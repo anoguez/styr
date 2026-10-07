@@ -5,6 +5,7 @@ import type { ContextUsage, ProviderUsage } from '../core/usage.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
   AppInfo,
+  AutoDispatchState,
   BrokenSettingsFile,
   CliStatus,
   OrchestrationSummary,
@@ -99,7 +100,14 @@ const api = {
     run: (
       taskIds?: string[]
     ): Promise<{ taskId: string; lane: string; session: TerminalSessionInfo }[]> =>
-      ipcRenderer.invoke('orchestrate:run', taskIds)
+      ipcRenderer.invoke('orchestrate:run', taskIds),
+    autoState: (): Promise<AutoDispatchState> => ipcRenderer.invoke('orchestrate:autoState'),
+    setAuto: (on: boolean): Promise<AutoDispatchState> =>
+      ipcRenderer.invoke('orchestrate:autoSet', on),
+    onAutoStarted: (handler: (session: TerminalSessionInfo) => void): (() => void) =>
+      subscribe('orchestrate:autoStarted', handler as (...args: never[]) => void),
+    onAutoState: (handler: (state: AutoDispatchState) => void): (() => void) =>
+      subscribe('orchestrate:autoState', handler as (...args: never[]) => void)
   },
   agents: {
     list: (): Promise<AgentStatus[]> => ipcRenderer.invoke('agents:list'),

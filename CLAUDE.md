@@ -571,6 +571,31 @@ from `useTasks().allTasks` — unfiltered by search. A manual launch of a blocke
 proceeds on confirm**, never refuses (`launchAgent` in `App`); resuming a task that has a chat never
 asks. This follows the shortcut rule: warn, do not force the user to undo something first.
 
+## Auto-run
+
+Dispatch's **Auto-run** (`Settings.autoDispatch`, a workspace setting, default off) keeps starting what
+"Dispatch now" would start. It is **event-driven, never a timer**: `notifyTasksChanged` and
+`notifyAgentsChanged` call `autoDispatch.request()`, which only marks work and arms one ~750ms
+trailing timer, so a burst of writes is one pass and an idle app does nothing. Nothing in the plan
+depends on elapsed time, so do not add an interval; a future time-based rule would arm a timer for a
+known instant. The runner is `core/autoDispatchRunner.ts` behind injected ports (tested with fakes,
+wired in `ipc.ts`); the rules are pure in `core/autoDispatch.ts`.
+
+- **Stop is the flag going off.** The flag is read before every launch, so a pass under way starts
+  nothing further; running agents are never touched. The limit and failure pauses use the same path
+  and report a reason (`AutoDispatchState.paused`, per workspace).
+- **Loop guard.** A launch does not always remove a task from the plan (a review leaves it In Review),
+  so the runner remembers `workspace:task → lane|status|readiness` in memory and does not start it
+  again until that changes. `pruneMemory` runs _before_ the plan is built and its `skip` set keeps
+  remembered tasks out of `planOrchestration`: left in, they take the lane's slot and starve the rest.
+- **Breaker.** `AUTO_LAUNCH_LIMIT` per rolling hour per workspace, and `AUTO_FAILURE_LIMIT`
+  consecutive failed launches, switch Auto-run off with a notification.
+- **Startup grace.** 30s after launch before the first pass; an explicit toggle skips it.
+- The flag is switched only by `orchestrate:autoSet`; `persistSettings` keeps the on-disk value so an
+  open Settings draft cannot undo a Stop, and a new workspace's seed copy starts with it off.
+- Auto-launched sessions reach the renderer through `orchestrate:autoStarted` (it adopts them like a
+  manual launch). Not built: the tray item and a Settings pane control.
+
 ## Prompt routing
 
 `src/core/prompt.ts` picks which template runs, in this order:

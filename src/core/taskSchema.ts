@@ -206,6 +206,7 @@ export const settingsSchema = z.object({
   promptTemplates: z.array(promptTemplateSchema).default([]),
   promptRouting: promptRoutingSchema,
   orchestration: orchestrationSchema,
+  autoDispatch: z.boolean().default(false),
   theme: themeSchema,
   shortcuts: shortcutsSchema,
   updates: z

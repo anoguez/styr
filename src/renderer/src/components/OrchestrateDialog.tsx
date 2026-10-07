@@ -2,20 +2,26 @@ import type { ReactNode } from 'react'
 import {
   ORCHESTRATION_LANES,
   ORCHESTRATION_LANE_LABELS,
+  type AutoDispatchState,
   type OrchestrationSummary
 } from '@core/types.js'
-import { Button, Modal } from './ui.js'
+import { Button, Card, Modal, SwitchRow } from './ui.js'
 
 export function OrchestrateDialog({
   summary,
+  auto,
+  onAutoChange,
   onConfirm,
   onClose
 }: {
   summary: OrchestrationSummary
+  auto: AutoDispatchState
+  onAutoChange: (on: boolean) => void
   onConfirm: () => void
   onClose: () => void
 }): ReactNode {
   const count = summary.dispatch.length
+  const running = ORCHESTRATION_LANES.reduce((sum, lane) => sum + summary.occupied[lane], 0)
   const notes = [
     summary.idleSessions > 0
       ? `${summary.idleSessions} skipped — a terminal tab is still open for them`
@@ -29,20 +35,45 @@ export function OrchestrateDialog({
 
   return (
     <Modal
-      title={`Start ${count} Claude session${count === 1 ? '' : 's'}?`}
-      subtitle="Each one runs in that task's working directory and can change files."
+      title={count > 0 ? `Start ${count} Claude session${count === 1 ? '' : 's'}?` : 'Dispatch'}
+      subtitle={
+        count > 0
+          ? "Each one runs in that task's working directory and can change files."
+          : 'Nothing is ready to start right now.'
+      }
       onClose={onClose}
-      onSubmit={onConfirm}
+      onSubmit={count > 0 ? onConfirm : onClose}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={onConfirm}>
+          <Button onClick={onClose}>{count > 0 ? 'Cancel' : 'Close'}</Button>
+          <Button variant="primary" onClick={onConfirm} disabled={count === 0}>
             Start {count} <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↵</kbd>
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
+        <Card>
+          <SwitchRow
+            checked={auto.on}
+            onChange={onAutoChange}
+            label="Auto-run"
+            hint="Start eligible tasks automatically as agents finish and new tasks become ready, while Styr is open. Turning it off starts nothing new; agents already running finish."
+          />
+        </Card>
+        {auto.paused ? (
+          <p className="text-[11.5px] text-danger">
+            {auto.paused === 'limit'
+              ? 'Paused: Auto-run started too many tasks in an hour.'
+              : 'Paused: three launches in a row failed.'}
+          </p>
+        ) : null}
+        {!auto.on && running > 0 ? (
+          <p className="text-[11.5px] text-faint">
+            {running} dispatched task{running === 1 ? '' : 's'} still running — they will finish; no
+            new ones start.
+          </p>
+        ) : null}
         <ol className="flex flex-col divide-y divide-edge overflow-hidden rounded-lg border border-edge-strong bg-chrome">
           {summary.dispatch.map((entry, index) => (
             <li key={entry.taskId} className="flex items-center gap-3 px-3 py-2.5">
@@ -61,23 +92,25 @@ export function OrchestrateDialog({
           ))}
         </ol>
 
-        <div className="flex flex-col gap-1.5">
-          <p className="text-[11px] font-medium text-dim">Slots after this</p>
-          <div className="flex gap-2">
-            {ORCHESTRATION_LANES.map((lane) => {
-              const starting = summary.dispatch.filter((entry) => entry.lane === lane).length
-              return (
-                <span
-                  key={lane}
-                  className="rounded-md border border-edge bg-chrome px-2 py-1 font-mono text-[10.5px] text-dim"
-                >
-                  {ORCHESTRATION_LANE_LABELS[lane]} {summary.occupied[lane] + starting}/
-                  {summary.capacity[lane]}
-                </span>
-              )
-            })}
+        {count > 0 ? (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[11px] font-medium text-dim">Slots after this</p>
+            <div className="flex gap-2">
+              {ORCHESTRATION_LANES.map((lane) => {
+                const starting = summary.dispatch.filter((entry) => entry.lane === lane).length
+                return (
+                  <span
+                    key={lane}
+                    className="rounded-md border border-edge bg-chrome px-2 py-1 font-mono text-[10.5px] text-dim"
+                  >
+                    {ORCHESTRATION_LANE_LABELS[lane]} {summary.occupied[lane] + starting}/
+                    {summary.capacity[lane]}
+                  </span>
+                )
+              })}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         {notes.length > 0 ? (
           <ul className="flex flex-col gap-1">

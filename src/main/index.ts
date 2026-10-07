@@ -8,6 +8,7 @@ import {
   notifyAgentsChanged,
   notifyTasksChanged,
   registerIpcHandlers,
+  startAutoDispatch,
   switchWorkspace
 } from './ipc.js'
 import { closeIndex, syncIndex } from './taskIndex.js'
@@ -114,6 +115,7 @@ app.whenReady().then(() => {
   tasksDir()
   syncIndex()
   registerIpcHandlers()
+  startAutoDispatch()
   installAppMenu()
 
   onTerminalData((id, output) => broadcast('terminal:data', { id, ...output }))

@@ -69,6 +69,8 @@ export interface OrchestrationContext {
   liveTaskIds: ReadonlySet<string>
   /** Current agent state per task. A slot is held by real activity, not by an open tab. */
   agents: ReadonlyMap<string, AgentState>
+  /** Tasks not to start now (Auto-run already did). They stay out of the plan so they cannot hold a slot. */
+  skip?: ReadonlySet<string>
 }
 
 const BUSY_STATES: ReadonlySet<AgentState> = new Set<AgentState>(['working', 'waiting'])
@@ -87,7 +89,7 @@ export function planOrchestration(
   tasks: Task[],
   context: OrchestrationContext
 ): OrchestrationPlan {
-  const { liveTaskIds, agents } = context
+  const { liveTaskIds, agents, skip } = context
   const capacity = settings.orchestration
   const occupied = emptyTally()
   for (const task of tasks) {
@@ -98,7 +100,9 @@ export function planOrchestration(
   const byId = indexTasks(tasks)
   const unblocked = (task: Task): boolean => openBlockers(task, byId).length === 0
 
-  const startable = tasks.filter((task) => !liveTaskIds.has(task.id) && isDispatchable(task))
+  const startable = tasks.filter(
+    (task) => !liveTaskIds.has(task.id) && !skip?.has(task.id) && isDispatchable(task)
+  )
   const blocked = startable.filter((task) => !unblocked(task)).length
   const candidates = startable.filter(unblocked)
 
