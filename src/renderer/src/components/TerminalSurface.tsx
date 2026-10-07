@@ -25,6 +25,12 @@ import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
 import { TerminalBlocks, type BlockActions } from './TerminalBlocks.js'
 import type { BlockLayout, TrackedBlock } from '../lib/blockTracker.js'
 import { TerminalView, type TerminalHandle, type TerminalSelection } from './TerminalView.js'
+import { UsageButton } from './UsageButton.js'
+import { DiffStatButton } from './ui.js'
+import type { DiffStat } from '@core/diff.js'
+import { useClaudeUsage } from '../hooks/useClaudeUsage.js'
+import { useContextUsage } from '../hooks/useContextUsage.js'
+import { useCodexUsage } from '../hooks/useCodexUsage.js'
 
 const INTERRUPT = '\x03'
 const CLEAR = '\x0c'
@@ -186,6 +192,8 @@ function ContextBar({
   blocksOn,
   branch,
   repoRoot,
+  usage,
+  diff,
   onOpenBranch,
   picking,
   menuOpen,
@@ -213,6 +221,10 @@ function ContextBar({
   blocksOn?: boolean
   branch: string | null
   repoRoot: string | null
+  /** The usage control, for a Claude session; sits beside Ask agent. */
+  usage?: ReactNode
+  /** The task's change totals, present only when its branch has changes. */
+  diff?: ReactNode
   onOpenBranch: () => void
   picking: boolean
   menuOpen: boolean
@@ -295,6 +307,10 @@ function ContextBar({
           <span className="truncate">{branch}</span>
         </button>
       ) : null}
+
+      {usage}
+
+      {diff}
 
       <span className="flex-1" />
 
@@ -439,6 +455,8 @@ export function TerminalSurface({
   agentStatus,
   taskStatus,
   taskPrUrl,
+  diffStat,
+  onShowChanges,
   onAskReview,
   onAskFork,
   onFullscreenChange,
@@ -458,6 +476,10 @@ export function TerminalSurface({
   taskStatus?: TaskStatus
   /** The task's pull request, once there is one. */
   taskPrUrl?: string
+  /** The task branch's change totals; absent when it has none. */
+  diffStat?: DiffStat
+  /** Open the Changes dialog for this session's task. */
+  onShowChanges?: () => void
   /** Start a fresh reviewer on the task (what Orchestrate does for the review lane). */
   onAskReview?: (taskId: string) => Promise<void>
   /** Ask a question in a copy of this task session's chat; false when there is no saved chat to copy. */
@@ -674,6 +696,13 @@ export function TerminalSurface({
     runtime.lastExitCode !== 0
   // Only a program on the alternate screen (vim, htop) owns the whole panel. Agent CLIs such as
   // Claude Code and Codex draw inline, so their sessions keep the bar.
+  const claudeUsage = useClaudeUsage()
+  const contextUsage = useContextUsage(session.id)
+  const isClaude =
+    session.provider === 'claude' ||
+    /^(\S*\/)?claude$/.test(runtime?.runningCommand?.command?.trim().split(/\s+/)[0] ?? '')
+  const isCodex = session.provider === 'codex'
+  const codexUsage = useCodexUsage(session.id, isCodex)
   const agent = Boolean(session.taskId) || isAgentProgram(runtime?.runningCommand?.command)
   const fullscreen = altScreen && !agent
   // A shell's commands become blocks; an agent session is one long command, which is not a block.
@@ -860,6 +889,31 @@ export function TerminalSurface({
           blocksOn={blocksOn}
           branch={git.branch}
           repoRoot={git.root}
+          diff={
+            diffStat && onShowChanges ? (
+              // The bar ignores the pointer so it never blocks the terminal; the button opts back in.
+              <span className="pointer-events-auto flex">
+                <DiffStatButton stat={diffStat} onClick={onShowChanges} />
+              </span>
+            ) : undefined
+          }
+          usage={
+            isClaude ? (
+              <UsageButton
+                agent="Claude"
+                usage={claudeUsage}
+                context={contextUsage}
+                onCompact={() => write('/compact\r')}
+              />
+            ) : isCodex && codexUsage ? (
+              <UsageButton
+                agent="Codex"
+                usage={codexUsage.usage}
+                context={codexUsage.context}
+                onCompact={() => write('/compact\r')}
+              />
+            ) : undefined
+          }
           onOpenBranch={() => {
             if (!git.root) return
             void window.api.terminal.openInCode(git.root).then((result) => {

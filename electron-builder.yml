@@ -11,6 +11,9 @@ files:
 extraResources:
   - from: node_modules/@fontsource/unbounded/LICENSE
     to: licenses/Unbounded-OFL.txt
+  # Loaded by Claude Code, a separate process, so it ships as plain files rather than in the asar.
+  - from: resources/claude
+    to: claude
 asarUnpack:
   - '**/node_modules/node-pty/**'
   - '**/node_modules/better-sqlite3/**'

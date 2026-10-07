@@ -15,6 +15,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { AGENT_STATE_LABELS, type AgentStatus } from '@core/agentState.js'
+import type { DiffStat } from '@core/diff.js'
 import type {
   ShortcutBindings,
   TerminalRuntimeState,
@@ -126,6 +127,8 @@ export function TerminalPanel({
   bindings,
   taskTitles,
   taskStates,
+  diffStats,
+  onShowChanges,
   workspaces,
   onToggleExpand,
   onSelect,
@@ -144,6 +147,9 @@ export function TerminalPanel({
   bindings: ShortcutBindings
   taskTitles: ReadonlyMap<string, string>
   taskStates: ReadonlyMap<string, { status: TaskStatus; prUrl?: string }>
+  /** Per-task change totals; a task with no changes has no entry. */
+  diffStats: ReadonlyMap<string, DiffStat>
+  onShowChanges: (taskId: string) => void
   workspaces: { activeId: string; names: ReadonlyMap<string, string> }
   onToggleExpand: () => void
   onSelect: (id: string) => void
@@ -316,6 +322,12 @@ export function TerminalPanel({
                     ? taskStates.get(session.taskId)?.prUrl
                     : undefined
                 }
+                diffStat={
+                  session.taskId && session.workspaceId === workspaces.activeId
+                    ? diffStats.get(session.taskId)
+                    : undefined
+                }
+                onShowChanges={session.taskId ? () => onShowChanges(session.taskId!) : undefined}
                 onAskReview={onAskReview}
                 onAskFork={onAskFork}
               />

@@ -361,6 +361,28 @@ export const DEFAULT_TASK_PRESETS: TaskPreset[] = [
     readiness: 'ready',
     useWorktree: true,
     orchestrate: true
+  },
+  {
+    id: 'research',
+    name: 'Research',
+    title: '',
+    description: '## Question\n\n\n## Sources to use\n\n\n## Deliverable\n',
+    tags: ['research'],
+    priority: 'medium',
+    readiness: 'ready',
+    useWorktree: false,
+    orchestrate: true
+  },
+  {
+    id: 'writing',
+    name: 'Writing',
+    title: '',
+    description: '## Audience\n\n\n## Outline\n\n\n## Length and tone\n',
+    tags: ['writing'],
+    priority: 'medium',
+    readiness: 'ready',
+    useWorktree: false,
+    orchestrate: true
   }
 ]
 

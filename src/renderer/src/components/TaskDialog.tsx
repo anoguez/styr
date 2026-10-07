@@ -337,11 +337,15 @@ export function TaskDialog({
   onShowChanges: (task: Task) => void
 }): ReactNode {
   const [changes, setChanges] = useState<TaskDiff | null>(null)
+  // The task's folder is not a git repository (non-code work): there is nothing to show changes of.
+  const [noGit, setNoGit] = useState(false)
   useEffect(() => {
     if (!task) return
     let cancelled = false
     void window.api.git.taskDiff(task.id).then((result) => {
-      if (!cancelled) setChanges('error' in result ? null : result)
+      if (cancelled) return
+      setChanges('error' in result ? null : result)
+      setNoGit('error' in result && result.error.endsWith('is not a git repository'))
     })
     return () => {
       cancelled = true
@@ -359,11 +363,15 @@ export function TaskDialog({
   const [branchInfo, setBranchInfo] = useState<{ branches: string[]; current?: string }>({
     branches: []
   })
+  const [branchesLoaded, setBranchesLoaded] = useState(false)
   useEffect(() => {
+    setBranchesLoaded(false)
     if (!form.useWorktree || !form.repoPath.trim()) return
     let cancelled = false
     void window.api.git.branches(form.repoPath.trim()).then((info) => {
-      if (!cancelled) setBranchInfo(info)
+      if (cancelled) return
+      setBranchInfo(info)
+      setBranchesLoaded(true)
     })
     return () => {
       cancelled = true
@@ -1028,6 +1036,11 @@ export function TaskDialog({
                     </button>
                   </div>
                 </div>
+                {!form.repoPath.trim() && !settings.defaultRepoPath ? (
+                  <span className="text-[11.5px] text-dim">
+                    No working directory set: the agent runs in the workspace folder.
+                  </span>
+                ) : null}
                 <Toggle
                   checked={form.useWorktree}
                   onChange={(useWorktree) => patch({ useWorktree })}
@@ -1036,7 +1049,9 @@ export function TaskDialog({
                     !form.useWorktree
                       ? 'Runs directly in the working directory.'
                       : form.repoPath
-                        ? `Runs on branch styr/${taskId} so parallel agents never share a checkout.`
+                        ? branchesLoaded && branchInfo.branches.length === 0
+                          ? 'This folder does not look like a git repository, so the agent will run in it directly. Turn this off for non-code work.'
+                          : `Runs on branch styr/${taskId} so parallel agents never share a checkout.`
                         : 'Set a working directory first — the worktree is created from that repository.'
                   }
                 />
@@ -1122,44 +1137,46 @@ export function TaskDialog({
                   <FolderIcon />
                   Reveal
                 </button>
-                <button
-                  type="button"
-                  className={`${GHOST_BTN} h-7`}
-                  disabled={!changes || changes.files.length === 0}
-                  title={
-                    !changes
-                      ? 'Reading changes…'
-                      : changes.files.length === 0
-                        ? changes.branch
-                          ? `No changes on ${changes.branch} yet`
-                          : 'No changes to show'
-                        : 'View changes'
-                  }
-                  onClick={() => onShowChanges(task)}
-                >
-                  <svg
-                    aria-hidden
-                    viewBox="0 0 16 16"
-                    width="13"
-                    height="13"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                {noGit ? null : (
+                  <button
+                    type="button"
+                    className={`${GHOST_BTN} h-7`}
+                    disabled={!changes || changes.files.length === 0}
+                    title={
+                      !changes
+                        ? 'Reading changes…'
+                        : changes.files.length === 0
+                          ? changes.branch
+                            ? `No changes on ${changes.branch} yet`
+                            : 'No changes to show'
+                          : 'View changes'
+                    }
+                    onClick={() => onShowChanges(task)}
                   >
-                    <path d="M4 2.5h5l3 3v8H4z" />
-                    <path d="M6.25 7h3.5M8 5.25v3.5M6.25 11h3.5" />
-                  </svg>
-                  Changes
-                  {changes && changes.files.length > 0 ? (
-                    <DiffCount
-                      added={changes.totalAdditions}
-                      removed={changes.totalDeletions}
-                      files={changes.totalFiles}
-                    />
-                  ) : null}
-                </button>
+                    <svg
+                      aria-hidden
+                      viewBox="0 0 16 16"
+                      width="13"
+                      height="13"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M4 2.5h5l3 3v8H4z" />
+                      <path d="M6.25 7h3.5M8 5.25v3.5M6.25 11h3.5" />
+                    </svg>
+                    Changes
+                    {changes && changes.files.length > 0 ? (
+                      <DiffCount
+                        added={changes.totalAdditions}
+                        removed={changes.totalDeletions}
+                        files={changes.totalFiles}
+                      />
+                    ) : null}
+                  </button>
+                )}
                 <button
                   type="button"
                   className={`${GHOST_BTN} h-7`}

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.20.0](https://github.com/anoguez/styr/compare/v0.19.0...v0.20.0) (2026-10-07)
+
+
+### Features
+
+* make Styr usable for non-coding tasks ([#90](https://github.com/anoguez/styr/issues/90)) ([bd40ce6](https://github.com/anoguez/styr/commit/bd40ce6616c458751f12dea19b102f34ed463c24))
+* match v3 design for terminal tabs, search and status bar ([#87](https://github.com/anoguez/styr/issues/87)) ([c0a7ba3](https://github.com/anoguez/styr/commit/c0a7ba3abac4d23682b937cdd91acd92c6ce74d1))
+* rename Orchestrate to Dispatch, add icon and Dispatching state ([#88](https://github.com/anoguez/styr/issues/88)) ([20e8826](https://github.com/anoguez/styr/commit/20e88266eefb0d3f54912240b100d8deff322016))
+* show Claude and Codex subscription usage in the terminal bar ([#89](https://github.com/anoguez/styr/issues/89)) ([11ef554](https://github.com/anoguez/styr/commit/11ef5544415dd5d1da385510eab9541e6cbdaa33))
+* split the palette into quick open (⌘P) and commands (⇧⌘P) ([#84](https://github.com/anoguez/styr/issues/84)) ([96b9d13](https://github.com/anoguez/styr/commit/96b9d136300b6a62994ea5af5c6512eb2da2efcb))
+* task dependencies (blockedBy) ([#80](https://github.com/anoguez/styr/issues/80)) ([3a6e137](https://github.com/anoguez/styr/commit/3a6e137093f7a424611b72c7b0e1770cd098cbb7))
+* task presets for the New task dialog ([#86](https://github.com/anoguez/styr/issues/86)) ([f60b6e8](https://github.com/anoguez/styr/commit/f60b6e820bc1281e1f0e9e15c9fb5d03e7d65ede))
+
 ## [0.19.0](https://github.com/anoguez/styr/compare/v0.18.1...v0.19.0) (2026-10-06)
 
 
