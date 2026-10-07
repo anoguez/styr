@@ -19,7 +19,7 @@ export function ArchiveDialog({
   return (
     <Modal
       title="Archive"
-      subtitle="Archived tasks are off the board and out of Orchestrate. Their files are kept."
+      subtitle="Archived tasks are off the board and out of Dispatch. Their files are kept."
       onClose={onClose}
       footer={<Button onClick={onClose}>Close</Button>}
     >

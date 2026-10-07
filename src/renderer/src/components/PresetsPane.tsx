@@ -334,8 +334,8 @@ export function PresetsPane({
                 <SwitchRow
                   checked={selected.orchestrate}
                   onChange={(orchestrate) => update(selected.id, { orchestrate })}
-                  label="Orchestrate can start it"
-                  hint="Orchestrate may pick the task up when a slot is free."
+                  label="Dispatch can start it"
+                  hint="Dispatch may pick the task up when a slot is free."
                 />
               </CardRow>
             </Card>

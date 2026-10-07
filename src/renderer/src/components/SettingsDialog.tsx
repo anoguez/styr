@@ -188,7 +188,7 @@ export const SECTIONS = [
   },
   {
     id: 'orchestration',
-    label: 'Orchestrate',
+    label: 'Dispatch',
     scope: 'workspace',
     blurb: 'Which agent picks up each kind of work, and how many run at once.',
     keys: ['orchestration'],
@@ -862,8 +862,8 @@ export function SettingsDialog({
                           onChange={(orchestrate) =>
                             patch({ taskDefaults: { ...draft.taskDefaults, orchestrate } })
                           }
-                          label="Orchestrate can start it"
-                          hint="Orchestrate may pick the task up when a slot is free."
+                          label="Dispatch can start it"
+                          hint="Dispatch may pick the task up when a slot is free."
                         />
                       </CardRow>
                     </Card>
@@ -1095,8 +1095,8 @@ export function SettingsDialog({
                       ))}
                     </Card>
                     <Hint>
-                      Orchestrate uses these providers. Claude remains the default until you opt a
-                      lane into Codex. The same choice is in the Orchestrate section.
+                      Dispatch uses these providers. Claude remains the default until you opt a lane
+                      into Codex. The same choice is in the Dispatch section.
                     </Hint>
                   </div>
                   <Field
@@ -1241,7 +1241,7 @@ export function SettingsDialog({
                           </span>
                           <span className="text-[11px] text-faint">
                             {draft.orchestration[lane] === 0
-                              ? 'Skipped — Orchestrate leaves these alone'
+                              ? 'Skipped — Dispatch leaves these alone'
                               : LANE_HINTS[lane]}
                           </span>
                         </span>
@@ -1278,8 +1278,8 @@ export function SettingsDialog({
                     ))}
                   </Card>
                   <Hint>
-                    Orchestrate fills free slots with the highest-priority waiting task. A slot is
-                    busy while its session is live. Set a lane to 0 to skip it. Up to{' '}
+                    Dispatch fills free slots with the highest-priority waiting task. A slot is busy
+                    while its session is live. Set a lane to 0 to skip it. Up to{' '}
                     {ORCHESTRATION_LANES.reduce((sum, lane) => sum + draft.orchestration[lane], 0)}{' '}
                     agents can run at once.
                   </Hint>
@@ -1681,8 +1681,8 @@ export function SettingsDialog({
                               {!on
                                 ? 'Off. Tasks and lanes cannot use it.'
                                 : isDefault
-                                  ? 'Used by manual launches. Orchestrate lanes can pick either.'
-                                  : 'Available for tasks and Orchestrate lanes.'}
+                                  ? 'Used by manual launches. Dispatch lanes can pick either.'
+                                  : 'Available for tasks and Dispatch lanes.'}
                             </span>
                           </span>
                           {on && !isDefault ? (

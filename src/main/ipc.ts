@@ -472,7 +472,7 @@ export function registerIpcHandlers(): void {
         .map(async ({ task, lane }) => ({
           lane,
           taskId: task.id,
-          session: launchSessionForTask(task.id, {
+          session: await launchSessionForTask(task.id, {
             withPrompt: true,
             fresh: lane === 'review',
             provider: providerForLane(loadSettings(), lane)

@@ -33,7 +33,7 @@ export const SHORTCUT_LABELS: Record<ShortcutCommand, string> = {
   settings: 'Open Settings',
   toggleTerminal: 'Toggle the terminal panel',
   toggleAgents: 'Toggle the agents sidebar',
-  orchestrate: 'Orchestrate',
+  orchestrate: 'Dispatch',
   newShell: 'New terminal tab',
   closeShell: 'Close terminal tab',
   switchWorkspace: 'Switch workspace',

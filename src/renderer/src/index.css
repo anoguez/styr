@@ -119,3 +119,38 @@ body {
     animation: none;
   }
 }
+
+/* A slim shimmer along the header's lower edge while a Dispatch run is going. */
+@keyframes dispatch-sweep {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+.dispatch-sweep {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 30%,
+    var(--color-accent) 40%,
+    var(--color-accent-soft) 50%,
+    var(--color-col-progress, #5f8df7) 60%,
+    transparent 70%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: dispatch-sweep 2.8s linear infinite;
+}
+.dispatch-running {
+  border-color: color-mix(in oklab, var(--color-accent-soft) 55%, transparent);
+  background: color-mix(in oklab, var(--color-accent) 22%, var(--color-chrome));
+  color: var(--color-ink);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dispatch-sweep {
+    animation: none;
+    background-position: 50% 0;
+  }
+}

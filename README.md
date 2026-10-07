@@ -30,10 +30,10 @@ a board you can see, and in plain files you can read.
   sorts first.
 - **Isolated worktrees.** Tick one box and a task runs on its own branch in its own checkout, so
   parallel agents never share a working directory.
-- **Orchestrate.** One button starts every task that is ready, up to a number of slots per lane
+- **Dispatch.** One button starts every task that is ready, up to a number of slots per lane
   (spec, implement, review), each lane on the agent you chose for it. It shows exactly what it will
   start, and with which agent, before it starts anything.
-- **Task dependencies.** A task can wait on others (`blockedBy`). Orchestrate skips it until every
+- **Task dependencies.** A task can wait on others (`blockedBy`). Dispatch skips it until every
   blocker is Done, the card and Inbox say what it is waiting on, and starting it by hand asks first.
 - **Chats you can resume.** Each task remembers its conversations, whichever agent ran them, and
   resumes each through its own CLI. Close the app, come back tomorrow, and pick up where the agent
