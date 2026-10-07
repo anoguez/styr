@@ -192,17 +192,20 @@ function hintFor(group: InboxGroup, items: InboxItem[]): string {
 function Row({
   item,
   selected,
-  onSelect
+  onSelect,
+  onOpen
 }: {
   item: InboxItem
   selected: boolean
   onSelect: () => void
+  onOpen: () => void
 }): ReactNode {
   const { task, agent } = item
   return (
     <button
       type="button"
       onClick={onSelect}
+      onDoubleClick={onOpen}
       aria-current={selected}
       className={`flex w-full items-start gap-2.5 rounded-lg border px-2.5 py-[9px] text-left transition-colors hover:bg-raised ${
         selected ? 'border-edge-strong bg-raised' : 'border-transparent'
@@ -435,6 +438,7 @@ export function Inbox({
                     item={item}
                     selected={item.task.id === selected?.task.id}
                     onSelect={() => setSelectedId(item.task.id)}
+                    onOpen={() => handlers.onOpen(item.task)}
                   />
                 ))}
               </div>
