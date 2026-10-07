@@ -545,28 +545,9 @@ export function TaskDialog({
                     <span className="truncate">{task.filePath}</span>
                   </>
                 ) : (
-                  <>
-                    <span className="font-[family-name:var(--font-ui)] text-[11.5px]">
-                      New task · saved to the board as a markdown file
-                    </span>
-                    {settings.taskPresets.length > 0 ? (
-                      <span className="ml-2 w-44 font-[family-name:var(--font-ui)]">
-                        <Select
-                          compact
-                          aria-label="Preset"
-                          value={appliedPresetId}
-                          onChange={(event) => applyPreset(event.target.value)}
-                        >
-                          <option value="">Preset: none</option>
-                          {settings.taskPresets.map((preset) => (
-                            <option key={preset.id} value={preset.id}>
-                              {preset.name}
-                            </option>
-                          ))}
-                        </Select>
-                      </span>
-                    ) : null}
-                  </>
+                  <span className="font-[family-name:var(--font-ui)] text-[11.5px]">
+                    New task · saved to the board as a markdown file
+                  </span>
                 )}
                 {form.useWorktree ? (
                   <span className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded-md bg-accent/15 px-1.5 text-[var(--color-accent-text)]">
@@ -805,6 +786,24 @@ export function TaskDialog({
             </section>
 
             <aside className="flex min-h-0 flex-col gap-5 overflow-y-auto border-l border-edge bg-chrome/50 p-4">
+              {!task && settings.taskPresets.length > 0 ? (
+                <div className="flex flex-col gap-1.5">
+                  <span className={SECTION_LABEL}>Start from</span>
+                  <Select
+                    compact
+                    aria-label="Preset"
+                    value={appliedPresetId}
+                    onChange={(event) => applyPreset(event.target.value)}
+                  >
+                    <option value="">Blank task</option>
+                    {settings.taskPresets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              ) : null}
               <div className="flex flex-col gap-0.5">
                 <span className={`${SECTION_LABEL} pb-1.5`}>Details</span>
                 <PropertySelect

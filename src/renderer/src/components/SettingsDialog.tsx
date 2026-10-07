@@ -839,7 +839,7 @@ export function SettingsDialog({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-5">
             <div
-              className={`flex flex-col gap-5 ${section === 'templates' ? 'h-full min-h-[380px]' : 'max-w-[640px]'}`}
+              className={`flex flex-col gap-5 ${section === 'templates' ? 'h-full min-h-[380px]' : section === 'presets' ? 'max-w-[820px]' : 'max-w-[640px]'}`}
             >
               {section === 'preferences' ? (
                 <>
