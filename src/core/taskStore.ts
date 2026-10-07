@@ -8,6 +8,7 @@ import {
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, extname, join } from 'node:path'
+import { blockerProblem, indexTasks } from './blocking.js'
 import { migrateProviderFields } from './migrateTask.js'
 import { jsonTaskSchema } from './taskSchema.js'
 import { hasFrontmatter, parseTaskMarkdown, serialiseTask } from './markdown.js'
@@ -61,6 +62,7 @@ function adoptUnmanaged(raw: string, filePath: string, index: number): Task {
     orchestrate: true,
     useWorktree: false,
     sessions: [],
+    blockedBy: [],
     contextFiles: [],
     description: raw.replace(/^#\s+.+$/m, '').trim(),
     activity: [],
@@ -176,8 +178,18 @@ function nextId(existing: Task[]): string {
   return `TASK-${String(highest + 1).padStart(4, '0')}`
 }
 
+/** Refuses a blocker list with unknown ids or a cycle, before anything is written. */
+function assertBlockers(id: string, blockedBy: string[], others: Task[]): void {
+  const problem = blockerProblem(id, blockedBy, indexTasks(others))
+  if (problem) throw new Error(problem)
+}
+
 export function createTask(draft: TaskDraft): Task {
   const existing = listTasks()
+  if (draft.blockedBy?.length) {
+    const id = draft.id ?? nextId(existing)
+    assertBlockers(id, draft.blockedBy, existing)
+  }
   const stamp = now()
   const id = draft.id ?? nextId(existing)
   const status = draft.status ?? 'backlog'
@@ -196,6 +208,7 @@ export function createTask(draft: TaskDraft): Task {
     useWorktree: draft.useWorktree ?? false,
     baseBranch: draft.baseBranch,
     worktreePath: draft.worktreePath,
+    blockedBy: draft.blockedBy ?? [],
     contextFiles: draft.contextFiles ?? [],
     promptTemplateId: draft.promptTemplateId,
     provider: draft.provider,
@@ -213,9 +226,22 @@ export function createTask(draft: TaskDraft): Task {
 }
 
 export function updateTask(id: string, patch: TaskPatch): Task {
-  const task = getTask(id)
+  const all = listTasks()
+  const task = all.find((candidate) => candidate.id === id)
   if (!task) throw new Error(`Task ${id} not found`)
-  return writeTask(stampDone(task, { ...task, ...patch, updatedAt: now() }))
+  const changes = { ...patch }
+  if (patch.blockedBy) {
+    changes.blockedBy = [...new Set(patch.blockedBy)]
+    // Only a change is checked: a task saved with the cycle or typo a hand edit left must still save.
+    if (changes.blockedBy.join() !== task.blockedBy.join()) {
+      assertBlockers(
+        id,
+        changes.blockedBy,
+        all.filter((other) => other.id !== id)
+      )
+    }
+  }
+  return writeTask(stampDone(task, { ...task, ...changes, updatedAt: now() }))
 }
 
 /**

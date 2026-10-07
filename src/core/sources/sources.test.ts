@@ -65,6 +65,7 @@ function task(over: Partial<Task> = {}): Task {
     tags: ['github:bug'],
     orchestrate: true,
     useWorktree: false,
+    blockedBy: [],
     contextFiles: [],
     sessions: [],
     order: 0,

@@ -1,4 +1,5 @@
 import { isAgentArchived, type AgentStatus } from './agentState.js'
+import { indexTasks, openBlockers } from './blocking.js'
 import type { Task } from './types.js'
 
 export const INBOX_GROUPS = ['needs', 'running', 'next', 'done'] as const
@@ -13,7 +14,16 @@ export const INBOX_GROUP_LABELS: Record<InboxGroup, string> = {
 
 /** Why a task sits in its group — picks the wording and the actions the inbox offers for it. */
 export type InboxKind =
-  'waiting' | 'review' | 'spec' | 'running' | 'queued' | 'resumable' | 'idle' | 'finished' | 'done'
+  | 'waiting'
+  | 'review'
+  | 'spec'
+  | 'running'
+  | 'blocked'
+  | 'queued'
+  | 'resumable'
+  | 'idle'
+  | 'finished'
+  | 'done'
 
 export interface InboxItem {
   task: Task
@@ -22,6 +32,8 @@ export interface InboxItem {
   agent?: AgentStatus
   /** Position in the Orchestrate queue, 1-based, when the task is next in line. */
   queuedAt?: number
+  /** Ids of the tasks this one is waiting on; set only for the `blocked` kind. */
+  blockers?: string[]
   /** One line saying what the task wants from you. */
   reason: string
   /** When that became true: the agent's last event, else the task's last write. */
@@ -37,7 +49,8 @@ export interface InboxItem {
 export function classifyTask(
   task: Task,
   agent: AgentStatus | undefined,
-  queuedAt?: number
+  queuedAt?: number,
+  blockers: readonly string[] = []
 ): Omit<InboxItem, 'task' | 'agent' | 'queuedAt'> {
   const fallbackAt = task.updatedAt
   const at = agent?.at ?? fallbackAt
@@ -70,6 +83,15 @@ export function classifyTask(
       at
     }
   }
+  if (blockers.length > 0) {
+    return {
+      group: 'next',
+      kind: 'blocked',
+      blockers: [...blockers],
+      reason: `Blocked by ${blockers.join(', ')}`,
+      at: fallbackAt
+    }
+  }
   if (queuedAt !== undefined) {
     return {
       group: 'next',
@@ -94,26 +116,32 @@ export function classifyTask(
 
 /** Most urgent first within a group: waiting agents, then the most recent activity. */
 function compareItems(a: InboxItem, b: InboxItem): number {
-  const rank = (item: InboxItem): number => (item.kind === 'waiting' ? 0 : 1)
+  const rank = (item: InboxItem): number =>
+    item.kind === 'waiting' ? 0 : item.kind === 'blocked' ? 2 : 1
   return rank(a) - rank(b) || b.at.localeCompare(a.at)
 }
 
 /**
  * Every group, in display order, including the empty ones. Archived tasks are left out, as on the
- * board. `queued` maps a task id to its place in the Orchestrate queue.
+ * board. `queued` maps a task id to its place in the Orchestrate queue. `all` is every task in the
+ * workspace, which blockers are looked up in; the board may be showing fewer (the Done cap), and a
+ * blocker hidden from it is still a blocker.
  */
 export function buildInbox(
   tasks: Task[],
   agents: ReadonlyMap<string, AgentStatus>,
-  queued: ReadonlyMap<string, number> = new Map()
+  queued: ReadonlyMap<string, number> = new Map(),
+  all: readonly Task[] = tasks
 ): Record<InboxGroup, InboxItem[]> {
   const groups: Record<InboxGroup, InboxItem[]> = { needs: [], running: [], next: [], done: [] }
+  const byId = indexTasks(all)
   for (const task of tasks) {
     if (task.archivedAt && task.status !== 'done') continue
     if (isAgentArchived(task) && task.status !== 'done') continue
     const agent = agents.get(task.id)
     const queuedAt = queued.get(task.id)
-    const verdict = classifyTask(task, agent, queuedAt)
+    const blockers = openBlockers(task, byId).map((blocker) => blocker.id)
+    const verdict = classifyTask(task, agent, queuedAt, blockers)
     groups[verdict.group].push({ task, agent, queuedAt, ...verdict })
   }
   // The board already hides archived Done tasks; keep that here too.

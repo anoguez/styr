@@ -71,6 +71,7 @@ function boardProtocol(task: Task, workspaceId?: string): string {
     '- If you finish writing a spec and stop, set `status: backlog` with `readiness: ready` so the task can be picked up.',
     '- Append progress notes as `- ` bullets under `## Activity` at the end of the file.',
     '- Change only those lines; leave the rest of the frontmatter as it is.',
+    '- If work must land first, record it with `blockedBy: [TASK-xxxx]` (ids from this board). Do not start a task whose blockers are not Done.',
     '',
     'This applies for the whole session. If you finish one phase and carry straight on into the',
     'next, keep the status in step with what you are actually doing.',

@@ -11,6 +11,8 @@ import {
   type GlobalSettingKey
 } from './types.js'
 
+export const TASK_ID_RE = /^TASK-\d+$/
+
 export const taskStatusSchema = z.enum(TASK_STATUSES)
 export const taskPrioritySchema = z.enum(TASK_PRIORITIES)
 export const taskReadinessSchema = z.enum(TASK_READINESS)
@@ -65,6 +67,7 @@ export const taskFrontmatterSchema = z.object({
   useWorktree: z.boolean().default(false),
   baseBranch: z.string().optional(),
   worktreePath: z.string().optional(),
+  blockedBy: z.array(z.string()).default([]),
   contextFiles: z.array(z.string()).default([]),
   promptTemplateId: z.string().optional(),
   provider: z.enum(['claude', 'codex']).optional(),
@@ -97,6 +100,7 @@ export const taskDraftSchema = z.object({
   useWorktree: z.boolean().optional(),
   baseBranch: z.string().optional(),
   worktreePath: z.string().optional(),
+  blockedBy: z.array(z.string().regex(TASK_ID_RE, 'Use a task id like TASK-0012')).optional(),
   contextFiles: z.array(z.string()).optional(),
   promptTemplateId: z.string().optional(),
   provider: z.enum(['claude', 'codex']).optional(),

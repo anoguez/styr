@@ -22,6 +22,7 @@ const task: Task = {
   orchestrate: false,
   useWorktree: true,
   worktreePath: '/projects/styr.worktrees/TASK-0042',
+  blockedBy: ['TASK-0007'],
   contextFiles: ['README.md'],
   promptTemplateId: 'code-review',
   provider: 'codex',
@@ -74,6 +75,33 @@ describe('task Markdown', () => {
       readiness: 'needs_spec',
       description: 'Ready for planning.'
     })
+  })
+
+  it('tidies a hand-written blockedBy and drops entries that are not task ids', () => {
+    const front = (blockedBy: string): string =>
+      [
+        '---',
+        'id: TASK-0044',
+        'title: Blocked',
+        `blockedBy: ${blockedBy}`,
+        'createdAt: 2026-10-01T07:00:00.000Z',
+        'updatedAt: 2026-10-01T07:00:00.000Z',
+        '---',
+        ''
+      ].join('\n')
+    const read = (blockedBy: string): string[] =>
+      parseTaskMarkdown(front(blockedBy), '/t/TASK-0044.md').blockedBy
+
+    expect(read('[task-0012, " TASK-0013 ", TASK-0012, nonsense, 7]')).toEqual([
+      'TASK-0012',
+      'TASK-0013'
+    ])
+    expect(read('task-0009')).toEqual(['TASK-0009'])
+    expect(read('')).toEqual([])
+  })
+
+  it('writes no blockedBy key when there are none', () => {
+    expect(serialiseTask({ ...task, blockedBy: [] })).not.toContain('blockedBy')
   })
 
   it('reads an Activity heading without the marker as activity', () => {

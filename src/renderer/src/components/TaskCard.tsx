@@ -6,11 +6,13 @@ import { AGENT_STATE_LABELS, type AgentStatus } from '@core/agentState.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
 import {
   ORCHESTRATION_LANE_LABELS,
+  TASK_STATUS_LABELS,
   type OrchestrationLane,
   type Task,
   type TaskPriority
 } from '@core/types.js'
 import type { DiffStat } from '@core/diff.js'
+import { describeBlockers, useOpenBlockers } from '../lib/blockerContext.js'
 import { Chip, DiffCount, DiffStatButton } from './ui.js'
 
 const PRIORITY_BAR: Record<TaskPriority, string> = {
@@ -102,6 +104,7 @@ export function TaskCardBody({
   diffStat?: DiffStat
   onShowChanges?: () => void
 }): ReactNode {
+  const blockers = useOpenBlockers(task)
   const loud = task.priority === 'high' || task.priority === 'urgent'
   const files = task.contextFiles.length
   const notes = task.activity.length
@@ -194,6 +197,14 @@ export function TaskCardBody({
 
       <div className="mt-2.5 flex min-w-0 items-center gap-2.5 text-[10.5px] text-faint">
         <span className="shrink-0 whitespace-nowrap font-mono tracking-tight">{task.id}</span>
+        {blockers.length > 0 ? (
+          <span
+            className="shrink-0 whitespace-nowrap font-medium text-[var(--color-col-review-text)]"
+            title={`Waiting on ${describeBlockers(blockers, (blocker) => TASK_STATUS_LABELS[blocker.status])}`}
+          >
+            Blocked · {blockers.length === 1 ? blockers[0]?.id : blockers.length}
+          </span>
+        ) : null}
         {issueLink}
         {prLink}
         <span className="ml-auto flex shrink-0 items-center gap-2 font-mono">
