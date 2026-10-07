@@ -85,7 +85,7 @@ at most one catch-up run and no new task while the previous one from that schedu
 same presets, the chosen one shows as a tag, and `quickTaskDraft` seeds the task from it (title is
 what was typed). ⌘↵ instead starts a **planning run**: a ready, non-worktree task tagged
 `quick-plan` (`planDraft`, `planningPrompt` in `core/planning.ts`) launched on the default provider
-to split the request into tasks through the MCP. `archivePlanRun` (`ipc.ts`) archives it when its
+to organise the board for the request through the MCP — create tasks, update existing ones, or both (it lists first, never implements). `archivePlanRun` (`ipc.ts`) archives it when its
 terminal exits, so no card is left. Nothing detects a missing MCP setup; the prompt tells the agent
 to say so and print the tasks as text.
 

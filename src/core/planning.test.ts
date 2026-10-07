@@ -9,6 +9,15 @@ describe('planningPrompt', () => {
     )
   })
 
+  it('is not create-only: list first, update instead of duplicating, never implement', () => {
+    const prompt = planningPrompt('review the imported tasks')
+    expect(prompt).not.toContain('Turn the request below into one or more focused tasks')
+    expect(prompt).toContain('Before creating anything, call list_tasks')
+    expect(prompt).toContain('update it instead of creating a duplicate')
+    expect(prompt).toContain('Do not implement anything')
+    expect(prompt).toContain('add_task_note')
+  })
+
   it('tells the agent what to do when the Styr tools are missing', () => {
     const prompt = planningPrompt('x')
     expect(prompt).toContain("If you cannot see Styr's task tools")
