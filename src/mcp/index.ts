@@ -1,9 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
+import { indexTasks, openBlockers } from '@core/blocking.js'
 import { pinWorkspace } from '@core/config.js'
 import { adapterFor, currentSources, runCommand, writableSource } from '@core/sources/index.js'
 import { addNote, createTask, deleteTask, getTask, listTasks, updateTask } from '@core/taskStore.js'
+import { TASK_ID_RE } from '@core/taskSchema.js'
 import { TASK_PRIORITIES, TASK_READINESS, TASK_STATUSES, type Task } from '@core/types.js'
 
 // Registered once for every agent, so the workspace comes from the agent that launched us.
@@ -11,7 +13,16 @@ pinWorkspace(process.env.STYR_WORKSPACE_ID)
 
 const AUTHOR = process.env.STYR_MCP_AUTHOR ?? 'claude'
 
-function summarise(task: Task): Record<string, unknown> {
+/** What still holds a task back. Computed on every call: blocked is derived, never stored. */
+function blockedByOpen(task: Task): string[] {
+  return openBlockers(task, indexTasks(listTasks())).map((blocker) => blocker.id)
+}
+
+const blockedByInput = z
+  .array(z.string().regex(TASK_ID_RE, 'Use a task id like TASK-0012'))
+  .optional()
+
+function summarise(task: Task, open: string[] = blockedByOpen(task)): Record<string, unknown> {
   return {
     id: task.id,
     title: task.title,
@@ -24,6 +35,8 @@ function summarise(task: Task): Record<string, unknown> {
     useWorktree: task.useWorktree,
     baseBranch: task.baseBranch,
     worktreePath: task.worktreePath,
+    blockedBy: task.blockedBy,
+    blockedByOpen: open,
     prUrl: task.prUrl,
     contextFiles: task.contextFiles,
     updatedAt: task.updatedAt,
@@ -43,17 +56,32 @@ server.registerTool(
     title: 'List tasks',
     description:
       'List tasks on the Styr board, optionally filtered by status, readiness, project, ' +
-      'tag or a text query. readiness "needs_spec" means the task still has to be specified before ' +
+      'tag, a text query or whether it is blocked. readiness "needs_spec" means the task still has to be specified before ' +
       'anyone can work on it.',
     inputSchema: {
       status: z.enum(TASK_STATUSES).optional(),
       readiness: z.enum(TASK_READINESS).optional(),
       project: z.string().optional(),
       tag: z.string().optional(),
-      query: z.string().optional()
+      query: z.string().optional(),
+      blocked: z
+        .boolean()
+        .optional()
+        .describe('true: only tasks waiting on an unfinished blocker; false: only the rest')
     }
   },
-  async (args) => json(listTasks(args).map(summarise))
+  async ({ blocked, ...filter }) => {
+    const byId = indexTasks(listTasks())
+    const rows = listTasks(filter).map((task) => ({
+      task,
+      open: openBlockers(task, byId).map((blocker) => blocker.id)
+    }))
+    return json(
+      rows
+        .filter(({ open }) => blocked === undefined || open.length > 0 === blocked)
+        .map(({ task, open }) => summarise(task, open))
+    )
+  }
 )
 
 server.registerTool(
@@ -65,7 +93,9 @@ server.registerTool(
   },
   async ({ id }) => {
     const task = getTask(id)
-    return task ? json(task) : json({ error: `Task ${id} not found` })
+    return task
+      ? json({ ...task, blockedByOpen: blockedByOpen(task) })
+      : json({ error: `Task ${id} not found` })
   }
 )
 
@@ -88,6 +118,7 @@ server.registerTool(
       repoPath: z.string().optional(),
       useWorktree: z.boolean().optional(),
       baseBranch: z.string().optional(),
+      blockedBy: blockedByInput,
       contextFiles: z.array(z.string()).optional()
     }
   },
@@ -104,7 +135,9 @@ server.registerTool(
       'contextFiles replaces the task attachment list — absolute paths to files worth reading for ' +
       'this task. prUrl is the link to the pull/merge request opened for the task, on any host. ' +
       'baseBranch is the branch the task worktree starts from; it can only be changed before the ' +
-      "worktree exists, and unset means the repository checkout's current branch.",
+      "worktree exists, and unset means the repository checkout's current branch. blockedBy lists the " +
+      'ids of tasks in this workspace that must be Done before this one starts; it replaces the list ' +
+      'and [] clears it. Unknown ids and dependency cycles are rejected.',
     inputSchema: {
       id: z.string(),
       title: z.string().optional(),
@@ -116,6 +149,7 @@ server.registerTool(
       tags: z.array(z.string()).optional(),
       repoPath: z.string().optional(),
       baseBranch: z.string().optional(),
+      blockedBy: blockedByInput,
       contextFiles: z.array(z.string()).optional(),
       prUrl: z.string().optional()
     }

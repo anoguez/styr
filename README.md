@@ -1,7 +1,7 @@
 # Styr
 
 [![Latest release](https://img.shields.io/github/v/release/anoguez/styr)](https://github.com/anoguez/styr/releases/latest)
-![Test coverage](https://img.shields.io/badge/coverage-88.64%25-brightgreen)
+![Test coverage](https://img.shields.io/badge/coverage-89.00%25-brightgreen)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/noguez)
 
 **An agentic IDE built around a kanban board.** Write tasks, and Styr launches a coding agent (Claude Code
@@ -33,10 +33,12 @@ a board you can see, and in plain files you can read.
 - **Orchestrate.** One button starts every task that is ready, up to a number of slots per lane
   (spec, implement, review), each lane on the agent you chose for it. It shows exactly what it will
   start, and with which agent, before it starts anything.
+- **Task dependencies.** A task can wait on others (`blockedBy`). Orchestrate skips it until every
+  blocker is Done, the card and Inbox say what it is waiting on, and starting it by hand asks first.
 - **Chats you can resume.** Each task remembers its conversations, whichever agent ran them, and
   resumes each through its own CLI. Close the app, come back tomorrow, and pick up where the agent
   left off.
-- **A real terminal.** Embedded xterm tabs, drag to reorder, a command palette (`⌘P`), rebindable
+- **A real terminal.** Embedded xterm tabs, drag to reorder, quick open (`⌘P`) and a command palette (`⇧⌘P`), rebindable
   shortcuts and a fully themeable UI.
 
 ## Agent support

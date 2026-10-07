@@ -15,6 +15,7 @@ export function orchestrateHint(orchestration: OrchestrationSummary | null): str
     orchestration.idleSessions > 0
       ? `${orchestration.idleSessions} already have a terminal tab open — close it to hand the task back`
       : '',
+    orchestration.blocked > 0 ? `${orchestration.blocked} blocked by other tasks` : '',
     optedOut > 0 ? `${optedOut} opted out` : '',
     missingWorkingDir > 0 ? `${missingWorkingDir} without a working directory` : ''
   ].filter(Boolean)

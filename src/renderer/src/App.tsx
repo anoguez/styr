@@ -3,6 +3,7 @@ import { AGENT_STATE_LABELS, isAgentArchived, type AgentState } from '@core/agen
 import { terminalDraft } from '@core/derivedTask.js'
 import { openTaskCounts } from '@core/boardCounts.js'
 import { sortColumn } from '@core/boardOrder.js'
+import { openBlockers } from '@core/blocking.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { commandForEvent, SHORTCUT_LABELS, shortcutHint } from '@core/shortcuts.js'
 import {
@@ -10,6 +11,7 @@ import {
   DEFAULT_SHORTCUTS,
   DEFAULT_THEME,
   SHORTCUT_COMMANDS,
+  TASK_STATUS_LABELS,
   globalSettingsFor,
   workspaceSettingsFor,
   type AppInfo,
@@ -27,7 +29,7 @@ import { Inbox } from './components/Inbox.js'
 import type { TerminalTaskRequest } from './components/TerminalSurface.js'
 import { buildInbox } from '@core/inbox.js'
 import { OrchestrateDialog } from './components/OrchestrateDialog.js'
-import { CommandPalette, type CommandEntry } from './components/CommandPalette.js'
+import { CommandPalette, type CommandEntry, type PaletteMode } from './components/CommandPalette.js'
 import { StatusBar } from './components/StatusBar.js'
 import { useUpdates } from './hooks/useUpdates.js'
 import { isTerminalTarget } from './lib/terminalKeys.js'
@@ -44,6 +46,7 @@ import { useSettings } from './hooks/useSettings.js'
 import { useTheme } from './hooks/useTheme.js'
 import { useDiffStats } from './hooks/useDiffStats.js'
 import { useTasks } from './hooks/useTasks.js'
+import { describeBlockers, taskLookup, TaskLookupContext } from './lib/blockerContext.js'
 import { useAgents } from './hooks/useAgents.js'
 import { useWorkspaces } from './hooks/useWorkspaces.js'
 import {
@@ -79,11 +82,13 @@ export default function App(): ReactNode {
   const {
     board: rawBoard,
     hiddenDone,
+    allTasks,
     archived,
     problems,
     loading
   } = useTasks(query, settings?.doneCap ?? DEFAULT_DONE_CAP, showAllDone)
   const agents = useAgents()
+  const lookup = useMemo(() => taskLookup(allTasks), [allTasks])
   // Done keeps its recency order; the other columns sort by priority, then working agents.
   const board = useMemo(() => {
     const state = (id: string): AgentState | undefined => agents.get(id)?.state
@@ -120,7 +125,7 @@ export default function App(): ReactNode {
   const [quickAdding, setQuickAdding] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
-  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [paletteMode, setPaletteMode] = useState<PaletteMode | null>(null)
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [performanceOpen, setPerformanceOpen] = useState(false)
   const [view, setView] = useState<View>(savedView)
@@ -230,6 +235,18 @@ export default function App(): ReactNode {
 
   const launchAgent = useCallback(
     async (taskId: string, templateId?: string, provider?: 'claude' | 'codex') => {
+      // Warn, never refuse: the user may know a blocker is as good as done. A task that already has
+      // a chat is being resumed, not started, so it never asks.
+      const task = lookup.get(taskId)
+      const blockers = task && !task.agentSession ? openBlockers(task, lookup) : []
+      if (
+        blockers.length > 0 &&
+        !window.confirm(
+          `${taskId} is blocked by ${describeBlockers(blockers, (blocker) => TASK_STATUS_LABELS[blocker.status])}. Start anyway?`
+        )
+      ) {
+        return
+      }
       try {
         adoptSession(await window.api.terminal.launchAgent(taskId, templateId, provider))
       } catch (error) {
@@ -238,7 +255,7 @@ export default function App(): ReactNode {
         window.alert(message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
       }
     },
-    [adoptSession]
+    [adoptSession, lookup]
   )
 
   /** Output the user wants an agent to look at becomes a Backlog task that carries it. */
@@ -330,8 +347,10 @@ export default function App(): ReactNode {
           return setCreating(true)
         case 'quickTask':
           return setQuickAdding(true)
+        case 'quickOpen':
+          return setPaletteMode((mode) => (mode === 'go' ? null : 'go'))
         case 'commandPalette':
-          return setPaletteOpen((open) => !open)
+          return setPaletteMode((mode) => (mode === 'command' ? null : 'command'))
         case 'focusSearch':
           searchRef.current?.focus()
           return searchRef.current?.select()
@@ -410,6 +429,7 @@ export default function App(): ReactNode {
       id: `cmd:${command}`,
       label: dynamicLabels[command] ?? SHORTCUT_LABELS[command],
       group: 'Actions',
+      mode: 'command',
       hint: shortcutHint(bindings, command),
       keywords: keywords[command],
       run: () => runCommand(command)
@@ -418,6 +438,7 @@ export default function App(): ReactNode {
     for (const preset of settings?.taskPresets ?? []) {
       entries.push({
         id: `preset:${preset.id}`,
+        mode: 'command',
         label: `New task from preset: ${preset.name}`,
         group: 'Actions',
         keywords: 'new task template preset',
@@ -434,6 +455,7 @@ export default function App(): ReactNode {
         id: `workspace:${workspace.id}`,
         label: `Switch to ${workspace.name}`,
         group: 'Workspaces',
+        mode: 'command',
         hint: `${workspace.taskCount} task${workspace.taskCount === 1 ? '' : 's'}`,
         keywords: 'workspace board switch',
         run: () => void switchWorkspace(workspace.id)
@@ -443,6 +465,7 @@ export default function App(): ReactNode {
       id: 'view:performance',
       label: 'Show performance',
       group: 'Actions',
+      mode: 'command',
       keywords: 'slow cpu memory profile diagnostics usage lag',
       run: () => setPerformanceOpen(true)
     })
@@ -450,6 +473,7 @@ export default function App(): ReactNode {
       id: 'view:archive',
       label: `View archive (${archived.length})`,
       group: 'Actions',
+      mode: 'command',
       keywords: 'archived unarchive restore',
       run: () => setArchiveOpen(true)
     })
@@ -460,6 +484,7 @@ export default function App(): ReactNode {
           id: `archive:${task.id}`,
           label: `Archive — ${task.title}`,
           group: 'Tasks',
+          mode: 'command',
           hint: task.id,
           keywords: 'archive hide done',
           run: () => void window.api.tasks.archive(task.id, true)
@@ -470,6 +495,7 @@ export default function App(): ReactNode {
           id: `changes:${task.id}`,
           label: `View changes — ${task.title}`,
           group: 'Tasks',
+          mode: 'command',
           hint: task.id,
           keywords: 'diff changes git files review',
           run: () => setChangesTask(task)
@@ -479,6 +505,7 @@ export default function App(): ReactNode {
         id: `task:${task.id}`,
         label: task.title,
         group: 'Tasks',
+        mode: 'go',
         hint: task.id,
         keywords: `${task.status} ${task.project ?? ''} ${task.tags.join(' ')}`,
         run: () => setEditing(task),
@@ -493,6 +520,7 @@ export default function App(): ReactNode {
         id: `agent:${row.task.id}`,
         label: `${state} — ${row.task.title}`,
         group: 'Agents',
+        mode: 'go',
         hint: row.task.id,
         keywords: 'agent claude session',
         run: () => activateTask(row.task.id)
@@ -509,6 +537,7 @@ export default function App(): ReactNode {
         label: name,
         hint: detail || undefined,
         group: 'Terminals',
+        mode: 'go',
         keywords: 'terminal tab session',
         run: () => setActiveSession(session.id)
       })
@@ -520,6 +549,7 @@ export default function App(): ReactNode {
         id: `settings:${section.id}`,
         label: `Settings — ${section.label}`,
         group: 'Settings',
+        mode: 'command',
         keywords: section.blurb,
         run: () => openSettings(section.id)
       })
@@ -565,8 +595,8 @@ export default function App(): ReactNode {
     [queued]
   )
   const needsYou = useMemo(
-    () => buildInbox(Object.values(board).flat(), agents, queuedPositions).needs.length,
-    [board, agents, queuedPositions]
+    () => buildInbox(Object.values(board).flat(), agents, queuedPositions, allTasks).needs.length,
+    [board, agents, queuedPositions, allTasks]
   )
 
   useEffect(() => {
@@ -576,7 +606,7 @@ export default function App(): ReactNode {
         setEditing(null)
         setShowSettings(false)
         setConfirmingOrchestrate(false)
-        setPaletteOpen(false)
+        setPaletteMode(null)
         setSwitcherOpen(false)
         setCreatingWorkspace(false)
         setArchiveOpen(false)
@@ -622,408 +652,423 @@ export default function App(): ReactNode {
   if (!settings) return <div className="p-6 text-muted">Loading…</div>
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex h-[44px] shrink-0 items-center gap-3 border-b border-edge bg-chrome pl-[86px] pr-3 [-webkit-app-region:drag]">
-        <span
-          aria-hidden
-          className="grid size-[22px] shrink-0 place-items-center rounded-[6px] bg-accent/15"
-        >
-          {/* The app icon's rune. Its gradient runs between theme colours rather than the icon's
+    <TaskLookupContext.Provider value={lookup}>
+      <div className="flex h-full flex-col">
+        <header className="flex h-[44px] shrink-0 items-center gap-3 border-b border-edge bg-chrome pl-[86px] pr-3 [-webkit-app-region:drag]">
+          <span
+            aria-hidden
+            className="grid size-[22px] shrink-0 place-items-center rounded-[6px] bg-accent/15"
+          >
+            {/* The app icon's rune. Its gradient runs between theme colours rather than the icon's
               fixed ones, which match them at the default theme, so it follows a re-theme. */}
-          <svg viewBox="0 0 16 16" className="size-[15px]">
-            <defs>
-              <linearGradient id="styr-mark" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" style={{ stopColor: 'var(--color-accent-text)' }} />
-                <stop offset="1" style={{ stopColor: 'var(--color-col-progress)' }} />
-              </linearGradient>
-            </defs>
-            <polyline
-              points="5.6,2.6 5.6,8.4 10.4,7 10.4,13.4"
-              transform="rotate(30 8 8)"
-              fill="none"
-              stroke="url(#styr-mark)"
-              strokeWidth="2.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
-        <span className="font-wordmark -ml-1 text-[13.5px] font-semibold tracking-[0.02em] text-ink">
-          Styr
-        </span>
-        {appInfo ? (
-          <button
-            type="button"
-            className={`text-[11px] [-webkit-app-region:no-drag] ${
-              newVersion ? 'font-medium text-accent hover:underline' : 'text-faint hover:text-dim'
-            }`}
-            title={
-              newVersion
-                ? `Styr ${newVersion} is ${update?.kind === 'ready' ? 'ready to install' : 'downloading'} — open Settings`
-                : 'Updates'
-            }
-            onClick={() => openSettings('updates')}
-          >
-            v{appInfo.version}
-          </button>
-        ) : null}
-        {appInfo && !appInfo.isPackaged ? (
-          <Chip tone="warn" title={`Running from source · v${appInfo.version}`}>
-            DEV
-          </Chip>
-        ) : null}
+            <svg viewBox="0 0 16 16" className="size-[15px]">
+              <defs>
+                <linearGradient id="styr-mark" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" style={{ stopColor: 'var(--color-accent-text)' }} />
+                  <stop offset="1" style={{ stopColor: 'var(--color-col-progress)' }} />
+                </linearGradient>
+              </defs>
+              <polyline
+                points="5.6,2.6 5.6,8.4 10.4,7 10.4,13.4"
+                transform="rotate(30 8 8)"
+                fill="none"
+                stroke="url(#styr-mark)"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <span className="font-wordmark -ml-1 text-[13.5px] font-semibold tracking-[0.02em] text-ink">
+            Styr
+          </span>
+          {appInfo ? (
+            <button
+              type="button"
+              className={`text-[11px] [-webkit-app-region:no-drag] ${
+                newVersion ? 'font-medium text-accent hover:underline' : 'text-faint hover:text-dim'
+              }`}
+              title={
+                newVersion
+                  ? `Styr ${newVersion} is ${update?.kind === 'ready' ? 'ready to install' : 'downloading'} — open Settings`
+                  : 'Updates'
+              }
+              onClick={() => openSettings('updates')}
+            >
+              v{appInfo.version}
+            </button>
+          ) : null}
+          {appInfo && !appInfo.isPackaged ? (
+            <Chip tone="warn" title={`Running from source · v${appInfo.version}`}>
+              DEV
+            </Chip>
+          ) : null}
 
-        <WorkspaceSwitcher
-          overview={overview}
-          open={switcherOpen}
-          onOpenChange={setSwitcherOpen}
-          onSwitch={(id) => void switchWorkspace(id)}
-          onNew={() => setCreatingWorkspace(true)}
-          onManage={() => openSettings('workspaces')}
-        />
+          <WorkspaceSwitcher
+            overview={overview}
+            open={switcherOpen}
+            onOpenChange={setSwitcherOpen}
+            onSwitch={(id) => void switchWorkspace(id)}
+            onNew={() => setCreatingWorkspace(true)}
+            onManage={() => openSettings('workspaces')}
+          />
 
-        <div className="flex flex-1 justify-center">
-          <div className="relative w-full max-w-md [-webkit-app-region:no-drag]">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint">
-              ⌕
-            </span>
-            <input
-              ref={searchRef}
-              className={`${inputClass} py-1.5 pl-8 pr-12`}
-              value={query}
-              placeholder="Search tasks"
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            {query ? (
-              <button
-                type="button"
-                aria-label="Clear search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-faint hover:text-ink"
-                onClick={() => setQuery('')}
-              >
-                ✕
-              </button>
-            ) : (
-              <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-edge-strong px-1 py-[1px] font-mono text-[10px] text-faint">
-                ⌘F
-              </kbd>
-            )}
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
-          <div
-            role="tablist"
-            aria-label="View"
-            className="flex h-7 items-center gap-0.5 rounded-lg border border-edge-strong bg-chrome p-0.5"
-          >
-            {(
-              [
-                { id: 'board', label: 'Board', command: 'viewBoard' },
-                { id: 'inbox', label: 'Inbox', command: 'viewInbox' }
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={view === tab.id}
-                title={`${tab.label} view ${shortcutHint(bindings, tab.command)}`.trim()}
-                onClick={() => setView(tab.id)}
-                className={`inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors ${
-                  view === tab.id
-                    ? 'border-edge-strong bg-raised text-ink'
-                    : 'border-transparent text-dim hover:text-ink'
-                }`}
-              >
-                {tab.label}
-                {tab.id === 'inbox' && needsYou > 0 ? (
-                  <span className="rounded-[5px] bg-[var(--color-col-review)]/15 px-[5px] font-mono text-[10.5px] font-semibold leading-4 text-[var(--color-col-review-text)]">
-                    {needsYou}
-                  </span>
-                ) : null}
-              </button>
-            ))}
-          </div>
-          <span aria-hidden className="h-[18px] w-px bg-edge" />
-          <Button
-            onClick={() => setConfirmingOrchestrate(true)}
-            disabled={orchestration === null || orchestration.dispatch.length === 0}
-            title={orchestrateTitle}
-          >
-            Orchestrate
-            {orchestration && orchestration.dispatch.length > 0 ? (
-              <span className="rounded bg-accent/20 px-1 text-[10px] font-semibold text-[var(--color-accent-text)]">
-                {orchestration.dispatch.length}
+          <div className="flex flex-1 justify-center">
+            <div className="relative w-full max-w-md [-webkit-app-region:no-drag]">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint">
+                ⌕
               </span>
-            ) : null}
-          </Button>
-          <Button variant="primary" onClick={() => setCreating(true)}>
-            New task
-          </Button>
-        </div>
-      </header>
-
-      {problems.length > 0 ? (
-        <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2">
-          <p className="text-[12px] text-amber-200">
-            {problems.length} task file{problems.length === 1 ? '' : 's'} could not be read and{' '}
-            {problems.length === 1 ? 'is' : 'are'} hidden from the board. Nothing was changed on
-            disk — fix the frontmatter and {problems.length === 1 ? 'it' : 'they'} will reappear.
-          </p>
-          <ul className="mt-1 flex flex-col gap-0.5">
-            {problems.map((problem) => (
-              <li key={problem.filePath} className="font-mono text-[10px] text-amber-200/70">
-                {problem.filePath.split('/').pop()} — {problem.reason.split('\n')[0]}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <main className="flex min-h-0 flex-1 flex-col" hidden={terminalOpen && terminalExpanded}>
-            {loading ? (
-              <p className="p-6 text-dim">Loading board…</p>
-            ) : view === 'inbox' ? (
-              <Inbox
-                tasks={Object.values(board).flat()}
-                agents={agents}
-                queued={queuedPositions}
-                diffStats={diffStats}
-                onOpen={setEditing}
-                onLaunch={(task) => void launchAgent(task.id)}
-                onActivate={(task) => activateTask(task.id)}
-                onShowChanges={setChangesTask}
-                onMove={(task, status) => void window.api.tasks.update(task.id, { status })}
-                onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
+              <input
+                ref={searchRef}
+                className={`${inputClass} py-1.5 pl-8 pr-12`}
+                value={query}
+                placeholder="Search tasks"
+                onChange={(event) => setQuery(event.target.value)}
               />
-            ) : (
-              <Board
-                board={board}
-                agents={agents}
-                queued={queued}
-                onOpen={setEditing}
-                onLaunch={(task) => void launchAgent(task.id)}
-                onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
-                onShowChanges={setChangesTask}
-                onOpenTerminal={(task) =>
-                  void window.api.terminal
-                    .create({ cwd: task.worktreePath || task.repoPath, title: task.id })
-                    .then(adoptSession)
-                }
-                diffStats={diffStats}
-                onQuickAdd={() => setQuickAdding(true)}
-                doneFooter={
-                  hiddenDone > 0 || showAllDone || archived.length > 0 ? (
-                    <div className="mt-auto flex shrink-0 flex-col items-center gap-1 pt-1 text-[11px] text-faint">
-                      {hiddenDone > 0 || showAllDone ? (
-                        <button
-                          type="button"
-                          className="hover:text-ink"
-                          onClick={() => setShowAllDone((open) => !open)}
-                        >
-                          {showAllDone ? 'Show fewer' : `${hiddenDone} older hidden — Show all`}
-                        </button>
-                      ) : null}
-                      {archived.length > 0 ? (
-                        <button
-                          type="button"
-                          className="hover:text-ink"
-                          onClick={() => setArchiveOpen(true)}
-                        >
-                          {archived.length} archived — View
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : undefined
-                }
-                templateNameFor={(task) => resolveTemplateFor(settings, task).name}
-              />
-            )}
-          </main>
+              {query ? (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-faint hover:text-ink"
+                  onClick={() => setQuery('')}
+                >
+                  ✕
+                </button>
+              ) : (
+                <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-edge-strong px-1 py-[1px] font-mono text-[10px] text-faint">
+                  ⌘F
+                </kbd>
+              )}
+            </div>
+          </div>
 
-          {terminalOpen ? (
-            <>
-              {terminalExpanded ? null : (
-                <div
-                  className="h-1 shrink-0 cursor-row-resize bg-edge/60 hover:bg-accent/60"
-                  onMouseDown={() => {
-                    dragging.current = true
-                  }}
+          <div className="flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
+            <div
+              role="tablist"
+              aria-label="View"
+              className="flex h-7 items-center gap-0.5 rounded-lg border border-edge-strong bg-chrome p-0.5"
+            >
+              {(
+                [
+                  { id: 'board', label: 'Board', command: 'viewBoard' },
+                  { id: 'inbox', label: 'Inbox', command: 'viewInbox' }
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === tab.id}
+                  title={`${tab.label} view ${shortcutHint(bindings, tab.command)}`.trim()}
+                  onClick={() => setView(tab.id)}
+                  className={`inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors ${
+                    view === tab.id
+                      ? 'border-edge-strong bg-raised text-ink'
+                      : 'border-transparent text-dim hover:text-ink'
+                  }`}
+                >
+                  {tab.label}
+                  {tab.id === 'inbox' && needsYou > 0 ? (
+                    <span className="rounded-[5px] bg-[var(--color-col-review)]/15 px-[5px] font-mono text-[10.5px] font-semibold leading-4 text-[var(--color-col-review-text)]">
+                      {needsYou}
+                    </span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+            <span aria-hidden className="h-[18px] w-px bg-edge" />
+            <Button
+              onClick={() => setConfirmingOrchestrate(true)}
+              disabled={orchestration === null || orchestration.dispatch.length === 0}
+              title={orchestrateTitle}
+            >
+              Orchestrate
+              {orchestration && orchestration.dispatch.length > 0 ? (
+                <span className="rounded bg-accent/20 px-1 text-[10px] font-semibold text-[var(--color-accent-text)]">
+                  {orchestration.dispatch.length}
+                </span>
+              ) : null}
+            </Button>
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              New task
+            </Button>
+          </div>
+        </header>
+
+        {problems.length > 0 ? (
+          <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2">
+            <p className="text-[12px] text-amber-200">
+              {problems.length} task file{problems.length === 1 ? '' : 's'} could not be read and{' '}
+              {problems.length === 1 ? 'is' : 'are'} hidden from the board. Nothing was changed on
+              disk — fix the frontmatter and {problems.length === 1 ? 'it' : 'they'} will reappear.
+            </p>
+            <ul className="mt-1 flex flex-col gap-0.5">
+              {problems.map((problem) => (
+                <li key={problem.filePath} className="font-mono text-[10px] text-amber-200/70">
+                  {problem.filePath.split('/').pop()} — {problem.reason.split('\n')[0]}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <main
+              className="flex min-h-0 flex-1 flex-col"
+              hidden={terminalOpen && terminalExpanded}
+            >
+              {loading ? (
+                <p className="p-6 text-dim">Loading board…</p>
+              ) : view === 'inbox' ? (
+                <Inbox
+                  tasks={Object.values(board).flat()}
+                  allTasks={allTasks}
+                  agents={agents}
+                  queued={queuedPositions}
+                  diffStats={diffStats}
+                  onOpen={setEditing}
+                  onLaunch={(task) => void launchAgent(task.id)}
+                  onActivate={(task) => activateTask(task.id)}
+                  onShowChanges={setChangesTask}
+                  onMove={(task, status) => void window.api.tasks.update(task.id, { status })}
+                  onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
+                />
+              ) : (
+                <Board
+                  board={board}
+                  agents={agents}
+                  queued={queued}
+                  onOpen={setEditing}
+                  onLaunch={(task) => void launchAgent(task.id)}
+                  onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
+                  onShowChanges={setChangesTask}
+                  onOpenTerminal={(task) =>
+                    void window.api.terminal
+                      .create({ cwd: task.worktreePath || task.repoPath, title: task.id })
+                      .then(adoptSession)
+                  }
+                  diffStats={diffStats}
+                  onQuickAdd={() => setQuickAdding(true)}
+                  doneFooter={
+                    hiddenDone > 0 || showAllDone || archived.length > 0 ? (
+                      <div className="mt-auto flex shrink-0 flex-col items-center gap-1 pt-1 text-[11px] text-faint">
+                        {hiddenDone > 0 || showAllDone ? (
+                          <button
+                            type="button"
+                            className="hover:text-ink"
+                            onClick={() => setShowAllDone((open) => !open)}
+                          >
+                            {showAllDone ? 'Show fewer' : `${hiddenDone} older hidden — Show all`}
+                          </button>
+                        ) : null}
+                        {archived.length > 0 ? (
+                          <button
+                            type="button"
+                            className="hover:text-ink"
+                            onClick={() => setArchiveOpen(true)}
+                          >
+                            {archived.length} archived — View
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : undefined
+                  }
+                  templateNameFor={(task) => resolveTemplateFor(settings, task).name}
                 />
               )}
-              <div
-                className={terminalExpanded ? 'min-h-0 flex-1' : 'shrink-0'}
-                style={terminalExpanded ? undefined : { height: terminalHeight }}
-              >
-                <TerminalPanel
-                  sessions={sessions}
-                  agents={agents}
-                  activeId={activeSession}
-                  expanded={terminalExpanded}
-                  theme={activeTheme}
-                  bindings={bindings}
-                  taskTitles={taskTitles}
-                  taskStates={taskStates}
-                  onAskReview={askReview}
-                  onAskFork={askFork}
-                  workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
-                  onToggleExpand={() => setTerminalExpanded((open) => !open)}
-                  onSelect={setActiveSession}
-                  onReorder={reorderSessions}
-                  onNewSession={(cwd) => void newShell(cwd)}
-                  onCreateTask={createTaskFromTerminal}
-                  onCloseSession={(id) => void closeSession(id)}
-                />
-              </div>
-            </>
+            </main>
+
+            {terminalOpen ? (
+              <>
+                {terminalExpanded ? null : (
+                  <div
+                    className="h-1 shrink-0 cursor-row-resize bg-edge/60 hover:bg-accent/60"
+                    onMouseDown={() => {
+                      dragging.current = true
+                    }}
+                  />
+                )}
+                <div
+                  className={terminalExpanded ? 'min-h-0 flex-1' : 'shrink-0'}
+                  style={terminalExpanded ? undefined : { height: terminalHeight }}
+                >
+                  <TerminalPanel
+                    sessions={sessions}
+                    agents={agents}
+                    activeId={activeSession}
+                    expanded={terminalExpanded}
+                    theme={activeTheme}
+                    bindings={bindings}
+                    taskTitles={taskTitles}
+                    taskStates={taskStates}
+                    onAskReview={askReview}
+                    onAskFork={askFork}
+                    workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
+                    onToggleExpand={() => setTerminalExpanded((open) => !open)}
+                    onSelect={setActiveSession}
+                    onReorder={reorderSessions}
+                    onNewSession={(cwd) => void newShell(cwd)}
+                    onCreateTask={createTaskFromTerminal}
+                    onCloseSession={(id) => void closeSession(id)}
+                  />
+                </div>
+              </>
+            ) : null}
+          </div>
+
+          {agentsOpen ? (
+            <AgentsSidebar
+              rows={agentRows}
+              diffStats={diffStats}
+              onShowChanges={setChangesTask}
+              onOpenTask={setEditing}
+              onRemove={setRemovingAgent}
+              onClose={() => setAgentsOpen(false)}
+              onActivate={(row) => activateTask(row.task.id)}
+            />
           ) : null}
         </div>
 
-        {agentsOpen ? (
-          <AgentsSidebar
-            rows={agentRows}
-            diffStats={diffStats}
+        <StatusBar
+          agentsOpen={agentsOpen}
+          terminalOpen={terminalOpen}
+          agentCount={agentRows.length}
+          waitingCount={counts.waiting}
+          sessionCount={sessions.length}
+          summary={`${counts.total} task${counts.total === 1 ? '' : 's'}${
+            counts.needsSpec > 0
+              ? ` · ${counts.needsSpec} need${counts.needsSpec === 1 ? 's' : ''} a spec`
+              : ''
+          }${counts.working > 0 ? ` · ${counts.working} running` : ''}`}
+          bindings={bindings}
+          readyUpdate={update?.kind === 'ready' ? update.version : undefined}
+          onToggleAgents={() => runCommand('toggleAgents')}
+          onToggleTerminal={() => runCommand('toggleTerminal')}
+          onOpenSettings={() => openSettings()}
+          onInstallUpdate={() => void window.api.updates.install()}
+        />
+
+        {creatingWorkspace ? (
+          <NewWorkspaceDialog
+            onCreate={async (name) => applyWorkspaces(await window.api.workspaces.create(name))}
+            onClose={() => setCreatingWorkspace(false)}
+          />
+        ) : null}
+
+        {paletteMode ? (
+          <CommandPalette
+            // a different mode is a fresh palette, so the query starts empty
+            key={paletteMode}
+            entries={commandEntries}
+            initialMode={paletteMode}
+            onClose={() => setPaletteMode(null)}
+          />
+        ) : null}
+
+        {performanceOpen ? <PerformanceDialog onClose={() => setPerformanceOpen(false)} /> : null}
+
+        {archiveOpen ? (
+          <ArchiveDialog
+            tasks={archived}
+            onOpen={(task) => {
+              setArchiveOpen(false)
+              setEditing(task)
+            }}
+            onClose={() => setArchiveOpen(false)}
+          />
+        ) : null}
+
+        {confirmingOrchestrate && orchestration && orchestration.dispatch.length > 0 ? (
+          <OrchestrateDialog
+            summary={orchestration}
+            onClose={() => setConfirmingOrchestrate(false)}
+            onConfirm={() =>
+              void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))
+            }
+          />
+        ) : null}
+
+        {removingAgent ? (
+          <Modal
+            title="Remove this agent?"
+            subtitle={`${removingAgent.task.id} · ${removingAgent.task.title}`}
+            onClose={() => setRemovingAgent(null)}
+            footer={
+              <>
+                <Button onClick={() => setRemovingAgent(null)}>Cancel</Button>
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    const { task } = removingAgent
+                    setRemovingAgent(null)
+                    void window.api.agents.remove(task.id)
+                  }}
+                >
+                  Remove
+                </Button>
+              </>
+            }
+          >
+            <p className="text-[12.5px] text-dim">
+              {removingAgent.session
+                ? 'Its terminal is closed and the chat is forgotten. '
+                : 'The chat is forgotten. '}
+              The task and its worktree are kept, and you can start a new agent on it later.
+            </p>
+          </Modal>
+        ) : null}
+
+        {quickAdding && settings ? (
+          <QuickTaskDialog settings={settings} onClose={() => setQuickAdding(false)} />
+        ) : null}
+
+        {creating || editing ? (
+          <TaskDialog
+            task={editing}
+            allTasks={allTasks}
+            settings={settings}
+            presetId={creatingPreset}
+            onSavePresets={(taskPresets) =>
+              save({
+                workspaceId: settings.activeWorkspaceId,
+                workspace: { ...workspaceSettingsFor(settings), taskPresets },
+                global: globalSettingsFor(settings)
+              })
+            }
+            onClose={() => {
+              setCreating(false)
+              setCreatingPreset(undefined)
+              setEditing(null)
+            }}
+            onLaunch={(taskId, templateId, provider) =>
+              void launchAgent(taskId, templateId, provider)
+            }
+            onResumeSession={(taskId, sessionId) => {
+              void window.api.terminal.resumeSession(taskId, sessionId).then(adoptSession)
+            }}
             onShowChanges={setChangesTask}
-            onOpenTask={setEditing}
-            onRemove={setRemovingAgent}
-            onClose={() => setAgentsOpen(false)}
-            onActivate={(row) => activateTask(row.task.id)}
+          />
+        ) : null}
+
+        {changesTask ? (
+          <ChangesDialog task={changesTask} onClose={() => setChangesTask(null)} />
+        ) : null}
+
+        {showSettings ? (
+          <SettingsDialog
+            settings={settings}
+            workspaces={workspaces}
+            initialSection={settingsSection}
+            onSave={save}
+            onPreviewTheme={setPreviewTheme}
+            onClose={() => {
+              setPreviewTheme(null)
+              setShowSettings(false)
+            }}
           />
         ) : null}
       </div>
-
-      <StatusBar
-        agentsOpen={agentsOpen}
-        terminalOpen={terminalOpen}
-        agentCount={agentRows.length}
-        waitingCount={counts.waiting}
-        sessionCount={sessions.length}
-        summary={`${counts.total} task${counts.total === 1 ? '' : 's'}${
-          counts.needsSpec > 0
-            ? ` · ${counts.needsSpec} need${counts.needsSpec === 1 ? 's' : ''} a spec`
-            : ''
-        }${counts.working > 0 ? ` · ${counts.working} running` : ''}`}
-        bindings={bindings}
-        readyUpdate={update?.kind === 'ready' ? update.version : undefined}
-        onToggleAgents={() => runCommand('toggleAgents')}
-        onToggleTerminal={() => runCommand('toggleTerminal')}
-        onOpenSettings={() => openSettings()}
-        onInstallUpdate={() => void window.api.updates.install()}
-      />
-
-      {creatingWorkspace ? (
-        <NewWorkspaceDialog
-          onCreate={async (name) => applyWorkspaces(await window.api.workspaces.create(name))}
-          onClose={() => setCreatingWorkspace(false)}
-        />
-      ) : null}
-
-      {paletteOpen ? (
-        <CommandPalette entries={commandEntries} onClose={() => setPaletteOpen(false)} />
-      ) : null}
-
-      {performanceOpen ? <PerformanceDialog onClose={() => setPerformanceOpen(false)} /> : null}
-
-      {archiveOpen ? (
-        <ArchiveDialog
-          tasks={archived}
-          onOpen={(task) => {
-            setArchiveOpen(false)
-            setEditing(task)
-          }}
-          onClose={() => setArchiveOpen(false)}
-        />
-      ) : null}
-
-      {confirmingOrchestrate && orchestration && orchestration.dispatch.length > 0 ? (
-        <OrchestrateDialog
-          summary={orchestration}
-          onClose={() => setConfirmingOrchestrate(false)}
-          onConfirm={() => void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))}
-        />
-      ) : null}
-
-      {removingAgent ? (
-        <Modal
-          title="Remove this agent?"
-          subtitle={`${removingAgent.task.id} · ${removingAgent.task.title}`}
-          onClose={() => setRemovingAgent(null)}
-          footer={
-            <>
-              <Button onClick={() => setRemovingAgent(null)}>Cancel</Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  const { task } = removingAgent
-                  setRemovingAgent(null)
-                  void window.api.agents.remove(task.id)
-                }}
-              >
-                Remove
-              </Button>
-            </>
-          }
-        >
-          <p className="text-[12.5px] text-dim">
-            {removingAgent.session
-              ? 'Its terminal is closed and the chat is forgotten. '
-              : 'The chat is forgotten. '}
-            The task and its worktree are kept, and you can start a new agent on it later.
-          </p>
-        </Modal>
-      ) : null}
-
-      {quickAdding && settings ? (
-        <QuickTaskDialog settings={settings} onClose={() => setQuickAdding(false)} />
-      ) : null}
-
-      {creating || editing ? (
-        <TaskDialog
-          task={editing}
-          settings={settings}
-          presetId={creatingPreset}
-          onSavePresets={(taskPresets) =>
-            save({
-              workspaceId: settings.activeWorkspaceId,
-              workspace: { ...workspaceSettingsFor(settings), taskPresets },
-              global: globalSettingsFor(settings)
-            })
-          }
-          onClose={() => {
-            setCreating(false)
-            setCreatingPreset(undefined)
-            setEditing(null)
-          }}
-          onLaunch={(taskId, templateId, provider) =>
-            void launchAgent(taskId, templateId, provider)
-          }
-          onResumeSession={(taskId, sessionId) => {
-            void window.api.terminal.resumeSession(taskId, sessionId).then(adoptSession)
-          }}
-          onShowChanges={setChangesTask}
-        />
-      ) : null}
-
-      {changesTask ? (
-        <ChangesDialog task={changesTask} onClose={() => setChangesTask(null)} />
-      ) : null}
-
-      {showSettings ? (
-        <SettingsDialog
-          settings={settings}
-          workspaces={workspaces}
-          initialSection={settingsSection}
-          onSave={save}
-          onPreviewTheme={setPreviewTheme}
-          onClose={() => {
-            setPreviewTheme(null)
-            setShowSettings(false)
-          }}
-        />
-      ) : null}
-    </div>
+    </TaskLookupContext.Provider>
   )
 }

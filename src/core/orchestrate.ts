@@ -7,6 +7,7 @@ import type {
 } from './types.js'
 import { ORCHESTRATION_LANES } from './types.js'
 import type { AgentState } from './agentState.js'
+import { indexTasks, openBlockers } from './blocking.js'
 import type { AgentProviderId } from './providers/types.js'
 
 export interface OrchestrationPlan {
@@ -15,6 +16,8 @@ export interface OrchestrationPlan {
   capacity: OrchestrationCapacity
   eligible: OrchestrationCapacity
   optedOut: number
+  /** Dispatchable tasks held back because a task they depend on is not Done yet. */
+  blocked: number
   missingWorkingDir: number
   /** Dispatchable tasks held back only by a terminal tab whose agent has stopped. */
   idleSessions: number
@@ -92,9 +95,12 @@ export function planOrchestration(
     if (state && BUSY_STATES.has(state)) occupied[laneFor(task)] += 1
   }
 
-  const candidates = tasks
-    .filter((task) => !liveTaskIds.has(task.id))
-    .filter((task) => isDispatchable(task))
+  const byId = indexTasks(tasks)
+  const unblocked = (task: Task): boolean => openBlockers(task, byId).length === 0
+
+  const startable = tasks.filter((task) => !liveTaskIds.has(task.id) && isDispatchable(task))
+  const blocked = startable.filter((task) => !unblocked(task)).length
+  const candidates = startable.filter(unblocked)
 
   const idleSessions = tasks.filter((task) => {
     if (!liveTaskIds.has(task.id) || !isDispatchable(task)) return false
@@ -122,5 +128,14 @@ export function planOrchestration(
     dispatch.push({ task, lane })
   }
 
-  return { dispatch, occupied, capacity, eligible, optedOut, missingWorkingDir, idleSessions }
+  return {
+    dispatch,
+    occupied,
+    capacity,
+    eligible,
+    optedOut,
+    blocked,
+    missingWorkingDir,
+    idleSessions
+  }
 }

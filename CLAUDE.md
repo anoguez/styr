@@ -552,6 +552,25 @@ gets no instruction on how to record its verdict.
 `launchSessionForTask` in `ipc.ts` is shared by the per-task launch and the orchestrator, so both
 advance the board and record the session identically.
 
+## Task dependencies
+
+`Task.blockedBy` is a list of same-workspace task ids (ids repeat across workspaces, so there is no
+cross-workspace form). **Blocked is derived, never stored**: `openBlockers` in `core/blocking.ts`
+returns the blockers that are not Done, so nothing is written when one finishes. An unknown id is
+ignored (a typo must not hold a task forever; the task dialog warns), an archived blocker that is
+not Done still blocks, and only direct blockers are read, so a hand-edited cycle cannot loop — it
+just leaves both ends blocked. `taskStore` refuses unknown ids, self-reference and cycles, but only
+when the list _changes_, so a task with a hand-made bad list still saves. `markdown.ts` tidies a
+hand-written list (case, duplicates) and drops entries that are not ids rather than failing the file.
+
+Orchestrate (`planOrchestration`) skips blocked tasks in every lane and counts them in `blocked`.
+Inbox puts them in Up next as kind `blocked` (a task that still needs a spec stays in Needs you);
+`buildInbox` takes the full task list as `all` because the board hides Done tasks and search
+results. The renderer reads blockers through `TaskLookupContext` (`lib/blockerContext.ts`), fed
+from `useTasks().allTasks` — unfiltered by search. A manual launch of a blocked task **warns and
+proceeds on confirm**, never refuses (`launchAgent` in `App`); resuming a task that has a chat never
+asks. This follows the shortcut rule: warn, do not force the user to undo something first.
+
 ## Prompt routing
 
 `src/core/prompt.ts` picks which template runs, in this order:

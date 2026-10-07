@@ -14,6 +14,7 @@ import {
   type TaskStatus
 } from '@core/types.js'
 import type { TaskDiff } from '@core/diff.js'
+import { danglingBlockers, findCycle, indexTasks } from '@core/blocking.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import {
   canAddPreset,
@@ -37,6 +38,7 @@ interface FormState {
   useWorktree: boolean
   baseBranch: string
   orchestrate: boolean
+  blockedBy: string[]
   contextFiles: string[]
   promptTemplateId: string
   provider: 'claude' | 'codex'
@@ -58,6 +60,7 @@ function toForm(task: Task | null, settings: Settings): FormState {
     useWorktree: task?.useWorktree ?? settings.taskDefaults.useWorktree,
     baseBranch: task?.baseBranch ?? '',
     orchestrate: task?.orchestrate ?? settings.taskDefaults.orchestrate,
+    blockedBy: task?.blockedBy ?? [],
     contextFiles: task?.contextFiles ?? [],
     promptTemplateId: task?.promptTemplateId ?? '',
     provider: task?.provider ?? settings.defaultProvider,
@@ -312,6 +315,7 @@ function TagsEditor({
 
 export function TaskDialog({
   task,
+  allTasks,
   settings,
   onClose,
   onLaunch,
@@ -321,6 +325,8 @@ export function TaskDialog({
   onSavePresets
 }: {
   task: Task | null
+  /** Every task in the workspace, for choosing and checking blockers. */
+  allTasks: Task[]
   settings: Settings
   /** A preset to start from, for a new task. */
   presetId?: string
@@ -429,6 +435,19 @@ export function TaskDialog({
       routedName)
     : routedName
 
+  const lookup = indexTasks(allTasks)
+  const missingBlockers = danglingBlockers({ blockedBy: form.blockedBy }, lookup)
+  const existingCycle = task ? findCycle(task.id, form.blockedBy, lookup) : null
+  const blockerChoices = allTasks
+    .filter(
+      (other) => other.id !== task?.id && !other.archivedAt && !form.blockedBy.includes(other.id)
+    )
+    .map((other) => ({
+      id: other.id,
+      title: other.title,
+      cycle: task ? findCycle(task.id, [other.id], lookup) !== null : false
+    }))
+
   const repoFolder = form.repoPath.trim().replace(/\/+$/, '').split('/').pop() ?? ''
 
   const payload = {
@@ -443,6 +462,7 @@ export function TaskDialog({
     useWorktree: form.useWorktree,
     baseBranch: form.baseBranch || undefined,
     orchestrate: form.orchestrate,
+    blockedBy: form.blockedBy,
     contextFiles: form.contextFiles,
     promptTemplateId: form.promptTemplateId || undefined,
     provider: form.provider,
@@ -620,6 +640,77 @@ export function TaskDialog({
                     onChange={(event) => patch({ description: event.target.value })}
                     className="min-h-60 w-full flex-1 resize-none rounded-[10px] border border-edge bg-chrome px-3.5 py-3 font-mono text-[12px] leading-[1.65] text-ink outline-none placeholder:text-faint focus:border-accent"
                   />
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] font-semibold text-dim">Blocked by</span>
+                      <span className="text-[11.5px] text-faint">
+                        The task waits until each of these is Done.
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {form.blockedBy.map((id) => {
+                        const blocker = lookup.get(id)
+                        return (
+                          <span
+                            key={id}
+                            title={blocker ? `${id} — ${blocker.title}` : `${id} does not exist`}
+                            className={`inline-flex h-[26px] max-w-full items-center gap-1.5 rounded-[7px] border bg-card pl-2 pr-1 text-[12px] ${
+                              blocker
+                                ? 'border-edge text-ink'
+                                : 'border-[var(--color-col-review)]/50 text-[var(--color-col-review-text)]'
+                            }`}
+                          >
+                            <span className="font-mono text-[10.5px]">{id}</span>
+                            <span className="truncate">
+                              {blocker
+                                ? `${blocker.title} · ${TASK_STATUS_LABELS[blocker.status]}`
+                                : 'unknown'}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Remove blocker ${id}`}
+                              className="inline-flex size-[18px] shrink-0 items-center justify-center rounded text-faint hover:bg-red-400/10 hover:text-red-300"
+                              onClick={() =>
+                                patch({
+                                  blockedBy: form.blockedBy.filter((current) => current !== id)
+                                })
+                              }
+                            >
+                              <CloseIcon size={10} />
+                            </button>
+                          </span>
+                        )
+                      })}
+                      <Select
+                        aria-label="Add blocker"
+                        value=""
+                        onChange={(event) => {
+                          if (event.target.value) {
+                            patch({ blockedBy: [...form.blockedBy, event.target.value] })
+                          }
+                        }}
+                      >
+                        <option value="">Add blocker…</option>
+                        {blockerChoices.map((choice) => (
+                          <option key={choice.id} value={choice.id} disabled={choice.cycle}>
+                            {choice.id} — {choice.title}
+                            {choice.cycle ? ' (would create a cycle)' : ''}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    {existingCycle ? (
+                      <span className="text-[11px] text-[var(--color-col-review-text)]">
+                        Dependency cycle: {existingCycle.join(' → ')}. None of these can start.
+                      </span>
+                    ) : null}
+                    {missingBlockers.length > 0 ? (
+                      <span className="text-[11px] text-[var(--color-col-review-text)]">
+                        {missingBlockers.join(', ')} not found — ignored until it exists. Remove it
+                        to clear this.
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-2">
                       <span className="text-[12px] font-semibold text-dim">Context files</span>

@@ -1,6 +1,6 @@
 import matter from 'gray-matter'
 import { migrateProviderFields } from './migrateTask.js'
-import { taskFrontmatterSchema } from './taskSchema.js'
+import { TASK_ID_RE, taskFrontmatterSchema } from './taskSchema.js'
 import type { ActivityEntry, Task } from './types.js'
 
 const ACTIVITY_MARKER = '<!-- styr:activity -->'
@@ -56,11 +56,22 @@ function normaliseToken(value: unknown): unknown {
     : value
 }
 
+/** A hand-written blocker list: one id or several, any case. Entries that are not ids are dropped. */
+function normaliseBlockers(value: unknown): string[] {
+  const items = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value]
+  const ids = items
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim().toUpperCase())
+    .filter((item) => TASK_ID_RE.test(item))
+  return [...new Set(ids)]
+}
+
 function tolerate(data: Record<string, unknown>): Record<string, unknown> {
   const out = { ...data }
   for (const field of TOKEN_FIELDS) {
     if (field in out) out[field] = normaliseToken(out[field])
   }
+  if ('blockedBy' in out) out.blockedBy = normaliseBlockers(out.blockedBy)
   for (const field of TIMESTAMP_FIELDS) {
     if (out[field] instanceof Date) out[field] = out[field].toISOString()
   }
@@ -83,6 +94,7 @@ export function serialiseTask(task: Task): string {
     ...(task.orchestrate ? {} : { orchestrate: false }),
     ...(task.useWorktree ? { useWorktree: true } : {}),
     ...(task.baseBranch ? { baseBranch: task.baseBranch } : {}),
+    ...(task.blockedBy.length > 0 ? { blockedBy: task.blockedBy } : {}),
     ...(task.worktreePath ? { worktreePath: task.worktreePath } : {}),
     ...(task.contextFiles.length > 0 ? { contextFiles: task.contextFiles } : {}),
     ...(task.promptTemplateId ? { promptTemplateId: task.promptTemplateId } : {}),

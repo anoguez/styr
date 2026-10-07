@@ -13,6 +13,7 @@ function task(extra: Partial<Task> = {}): Task {
     priority: 'medium',
     readiness: 'ready',
     tags: [],
+    blockedBy: [],
     contextFiles: [],
     orchestrate: true,
     repoPath: '/repo',
@@ -30,6 +31,29 @@ describe('planOrchestration', () => {
   it('dispatches a specified Backlog task', () => {
     const plan = planOrchestration(shippedSettings(), [task()], context)
     expect(plan.dispatch.map((d) => d.task.id)).toEqual(['TASK-1'])
+  })
+
+  it('holds back a task until every blocker is Done, in any lane', () => {
+    const blocker = task({ id: 'TASK-2', status: 'in_progress' })
+    const blocked = task({ blockedBy: ['TASK-2'] })
+    const review = task({ id: 'TASK-3', status: 'in_review', blockedBy: ['TASK-2'] })
+    const held = planOrchestration(shippedSettings(), [blocker, blocked, review], context)
+    expect(held.dispatch).toEqual([])
+    expect(held.blocked).toBe(2)
+
+    const done = { ...blocker, status: 'done' as const }
+    const freed = planOrchestration(shippedSettings(), [done, blocked, review], context)
+    expect(freed.dispatch.map((d) => d.task.id).sort()).toEqual(['TASK-1', 'TASK-3'])
+    expect(freed.blocked).toBe(0)
+  })
+
+  it('ignores an unknown blocker and holds both ends of a cycle', () => {
+    const dangling = task({ blockedBy: ['TASK-99'] })
+    expect(planOrchestration(shippedSettings(), [dangling], context).dispatch).toHaveLength(1)
+
+    const a = task({ id: 'TASK-1', blockedBy: ['TASK-2'] })
+    const b = task({ id: 'TASK-2', blockedBy: ['TASK-1'] })
+    expect(planOrchestration(shippedSettings(), [a, b], context).dispatch).toEqual([])
   })
 
   it('leaves an In Progress task alone even when it is ready', () => {

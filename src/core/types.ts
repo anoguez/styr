@@ -72,6 +72,7 @@ export interface ThemeSettings {
 export const SHORTCUT_COMMANDS = [
   'newTask',
   'quickTask',
+  'quickOpen',
   'commandPalette',
   'focusSearch',
   'viewBoard',
@@ -124,6 +125,7 @@ export interface OrchestrationSummary {
   capacity: OrchestrationCapacity
   eligible: OrchestrationCapacity
   optedOut: number
+  blocked: number
   missingWorkingDir: number
   idleSessions: number
 }
@@ -182,6 +184,8 @@ export interface Task {
   /** Branch the worktree starts from; unset means the main checkout's current branch. */
   baseBranch?: string
   worktreePath?: string
+  /** Ids of same-workspace tasks that must be Done first. Whether the task is blocked is derived. */
+  blockedBy: string[]
   contextFiles: string[]
   promptTemplateId?: string
   provider?: 'claude' | 'codex'
@@ -396,7 +400,8 @@ export const DEFAULT_THEME: ThemeSettings = {
 export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   newTask: ['mod+n'],
   quickTask: ['mod+shift+n'],
-  commandPalette: ['mod+p', 'mod+k'],
+  quickOpen: ['mod+p'],
+  commandPalette: ['mod+shift+p', 'mod+k'],
   focusSearch: ['mod+f'],
   viewBoard: ['ctrl+1'],
   viewInbox: ['ctrl+2'],

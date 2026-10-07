@@ -14,6 +14,7 @@ const summary = (over: Partial<OrchestrationSummary> = {}): OrchestrationSummary
   capacity: lanes(2),
   eligible: lanes(0),
   optedOut: 0,
+  blocked: 0,
   missingWorkingDir: 0,
   idleSessions: 0,
   ...over

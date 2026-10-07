@@ -19,6 +19,8 @@ export function useTasks(
   showAllDone: boolean
 ): {
   tasks: Task[]
+  /** Every task in the workspace, whatever the search says — blockers are looked up here. */
+  allTasks: Task[]
   board: TaskBoard
   /** Done tasks the cap is hiding from the board right now. */
   hiddenDone: number
@@ -29,15 +31,18 @@ export function useTasks(
   refresh: () => Promise<void>
 } {
   const [tasks, setTasks] = useState<Task[]>([])
+  const [allTasks, setAllTasks] = useState<Task[]>([])
   const [problems, setProblems] = useState<TaskProblem[]>([])
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
-    const [next, broken] = await Promise.all([
+    const [next, broken, everything] = await Promise.all([
       window.api.tasks.list(query ? { query } : {}),
-      window.api.tasks.problems()
+      window.api.tasks.problems(),
+      query ? window.api.tasks.list({}) : null
     ])
     setTasks(next)
+    setAllTasks(everything ?? next)
     setProblems(broken)
     setLoading(false)
   }, [query])
@@ -67,5 +72,5 @@ export function useTasks(
     return { board: grouped, hiddenDone: hidden.length }
   }, [tasks, doneCap, showAllDone])
 
-  return { tasks, board, hiddenDone, archived, problems, loading, refresh }
+  return { tasks, allTasks, board, hiddenDone, archived, problems, loading, refresh }
 }

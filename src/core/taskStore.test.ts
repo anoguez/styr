@@ -137,3 +137,35 @@ describe('task store', () => {
     expect(restored.activity.map((entry) => entry.message)).toEqual(['Archived.', 'Unarchived.'])
   })
 })
+
+describe('task store blockers', () => {
+  it('stores blockers, rejects unknown ids, self-reference and cycles, and leaves files untouched', async () => {
+    const store = await taskStoreInTemporaryWorkspace()
+    const a = store.createTask({ title: 'A' })
+    const b = store.createTask({ title: 'B', blockedBy: [a.id, a.id] })
+    expect(store.getTask(b.id)?.blockedBy).toEqual([a.id])
+
+    expect(() => store.updateTask(b.id, { blockedBy: ['TASK-0099'] })).toThrow(/Unknown blocker/)
+    expect(() => store.updateTask(b.id, { blockedBy: [b.id] })).toThrow(/cycle/)
+    expect(() => store.updateTask(a.id, { blockedBy: [b.id] })).toThrow(
+      /TASK-0001 → TASK-0002 → TASK-0001/
+    )
+    expect(() => store.createTask({ title: 'C', blockedBy: ['TASK-0099'] })).toThrow(/Unknown/)
+    expect(store.getTask(a.id)?.blockedBy).toEqual([])
+    expect(store.listTasks()).toHaveLength(2)
+
+    expect(store.updateTask(b.id, { blockedBy: [] }).blockedBy).toEqual([])
+  })
+
+  it('lets a task keep an inherited bad blocker list when it is saved unchanged', async () => {
+    const store = await taskStoreInTemporaryWorkspace()
+    const a = store.createTask({ title: 'A' })
+    const b = store.createTask({ title: 'B', blockedBy: [a.id] })
+    // A hand edit closes the cycle behind the store's back.
+    const fs = await import('node:fs')
+    const raw = fs.readFileSync(a.filePath, 'utf8')
+    fs.writeFileSync(a.filePath, raw.replace('tags: []', `tags: []\nblockedBy: [${b.id}]`))
+    expect(store.getTask(a.id)?.blockedBy).toEqual([b.id])
+    expect(() => store.updateTask(a.id, { blockedBy: [b.id], priority: 'high' })).not.toThrow()
+  })
+})
