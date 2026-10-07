@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import type { ShortcutBindings, ShortcutCommand } from '@core/types.js'
 import { shortcutHint } from '@core/shortcuts.js'
-import { currentWindow, type ProviderUsage } from '@core/usage.js'
 
 function Glyph({ children }: { children: ReactNode }): ReactNode {
   return (
@@ -46,30 +45,6 @@ const ICONS = {
       <circle cx="8" cy="8" r="2.5" />
       <circle cx="8" cy="8" r="5.6" strokeDasharray="1.7 1.9" />
     </Glyph>
-  )
-}
-
-/** The Claude 5-hour window as a small bar. Nothing until the usage mod has written a reading. */
-function UsageMeter({ usage }: { usage: ProviderUsage | null }): ReactNode {
-  const window5h = currentWindow(usage, 'five_hour', Date.now())
-  if (!window5h) return null
-  const percent = Math.min(100, Math.max(0, Math.round(window5h.percentUsed)))
-  const resets = window5h.resetsAt
-    ? ` Resets ${new Date(window5h.resetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
-    : ''
-  const tone =
-    percent >= 90 ? 'bg-danger' : percent >= 70 ? 'bg-[var(--color-col-review)]' : 'bg-accent'
-  return (
-    <span
-      className="flex items-center gap-1.5 px-2.5 text-[11px] text-faint"
-      title={`Claude 5-hour usage: ${percent}%.${resets}`}
-    >
-      <span>5h</span>
-      <span className="h-1 w-12 overflow-hidden rounded-full bg-raised">
-        <span className={`block h-full ${tone}`} style={{ width: `${percent}%` }} />
-      </span>
-      <span className="font-mono text-[10px]">{percent}%</span>
-    </span>
   )
 }
 
@@ -123,7 +98,6 @@ export function StatusBar({
   summary,
   bindings,
   readyUpdate,
-  claudeUsage,
   onToggleAgents,
   onToggleTerminal,
   onOpenSettings,
@@ -138,8 +112,6 @@ export function StatusBar({
   bindings: ShortcutBindings
   /** The version downloaded and waiting to install, if any. */
   readyUpdate?: string
-  /** The Claude rate-limit reading the usage mod last wrote, if any. */
-  claudeUsage: ProviderUsage | null
   onToggleAgents: () => void
   onToggleTerminal: () => void
   onOpenSettings: () => void
@@ -160,8 +132,6 @@ export function StatusBar({
       />
 
       <span className="flex items-center px-2.5 text-[11px] text-faint">{summary}</span>
-
-      <UsageMeter usage={claudeUsage} />
 
       {readyUpdate ? (
         <StatusItem

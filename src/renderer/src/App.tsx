@@ -32,7 +32,6 @@ import { OrchestrateDialog } from './components/OrchestrateDialog.js'
 import { CommandPalette, type CommandEntry, type PaletteMode } from './components/CommandPalette.js'
 import { StatusBar } from './components/StatusBar.js'
 import { useUpdates } from './hooks/useUpdates.js'
-import { useClaudeUsage } from './hooks/useClaudeUsage.js'
 import { isTerminalTarget } from './lib/terminalKeys.js'
 import { dispatchTerminalCommand } from './lib/terminalCommands.js'
 import { SECTIONS, SettingsDialog, type SectionId } from './components/SettingsDialog.js'
@@ -114,7 +113,6 @@ export default function App(): ReactNode {
   useTheme(activeTheme)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const update = useUpdates()
-  const claudeUsage = useClaudeUsage()
   const newVersion =
     update?.kind === 'ready' || update?.kind === 'downloading' ? update.version : undefined
   const [orchestration, setOrchestration] = useState<OrchestrationSummary | null>(null)
@@ -988,7 +986,6 @@ export default function App(): ReactNode {
                 : ''
             }${counts.working > 0 ? ` · ${counts.working} running` : ''}`}
             bindings={bindings}
-            claudeUsage={claudeUsage}
             readyUpdate={update?.kind === 'ready' ? update.version : undefined}
             onToggleAgents={() => runCommand('toggleAgents')}
             onToggleTerminal={() => runCommand('toggleTerminal')}

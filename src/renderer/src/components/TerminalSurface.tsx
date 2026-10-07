@@ -25,6 +25,9 @@ import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
 import { TerminalBlocks, type BlockActions } from './TerminalBlocks.js'
 import type { BlockLayout, TrackedBlock } from '../lib/blockTracker.js'
 import { TerminalView, type TerminalHandle, type TerminalSelection } from './TerminalView.js'
+import { UsageMeter } from './UsageMeter.js'
+import { useClaudeUsage } from '../hooks/useClaudeUsage.js'
+import type { ProviderUsage } from '@core/usage.js'
 
 const INTERRUPT = '\x03'
 const CLEAR = '\x0c'
@@ -186,6 +189,7 @@ function ContextBar({
   blocksOn,
   branch,
   repoRoot,
+  claudeUsage,
   onOpenBranch,
   picking,
   menuOpen,
@@ -213,6 +217,8 @@ function ContextBar({
   blocksOn?: boolean
   branch: string | null
   repoRoot: string | null
+  /** Set only for a Claude session; the quota is the account's, so it is not per tab. */
+  claudeUsage?: ProviderUsage | null
   onOpenBranch: () => void
   picking: boolean
   menuOpen: boolean
@@ -295,6 +301,8 @@ function ContextBar({
           <span className="truncate">{branch}</span>
         </button>
       ) : null}
+
+      {claudeUsage !== undefined ? <UsageMeter usage={claudeUsage} /> : null}
 
       <span className="flex-1" />
 
@@ -674,6 +682,10 @@ export function TerminalSurface({
     runtime.lastExitCode !== 0
   // Only a program on the alternate screen (vim, htop) owns the whole panel. Agent CLIs such as
   // Claude Code and Codex draw inline, so their sessions keep the bar.
+  const claudeUsage = useClaudeUsage()
+  const isClaude =
+    session.provider === 'claude' ||
+    /^(\S*\/)?claude$/.test(runtime?.runningCommand?.command?.trim().split(/\s+/)[0] ?? '')
   const agent = Boolean(session.taskId) || isAgentProgram(runtime?.runningCommand?.command)
   const fullscreen = altScreen && !agent
   // A shell's commands become blocks; an agent session is one long command, which is not a block.
@@ -860,6 +872,7 @@ export function TerminalSurface({
           blocksOn={blocksOn}
           branch={git.branch}
           repoRoot={git.root}
+          claudeUsage={isClaude ? claudeUsage : undefined}
           onOpenBranch={() => {
             if (!git.root) return
             void window.api.terminal.openInCode(git.root).then((result) => {
