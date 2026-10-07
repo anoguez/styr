@@ -51,12 +51,14 @@ export function terminalSessionsReducer(
         activeSession: action.session.id,
         terminalOpen: true
       }
-    case 'remove':
-      return {
-        ...state,
-        sessions: state.sessions.filter((session) => session.id !== action.id),
-        activeSession: state.activeSession === action.id ? null : state.activeSession
-      }
+    case 'remove': {
+      const sessions = state.sessions.filter((session) => session.id !== action.id)
+      if (state.activeSession !== action.id) return { ...state, sessions }
+      // Closing the active tab focuses its neighbour: the next tab, else the previous one.
+      const index = state.sessions.findIndex((session) => session.id === action.id)
+      const neighbour = sessions[Math.min(Math.max(index, 0), sessions.length - 1)]
+      return { ...state, sessions, activeSession: neighbour?.id ?? null }
+    }
     case 'select':
       return { ...state, activeSession: action.id, terminalOpen: true }
     case 'reorder': {
