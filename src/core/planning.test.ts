@@ -9,9 +9,18 @@ describe('planningPrompt', () => {
     )
   })
 
+  it('follows the request: names the tools, creates tasks only when asked', () => {
+    const prompt = planningPrompt('anything')
+    expect(prompt).not.toContain('Turn the request below')
+    for (const tool of ['list_tasks', 'create_task', 'update_task', 'set_task_status']) {
+      expect(prompt).toContain(tool)
+    }
+    expect(prompt).toContain('Create tasks only if the request says to')
+  })
+
   it('tells the agent what to do when the Styr tools are missing', () => {
     const prompt = planningPrompt('x')
-    expect(prompt).toContain("If you cannot see Styr's task tools")
+    expect(prompt).toContain('cannot see them')
     expect(prompt).toContain('Markdown list')
     expect(prompt).toContain('Settings → Integrations')
   })
