@@ -891,7 +891,10 @@ export function TerminalSurface({
           repoRoot={git.root}
           diff={
             diffStat && onShowChanges ? (
-              <DiffStatButton stat={diffStat} onClick={onShowChanges} />
+              // The bar ignores the pointer so it never blocks the terminal; the button opts back in.
+              <span className="pointer-events-auto flex">
+                <DiffStatButton stat={diffStat} onClick={onShowChanges} />
+              </span>
             ) : undefined
           }
           usage={
