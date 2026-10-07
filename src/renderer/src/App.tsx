@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AGENT_STATE_LABELS, isAgentArchived, type AgentState } from '@core/agentState.js'
-import { terminalDraft } from '@core/derivedTask.js'
+import { planDraft, terminalDraft } from '@core/derivedTask.js'
+import { planningPrompt, planTitle } from '@core/planning.js'
 import { openTaskCounts } from '@core/boardCounts.js'
 import { sortColumn } from '@core/boardOrder.js'
 import { openBlockers } from '@core/blocking.js'
@@ -270,6 +271,18 @@ export default function App(): ReactNode {
       const task = await window.api.tasks.create(terminalDraft(request, settings))
       if (request.launch) await launchAgent(task.id)
       return task.id
+    },
+    [settings, launchAgent]
+  )
+
+  /** ⌘↵ in Quick add: an agent splits the request into tasks; the throwaway task is archived after. */
+  const planTasks = useCallback(
+    async (request: string): Promise<void> => {
+      if (!settings) throw new Error('Settings have not loaded yet')
+      const task = await window.api.tasks.create(
+        planDraft({ title: planTitle(request), description: planningPrompt(request) }, settings)
+      )
+      await launchAgent(task.id)
     },
     [settings, launchAgent]
   )
@@ -1095,7 +1108,11 @@ export default function App(): ReactNode {
           ) : null}
 
           {quickAdding && settings ? (
-            <QuickTaskDialog settings={settings} onClose={() => setQuickAdding(false)} />
+            <QuickTaskDialog
+              settings={settings}
+              onPlan={planTasks}
+              onClose={() => setQuickAdding(false)}
+            />
           ) : null}
 
           {creating || editing ? (

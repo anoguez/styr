@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { settingsSchema } from './taskSchema.js'
 import {
   canAddPreset,
+  filterPresets,
+  leadingPreset,
   matchesPreset,
   newPresetId,
+  parseSlashQuery,
   presetFields,
   presetFromFields,
-  presetNameTaken
+  presetNameTaken,
+  quickTaskDraft
 } from './taskPreset.js'
 import { DEFAULT_TASK_PRESETS, MAX_TASK_PRESETS, type TaskPreset } from './types.js'
 import { shippedSettings } from './config.js'
@@ -71,5 +75,74 @@ describe('taskPresets setting', () => {
       taskPresets: [bug, { id: 'broken' }, { ...bug, id: 'ok', name: 'Ok' }]
     })
     expect(parsed.taskPresets.map((p) => p.id)).toEqual(['bug', 'ok'])
+  })
+})
+
+describe('Quick add presets', () => {
+  const settings = {
+    defaultRepoPath: ' /repo ',
+    defaultProvider: 'codex' as const,
+    taskDefaults: { orchestrate: false, useWorktree: true }
+  }
+  const named = (name: string): TaskPreset => ({ ...bug, id: name, name })
+
+  it('opens the picker only for a leading slash token', () => {
+    expect(parseSlashQuery('/')).toBe('')
+    expect(parseSlashQuery('/re')).toBe('re')
+    expect(parseSlashQuery('/bug fix')).toBeNull()
+    expect(parseSlashQuery('fix a/b')).toBeNull()
+    expect(parseSlashQuery('')).toBeNull()
+  })
+
+  it('filters by name, prefix matches first', () => {
+    const presets = [named('Prefactor'), named('Refactor'), named('Research'), named('Bug')]
+    expect(filterPresets(presets, 're').map((p) => p.name)).toEqual([
+      'Refactor',
+      'Research',
+      'Prefactor'
+    ])
+    expect(filterPresets(presets, '')).toHaveLength(4)
+    expect(filterPresets(presets, 'zzz')).toEqual([])
+  })
+
+  it('tags from `/name ` only on a unique exact match', () => {
+    const presets = [named('Bug'), named('Spec')]
+    expect(leadingPreset(presets, '/bug fix ui')).toMatchObject({ rest: 'fix ui' })
+    expect(leadingPreset(presets, '/bug')).toBeNull()
+    expect(leadingPreset(presets, '/nope x')).toBeNull()
+    expect(leadingPreset([named('Bug'), named('bug')], '/bug x')).toBeNull()
+  })
+
+  it('without a preset is the plain capture', () => {
+    expect(quickTaskDraft(undefined, '  fix a/b ', settings)).toEqual({
+      title: 'fix a/b',
+      status: 'backlog',
+      priority: 'medium',
+      readiness: 'needs_spec',
+      tags: [],
+      repoPath: '/repo',
+      useWorktree: true,
+      orchestrate: false,
+      contextFiles: [],
+      provider: 'codex',
+      description: ''
+    })
+    expect(quickTaskDraft(undefined, '  ', settings)).toBeNull()
+  })
+
+  it('with a preset takes everything but the title from it', () => {
+    expect(quickTaskDraft(bug, 'fix ui', settings)).toMatchObject({
+      title: 'fix ui',
+      tags: ['bug'],
+      priority: 'high',
+      readiness: 'ready',
+      description: bug.description,
+      repoPath: '/repo'
+    })
+  })
+
+  it('falls back to the preset title, else refuses', () => {
+    expect(quickTaskDraft({ ...bug, title: 'Triage' }, ' ', settings)?.title).toBe('Triage')
+    expect(quickTaskDraft(bug, ' ', settings)).toBeNull()
   })
 })

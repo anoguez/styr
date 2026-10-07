@@ -81,6 +81,14 @@ A new workspace inherits them through the settings seed copy. Recurring tasks ar
 would attach as a schedule pointing at a preset id, evaluated for the active workspace only, with
 at most one catch-up run and no new task while the previous one from that schedule is open.
 
+**Quick add** (`QuickTaskDialog`) is the only other consumer: a leading `/` opens a picker over the
+same presets, the chosen one shows as a tag, and `quickTaskDraft` seeds the task from it (title is
+what was typed). ⌘↵ instead starts a **planning run**: a ready, non-worktree task tagged
+`quick-plan` (`planDraft`, `planningPrompt` in `core/planning.ts`) launched on the default provider
+to split the request into tasks through the MCP. `archivePlanRun` (`ipc.ts`) archives it when its
+terminal exits, so no card is left. Nothing detects a missing MCP setup; the prompt tells the agent
+to say so and print the tasks as text.
+
 ## Done cap and archive
 
 `Settings.doneCap` (`maxCount`, `maxAgeDays`, 0 = off; a workspace setting) hides old Done tasks from the board. The rule
