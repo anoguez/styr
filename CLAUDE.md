@@ -867,6 +867,11 @@ fails is noted on the task and not retried. A remote edit never overwrites a tit
 the user changed since the last import (`syncedHash`); a remote close moves a task to Done unless it
 is In Progress.
 
+An imported task takes `Settings.taskDefaults` (`useWorktree`, `orchestrate`), passed to `planSync`.
+"Blocked by" at the source (`RemoteItem.blockedBy`, read by one GraphQL call per 100 issues, best
+effort) becomes `Task.blockedBy` in a second pass, `planBlockers`, once the tasks exist: it only
+adds, skips blockers with no linked task, and a refused relation (cycle) is noted, not fatal.
+
 `checkGh` reports `missing | outdated | unauthenticated | ready`; the Integrations pane shows it
 first and disables adding, testing and syncing until ready. `gh` is run with a PATH widened by
 Homebrew's directories because a Finder-launched app has a bare one.

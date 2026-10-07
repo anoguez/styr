@@ -101,7 +101,8 @@ export function planSync(
   items: RemoteItem[],
   source: SourceConfig,
   tagPrefix: string,
-  where: SourceTarget
+  where: SourceTarget,
+  defaults: { useWorktree?: boolean; orchestrate?: boolean } = {}
 ): SyncPlan {
   const { target } = where
   const plan: SyncPlan = { actions: [], created: 0, updated: 0, unchanged: 0 }
@@ -118,6 +119,8 @@ export function planSync(
           description: item.body,
           status: item.state === 'closed' ? 'done' : 'backlog',
           readiness: 'needs_spec',
+          ...(defaults.useWorktree !== undefined ? { useWorktree: defaults.useWorktree } : {}),
+          ...(defaults.orchestrate !== undefined ? { orchestrate: defaults.orchestrate } : {}),
           tags: tagsFor(tagPrefix, item),
           repoPath: where.repoPath,
           externalRef: refFor(source, target, item)
@@ -218,4 +221,43 @@ export function planPush(before: Task, after: Task, source: SourceConfig): PushA
     })
   }
   return actions
+}
+
+export interface BlockerUpdate {
+  taskId: string
+  blockedBy: string[]
+  note: string
+}
+
+/**
+ * Mirrors the source's "blocked by" relations onto linked tasks. A separate pass after the tasks
+ * exist, since a blocker may be imported in the same sync. Only adds: a blocker the user set
+ * locally is never removed, and a blocker with no task here (never imported, other repository) is
+ * skipped. An item with unknown relations (`blockedBy` undefined) changes nothing.
+ */
+export function planBlockers(
+  tasks: Task[],
+  items: RemoteItem[],
+  source: SourceConfig,
+  target: string
+): BlockerUpdate[] {
+  const updates: BlockerUpdate[] = []
+  for (const item of items) {
+    if (!item.blockedBy?.length) continue
+    const task = linkedTask(tasks, source.id, target, item.id)
+    if (!task || task.archivedAt) continue
+    const added: string[] = []
+    for (const blocker of item.blockedBy) {
+      const other = linkedTask(tasks, source.id, blocker.target, blocker.id)
+      if (!other || other.id === task.id || task.blockedBy.includes(other.id)) continue
+      added.push(other.id)
+    }
+    if (added.length === 0) continue
+    updates.push({
+      taskId: task.id,
+      blockedBy: [...task.blockedBy, ...added],
+      note: `${target}#${item.id} is blocked by ${added.join(', ')} on ${source.provider}.`
+    })
+  }
+  return updates
 }

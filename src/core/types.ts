@@ -276,6 +276,8 @@ export interface RemoteItem {
   state: 'open' | 'closed'
   labels: string[]
   updatedAt: string
+  /** Items that block this one at the source. Undefined means unknown, not none. */
+  blockedBy?: { target: string; id: string }[]
 }
 
 export interface ActivityEntry {

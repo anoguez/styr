@@ -8,7 +8,14 @@ import {
   type CliStatus,
   type SourceAdapter
 } from '@core/sources/index.js'
-import { IMPORT_LIMIT, fieldHashes, linkedTask, planPush, planSync } from '@core/sources/sync.js'
+import {
+  IMPORT_LIMIT,
+  fieldHashes,
+  linkedTask,
+  planBlockers,
+  planPush,
+  planSync
+} from '@core/sources/sync.js'
 import { addNote, createTask, getTask, listTasks, updateTask } from '@core/taskStore.js'
 import type { RemoteItem, SourceConfig, SourceSyncState, SourceTarget, Task } from '@core/types.js'
 
@@ -81,6 +88,22 @@ function applyPlan(actions: ReturnType<typeof planSync>['actions']): void {
       addNote(action.taskId, 'styr', action.note)
     }
   }
+}
+
+/** Adds the source's blocked-by relations to tasks. A relation the store refuses (a cycle) is noted, not fatal. */
+function applyBlockers(source: SourceConfig, target: string, items: RemoteItem[]): number {
+  let changed = 0
+  for (const update of planBlockers(listTasks(), items, source, target)) {
+    try {
+      updateTask(update.taskId, { blockedBy: update.blockedBy })
+      addNote(update.taskId, 'styr', update.note)
+      changed++
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      addNote(update.taskId, 'styr', `Could not copy blocked-by from the source: ${message}`)
+    }
+  }
+  return changed
 }
 
 /** Links already reported stale, so a poll does not repeat the note. */
@@ -164,12 +187,16 @@ export async function syncSource(sourceId: string): Promise<SourceSyncState> {
       try {
         const items = await adapter.list(source, runCommand, where.target, { limit: IMPORT_LIMIT })
         await addUnlistedLinked(source, adapter, where.target, items)
-        const plan = planSync(listTasks(), items, source, adapter.tagPrefix, where)
+        const plan = planSync(listTasks(), items, source, adapter.tagPrefix, where, {
+          useWorktree: loadSettings().taskDefaults.useWorktree,
+          orchestrate: loadSettings().taskDefaults.orchestrate
+        })
         applyPlan(plan.actions)
+        const blocked = applyBlockers(source, where.target, items)
         created += plan.created
         updated += plan.updated
         void retryPushes(source, where.target, items)
-        if (plan.actions.length > 0) hooks?.onTasksChanged()
+        if (plan.actions.length > 0 || blocked > 0) hooks?.onTasksChanged()
       } catch (error) {
         failures.push(error instanceof Error ? error.message : String(error))
       }
