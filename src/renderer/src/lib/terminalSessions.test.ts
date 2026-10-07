@@ -41,12 +41,16 @@ describe('terminalSessionsReducer', () => {
     expect(kept.activeSession).toBe('z')
   })
 
-  it('removing the active tab clears the selection; others leave it', () => {
-    const state = { ...withTabs('a', 'b'), activeSession: 'a' }
-    expect(reduce(state, { type: 'remove', id: 'b' }).activeSession).toBe('a')
-    const next = reduce(state, { type: 'remove', id: 'a' })
-    expect(next.activeSession).toBeNull()
-    expect(next.sessions.map((s) => s.id)).toEqual(['b'])
+  it('removing the active tab focuses the next tab, else the previous; others leave it', () => {
+    const state = { ...withTabs('a', 'b', 'c'), activeSession: 'b' }
+    expect(reduce(state, { type: 'remove', id: 'c' }).activeSession).toBe('b')
+    const next = reduce(state, { type: 'remove', id: 'b' })
+    expect(next.activeSession).toBe('c')
+    expect(next.sessions.map((s) => s.id)).toEqual(['a', 'c'])
+    const last = reduce({ ...state, activeSession: 'c' }, { type: 'remove', id: 'c' })
+    expect(last.activeSession).toBe('b')
+    const only = reduce({ ...withTabs('a'), activeSession: 'a' }, { type: 'remove', id: 'a' })
+    expect(only.activeSession).toBeNull()
   })
 
   it('select activates and opens the panel', () => {
