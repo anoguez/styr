@@ -302,9 +302,9 @@ function ContextBar({
         </button>
       ) : null}
 
-      <span className="flex-1" />
-
       {usage}
+
+      <span className="flex-1" />
 
       {fresh ? (
         <span className="hidden items-center gap-2.5 text-[11.5px] text-faint @md:flex">
