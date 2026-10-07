@@ -4,6 +4,7 @@ import {
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_TERMINAL_PALETTE,
+  MAX_TASK_PRESETS,
   SHORTCUT_COMMANDS,
   TASK_PRIORITIES,
   TASK_READINESS,
@@ -166,6 +167,21 @@ export const shortcutsSchema = z
   .default({})
   .transform((value) => ({ ...DEFAULT_SHORTCUTS, ...value }))
 
+export const taskPresetSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().trim().min(1),
+  title: z.string().default(''),
+  description: z.string().default(''),
+  tags: z.array(z.string()).default([]),
+  priority: taskPrioritySchema.default('medium'),
+  readiness: taskReadinessSchema.default('ready'),
+  useWorktree: z.boolean().default(false),
+  orchestrate: z.boolean().default(true),
+  provider: z.enum(['claude', 'codex']).optional(),
+  promptTemplateId: z.string().optional(),
+  baseBranch: z.string().optional()
+})
+
 export const settingsSchema = z.object({
   storageDir: z.string(),
   activeWorkspaceId: z.string().default('default'),
@@ -201,6 +217,18 @@ export const settingsSchema = z.object({
   taskDefaults: z
     .object({ orchestrate: z.boolean().default(true), useWorktree: z.boolean().default(false) })
     .default({ orchestrate: true, useWorktree: false }),
+  // One bad entry is dropped rather than costing the whole list (the file may be hand-edited).
+  taskPresets: z
+    .preprocess(
+      (value) =>
+        Array.isArray(value)
+          ? value
+              .filter((entry) => taskPresetSchema.safeParse(entry).success)
+              .slice(0, MAX_TASK_PRESETS)
+          : value,
+      z.array(taskPresetSchema)
+    )
+    .default([]),
   doneCap: z
     .object({
       maxCount: z.number().int().min(0).max(1000).default(DEFAULT_DONE_CAP.maxCount),

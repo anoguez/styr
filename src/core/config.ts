@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import {
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
+  DEFAULT_TASK_PRESETS,
   DEFAULT_THEME,
   DEFAULT_WORKSPACE_ID,
   workspaceSettingsFor,
@@ -129,6 +130,7 @@ export function shippedSettings(): Settings {
     updates: { checkAutomatically: true },
     experimental: { externalSources: false },
     taskDefaults: { orchestrate: true, useWorktree: false },
+    taskPresets: DEFAULT_TASK_PRESETS,
     doneCap: DEFAULT_DONE_CAP,
     sources: [],
     theme: DEFAULT_THEME,

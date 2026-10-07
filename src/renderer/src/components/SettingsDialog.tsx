@@ -59,6 +59,7 @@ import {
 } from './ui.js'
 import { WorkspacesPane } from './WorkspacesPane.js'
 import { SourcesPane } from './SourcesPane.js'
+import { PresetsPane } from './PresetsPane.js'
 import type { Workspaces } from '../hooks/useWorkspaces.js'
 import { useUpdates } from '../hooks/useUpdates.js'
 import { useWorkspaceTarget } from '../hooks/useWorkspaceTarget.js'
@@ -159,6 +160,15 @@ export const SECTIONS = [
     keys: ['sources'],
     flag: 'externalSources',
     words: 'github issues sync gh external source integrations'
+  },
+  {
+    id: 'presets',
+    label: 'Presets',
+    scope: 'workspace',
+    blurb:
+      'Starting points for the New task dialog. A task keeps no link to the preset it came from.',
+    keys: ['taskPresets'],
+    words: 'task template preset bug refactor spec new task prefill'
   },
   {
     id: 'routing',
@@ -829,7 +839,7 @@ export function SettingsDialog({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-5">
             <div
-              className={`flex flex-col gap-5 ${section === 'templates' ? 'h-full min-h-[380px]' : 'max-w-[640px]'}`}
+              className={`flex flex-col gap-5 ${section === 'templates' ? 'h-full min-h-[380px]' : section === 'presets' ? 'max-w-[820px]' : 'max-w-[640px]'}`}
             >
               {section === 'preferences' ? (
                 <>
@@ -1628,6 +1638,14 @@ export function SettingsDialog({
                     ) : null}
                   </div>
                 </>
+              ) : null}
+
+              {section === 'presets' ? (
+                <PresetsPane
+                  presets={draft.taskPresets}
+                  settings={draft}
+                  onChange={(taskPresets) => patch({ taskPresets })}
+                />
               ) : null}
 
               {section === 'source-github' ? (

@@ -296,6 +296,65 @@ export interface PromptTemplate {
   template: string
 }
 
+/**
+ * A reusable starting point for the New task dialog. Applying one copies its values into the form;
+ * the task keeps no reference to it. Called a preset, never a template: `PromptTemplate` owns that word.
+ */
+export interface TaskPreset {
+  /** Generated from the name at creation; never changes, so a rename edits `name` only. */
+  id: string
+  name: string
+  title: string
+  description: string
+  tags: string[]
+  priority: TaskPriority
+  readiness: TaskReadiness
+  useWorktree: boolean
+  orchestrate: boolean
+  provider?: 'claude' | 'codex'
+  promptTemplateId?: string
+  baseBranch?: string
+}
+
+export const MAX_TASK_PRESETS = 50
+
+/** Shipped for a workspace whose `settings.json` has no `taskPresets` key. */
+export const DEFAULT_TASK_PRESETS: TaskPreset[] = [
+  {
+    id: 'bug',
+    name: 'Bug',
+    title: '',
+    description: '## Steps to reproduce\n\n\n## Expected\n\n\n## Actual\n',
+    tags: ['bug'],
+    priority: 'high',
+    readiness: 'ready',
+    useWorktree: true,
+    orchestrate: true
+  },
+  {
+    id: 'spec',
+    name: 'Spec',
+    title: '',
+    description: '',
+    tags: ['spec'],
+    priority: 'medium',
+    readiness: 'needs_spec',
+    useWorktree: false,
+    orchestrate: true
+  },
+  {
+    id: 'refactor',
+    name: 'Refactor',
+    title: '',
+    description: '',
+    tags: ['refactor'],
+    priority: 'medium',
+    readiness: 'ready',
+    useWorktree: true,
+    orchestrate: true
+  }
+]
+
 export interface PromptRouting {
   needsSpec: string
   byStatus: Record<TaskStatus, string>
@@ -398,6 +457,7 @@ export interface Settings {
   updates: UpdateSettings
   experimental: ExperimentalSettings
   taskDefaults: TaskDefaults
+  taskPresets: TaskPreset[]
   doneCap: DoneCap
   sources: SourceConfig[]
 }
@@ -434,6 +494,7 @@ export const WORKSPACE_SETTING_KEYS = [
   'orchestration',
   'theme',
   'taskDefaults',
+  'taskPresets',
   'doneCap',
   'sources'
 ] as const satisfies readonly (keyof Settings)[]

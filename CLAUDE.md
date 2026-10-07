@@ -767,6 +767,18 @@ TypeScript 7 (`@typescript/native`) is the compiler; the `typescript` package na
 compatibility build (`@typescript/typescript6`), because typescript-eslint needs the compiler API
 that TS 7 no longer ships.
 
+## Task presets
+
+`Settings.taskPresets` (a workspace setting) are starting points for the New task dialog, called
+**presets**, never templates: `PromptTemplate` owns that word. Applying one copies its values into
+the form (`presetFields` in `core/taskPreset.ts`); the task keeps no link, so editing or deleting a
+preset never touches existing tasks. A preset omits `repoPath`, context files and status. A
+workspace whose `settings.json` has no `taskPresets` key runs on `DEFAULT_TASK_PRESETS`; once the
+key is saved the list is the user's. The schema drops one invalid entry rather than the whole list.
+A new workspace inherits them through the settings seed copy. Recurring tasks are not built: they
+would attach as a schedule pointing at a preset id, evaluated for the active workspace only, with
+at most one catch-up run and no new task while the previous one from that schedule is open.
+
 ## Done cap and archive
 
 `Settings.doneCap` (`maxCount`, `maxAgeDays`, 0 = off; a workspace setting) hides old Done tasks from the board. The rule

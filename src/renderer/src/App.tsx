@@ -12,6 +12,8 @@ import {
   DEFAULT_THEME,
   SHORTCUT_COMMANDS,
   TASK_STATUS_LABELS,
+  globalSettingsFor,
+  workspaceSettingsFor,
   type AppInfo,
   type OrchestrationSummary,
   type ShortcutCommand,
@@ -118,6 +120,8 @@ export default function App(): ReactNode {
 
   const [editing, setEditing] = useState<Task | null>(null)
   const [creating, setCreating] = useState(false)
+  /** The preset the New task dialog opens with, when it was started from the palette. */
+  const [creatingPreset, setCreatingPreset] = useState<string | undefined>()
   const [quickAdding, setQuickAdding] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
@@ -339,6 +343,7 @@ export default function App(): ReactNode {
     (command: ShortcutCommand) => {
       switch (command) {
         case 'newTask':
+          setCreatingPreset(undefined)
           return setCreating(true)
         case 'quickTask':
           return setQuickAdding(true)
@@ -429,6 +434,20 @@ export default function App(): ReactNode {
       keywords: keywords[command],
       run: () => runCommand(command)
     }))
+
+    for (const preset of settings?.taskPresets ?? []) {
+      entries.push({
+        id: `preset:${preset.id}`,
+        mode: 'command',
+        label: `New task from preset: ${preset.name}`,
+        group: 'Actions',
+        keywords: 'new task template preset',
+        run: () => {
+          setCreatingPreset(preset.id)
+          setCreating(true)
+        }
+      })
+    }
 
     for (const workspace of overview.workspaces) {
       if (workspace.id === activeWorkspaceId) continue
@@ -540,6 +559,7 @@ export default function App(): ReactNode {
   }, [
     board,
     settings?.experimental,
+    settings?.taskPresets,
     archived.length,
     diffStats,
     agentRows,
@@ -1008,8 +1028,17 @@ export default function App(): ReactNode {
             task={editing}
             allTasks={allTasks}
             settings={settings}
+            presetId={creatingPreset}
+            onSavePresets={(taskPresets) =>
+              save({
+                workspaceId: settings.activeWorkspaceId,
+                workspace: { ...workspaceSettingsFor(settings), taskPresets },
+                global: globalSettingsFor(settings)
+              })
+            }
             onClose={() => {
               setCreating(false)
+              setCreatingPreset(undefined)
               setEditing(null)
             }}
             onLaunch={(taskId, templateId, provider) =>
