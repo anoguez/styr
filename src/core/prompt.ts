@@ -55,7 +55,20 @@ function contextBlock(files: string[]): string {
  * How to move the task on the board. Rendered into every prompt rather than written into each
  * template, so a custom or older template cannot leave an agent with no way to report progress.
  */
-function boardProtocol(task: Task, workspaceId?: string): string {
+function boardProtocol(task: Task, workspaceId?: string, plainFolder = false): string {
+  const finish = plainFolder
+    ? [
+        '- Set `status: in_review` once the result is ready for me to look at. Put the deliverable in the',
+        '  working directory, or give its path in an Activity note.',
+        '- Do not set `status: done` yourself: this is not a code change, so there is nothing to land.',
+        '  I mark it done when I am happy with the result.'
+      ]
+    : [
+        '- Set `status: in_review` once the work is ready for me to look at.',
+        '- Set `status: done` only when the work has landed on the base branch (or I confirm it). Work',
+        '  that is merely approved or committed on a branch stays `in_review`.',
+        '- If you open a pull or merge request (any host), record its URL as `prUrl:` in the frontmatter so the card links to it.'
+      ]
   return [
     '## Board protocol',
     `This task is the file ${task.filePath}. The board reads it from there, so you move it by`,
@@ -63,10 +76,7 @@ function boardProtocol(task: Task, workspaceId?: string): string {
     '',
     `- \`status:\` is one of: ${TASK_STATUSES.join(', ')}.`,
     '- Set `status: in_progress` as soon as you start working on it, writing its spec included.',
-    '- Set `status: in_review` once the work is ready for me to look at.',
-    '- Set `status: done` only when the work has landed on the base branch (or I confirm it). Work',
-    '  that is merely approved or committed on a branch stays `in_review`.',
-    '- If you open a pull or merge request (any host), record its URL as `prUrl:` in the frontmatter so the card links to it.',
+    ...finish,
     '- Set `readiness: ready` once the task is specified well enough to be worked on.',
     '- If you finish writing a spec and stop, set `status: backlog` with `readiness: ready` so the task can be picked up.',
     '- Append progress notes as `- ` bullets under `## Activity` at the end of the file.',
@@ -90,13 +100,23 @@ function placeholder(key: string): RegExp {
   return new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`)
 }
 
-export function buildPrompt(template: string, task: Task, workspaceId?: string): string {
+export interface PromptOptions {
+  /** The task runs in a folder that is not a git repository, so there is no branch to land. */
+  plainFolder?: boolean
+}
+
+export function buildPrompt(
+  template: string,
+  task: Task,
+  workspaceId?: string,
+  options: PromptOptions = {}
+): string {
   const sections: Record<string, string> = {
     contextFiles: contextBlock(task.contextFiles),
     issue: task.externalRef?.url
       ? `This task is linked to an external issue: ${task.externalRef.url}`
       : '',
-    board: boardProtocol(task, workspaceId)
+    board: boardProtocol(task, workspaceId, options.plainFolder)
   }
   const values: Record<string, string> = {
     id: task.id,

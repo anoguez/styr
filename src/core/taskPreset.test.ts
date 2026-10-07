@@ -59,7 +59,13 @@ describe('names and ids', () => {
 
 describe('taskPresets setting', () => {
   it('ships the default presets and drops one bad entry without losing the rest', () => {
-    expect(shippedSettings().taskPresets.map((p) => p.id)).toEqual(['bug', 'spec', 'refactor'])
+    expect(shippedSettings().taskPresets.map((p) => p.id)).toEqual([
+      'bug',
+      'spec',
+      'refactor',
+      'research',
+      'writing'
+    ])
     const parsed = settingsSchema.parse({
       ...shippedSettings(),
       taskPresets: [bug, { id: 'broken' }, { ...bug, id: 'ok', name: 'Ok' }]

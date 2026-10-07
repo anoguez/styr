@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { clearAgentStatus, supportDir } from './agentStore.js'
 import { checkoutPath, ensureWorktree, type Checkout as WorktreeCheckout } from './worktree.js'
+import { isGitRepo } from './gitExec.js'
 import { buildPrompt, resolveTemplateFor } from './prompt.js'
 import { providerById, providerFor } from './providers/index.js'
 import { shellQuote } from './shell.js'
@@ -66,11 +67,10 @@ function checkoutFor(settings: Settings, task: Task): Checkout {
 
 export function renderPrompt(settings: Settings, task: Task, templateId?: string): string {
   const template = resolveTemplateFor(settings, task, templateId)
-  return buildPrompt(
-    template.template,
-    { ...task, repoPath: plannedCwd(settings, task) },
-    settings.activeWorkspaceId
-  )
+  const cwd = plannedCwd(settings, task)
+  return buildPrompt(template.template, { ...task, repoPath: cwd }, settings.activeWorkspaceId, {
+    plainFolder: !task.useWorktree && !isGitRepo(cwd)
+  })
 }
 
 /** When a past conversation was last written, for dating a chat we only learned about later. */
