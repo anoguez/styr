@@ -1,9 +1,22 @@
 import { basename, delimiter, join } from 'node:path'
-import { existsSync, readFileSync, mkdirSync, rmSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  rmSync
+} from 'node:fs'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import chokidar from 'chokidar'
 import { configDir } from '@core/config.js'
+import { codexTranscript } from '@core/providers/codex.js'
+import { findTask } from './taskIndex.js'
+import { sessionTask } from './terminal/ptyManager.js'
 import {
+  parseCodexRollout,
   parseContextFile,
   parseUsageFile,
   type ContextUsage,
@@ -60,9 +73,50 @@ function readClaudeUsage(): ProviderUsage | null {
   }
 }
 
+/** A rollout can be megabytes; the newest `token_count` is always near the end. */
+const ROLLOUT_TAIL_BYTES = 256 * 1024
+
+/** Thread id to rollout path. Finding it walks the whole sessions tree, so it is done once. */
+const rolloutPaths = new Map<string, string>()
+
+/**
+ * The Codex usage for a terminal's thread, read from its rollout file. Task sessions only: a bare
+ * shell running `codex` has no thread id Styr knows, and a background workspace's tasks are not in
+ * the index. Read on demand rather than watched — the sessions tree is large and deep.
+ */
+function readCodexUsage(
+  terminalId: string
+): { usage: ProviderUsage | null; context: ContextUsage | null } | null {
+  const owner = sessionTask(terminalId)
+  const session = owner ? findTask(owner.taskId)?.agentSession : undefined
+  if (session?.provider !== 'codex') return null
+  let path = rolloutPaths.get(session.id)
+  if (!path) {
+    path = codexTranscript(session.id)
+    if (!path) return null
+    rolloutPaths.set(session.id, path)
+  }
+  try {
+    const fd = openSync(path, 'r')
+    try {
+      const size = fstatSync(fd).size
+      const length = Math.min(size, ROLLOUT_TAIL_BYTES)
+      const buffer = Buffer.alloc(length)
+      readSync(fd, buffer, 0, length, size - length)
+      return parseCodexRollout(buffer.toString('utf8'))
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
+    rolloutPaths.delete(session.id)
+    return null
+  }
+}
+
 /** Serves the last reading and pushes each new one. Read-only: the mod is the only writer. */
 export function initUsage(): void {
   ipcMain.handle('usage:claude', () => readClaudeUsage())
+  ipcMain.handle('usage:codex', (_event, terminalId: string) => readCodexUsage(terminalId))
   ipcMain.handle('usage:context', (_event, terminalId: string) => readContext(terminalId))
   // Ids are not reused, so files from a previous run are only litter.
   rmSync(contextDir(), { recursive: true, force: true })

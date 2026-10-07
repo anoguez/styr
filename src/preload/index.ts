@@ -87,6 +87,10 @@ const api = {
     onContext: (
       handler: (update: { terminalId: string; context: ContextUsage | null }) => void
     ): (() => void) => subscribe('usage:context', handler as (...args: never[]) => void),
+    codex: (
+      terminalId: string
+    ): Promise<{ usage: ProviderUsage | null; context: ContextUsage | null } | null> =>
+      ipcRenderer.invoke('usage:codex', terminalId),
     onClaude: (handler: (usage: ProviderUsage | null) => void): (() => void) =>
       subscribe('usage:claude', handler as (...args: never[]) => void)
   },

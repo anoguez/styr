@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { currentWindow, parseContextFile, parseUsageFile, resetsIn } from './usage.js'
+import {
+  currentWindow,
+  parseCodexRollout,
+  parseContextFile,
+  parseUsageFile,
+  resetsIn
+} from './usage.js'
 
 const file = JSON.stringify({
   at: '2026-10-07T10:00:00.000Z',
@@ -66,5 +72,37 @@ describe('resetsIn', () => {
   it('is null when unknown or past', () => {
     expect(resetsIn(undefined, now)).toBeNull()
     expect(resetsIn('2026-10-07T09:00:00Z', now)).toBeNull()
+  })
+})
+
+describe('parseCodexRollout', () => {
+  const event = (percent: number, tokens: number): string =>
+    JSON.stringify({
+      timestamp: '2026-10-07T10:00:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: { last_token_usage: { total_tokens: tokens }, model_context_window: 200000 },
+        rate_limits: {
+          primary: { used_percent: percent, window_minutes: 300, resets_at: 1791299021 },
+          secondary: { used_percent: 13, window_minutes: 10080, resets_at: 1791602354 }
+        }
+      }
+    })
+
+  it('reads the newest token_count, naming windows by length', () => {
+    const read = parseCodexRollout(
+      ['cut off mid-line {', event(2, 1000), '{"type":"other"}', event(9, 50000), ''].join('\n')
+    )
+    expect(read?.usage?.windows.map((w) => [w.kind, w.percentUsed])).toEqual([
+      ['five_hour', 9],
+      ['seven_day', 13]
+    ])
+    expect(read?.usage?.windows[0]?.resetsAt).toBe(new Date(1791299021 * 1000).toISOString())
+    expect(read?.context).toEqual({ percent: 25, tokens: 50000, window: 200000 })
+  })
+
+  it('is null when there is no reading yet', () => {
+    expect(parseCodexRollout('{"type":"session_meta"}\n')).toBeNull()
   })
 })

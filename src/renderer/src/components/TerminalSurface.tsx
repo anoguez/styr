@@ -28,6 +28,7 @@ import { TerminalView, type TerminalHandle, type TerminalSelection } from './Ter
 import { UsageButton } from './UsageButton.js'
 import { useClaudeUsage } from '../hooks/useClaudeUsage.js'
 import { useContextUsage } from '../hooks/useContextUsage.js'
+import { useCodexUsage } from '../hooks/useCodexUsage.js'
 
 const INTERRUPT = '\x03'
 const CLEAR = '\x0c'
@@ -687,6 +688,8 @@ export function TerminalSurface({
   const isClaude =
     session.provider === 'claude' ||
     /^(\S*\/)?claude$/.test(runtime?.runningCommand?.command?.trim().split(/\s+/)[0] ?? '')
+  const isCodex = session.provider === 'codex'
+  const codexUsage = useCodexUsage(session.id, isCodex)
   const agent = Boolean(session.taskId) || isAgentProgram(runtime?.runningCommand?.command)
   const fullscreen = altScreen && !agent
   // A shell's commands become blocks; an agent session is one long command, which is not a block.
@@ -876,8 +879,16 @@ export function TerminalSurface({
           usage={
             isClaude ? (
               <UsageButton
+                agent="Claude"
                 usage={claudeUsage}
                 context={contextUsage}
+                onCompact={() => write('/compact\r')}
+              />
+            ) : isCodex && codexUsage ? (
+              <UsageButton
+                agent="Codex"
+                usage={codexUsage.usage}
+                context={codexUsage.context}
                 onCompact={() => write('/compact\r')}
               />
             ) : undefined

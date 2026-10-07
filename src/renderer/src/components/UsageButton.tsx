@@ -84,11 +84,14 @@ function rowsFor(usage: ProviderUsage | null, context: ContextUsage | null, now:
 export function UsageButton({
   usage,
   context,
+  agent,
   onCompact
 }: {
   usage: ProviderUsage | null
   context: ContextUsage | null
   /** Sends `/compact` to the agent. */
+  /** Whose numbers these are, for the popover's header. */
+  agent: string
   onCompact: () => void
 }): ReactNode {
   const [open, setOpen] = useState(false)
@@ -161,7 +164,7 @@ export function UsageButton({
         >
           <div className="flex h-[30px] items-center gap-1.5 border-b border-edge px-2.5 text-[11.5px] text-dim">
             <span aria-hidden className="size-1.5 rounded-full bg-[var(--color-col-progress)]" />
-            <span className="font-medium text-ink">Claude</span>
+            <span className="font-medium text-ink">{agent}</span>
             <span>· usage</span>
           </div>
           <div className="flex flex-col gap-2.5 p-2.5">

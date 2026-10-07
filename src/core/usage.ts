@@ -95,3 +95,67 @@ export function resetsIn(resetsAt: string | undefined, now: number): string | nu
   if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`
   return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`
 }
+
+/**
+ * The newest reading in a Codex rollout (`~/.codex/sessions/**\/rollout-*.jsonl`): its last
+ * `token_count` event carries both the account's rate-limit windows and this thread's context
+ * fill. Windows are named by length, since Codex calls them primary and secondary. Context is the
+ * last response's tokens over the model's window, which is what the TUI's own meter approximates.
+ * Takes the tail of a file, so a first line cut mid-way is skipped like any unparseable one.
+ */
+export function parseCodexRollout(
+  text: string
+): { usage: ProviderUsage | null; context: ContextUsage | null } | null {
+  const lines = text.split('\n')
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index]!
+    if (!line.includes('"token_count"')) continue
+    let event: unknown
+    try {
+      event = JSON.parse(line)
+    } catch {
+      continue
+    }
+    const at = (event as { timestamp?: unknown }).timestamp
+    const payload = (event as { payload?: Record<string, unknown> }).payload
+    if (!payload || payload.type !== 'token_count') continue
+
+    const windows: UsageWindow[] = []
+    const limits = payload.rate_limits as Record<string, unknown> | null | undefined
+    for (const name of ['primary', 'secondary']) {
+      const entry = limits?.[name] as Record<string, unknown> | null | undefined
+      if (!entry || typeof entry.used_percent !== 'number') continue
+      const kind =
+        entry.window_minutes === 300
+          ? 'five_hour'
+          : entry.window_minutes === 10080
+            ? 'seven_day'
+            : null
+      if (!kind) continue
+      windows.push({
+        kind,
+        percentUsed: entry.used_percent,
+        ...(typeof entry.resets_at === 'number'
+          ? { resetsAt: new Date(entry.resets_at * 1000).toISOString() }
+          : {})
+      })
+    }
+
+    const info = payload.info as Record<string, unknown> | null | undefined
+    const last = info?.last_token_usage as Record<string, unknown> | undefined
+    const window = info?.model_context_window
+    let context: ContextUsage | null = null
+    if (typeof last?.total_tokens === 'number' && typeof window === 'number' && window > 0) {
+      context = {
+        percent: Math.min(100, Math.round((last.total_tokens / window) * 100)),
+        tokens: last.total_tokens,
+        window
+      }
+    }
+    return {
+      usage: windows.length > 0 ? { windows, at: typeof at === 'string' ? at : '' } : null,
+      context
+    }
+  }
+  return null
+}
