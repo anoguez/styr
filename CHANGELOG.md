@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.21.0](https://github.com/anoguez/styr/compare/v0.20.0...v0.21.0) (2026-10-07)
+
+
+### Features
+
+* Dispatch auto-run with stop (event-driven) ([#91](https://github.com/anoguez/styr/issues/91)) ([13b6d74](https://github.com/anoguez/styr/commit/13b6d74e9a3cfe788e90f462cfb80476866e1245))
+
+
+### Bug Fixes
+
+* offer only open tasks as blockers and move Blocked by to the sidebar ([#94](https://github.com/anoguez/styr/issues/94)) ([a3cc9c0](https://github.com/anoguez/styr/commit/a3cc9c0d803372b9f659963ffcf1be445ae2f349))
+* open task for editing on double-click in the inbox ([#93](https://github.com/anoguez/styr/issues/93)) ([409c85a](https://github.com/anoguez/styr/commit/409c85aa3efae4770c8b537d780a7a57c5a30194))
+
 ## [0.20.0](https://github.com/anoguez/styr/compare/v0.19.0...v0.20.0) (2026-10-07)
 
 
