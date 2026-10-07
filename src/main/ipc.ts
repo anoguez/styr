@@ -24,6 +24,7 @@ import {
 import { clearAgentStatus, readAllAgentStatuses, recordAgentEvent } from '@core/agentStore.js'
 import type { AgentStatus } from '@core/agentState.js'
 import { planLaunch, renderPrompt, workingDirFor } from '@core/launch.js'
+import { isPlanRun } from '@core/planning.js'
 import { providerFor } from '@core/providers/index.js'
 import { z } from 'zod'
 import { recordNotifyDuration, stopSampling, takeSnapshot } from './diagnostics.js'
@@ -163,7 +164,23 @@ export function markAgentExited(
     return
   }
   recordAgentEvent(pathsInWorkspace(loadSettings(), workspaceId), taskId, 'TerminalExit')
+  archivePlanRun(taskId, workspaceId)
   notifyAgentsChanged()
+}
+
+/** A ⌘↵ planning run leaves no card behind: its throwaway task is archived when the session ends. */
+function archivePlanRun(taskId: string, workspaceId: string): void {
+  try {
+    const archived = inOtherWorkspace(workspaceId, () => {
+      const task = getTask(taskId)
+      if (!task || !isPlanRun(task) || task.archivedAt) return false
+      setArchived(taskId, true)
+      return true
+    })
+    if (archived) notifyTasksChanged()
+  } catch (error) {
+    console.error('Could not archive the planning run:', error)
+  }
 }
 
 export /** Resolves the task a diff request names; errors come back as data, not as a thrown IPC failure. */
