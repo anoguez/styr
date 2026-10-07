@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currentWindow, parseContextFile, parseUsageFile } from './usage.js'
+import { currentWindow, parseContextFile, parseUsageFile, resetsIn } from './usage.js'
 
 const file = JSON.stringify({
   at: '2026-10-07T10:00:00.000Z',
@@ -51,5 +51,20 @@ describe('parseContextFile', () => {
   it('returns null without a numeric percent', () => {
     expect(parseContextFile('{"context":{}}')).toBeNull()
     expect(parseContextFile('nope')).toBeNull()
+  })
+})
+
+describe('resetsIn', () => {
+  const now = Date.parse('2026-10-07T10:00:00Z')
+  it('spells the time left', () => {
+    expect(resetsIn('2026-10-07T12:14:30Z', now)).toBe('2h 14m')
+    expect(resetsIn('2026-10-07T10:38:00Z', now)).toBe('38m')
+    expect(resetsIn('2026-10-07T10:00:20Z', now)).toBe('<1m')
+    expect(resetsIn('2026-10-09T13:00:00Z', now)).toBe('2d 3h')
+  })
+
+  it('is null when unknown or past', () => {
+    expect(resetsIn(undefined, now)).toBeNull()
+    expect(resetsIn('2026-10-07T09:00:00Z', now)).toBeNull()
   })
 })

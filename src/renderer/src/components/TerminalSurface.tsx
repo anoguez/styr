@@ -25,10 +25,9 @@ import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
 import { TerminalBlocks, type BlockActions } from './TerminalBlocks.js'
 import type { BlockLayout, TrackedBlock } from '../lib/blockTracker.js'
 import { TerminalView, type TerminalHandle, type TerminalSelection } from './TerminalView.js'
-import { UsageMeter } from './UsageMeter.js'
+import { UsageButton } from './UsageButton.js'
 import { useClaudeUsage } from '../hooks/useClaudeUsage.js'
 import { useContextUsage } from '../hooks/useContextUsage.js'
-import type { ContextUsage, ProviderUsage } from '@core/usage.js'
 
 const INTERRUPT = '\x03'
 const CLEAR = '\x0c'
@@ -190,8 +189,7 @@ function ContextBar({
   blocksOn,
   branch,
   repoRoot,
-  claudeUsage,
-  contextUsage,
+  usage,
   onOpenBranch,
   picking,
   menuOpen,
@@ -219,10 +217,8 @@ function ContextBar({
   blocksOn?: boolean
   branch: string | null
   repoRoot: string | null
-  /** Set only for a Claude session; the quota is the account's, so it is not per tab. */
-  claudeUsage?: ProviderUsage | null
-  /** This terminal's own context-window fill. */
-  contextUsage?: ContextUsage | null
+  /** The usage control, for a Claude session; sits beside Ask agent. */
+  usage?: ReactNode
   onOpenBranch: () => void
   picking: boolean
   menuOpen: boolean
@@ -304,10 +300,6 @@ function ContextBar({
           </svg>
           <span className="truncate">{branch}</span>
         </button>
-      ) : null}
-
-      {claudeUsage !== undefined ? (
-        <UsageMeter usage={claudeUsage} context={contextUsage ?? null} />
       ) : null}
 
       <span className="flex-1" />
@@ -407,6 +399,7 @@ function ContextBar({
           Hand off
         </button>
       ) : null}
+      {usage}
       <button
         type="button"
         title={`Ask agent about this terminal${askHint ? ` (${askHint})` : ''}`}
@@ -879,8 +872,15 @@ export function TerminalSurface({
           blocksOn={blocksOn}
           branch={git.branch}
           repoRoot={git.root}
-          claudeUsage={isClaude ? claudeUsage : undefined}
-          contextUsage={contextUsage}
+          usage={
+            isClaude ? (
+              <UsageButton
+                usage={claudeUsage}
+                context={contextUsage}
+                onCompact={() => write('/compact\r')}
+              />
+            ) : undefined
+          }
           onOpenBranch={() => {
             if (!git.root) return
             void window.api.terminal.openInCode(git.root).then((result) => {

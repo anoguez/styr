@@ -83,3 +83,15 @@ export function parseContextFile(text: string): ContextUsage | null {
     ...(typeof window === 'number' ? { window } : {})
   }
 }
+
+/** "2h 14m", "38m" or "<1m" until `resetsAt`; null when there is no time or it has passed. */
+export function resetsIn(resetsAt: string | undefined, now: number): string | null {
+  if (!resetsAt) return null
+  const ms = Date.parse(resetsAt) - now
+  if (!Number.isFinite(ms) || ms <= 0) return null
+  const minutes = Math.floor(ms / 60_000)
+  if (minutes < 1) return '<1m'
+  const hours = Math.floor(minutes / 60)
+  if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`
+  return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`
+}
