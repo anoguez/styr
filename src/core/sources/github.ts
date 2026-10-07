@@ -110,18 +110,16 @@ interface BlockerPage {
 }
 
 /**
- * "Blocked by" relations of a repository's issues, by issue number. `gh issue list` does not carry
+ * "Blocked by" relations of a repository's open issues (a closed one is Done, so it has nothing to wait on), by issue number. `gh issue list` does not carry
  * them, so this is one GraphQL read per 100 issues. Best effort: null when it cannot be read
  * (older GitHub Enterprise, no access), which leaves local blockers alone.
  */
 async function readBlockers(
   run: CommandRunner,
-  target: string,
-  state: 'all' | 'open'
+  target: string
 ): Promise<Map<string, { target: string; id: string }[]> | null> {
   const [owner, name] = target.split('/')
-  const states = state === 'all' ? 'OPEN, CLOSED' : 'OPEN'
-  const query = `query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){issues(first:100,after:$after,states:[${states}],orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor}nodes{number blockedBy(first:50){nodes{number repository{nameWithOwner}}}}}}}`
+  const query = `query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor}nodes{number blockedBy(first:50){nodes{number repository{nameWithOwner}}}}}}}`
   const found = new Map<string, { target: string; id: string }[]>()
   let after: string | null = null
   for (let page = 0; page < 5; page++) {
@@ -256,7 +254,7 @@ export const githubAdapter: SourceAdapter = {
     const result = await run('gh', args)
     if (result.code !== 0) fail(result, `Could not list issues of ${target}`)
     const items = parseIssues(result.stdout).map(toItem)
-    const blockers = await readBlockers(run, target, config.includeClosed ? 'all' : 'open')
+    const blockers = await readBlockers(run, target)
     if (blockers) for (const item of items) item.blockedBy = blockers.get(item.id) ?? []
     return items
   },
