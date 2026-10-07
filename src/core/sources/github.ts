@@ -95,6 +95,70 @@ function toItem(issue: GhIssue): RemoteItem {
   }
 }
 
+interface BlockerPage {
+  data?: {
+    repository?: {
+      issues: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null }
+        nodes: {
+          number: number
+          blockedBy: { nodes: { number: number; repository: { nameWithOwner: string } }[] }
+        }[]
+      }
+    }
+  }
+}
+
+/**
+ * "Blocked by" relations of a repository's open issues (a closed one is Done, so it has nothing to wait on), by issue number. `gh issue list` does not carry
+ * them, so this is one GraphQL read per 100 issues. Best effort: null when it cannot be read
+ * (older GitHub Enterprise, no access), which leaves local blockers alone.
+ */
+async function readBlockers(
+  run: CommandRunner,
+  target: string
+): Promise<Map<string, { target: string; id: string }[]> | null> {
+  const [owner, name] = target.split('/')
+  const query = `query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){pageInfo{hasNextPage endCursor}nodes{number blockedBy(first:50){nodes{number repository{nameWithOwner}}}}}}}`
+  const found = new Map<string, { target: string; id: string }[]>()
+  let after: string | null = null
+  for (let page = 0; page < 5; page++) {
+    const args = [
+      'api',
+      'graphql',
+      '-f',
+      `query=${query}`,
+      '-F',
+      `owner=${owner}`,
+      '-F',
+      `name=${name}`
+    ]
+    if (after) args.push('-F', `after=${after}`)
+    const result = await run('gh', args)
+    if (result.code !== 0) return null
+    let parsed: BlockerPage
+    try {
+      parsed = JSON.parse(result.stdout) as BlockerPage
+    } catch {
+      return null
+    }
+    const issues = parsed.data?.repository?.issues
+    if (!issues) return null
+    for (const node of issues.nodes) {
+      found.set(
+        String(node.number),
+        node.blockedBy.nodes.map((blocker) => ({
+          target: blocker.repository.nameWithOwner,
+          id: String(blocker.number)
+        }))
+      )
+    }
+    if (!issues.pageInfo.hasNextPage) break
+    after = issues.pageInfo.endCursor
+  }
+  return found
+}
+
 function fail(result: RunResult, what: string): never {
   const detail = result.stderr.trim().split('\n')[0] || `exit ${result.code}`
   throw new Error(`${what}: ${detail}`)
@@ -189,7 +253,10 @@ export const githubAdapter: SourceAdapter = {
     for (const label of config.labels) args.push('--label', label)
     const result = await run('gh', args)
     if (result.code !== 0) fail(result, `Could not list issues of ${target}`)
-    return parseIssues(result.stdout).map(toItem)
+    const items = parseIssues(result.stdout).map(toItem)
+    const blockers = await readBlockers(run, target)
+    if (blockers) for (const item of items) item.blockedBy = blockers.get(item.id) ?? []
+    return items
   },
 
   async get(run, target, id) {

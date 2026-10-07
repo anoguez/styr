@@ -12,7 +12,7 @@ import {
   githubAdapter,
   parseGithubRemote
 } from './github.js'
-import { contentHash, fieldHashes, planPush, planSync } from './sync.js'
+import { contentHash, fieldHashes, planBlockers, planPush, planSync } from './sync.js'
 import type { CommandRunner, RunResult } from './types.js'
 
 const ok = (stdout = ''): RunResult => ({ code: 0, stdout, stderr: '' })
@@ -139,9 +139,9 @@ describe('a full read-only cycle', () => {
     expect(planSync([], [item()], cfg, 'github', where).created).toBe(1)
     expect(planPush(task(), task({ status: 'done' }), cfg)).toEqual([])
     const verbs = calls.map((args) => args.slice(0, 2).join(' '))
-    expect(verbs.every((verb) => /^(--version|auth status|api user|issue list)$/.test(verb))).toBe(
-      true
-    )
+    expect(
+      verbs.every((verb) => /^(--version|auth status|api user|api graphql|issue list)$/.test(verb))
+    ).toBe(true)
   })
 })
 
@@ -267,12 +267,12 @@ describe('planSync', () => {
   const plan = (tasks: Task[], items: RemoteItem[], cfg = source()) =>
     planSync(tasks, items, cfg, 'github', where)
 
-  it('creates a needs-spec backlog task in the repo checkout, and is idempotent', () => {
+  it('creates a ready backlog task in the repo checkout, and is idempotent', () => {
     expect(plan([], [item()]).actions[0]).toMatchObject({
       kind: 'create',
       draft: {
         status: 'backlog',
-        readiness: 'needs_spec',
+        readiness: 'ready',
         tags: ['github:bug'],
         repoPath: '/code/styr',
         externalRef: { target: TARGET, id: '42' }
@@ -403,5 +403,56 @@ describe('planSync per-field conflicts', () => {
     )
     const action = plan.actions[0]
     expect(action?.kind === 'update' && action.patch.status).toBe('done')
+  })
+})
+
+describe('imported defaults', () => {
+  it('gives a new task the worktree default', () => {
+    const plan = planSync([], [item()], source(), 'github', where, { useWorktree: true })
+    const action = plan.actions[0]
+    expect(action?.kind === 'create' && action.draft.useWorktree).toBe(true)
+  })
+})
+
+describe('planBlockers', () => {
+  const linkedTo = (id: string, n: string, over: Partial<Task> = {}): Task =>
+    task({
+      id,
+      externalRef: { provider: 'github', id: n, url: '', sourceId: 's1', target: TARGET },
+      ...over
+    })
+
+  it('adds the task linked to each blocker, keeping local ones', () => {
+    const tasks = [
+      linkedTo('TASK-0001', '1', { blockedBy: ['TASK-0009'] }),
+      linkedTo('TASK-0002', '2')
+    ]
+    const items = [item({ id: '1', blockedBy: [{ target: TARGET, id: '2' }] })]
+    const [update] = planBlockers(tasks, items, source(), TARGET)
+    expect(update?.blockedBy).toEqual(['TASK-0009', 'TASK-0002'])
+  })
+
+  it('skips blockers with no task, known ones, and unknown relations', () => {
+    const tasks = [
+      linkedTo('TASK-0001', '1', { blockedBy: ['TASK-0002'] }),
+      linkedTo('TASK-0002', '2')
+    ]
+    expect(
+      planBlockers(
+        tasks,
+        [item({ id: '1', blockedBy: [{ target: TARGET, id: '2' }] })],
+        source(),
+        TARGET
+      )
+    ).toEqual([])
+    expect(
+      planBlockers(
+        tasks,
+        [item({ id: '1', blockedBy: [{ target: 'o/other', id: '2' }] })],
+        source(),
+        TARGET
+      )
+    ).toEqual([])
+    expect(planBlockers(tasks, [item({ id: '1' })], source(), TARGET)).toEqual([])
   })
 })
