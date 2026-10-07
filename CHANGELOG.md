@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/anoguez/styr/compare/v0.22.0...v0.22.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* make the Quick add planning brief organise the board, not only create tasks ([#101](https://github.com/anoguez/styr/issues/101)) ([c2540e4](https://github.com/anoguez/styr/commit/c2540e4a7b0a0ac8ab8d254d435e211435b88ea1))
+
 ## [0.22.0](https://github.com/anoguez/styr/compare/v0.21.0...v0.22.0) (2026-10-07)
 
 
