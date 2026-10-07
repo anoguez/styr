@@ -92,7 +92,7 @@ export function linkedTask(
 }
 
 /**
- * Decides what a sync does, without doing it. New issues become Backlog / needs-spec tasks; a
+ * Decides what a sync does, without doing it. New issues become Backlog / ready tasks; a
  * linked task takes the remote title, body and labels only if the user has not edited them
  * since the last import; a remote close moves it to Done unless it is mid-work.
  */
@@ -118,7 +118,7 @@ export function planSync(
           title: item.title,
           description: item.body,
           status: item.state === 'closed' ? 'done' : 'backlog',
-          readiness: 'needs_spec',
+          readiness: 'ready',
           ...(defaults.useWorktree !== undefined ? { useWorktree: defaults.useWorktree } : {}),
           ...(defaults.orchestrate !== undefined ? { orchestrate: defaults.orchestrate } : {}),
           tags: tagsFor(tagPrefix, item),

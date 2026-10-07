@@ -267,12 +267,12 @@ describe('planSync', () => {
   const plan = (tasks: Task[], items: RemoteItem[], cfg = source()) =>
     planSync(tasks, items, cfg, 'github', where)
 
-  it('creates a needs-spec backlog task in the repo checkout, and is idempotent', () => {
+  it('creates a ready backlog task in the repo checkout, and is idempotent', () => {
     expect(plan([], [item()]).actions[0]).toMatchObject({
       kind: 'create',
       draft: {
         status: 'backlog',
-        readiness: 'needs_spec',
+        readiness: 'ready',
         tags: ['github:bug'],
         repoPath: '/code/styr',
         externalRef: { target: TARGET, id: '42' }
