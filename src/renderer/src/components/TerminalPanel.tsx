@@ -71,8 +71,10 @@ function TerminalTab({
         node.current = element
       }}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={`group relative flex shrink-0 cursor-grab items-center gap-2 border-b-2 px-3 py-2 text-[12px] transition-colors active:cursor-grabbing ${
-        active ? 'border-accent text-ink' : 'border-transparent text-faint hover:text-dim'
+      className={`group relative -mb-px flex shrink-0 cursor-grab items-center gap-2 rounded-t-lg border border-b-0 py-0 pl-3.5 pr-3 text-[12.5px] transition-colors active:cursor-grabbing ${
+        active
+          ? 'border-edge-strong bg-chrome font-medium text-ink shadow-[inset_0_2px_0_var(--color-accent-soft)]'
+          : 'border-transparent text-faint hover:text-ink'
       } ${isDragging ? 'opacity-50' : ''}`}
       {...attributes}
       {...listeners}
@@ -92,12 +94,16 @@ function TerminalTab({
       >
         <span className="max-w-[180px] truncate">{name}</span>
         {detail ? (
-          <span className="shrink-0 font-mono text-[10.5px] text-faint">{detail}</span>
+          <span
+            className={`shrink-0 font-mono text-[10.5px] font-normal ${active ? 'text-dim' : 'text-faint'}`}
+          >
+            {detail}
+          </span>
         ) : null}
       </button>
       <button
         type="button"
-        className="rounded px-0.5 text-faint opacity-0 transition-opacity hover:text-red-300 focus-visible:opacity-100 group-hover:opacity-100"
+        className={`inline-flex size-4 items-center justify-center rounded text-[10px] text-faint transition-opacity hover:bg-raised hover:text-danger focus-visible:opacity-100 group-hover:opacity-100 ${active ? 'opacity-100' : 'opacity-0'}`}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation()
@@ -185,8 +191,8 @@ export function TerminalPanel({
       tabIndex={-1}
       className="flex h-full min-h-0 flex-col border-t border-edge-strong bg-chrome outline-none"
     >
-      <header className="flex items-stretch border-b border-edge">
-        <div className="flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto px-2">
+      <header className="flex h-[42px] items-stretch border-b border-edge bg-[color-mix(in_oklab,var(--color-chrome)_70%,black)]">
+        <div className="flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto overflow-y-hidden px-2">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
