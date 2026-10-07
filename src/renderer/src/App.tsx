@@ -796,7 +796,7 @@ export default function App(): ReactNode {
                 onClick={() => setConfirmingOrchestrate(true)}
                 disabled={orchestration === null || orchestration.dispatch.length === 0}
                 title={isDispatching ? 'Dispatch is running' : orchestrateTitle}
-                className={isDispatching ? 'dispatch-running' : ''}
+                className={isDispatching ? 'dispatch-running disabled:opacity-100' : ''}
               >
                 {isDispatching ? (
                   <span
