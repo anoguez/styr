@@ -123,7 +123,8 @@ export function UsageButton({
   const contextRow = rows.find((row) => row.key === 'ctx')
 
   return (
-    <>
+    // Positioned wrapper, so the popover opens over the button rather than the bar's far edge.
+    <span className="relative inline-flex">
       <button
         ref={button}
         type="button"
@@ -156,7 +157,7 @@ export function UsageButton({
           ref={popover}
           role="dialog"
           aria-label="Agent usage"
-          className="pointer-events-auto absolute bottom-full right-1.5 z-20 mb-1 flex w-[272px] max-w-[calc(100%-12px)] flex-col overflow-hidden rounded-lg border border-edge-strong bg-panel shadow-2xl"
+          className="pointer-events-auto absolute bottom-full left-0 z-20 mb-1 flex w-[272px] flex-col overflow-hidden rounded-lg border border-edge-strong bg-panel shadow-2xl"
         >
           <div className="flex h-[30px] items-center gap-1.5 border-b border-edge px-2.5 text-[11.5px] text-dim">
             <span aria-hidden className="size-1.5 rounded-full bg-[var(--color-col-progress)]" />
@@ -207,6 +208,6 @@ export function UsageButton({
           ) : null}
         </div>
       ) : null}
-    </>
+    </span>
   )
 }
