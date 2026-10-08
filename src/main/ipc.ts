@@ -108,6 +108,7 @@ import {
 } from './terminal/ptyManager.js'
 import { CodexMonitor, prepareCodex } from './codexMonitor.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
+import { mcpEntry } from './mcpEntry.js'
 
 function broadcast(channel: string, payload?: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
@@ -548,10 +549,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') => {
-    const root = app.isPackaged
-      ? join(process.resourcesPath, 'app.asar.unpacked')
-      : app.getAppPath()
-    const entry = join(root, 'out', 'main', 'mcp', 'index.mjs')
+    const entry = mcpEntry()
     return providerFor({
       ...loadSettings(),
       defaultProvider: provider ?? 'claude'

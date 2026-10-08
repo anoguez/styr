@@ -21,6 +21,7 @@ import {
 } from './terminal/ptyManager.js'
 import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
 import { linuxIconPath } from './appIcon.js'
+import { syncAppImageMcp } from './mcpEntry.js'
 import { createTray, destroyTray } from './tray.js'
 import { initUpdater } from './updater.js'
 import { forgetContext, initUsage } from './usage.js'
@@ -149,6 +150,7 @@ app.whenReady().then(() => {
   // the `appId` the installer registers its shortcut under.
   if (process.platform === 'win32') app.setAppUserModelId('com.andersonnoguez.styr')
   migrateSettings()
+  syncAppImageMcp()
   tasksDir()
   syncIndex()
   registerIpcHandlers()
