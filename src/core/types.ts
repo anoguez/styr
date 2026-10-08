@@ -624,11 +624,19 @@ export interface AppInfo {
   version: string
 }
 
+/**
+ * The syntax a terminal shell speaks (see `ShellSyntax` in shell.ts): `posix` is sh, bash, zsh and
+ * Git Bash; `powershell` is PowerShell 7 and Windows PowerShell; `cmd` is the Command Prompt.
+ */
+export type ShellDialect = 'posix' | 'powershell' | 'cmd'
+
 export interface TerminalSessionInfo {
   id: string
   /** The task's title when the session was started, or a plain label for a shell. */
   title: string
   cwd: string
+  /** What the session's shell speaks, so the renderer types `cd` and dropped paths it understands. */
+  dialect?: ShellDialect
   taskId?: string
   /** The workspace the task belongs to; task ids are only unique within one. */
   workspaceId?: string
@@ -696,8 +704,8 @@ export interface SourceSyncState {
 }
 
 /**
- * Whether an agent CLI starts from the terminal's shell. `unsupported_shell` is Windows only: launch
- * commands are POSIX shell, so PowerShell or cmd cannot run them.
+ * Whether an agent CLI starts from the terminal's shell. `unsupported_shell` is a shell that cannot
+ * carry a launch (Windows PowerShell 5.1, cmd); `TerminalShell.unsupported` says why.
  */
 export type AgentCliStatus =
   | { state: 'ready'; version: string }
@@ -709,7 +717,10 @@ export type AgentCliStatus =
 export interface AgentCliReport {
   provider: 'claude' | 'codex'
   command: string
+  /** The shell's path, as configured or found. */
   shell: string
+  /** The shell's name as shown to the user: "Git Bash", "PowerShell 7", "zsh". */
+  shellLabel: string
   /** `process.platform` of the main process: the OS the agents actually run on. */
   platform: string
   status: AgentCliStatus

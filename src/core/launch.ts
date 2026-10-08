@@ -6,6 +6,7 @@ import { isGitRepo } from './gitExec.js'
 import { buildPrompt, resolveTemplateFor } from './prompt.js'
 import { providerById, providerFor } from './providers/index.js'
 import { shellQuote } from './shell.js'
+import { resolveShell } from './platformShell.js'
 import { worktreeKey, type Settings, type Task } from './types.js'
 
 export { shellQuote }
@@ -115,11 +116,13 @@ export function planLaunch(
   const existing = task.agentSession?.provider === provider.id ? task.agentSession.id : undefined
 
   clearAgentStatus(settings, task.id)
+  // The command is typed into the terminal's shell, so it is written in that shell's syntax.
+  const { syntax } = resolveShell(settings.shell)
 
   const writePrompt = (): string => {
     const file = join(supportDir(settings, 'prompts'), `${task.id}.txt`)
     writeFileSync(file, renderPrompt(settings, task, templateId), 'utf8')
-    return `"$(cat '${shellQuote(file)}')"`
+    return syntax.fileContents(file)
   }
 
   const wanted = resume ?? options.sessionId ?? existing
@@ -143,7 +146,8 @@ export function planLaunch(
       resume: resumable,
       forkFrom,
       cwd: checkout.cwd,
-      prompt
+      prompt,
+      syntax
     }),
     cwd: checkout.cwd,
     sessionId,

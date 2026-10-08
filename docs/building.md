@@ -50,10 +50,13 @@ That produces `dist/Styr-Setup-<version>.exe`, a per-user installer (no administ
 `dist/win-unpacked/Styr.exe` to run without installing. The installer is unsigned, so SmartScreen
 shows **Windows protected your PC** on first run: **More info → Run anyway**.
 
-On Windows the terminal shell defaults to Git Bash (found through `CLAUDE_CODE_GIT_BASH_PATH`, the
-standard install folders, or the `git.exe` on `PATH`), because launch commands and Claude Code's
-status hooks are POSIX shell. Without Git for Windows it falls back to PowerShell, where agent
-launches will not work. `mod` in shortcuts is Ctrl; inside the terminal, Ctrl+letter goes to the
+On Windows agents launch from **Git Bash** or **PowerShell 7** (`pwsh`); pick either under Settings
+→ Preferences → Shell. With none set, Styr uses Git Bash (found through `CLAUDE_CODE_GIT_BASH_PATH`,
+the standard install folders, or the `git.exe` on `PATH`), else PowerShell 7, else Windows
+PowerShell. Windows PowerShell 5.1 and Command Prompt open as terminals, but agents cannot launch
+from them: 5.1 splits arguments that contain quotes when it passes them to a program, which breaks
+the prompt. Install PowerShell 7 with `winget install Microsoft.PowerShell`. Claude Code itself still
+uses Git Bash for its hooks and its own commands. `mod` in shortcuts is Ctrl; inside the terminal, Ctrl+letter goes to the
 shell and Ctrl+Shift+letter reaches the command bound to Ctrl+letter.
 
 ## Installing it on Linux, or in WSL2

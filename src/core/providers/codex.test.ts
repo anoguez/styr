@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { syntaxFor } from '../shell.js'
 import { codexCommand } from './codex.js'
 
 const settings = { codexCommand: 'codex', codexApprovalReviewer: 'user' as const }
@@ -6,7 +7,13 @@ const settings = { codexCommand: 'codex', codexApprovalReviewer: 'user' as const
 describe('codexCommand', () => {
   it('starts on the shared daemon with a workspace-write sandbox and on-request -c sandbox_workspace_write.network_access=true approvals', () => {
     expect(
-      codexCommand(settings, { sessionId: 'id', resume: false, cwd: '/work/styr', prompt: '"$P"' })
+      codexCommand(settings, {
+        sessionId: 'id',
+        resume: false,
+        cwd: '/work/styr',
+        prompt: '"$P"',
+        syntax: syntaxFor('posix')
+      })
     ).toBe(
       `codex --remote unix:// --cd '/work/styr' --sandbox workspace-write --ask-for-approval on-request -c sandbox_workspace_write.network_access=true "$P"`
     )
@@ -15,7 +22,7 @@ describe('codexCommand', () => {
   it('resumes through the daemon without permission overrides', () => {
     const command = codexCommand(
       { ...settings, codexApprovalReviewer: 'auto_review' },
-      { sessionId: 'abc-123', resume: true, cwd: '/work/styr' }
+      { sessionId: 'abc-123', resume: true, cwd: '/work/styr', syntax: syntaxFor('posix') }
     )
     expect(command).toBe(`codex resume --remote unix:// --cd '/work/styr' abc-123`)
     expect(command).not.toContain('--approve-for-me')
@@ -24,14 +31,25 @@ describe('codexCommand', () => {
   })
 
   it('quotes a working directory containing spaces and quotes', () => {
-    const command = codexCommand(settings, { sessionId: 'id', resume: false, cwd: `/my dir/it's` })
+    const command = codexCommand(settings, {
+      sessionId: 'id',
+      resume: false,
+      cwd: `/my dir/it's`,
+      syntax: syntaxFor('posix')
+    })
     expect(command).toContain(`--cd '/my dir/it'\\''s'`)
   })
 
   it('uses automatic approval review without a conflicting --sandbox flag', () => {
     const command = codexCommand(
       { ...settings, codexApprovalReviewer: 'auto_review' },
-      { sessionId: 'id', resume: false, cwd: '/w', prompt: 'Implement the task' }
+      {
+        sessionId: 'id',
+        resume: false,
+        cwd: '/w',
+        prompt: 'Implement the task',
+        syntax: syntaxFor('posix')
+      }
     )
     expect(command).toBe(
       `codex --remote unix:// --cd '/w' --approve-for-me -c sandbox_workspace_write.network_access=true Implement the task`
@@ -46,10 +64,25 @@ describe('codexCommand', () => {
         resume: false,
         forkFrom: 'src-thread',
         cwd: '/w',
+        syntax: syntaxFor('posix'),
         prompt: '"$P"'
       })
     ).toBe(
       `codex fork --remote unix:// --cd '/w' --sandbox workspace-write --ask-for-approval on-request -c sandbox_workspace_write.network_access=true src-thread "$P"`
     )
+  })
+})
+
+describe('codexCommand in PowerShell', () => {
+  it('calls the command with & and quotes the PowerShell way', () => {
+    const command = codexCommand(settings, {
+      sessionId: 'id',
+      resume: false,
+      cwd: "C:\\my dir\\it's",
+      syntax: syntaxFor('powershell')
+    })
+    expect(command.startsWith('& codex --remote unix:// ')).toBe(true)
+    expect(command).toContain("--cd 'C:\\my dir\\it''s'")
+    expect(command.endsWith(" ''")).toBe(true)
   })
 })

@@ -12,8 +12,7 @@ import {
   parseCodexVersion,
   type ThreadUpdate
 } from '@core/providers/codexProtocol.js'
-import { commandShellArgs, defaultShell } from '@core/platformShell.js'
-import { shellQuote } from '@core/shell.js'
+import { resolveShell, type TerminalShell } from '@core/platformShell.js'
 
 const run = promisify(execFile)
 const HANDSHAKE_TIMEOUT_MS = 5_000
@@ -24,11 +23,11 @@ const RECONNECT_DELAY_MS = 3_000
  * Finder inherits a bare PATH, so spawning the configured command directly fails with ENOENT even
  * though it works in a terminal. The command is a shell string (it may carry flags), as in a launch.
  */
-async function output(command: string, args: string[]): Promise<string> {
-  const line = [command, ...args.map((arg) => `'${shellQuote(arg)}'`)].join(' ')
+async function output(shell: TerminalShell, command: string, args: string[]): Promise<string> {
+  const { syntax } = shell
+  const line = [syntax.invoke(command), ...args.map((arg) => syntax.quote(arg))].join(' ')
   try {
-    const shell = defaultShell()
-    const { stdout } = await run(shell, commandShellArgs(shell, line), {
+    const { stdout } = await run(shell.path, shell.commandArgs(line), {
       timeout: 15_000
     })
     return stdout
@@ -48,18 +47,21 @@ async function output(command: string, args: string[]): Promise<string> {
  * the CLI version, a running app-server daemon of a supported version. Throws an error that says
  * what to fix, so a launch is refused up front instead of running with no live status.
  */
-export async function prepareCodex(command: string): Promise<string> {
+export async function prepareCodex(command: string, configuredShell: string): Promise<string> {
+  const shell = resolveShell(configuredShell)
   const required = MIN_CODEX_VERSION.join('.')
-  const cli = parseCodexVersion(await output(command, ['--version']))
+  const cli = parseCodexVersion(await output(shell, command, ['--version']))
   if (!cli || !isSupportedCodexVersion(cli)) {
     throw new Error(
       `Codex CLI ${required} or later is required (found ${cli ? cli.join('.') : 'an unknown version'}). ${CODEX_UPGRADE_HINT}`
     )
   }
-  await output(command, ['app-server', 'daemon', 'start'])
+  await output(shell, command, ['app-server', 'daemon', 'start'])
   let info: { socketPath?: string; appServerVersion?: string }
   try {
-    info = JSON.parse(await output(command, ['app-server', 'daemon', 'version'])) as typeof info
+    info = JSON.parse(
+      await output(shell, command, ['app-server', 'daemon', 'version'])
+    ) as typeof info
   } catch {
     throw new Error(
       `Codex's app-server daemon returned unreadable version info. ${CODEX_UPGRADE_HINT}`

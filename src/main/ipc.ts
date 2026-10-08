@@ -109,6 +109,7 @@ import {
 import { CodexMonitor, prepareCodex } from './codexMonitor.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
+import { resolveShell } from '@core/platformShell.js'
 
 function broadcast(channel: string, payload?: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
@@ -553,7 +554,7 @@ export function registerIpcHandlers(): void {
     return providerFor({
       ...loadSettings(),
       defaultProvider: provider ?? 'claude'
-    }).mcpInstallCommand(entry)
+    }).mcpInstallCommand(entry, resolveShell(loadSettings().shell).syntax)
   })
 
   ipcMain.handle('orchestrate:plan', () => summarisePlan())
@@ -696,7 +697,7 @@ export function registerIpcHandlers(): void {
     const entry = task.sessions.find((item) => item.id === sessionId)
     const plan = planLaunch(settings, task, { resume: sessionId, provider: entry?.provider })
     await ensureAgentCli(plan.provider, settings)
-    if (plan.provider === 'codex') await prepareCodex(settings.codexCommand)
+    if (plan.provider === 'codex') await prepareCodex(settings.codexCommand, settings.shell)
     return createSession({
       cwd: plan.cwd,
       shell: settings.shell,
