@@ -13,12 +13,7 @@ const PLATFORM_NAMES: Record<string, string> = {
 
 /** "Git Bash on Windows", "zsh on macOS": the shell and OS the check ran in. */
 function where(report: AgentCliReport): string {
-  const file = report.shell.replace(/\\/g, '/').split('/').pop() ?? report.shell
-  const shell =
-    report.platform === 'win32' && /^bash(\.exe)?$/i.test(file)
-      ? 'Git Bash'
-      : file.replace(/\.exe$/i, '')
-  return `${shell} on ${PLATFORM_NAMES[report.platform] ?? report.platform}`
+  return `${report.shellLabel} on ${PLATFORM_NAMES[report.platform] ?? report.platform}`
 }
 
 /**
@@ -64,7 +59,7 @@ export function AgentCliStatus({
     : report.status.state === 'ready'
       ? `${report.status.version} · found by ${where(report)}`
       : report.status.state === 'unsupported_shell'
-        ? `Needs Git Bash on ${PLATFORM_NAMES[report.platform] ?? report.platform}`
+        ? `Agents can’t launch from ${where(report)}`
         : report.status.state === 'missing'
           ? `Not found by ${where(report)}`
           : `Not working in ${where(report)}`

@@ -70,8 +70,8 @@ path is in every prompt.
 
 You need macOS or Windows, a recent Node (24) with Yarn, git, and at least one agent CLI on your `PATH`:
 [Claude Code](https://docs.claude.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex)
-0.159.3 or later. On Windows, also [Git for Windows](https://git-scm.com/download/win): its Git Bash is
-the terminal shell, as Claude Code requires.
+0.159.3 or later. On Windows, also [Git for Windows](https://git-scm.com/download/win), which Claude
+Code requires; Styr's terminals use its Git Bash, or PowerShell 7 if you choose it in Settings.
 
 ```sh
 git clone https://github.com/anoguez/styr.git

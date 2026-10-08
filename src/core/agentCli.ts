@@ -1,5 +1,5 @@
-import { basename } from 'node:path'
-import { commandShellArgs, isPosixShell } from './platformShell.js'
+import type { TerminalShell } from './platformShell.js'
+import { COMMAND_NOT_FOUND } from './shell.js'
 import type { AgentCliReport, AgentCliStatus } from './types.js'
 
 type Provider = AgentCliReport['provider']
@@ -11,21 +11,26 @@ export interface ShellRun {
   stderr: string
 }
 
-/** Runs `shell` with `args`. Injected so the check is testable without spawning anything. */
-export type ShellRunner = (shell: string, args: string[]) => Promise<ShellRun>
+/**
+ * Runs the shell at `path` with `args` and the shell's extra `environment`. Injected so the check is
+ * testable without spawning anything.
+ */
+export type ShellRunner = (
+  path: string,
+  args: string[],
+  environment: Record<string, string>
+) => Promise<ShellRun>
 
 export interface AgentCliTarget {
   provider: Provider
   /** As configured in Settings → Integrations; may carry flags (`claude --model …`). */
   command: string
-  shell: string
+  /** The shell launches are typed into, as `resolveShell` describes it. */
+  shell: TerminalShell
   platform: NodeJS.Platform
 }
 
 const LABELS: Record<Provider, string> = { claude: 'Claude Code', codex: 'Codex' }
-
-/** Exit status POSIX shells use for "command not found". */
-const NOT_FOUND = 127
 
 /** The official install command for `provider` on `platform`, as the user would paste it. */
 export function installCommandFor(provider: Provider, platform: string): string {
@@ -35,29 +40,18 @@ export function installCommandFor(provider: Provider, platform: string): string 
     : 'curl -fsSL https://claude.ai/install.sh | bash'
 }
 
-/** How the shell is named to the user: Git for Windows' bash is "Git Bash". */
-export function shellName(shell: string, platform: string): string {
-  const name = basename(shell.replace(/\\/g, '/'))
-  if (platform === 'win32' && /^bash(\.exe)?$/i.test(name)) return 'Git Bash'
-  return name.replace(/\.exe$/i, '')
-}
-
 function firstLine(text: string): string {
   return text.trim().split(/\r?\n/)[0]?.trim() ?? ''
 }
 
 function problemFor(target: AgentCliTarget, status: AgentCliStatus): string {
   const label = LABELS[target.provider]
-  const shell = shellName(target.shell, target.platform)
+  const shell = target.shell.label
   switch (status.state) {
     case 'ready':
       return ''
     case 'unsupported_shell':
-      return (
-        `${label} is started with POSIX shell commands, which ${shell} cannot run. Install Git ` +
-        'for Windows and set Settings → Preferences → Shell to its bash.exe ' +
-        '(usually C:\\Program Files\\Git\\bin\\bash.exe).'
-      )
+      return `${label} cannot be launched from ${shell}. ${target.shell.unsupported ?? ''}`.trim()
     case 'missing': {
       const where =
         target.platform === 'win32'
@@ -75,14 +69,21 @@ function problemFor(target: AgentCliTarget, status: AgentCliStatus): string {
 
 /**
  * Checks that `target.command` starts from `target.shell` by asking it for its version, through the
- * same login shell the terminal uses, so the PATH is the one an agent launch will see.
+ * same shell, with the same profile, that a launch is typed into — so the PATH is the one the agent
+ * will see. The probe is written in the shell's own syntax and exits 127 when the command does not
+ * exist, whatever the shell.
  */
 export async function checkAgentCli(
   target: AgentCliTarget,
   run: ShellRunner
 ): Promise<AgentCliReport> {
+  const { shell } = target
   const report = (status: AgentCliStatus): AgentCliReport => ({
-    ...target,
+    provider: target.provider,
+    command: target.command,
+    shell: shell.path,
+    shellLabel: shell.label,
+    platform: target.platform,
     status,
     problem: problemFor(target, status),
     ...(status.state === 'missing'
@@ -90,19 +91,17 @@ export async function checkAgentCli(
       : {})
   })
 
-  if (target.platform === 'win32' && !isPosixShell(target.shell)) {
-    return report({ state: 'unsupported_shell' })
-  }
-  const line = `${target.command} --version`
-  const result = await run(target.shell, commandShellArgs(target.shell, line, target.platform))
+  if (shell.unsupported) return report({ state: 'unsupported_shell' })
+  const line = shell.syntax.exitIfNotFound(`${shell.syntax.invoke(target.command)} --version`)
+  const result = await run(shell.path, shell.commandArgs(line), shell.environment)
   if (result.code === 0) {
     const version = /\d+\.\d+\.\d+[\w.-]*/.exec(result.stdout)?.[0] ?? firstLine(result.stdout)
     return report({ state: 'ready', version: version || 'unknown version' })
   }
-  if (result.code === NOT_FOUND) return report({ state: 'missing' })
+  if (result.code === COMMAND_NOT_FOUND) return report({ state: 'missing' })
   const detail =
     result.code === null
-      ? firstLine(result.stderr) || `the shell ${target.shell} could not be started`
+      ? firstLine(result.stderr) || `the shell ${shell.path} could not be started`
       : firstLine(result.stderr) || firstLine(result.stdout) || `exit code ${result.code}`
   return report({ state: 'failed', detail })
 }

@@ -68,6 +68,7 @@ import { terminalTheme } from '../lib/palette.js'
 import { THEME_PRESETS, applyPreset } from '../lib/themePresets.js'
 import { workspaceColor } from '../lib/workspaceColor.js'
 import { AgentCliStatus } from './AgentCliStatus.js'
+import { PLATFORM } from '../lib/platform.js'
 
 const PLACEHOLDERS = [
   '{{id}}',
@@ -924,7 +925,14 @@ export function SettingsDialog({
                       placeholder="Storage folder"
                     />
                   </Field>
-                  <Field label="Shell" hint="Every terminal session starts in this shell.">
+                  <Field
+                    label="Shell"
+                    hint={
+                      PLATFORM === 'win32'
+                        ? 'Every terminal session starts in this shell. Agents launch from Git Bash or PowerShell 7 (pwsh.exe). Blank picks one for you.'
+                        : 'Every terminal session starts in this shell. Blank uses $SHELL.'
+                    }
+                  >
                     <input
                       className={`${inputBase} h-8 w-60 px-2.5 font-mono text-[11.5px]`}
                       value={draft.shell}

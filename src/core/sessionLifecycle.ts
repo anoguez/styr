@@ -97,7 +97,7 @@ export interface SessionPorts {
   /** Refuses (throws) when the provider's CLI does not start from the terminal's shell. */
   ensureAgentCli(provider: 'claude' | 'codex', settings: Settings): Promise<void>
   /** Refuses (throws) when Codex cannot be monitored; otherwise gives the control socket. */
-  prepareCodex(command: string): Promise<string>
+  prepareCodex(command: string, shell: string): Promise<string>
   planLaunch(settings: Settings, task: Task, options: LaunchOptions): LaunchPlan
 
   git: {
@@ -218,7 +218,9 @@ export function createSessionLifecycle(ports: SessionPorts) {
     // Codex is refused up front when it cannot be monitored: a session with no live status is worse
     // than an error that says what to fix. Nothing has been written yet, so a refusal leaves no trace.
     const socketPath =
-      requestedProvider === 'codex' ? await ports.prepareCodex(settings.codexCommand) : undefined
+      requestedProvider === 'codex'
+        ? await ports.prepareCodex(settings.codexCommand, settings.shell)
+        : undefined
     // The board may have switched while Codex was being checked; everything below writes to the
     // active workspace's files, so it must still be the one this launch was planned in.
     if (ports.settings().activeWorkspaceId !== workspaceId) {
