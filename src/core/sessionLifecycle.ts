@@ -94,6 +94,8 @@ export interface SessionPorts {
     watch(socketPath: string, key: string, threadId: string): Promise<void>
     release(key: string): void
   }
+  /** Refuses (throws) when the provider's CLI does not start from the terminal's shell. */
+  ensureAgentCli(provider: 'claude' | 'codex', settings: Settings): Promise<void>
   /** Refuses (throws) when Codex cannot be monitored; otherwise gives the control socket. */
   prepareCodex(command: string): Promise<string>
   planLaunch(settings: Settings, task: Task, options: LaunchOptions): LaunchPlan
@@ -210,6 +212,9 @@ export function createSessionLifecycle(ports: SessionPorts) {
         `${requestedProvider === 'codex' ? 'Codex' : 'Claude Code'} is disabled in Settings → Integrations.`
       )
     }
+    // A missing CLI would otherwise surface as "command not found" in a tab, after the task had
+    // moved to In Progress with a session that never started. Nothing is written before this.
+    await ports.ensureAgentCli(requestedProvider, settings)
     // Codex is refused up front when it cannot be monitored: a session with no live status is worse
     // than an error that says what to fix. Nothing has been written yet, so a refusal leaves no trace.
     const socketPath =

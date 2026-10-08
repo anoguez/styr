@@ -107,6 +107,7 @@ import {
   type SpawnOptions
 } from './terminal/ptyManager.js'
 import { CodexMonitor, prepareCodex } from './codexMonitor.js'
+import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 
 function broadcast(channel: string, payload?: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
@@ -271,6 +272,7 @@ const lifecycle = createSessionLifecycle({
   runtimeState: terminalRuntimeState,
   agentStatuses,
   monitor: codexMonitor,
+  ensureAgentCli,
   prepareCodex,
   planLaunch,
   git: {
@@ -633,6 +635,11 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('settings:listApps', () => listInstalledApps())
+  ipcMain.handle(
+    'agents:cliStatus',
+    (_event, provider: 'claude' | 'codex', command: string, shell: string) =>
+      agentCliStatus({ provider, command: String(command ?? ''), shell: String(shell ?? '') })
+  )
 
   ipcMain.handle('settings:pickApp', async (event) => {
     const parent = BrowserWindow.fromWebContents(event.sender)
@@ -687,6 +694,7 @@ export function registerIpcHandlers(): void {
     const settings = loadSettings()
     const entry = task.sessions.find((item) => item.id === sessionId)
     const plan = planLaunch(settings, task, { resume: sessionId, provider: entry?.provider })
+    await ensureAgentCli(plan.provider, settings)
     if (plan.provider === 'codex') await prepareCodex(settings.codexCommand)
     return createSession({
       cwd: plan.cwd,

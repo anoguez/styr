@@ -67,6 +67,7 @@ import { ansiLabel, TERMINAL_FONTS, TERMINAL_PALETTES, UI_FONTS } from '../hooks
 import { terminalTheme } from '../lib/palette.js'
 import { THEME_PRESETS, applyPreset } from '../lib/themePresets.js'
 import { workspaceColor } from '../lib/workspaceColor.js'
+import { AgentCliStatus } from './AgentCliStatus.js'
 
 const PLACEHOLDERS = [
   '{{id}}',
@@ -1717,6 +1718,15 @@ export function SettingsDialog({
                                       : { codexCommand: event.target.value }
                                   )
                                 }
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-2.5">
+                              <span className="pt-[3px] text-[12px] text-dim">Status</span>
+                              <AgentCliStatus
+                                provider={provider.id}
+                                command={provider.command}
+                                shell={draft.shell}
                               />
                             </div>
 

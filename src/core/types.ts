@@ -695,6 +695,30 @@ export interface SourceSyncState {
   updated: number
 }
 
+/**
+ * Whether an agent CLI starts from the terminal's shell. `unsupported_shell` is Windows only: launch
+ * commands are POSIX shell, so PowerShell or cmd cannot run them.
+ */
+export type AgentCliStatus =
+  | { state: 'ready'; version: string }
+  | { state: 'missing' }
+  | { state: 'failed'; detail: string }
+  | { state: 'unsupported_shell' }
+
+/** One agent CLI check, with what it ran and, when it is not ready, what to do about it. */
+export interface AgentCliReport {
+  provider: 'claude' | 'codex'
+  command: string
+  shell: string
+  /** `process.platform` of the main process: the OS the agents actually run on. */
+  platform: string
+  status: AgentCliStatus
+  /** What is wrong and how to fix it, in words; empty when ready. */
+  problem: string
+  /** A command that installs the CLI on this OS, when it is missing. */
+  installCommand?: string
+}
+
 /** Whether an adapter's command-line tool is usable. */
 export type CliStatus =
   | { state: 'missing' }

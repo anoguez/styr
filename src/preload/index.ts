@@ -4,6 +4,7 @@ import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
 import type { ContextUsage, ProviderUsage } from '../core/usage.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
+  AgentCliReport,
   AppInfo,
   AutoDispatchState,
   BrokenSettingsFile,
@@ -165,6 +166,12 @@ const api = {
     pickFiles: (startIn?: string): Promise<string[]> =>
       ipcRenderer.invoke('settings:pickFiles', startIn),
     listApps: (): Promise<string[]> => ipcRenderer.invoke('settings:listApps'),
+    /** Checks an agent CLI against a shell and command as typed, not yet saved. */
+    agentCliStatus: (
+      provider: 'claude' | 'codex',
+      command: string,
+      shell: string
+    ): Promise<AgentCliReport> => ipcRenderer.invoke('agents:cliStatus', provider, command, shell),
     pickApp: (): Promise<string | null> => ipcRenderer.invoke('settings:pickApp'),
     onChanged: (handler: (settings: Settings) => void): (() => void) =>
       subscribe('settings:changed', handler as (...args: never[]) => void)
