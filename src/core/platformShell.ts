@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { basename, delimiter, join } from 'node:path'
+import { basename, win32 } from 'node:path'
 
 /**
  * The shell a terminal opens when Settings names none. Launch commands, Claude Code's status hooks
@@ -25,6 +25,8 @@ export function findGitBash(
   env: NodeJS.ProcessEnv = process.env,
   exists: (path: string) => boolean = existsSync
 ): string | undefined {
+  // Windows path rules whatever the host, so the logic (and its tests) read the same on any OS.
+  const { join } = win32
   const candidates: string[] = []
   if (env.CLAUDE_CODE_GIT_BASH_PATH) candidates.push(env.CLAUDE_CODE_GIT_BASH_PATH)
   for (const root of [env.ProgramFiles, env['ProgramFiles(x86)'], env.ProgramW6432]) {
@@ -42,7 +44,7 @@ export function findGitBash(
 function pathEntries(env: NodeJS.ProcessEnv): string[] {
   // Windows spells it `Path`; a spread of process.env keeps that spelling.
   const key = Object.keys(env).find((name) => name.toUpperCase() === 'PATH')
-  return ((key && env[key]) || '').split(delimiter).filter(Boolean)
+  return ((key && env[key]) || '').split(win32.delimiter).filter(Boolean)
 }
 
 type ShellKind = 'posix' | 'powershell' | 'cmd'

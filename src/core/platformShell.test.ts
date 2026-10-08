@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { win32 } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   commandShellArgs,
@@ -30,14 +30,15 @@ describe('findGitBash', () => {
   })
 
   it('finds the standard install folder', () => {
-    const expected = join('C:\\PF', 'Git', 'bin', 'bash.exe')
+    const expected = win32.join('C:\\PF', 'Git', 'bin', 'bash.exe')
     expect(findGitBash({ ProgramFiles: 'C:\\PF' }, (path) => path === expected)).toBe(expected)
   })
 
   it('derives bash from the git.exe on PATH', () => {
-    const gitCmd = join('E:\\Git', 'cmd')
-    const bash = join(gitCmd, '..', 'bin', 'bash.exe')
-    const exists = (path: string): boolean => path === join(gitCmd, 'git.exe') || path === bash
+    const gitCmd = win32.join('E:\\Git', 'cmd')
+    const bash = win32.join(gitCmd, '..', 'bin', 'bash.exe')
+    const exists = (path: string): boolean =>
+      path === win32.join(gitCmd, 'git.exe') || path === bash
     expect(findGitBash({ Path: gitCmd }, exists)).toBe(bash)
   })
 
