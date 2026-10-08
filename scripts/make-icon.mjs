@@ -1,11 +1,29 @@
-import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { execFile, execFileSync } from 'node:child_process'
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+// Rasterises the SVG sources with headless Chrome (or Edge on Windows). Every platform writes
+// icon.png, from which electron-builder derives the Windows .ico; icon.icns and the tray icon need
+// macOS's sips and iconutil, so they are only rebuilt there.
+const MAC = process.platform === 'darwin'
+const BROWSERS = MAC
+  ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
+  : [
+      join(process.env.ProgramFiles ?? '', 'Google/Chrome/Application/chrome.exe'),
+      join(process.env['ProgramFiles(x86)'] ?? '', 'Google/Chrome/Application/chrome.exe'),
+      join(process.env.LOCALAPPDATA ?? '', 'Google/Chrome/Application/chrome.exe'),
+      join(process.env['ProgramFiles(x86)'] ?? '', 'Microsoft/Edge/Application/msedge.exe'),
+      join(process.env.ProgramFiles ?? '', 'Microsoft/Edge/Application/msedge.exe')
+    ]
+const CHROME = BROWSERS.find((path) => existsSync(path))
 const SOURCE = 'resources/icon.svg'
 const OUTPUT = 'resources/icon.icns'
+const PNG_OUTPUT = 'resources/icon.png'
+// Asynchronous, so the server below (in this process) can answer the browser while it renders.
+const render = promisify(execFile)
 const TRAY_SOURCE = 'resources/tray.svg'
 const TRAY_OUTPUT = 'src/main/trayIcon.ts'
 const PORT = 8732
@@ -23,8 +41,10 @@ const RENDITIONS = [
   [1024, 'icon_512x512@2x']
 ]
 
-if (!existsSync(CHROME)) {
-  console.error(`Google Chrome is required to rasterise ${SOURCE} and was not found at ${CHROME}.`)
+if (!CHROME) {
+  console.error(
+    `Google Chrome is required to rasterise ${SOURCE} and was not found at:\n  ${BROWSERS.join('\n  ')}`
+  )
   process.exit(1)
 }
 
@@ -37,10 +57,13 @@ writeFileSync(
     '<img src="icon.svg">'
 )
 
-const server = spawn('python3', ['-m', 'http.server', String(PORT)], {
-  cwd: 'resources',
-  stdio: 'ignore'
-})
+// Serves resources/ so the page can load the SVG next to it.
+const server = createServer((request, response) => {
+  const file = join('resources', decodeURIComponent(new URL(request.url, 'http://x').pathname))
+  if (!existsSync(file)) return response.writeHead(404).end()
+  const type = file.endsWith('.svg') ? 'image/svg+xml' : 'text/html; charset=utf-8'
+  response.writeHead(200, { 'Content-Type': type }).end(readFileSync(file))
+}).listen(PORT)
 
 async function waitForServer() {
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -55,20 +78,8 @@ async function waitForServer() {
   throw new Error('local server did not start')
 }
 
-try {
-  await waitForServer()
-  const master = join(work, 'icon_1024.png')
-  execFileSync(CHROME, [
-    '--headless',
-    '--disable-gpu',
-    '--default-background-color=00000000',
-    '--hide-scrollbars',
-    '--virtual-time-budget=3000',
-    '--window-size=1024,1024',
-    `--screenshot=${master}`,
-    `http://localhost:${PORT}/.icon-render.html`
-  ])
-
+/** icon.icns and the inlined tray icon, from the 1024px master. Needs macOS's sips and iconutil. */
+async function buildMacIcons(master) {
   const iconset = join(work, 'icon.iconset')
   execFileSync('mkdir', ['-p', iconset])
   for (const [size, name] of RENDITIONS) {
@@ -91,7 +102,7 @@ try {
       '<img src="tray.svg">'
   )
   const trayMaster = join(work, 'tray_32.png')
-  execFileSync(CHROME, [
+  await render(CHROME, [
     '--headless',
     '--disable-gpu',
     '--default-background-color=00000000',
@@ -120,8 +131,29 @@ try {
       "'\n"
   )
   console.log(`wrote ${TRAY_OUTPUT} from ${TRAY_SOURCE}`)
+}
+
+try {
+  await waitForServer()
+  const master = join(work, 'icon_1024.png')
+  await render(CHROME, [
+    '--headless',
+    '--disable-gpu',
+    // On Windows a running Chrome would otherwise take over the command and never exit.
+    ...(MAC ? [] : [`--user-data-dir=${join(work, 'profile')}`]),
+    '--default-background-color=00000000',
+    '--hide-scrollbars',
+    '--virtual-time-budget=3000',
+    '--window-size=1024,1024',
+    `--screenshot=${master}`,
+    `http://localhost:${PORT}/.icon-render.html`
+  ])
+  copyFileSync(master, PNG_OUTPUT)
+  console.log(`wrote ${PNG_OUTPUT} from ${SOURCE}`)
+  if (MAC) await buildMacIcons(master)
+  else console.log(`skipped ${OUTPUT} and ${TRAY_OUTPUT}: they need macOS (sips, iconutil)`)
 } finally {
-  server.kill()
+  server.close()
   rmSync(page, { force: true })
   rmSync(work, { recursive: true, force: true })
 }

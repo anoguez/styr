@@ -69,7 +69,12 @@ const api = {
     stop: (): Promise<void> => ipcRenderer.invoke('diagnostics:stop')
   },
   app: {
+    /** Read once at load; the renderer has no `process`. */
+    platform: process.platform,
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
+    /** Colours the native window controls drawn over the title bar (Windows only; a no-op elsewhere). */
+    setTitleBarColors: (background: string, symbols: string): void =>
+      ipcRenderer.send('app:titleBarColors', background, symbols),
     mcpCommand: (provider?: 'claude' | 'codex'): Promise<string> =>
       ipcRenderer.invoke('app:mcpCommand', provider)
   },

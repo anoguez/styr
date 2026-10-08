@@ -12,6 +12,7 @@ import {
   parseCodexVersion,
   type ThreadUpdate
 } from '@core/providers/codexProtocol.js'
+import { commandShellArgs, defaultShell } from '@core/platformShell.js'
 import { shellQuote } from '@core/shell.js'
 
 const run = promisify(execFile)
@@ -26,7 +27,8 @@ const RECONNECT_DELAY_MS = 3_000
 async function output(command: string, args: string[]): Promise<string> {
   const line = [command, ...args.map((arg) => `'${shellQuote(arg)}'`)].join(' ')
   try {
-    const { stdout } = await run(process.env.SHELL || '/bin/zsh', ['-l', '-c', line], {
+    const shell = defaultShell()
+    const { stdout } = await run(shell, commandShellArgs(shell, line), {
       timeout: 15_000
     })
     return stdout

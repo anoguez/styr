@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import {
   branchExists,
   branchNameFor,
@@ -142,7 +142,8 @@ export function readGitBranch(dir: string): string | undefined {
       const pointer = readFileSync(dotGit, 'utf8').trim()
       const target = pointer.startsWith('gitdir:') ? pointer.slice('gitdir:'.length).trim() : ''
       if (!target) return undefined
-      gitDir = target.startsWith('/') ? target : join(dir, target)
+      // Git writes an absolute `C:/…` path on Windows.
+      gitDir = isAbsolute(target) ? target : join(dir, target)
     }
     const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim()
     if (head.startsWith('ref: refs/heads/')) return head.slice('ref: refs/heads/'.length)

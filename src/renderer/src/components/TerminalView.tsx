@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import type { ShortcutBindings, ThemeSettings } from '@core/types.js'
 import { terminalTheme } from '../lib/palette.js'
-import { isAppShortcut, multilineSequence } from '../lib/terminalKeys.js'
+import { clipboardKey, isAppShortcut, multilineSequence } from '../lib/terminalKeys.js'
 import { BlockTracker, type BlockLayout } from '../lib/blockTracker.js'
 import { shellQuote } from '@core/shell.js'
 import { TerminalOutputSynchronizer } from '../lib/terminalOutput.js'
@@ -92,6 +92,15 @@ export function TerminalView({
     terminal.open(element)
 
     terminal.attachCustomKeyEventHandler((event) => {
+      const clipboard = clipboardKey(event, terminal.hasSelection())
+      if (clipboard === 'copy') {
+        event.preventDefault()
+        void navigator.clipboard.writeText(terminal.getSelection())
+        terminal.clearSelection()
+        return false
+      }
+      // Left to the browser, whose paste event xterm turns into a (bracketed) paste.
+      if (clipboard === 'paste') return false
       const sequence = multilineSequence(event)
       if (sequence !== null) {
         event.preventDefault()

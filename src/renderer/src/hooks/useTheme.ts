@@ -131,6 +131,7 @@ export function useTheme(theme: ThemeSettings): void {
     root.style.setProperty('--color-ink', ramp.ink)
     root.style.setProperty('--color-dim', ramp.dim)
     root.style.setProperty('--color-faint', ramp.faint)
+    window.api.app.setTitleBarColors(ramp.chrome, ramp.dim)
     root.style.setProperty('--color-accent', theme.accent)
     root.style.setProperty('--color-on-accent', onColor(theme.accent))
     // The accent tints are written for dark surfaces (mixed toward white); on a light theme they

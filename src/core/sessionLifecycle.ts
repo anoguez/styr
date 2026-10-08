@@ -427,7 +427,7 @@ export function createSessionLifecycle(ports: SessionPorts) {
     // The new worktree starts from the source's branch, so the commits carry over. Uncommitted work
     // does not; the document says where it is.
     const carryBranch = branch?.startsWith(WORKTREE_BRANCH_PREFIX) ? branch : undefined
-    const subject = source ? source.title : `work in ${cwd.split('/').pop() || cwd}`
+    const subject = source ? source.title : `work in ${cwd.split(/[\\/]/).pop() || cwd}`
     const task = ports.createTask(
       handoffDraft(
         {

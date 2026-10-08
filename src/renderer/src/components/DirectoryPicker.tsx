@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { fuzzyScore } from '../lib/fuzzy.js'
+import { formatAccelerator } from '@core/shortcuts.js'
 
 interface Listing {
   path: string
@@ -137,7 +138,8 @@ export function DirectoryPicker({
             className="inline-flex h-[18px] shrink-0 items-center gap-1.5 rounded bg-raised px-1.5 font-sans text-[11px] font-medium text-ink"
             onClick={() => onChoose(listing.path)}
           >
-            cd here <span className="font-mono text-[10px] text-dim">⌘↵</span>
+            cd here{' '}
+            <span className="font-mono text-[10px] text-dim">{formatAccelerator('mod+enter')}</span>
           </button>
         ) : null}
       </div>

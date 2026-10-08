@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { defaultShell } from './platformShell.js'
 import {
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
@@ -112,7 +113,7 @@ export function shippedSettings(): Settings {
     storageDir: join(homedir(), 'Styr'),
     activeWorkspaceId: DEFAULT_WORKSPACE_ID,
     defaultRepoPath: '',
-    shell: process.env.SHELL ?? '/bin/zsh',
+    shell: defaultShell(),
     openFilesWith: '',
     claudeCommand: 'claude',
     claudeApprovalMode: 'user',

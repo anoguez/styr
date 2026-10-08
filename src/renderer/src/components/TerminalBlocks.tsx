@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { BlockLayout, TrackedBlock } from '../lib/blockTracker.js'
 import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
+import { formatAccelerator } from '@core/shortcuts.js'
 
 export interface BlockActions {
   copyOutput: (block: TrackedBlock) => void
@@ -181,7 +182,7 @@ function Block({
               <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" />
             </svg>
             Interrupt
-            <span className="font-mono text-[10px] text-faint">⌃C</span>
+            <span className="font-mono text-[10px] text-faint">{formatAccelerator('ctrl+c')}</span>
           </button>
         ) : null}
         <BlockStatus block={block} />

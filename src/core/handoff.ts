@@ -28,7 +28,9 @@ export interface HandoffInput {
 export function isAgentProgram(command: string | undefined): boolean {
   if (!command) return false
   const program = command.trim().split(/\s+/)[0] ?? ''
-  return ['claude', 'codex'].includes(program.slice(program.lastIndexOf('/') + 1))
+  // `/` on macOS; `\` or `.exe` when a Windows shell names the program by path.
+  const name = (program.split(/[\\/]/).pop() ?? '').replace(/\.exe$/i, '')
+  return ['claude', 'codex'].includes(name)
 }
 
 export const AGENT_SUMMARY_HEADING = '## Agent summary'

@@ -1,5 +1,5 @@
 import type { ShortcutBindings } from '@core/types.js'
-import { commandForEvent, type ShortcutKeyEvent } from '@core/shortcuts.js'
+import { commandForEvent, usesControlAsPrimary, type ShortcutKeyEvent } from '@core/shortcuts.js'
 
 /**
  * Claude Code treats ESC + CR as "insert a newline" — it is what `/terminal-setup` binds
@@ -18,6 +18,23 @@ export function multilineSequence(event: ModifierKeyEvent): string | null {
   if (event.type !== 'keydown' || event.key !== 'Enter') return null
   if (event.ctrlKey || event.metaKey) return null
   return event.shiftKey || event.altKey ? NEWLINE_SEQUENCE : null
+}
+
+/**
+ * Clipboard keys where Control is the primary modifier (Windows), following Windows Terminal: Ctrl+C
+ * copies when text is selected and interrupts otherwise, and Ctrl+V (or Ctrl+Shift+V) pastes. On
+ * macOS ⌘C and ⌘V never reach the shell, so this is always null there.
+ */
+export function clipboardKey(
+  event: ModifierKeyEvent,
+  hasSelection: boolean
+): 'copy' | 'paste' | null {
+  if (!usesControlAsPrimary() || event.type !== 'keydown') return null
+  if (!event.ctrlKey || event.altKey || event.metaKey) return null
+  const key = event.key.toLowerCase()
+  if (key === 'v') return 'paste'
+  if (key === 'c' && !event.shiftKey && hasSelection) return 'copy'
+  return null
 }
 
 /**

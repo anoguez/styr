@@ -5,7 +5,15 @@ import { spawn } from 'node:child_process'
 // Vite does warn at build time — treat that warning as a build failure.
 const EXTERNALIZED = /has been externalized for browser compatibility/i
 
-const child = spawn('npx', ['electron-vite', 'build'], { shell: false })
+// Run electron-vite's bin with this Node rather than through `npx`, which is `npx.cmd` on Windows
+// and cannot be spawned without a shell there.
+const child = spawn(
+  process.execPath,
+  ['node_modules/electron-vite/bin/electron-vite.js', 'build'],
+  {
+    shell: false
+  }
+)
 let offending = []
 
 function watch(stream, sink) {

@@ -7,6 +7,7 @@ import { sortColumn } from '@core/boardOrder.js'
 import { openBlockers } from '@core/blocking.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { commandForEvent, SHORTCUT_LABELS, shortcutHint } from '@core/shortcuts.js'
+import { IS_MAC } from './lib/platform.js'
 import {
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
@@ -58,6 +59,7 @@ import {
   WorkspaceSwitcher,
   ipcMessage
 } from './components/WorkspaceSwitcher.js'
+import { fileName } from './lib/terminalPath.js'
 
 const VIEW_KEY = 'styr:view'
 
@@ -692,7 +694,10 @@ export default function App(): ReactNode {
     <TaskLookupContext.Provider value={lookup}>
       <DispatchingContext.Provider value={dispatching}>
         <div className="flex h-full flex-col">
-          <header className="relative flex h-[44px] shrink-0 items-center gap-3 border-b border-edge bg-chrome pl-[86px] pr-3 [-webkit-app-region:drag]">
+          <header
+            // macOS keeps its traffic lights on the left; Windows draws its controls on the right.
+            className={`relative flex h-[44px] shrink-0 items-center gap-3 border-b border-edge bg-chrome [-webkit-app-region:drag] ${IS_MAC ? 'pl-[86px] pr-3' : 'pl-3 pr-[150px]'}`}
+          >
             <span
               aria-hidden
               className="grid size-[22px] shrink-0 place-items-center rounded-[6px] bg-accent/15"
@@ -776,7 +781,7 @@ export default function App(): ReactNode {
                   </button>
                 ) : (
                   <kbd className="pointer-events-none absolute right-2 top-1/2 inline-flex h-[18px] -translate-y-1/2 items-center rounded border border-edge-strong px-[5px] font-mono text-[10.5px] text-faint">
-                    ⌘F
+                    {shortcutHint(bindings, 'focusSearch')}
                   </kbd>
                 )}
               </div>
@@ -886,7 +891,7 @@ export default function App(): ReactNode {
               <ul className="mt-1 flex flex-col gap-0.5">
                 {problems.map((problem) => (
                   <li key={problem.filePath} className="font-mono text-[10px] text-amber-200/70">
-                    {problem.filePath.split('/').pop()} — {problem.reason.split('\n')[0]}
+                    {fileName(problem.filePath)} — {problem.reason.split('\n')[0]}
                   </li>
                 ))}
               </ul>

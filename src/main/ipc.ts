@@ -1,5 +1,5 @@
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
-import { execFile } from 'node:child_process'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { execFile, spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import {
@@ -536,6 +536,13 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle('diagnostics:stop', () => stopSampling())
   ipcMain.handle('app:info', () => ({ isPackaged: app.isPackaged, version: app.getVersion() }))
+  ipcMain.on('app:titleBarColors', (event, background: string, symbols: string) => {
+    if (process.platform !== 'win32') return
+    BrowserWindow.fromWebContents(event.sender)?.setTitleBarOverlay({
+      color: String(background),
+      symbolColor: String(symbols)
+    })
+  })
 
   ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') => {
     const root = app.isPackaged
@@ -629,16 +636,23 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('settings:pickApp', async (event) => {
     const parent = BrowserWindow.fromWebContents(event.sender)
+    const windows = process.platform === 'win32'
     const options: OpenDialogOptions = {
       properties: ['openFile'],
-      defaultPath: '/Applications',
-      filters: [{ name: 'Applications', extensions: ['app'] }]
+      defaultPath: windows ? process.env.ProgramFiles : '/Applications',
+      filters: [
+        windows
+          ? { name: 'Programs', extensions: ['exe'] }
+          : { name: 'Applications', extensions: ['app'] }
+      ]
     }
     const result = parent
       ? await dialog.showOpenDialog(parent, options)
       : await dialog.showOpenDialog(options)
     const picked = result.canceled ? undefined : result.filePaths[0]
-    return picked ? basename(picked, '.app') : null
+    // Windows has no `open -a`, so the program is kept by path and run directly.
+    if (!picked) return null
+    return windows ? picked : basename(picked, '.app')
   })
 
   ipcMain.handle('settings:pickFiles', async (event, startIn?: string) => {
@@ -745,9 +759,12 @@ export function registerIpcHandlers(): void {
     return { root: root ?? null, branch: (root && readGitBranch(root)) ?? null }
   })
   ipcMain.handle('terminal:openInCode', async (_event, path: string) => {
-    const opened = await new Promise<boolean>((resolve) =>
-      execFile('open', ['-a', 'Visual Studio Code', path], (error) => resolve(!error))
-    )
+    const opened =
+      process.platform === 'win32'
+        ? await launchDetached(findVsCodeWindows(), path)
+        : await new Promise<boolean>((resolve) =>
+            execFile('open', ['-a', 'Visual Studio Code', path], (error) => resolve(!error))
+          )
     if (opened) return 'code'
     // VS Code is optional, so fall back to the folder rather than failing.
     return (await shell.openPath(path)) ? 'failed' : 'folder'
@@ -786,8 +803,37 @@ function readsText(appPath: string): Promise<boolean> {
   })
 }
 
-/** Names of the installed apps that open text or markdown, for the "Open files with" picker. */
+/**
+ * Starts a GUI program on `path` without tying it to Styr's lifetime. Resolves once it has started
+ * (true) or failed to (false) — not when it exits, as `execFile` would.
+ */
+function launchDetached(program: string | undefined, path: string): Promise<boolean> {
+  if (!program) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const child = spawn(program, [path], { detached: true, stdio: 'ignore' })
+    child.once('error', () => resolve(false))
+    child.once('spawn', () => {
+      child.unref()
+      resolve(true)
+    })
+  })
+}
+
+/** VS Code's own executable: the per-user install first, then the system-wide one. */
+function findVsCodeWindows(): string | undefined {
+  const { LOCALAPPDATA, ProgramFiles } = process.env
+  return [
+    LOCALAPPDATA && join(LOCALAPPDATA, 'Programs', 'Microsoft VS Code', 'Code.exe'),
+    ProgramFiles && join(ProgramFiles, 'Microsoft VS Code', 'Code.exe')
+  ].find((candidate): candidate is string => Boolean(candidate && existsSync(candidate)))
+}
+
+/**
+ * Names of the installed apps that open text or markdown, for the "Open files with" picker. Reads
+ * macOS bundles only; on Windows the picker offers "Other…" to browse for a program.
+ */
 async function listInstalledApps(): Promise<string[]> {
+  if (process.platform !== 'darwin') return []
   const found = new Map<string, string>()
   for (const dir of ['/Applications', '/System/Applications', join(homedir(), 'Applications')]) {
     try {
@@ -804,12 +850,17 @@ async function listInstalledApps(): Promise<string[]> {
 }
 
 /**
- * Opens a file or folder in the app chosen in Settings (macOS `open -a`), else the system default.
- * Returns an error string, or '' on success, like `shell.openPath`.
+ * Opens a file or folder in the app chosen in Settings (macOS `open -a`; on Windows the program's
+ * path), else the system default. Returns an error string, or '' on success, like `shell.openPath`.
  */
 async function openPathWith(path: string): Promise<string> {
   const appName = loadSettings().openFilesWith.trim()
   if (!appName) return shell.openPath(path)
+  if (process.platform === 'win32') {
+    if (await launchDetached(appName, path)) return ''
+    const fallback = await shell.openPath(path)
+    return fallback || `Could not open with ${appName}`
+  }
   return new Promise((resolve) => {
     execFile('open', ['-a', appName, path], (error) => {
       if (!error) return resolve('')

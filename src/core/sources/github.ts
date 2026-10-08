@@ -12,7 +12,12 @@ export const GH_MINIMUM_VERSION = '2.0.0'
  */
 const EXTRA_PATH = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin']
 
-export function ghEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function ghEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): NodeJS.ProcessEnv {
+  // A Windows app inherits the full user PATH, and the installer puts `gh` on it.
+  if (platform === 'win32') return { ...env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1' }
   const current = (env.PATH ?? '').split(':').filter(Boolean)
   const merged = [...current, ...EXTRA_PATH.filter((dir) => !current.includes(dir))]
   return { ...env, PATH: merged.join(':'), GH_PROMPT_DISABLED: '1', NO_COLOR: '1' }

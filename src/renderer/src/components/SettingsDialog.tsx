@@ -932,7 +932,7 @@ export function SettingsDialog({
                   </Field>
                   <Field
                     label="Open files with"
-                    hint="App that opens task files and folders. System default uses whatever macOS has set for the file type."
+                    hint="App that opens task files and folders. System default uses whatever the operating system has set for the file type."
                   >
                     <OpenWithSelect
                       value={draft.openFilesWith}
@@ -1319,9 +1319,9 @@ export function SettingsDialog({
                   ) : null}
 
                   <Hint>
-                    Click Change and press the new keys. Esc closes a dialog and ⌘↵ saves one; both
-                    are fixed. Ctrl+C, Ctrl+D, Ctrl+L, Ctrl+Z, Esc, Enter and Tab cannot be bound —
-                    the terminal needs them.
+                    Click Change and press the new keys. Esc closes a dialog and{' '}
+                    {formatAccelerator('mod+enter')} saves one; both are fixed. Ctrl+C, Ctrl+D,
+                    Ctrl+L, Ctrl+Z, Esc, Enter and Tab cannot be bound — the terminal needs them.
                   </Hint>
                 </>
               ) : null}
@@ -1888,7 +1888,9 @@ export function SettingsDialog({
             ) : null}
             <Button variant="primary" disabled={dirtyCount === 0} onClick={save}>
               Save
-              <kbd className="font-mono text-[10px] font-normal opacity-70">⌘↵</kbd>
+              <kbd className="font-mono text-[10px] font-normal opacity-70">
+                {formatAccelerator('mod+enter')}
+              </kbd>
             </Button>
           </footer>
         </section>

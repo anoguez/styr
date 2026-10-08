@@ -74,6 +74,7 @@ describe('agent summary', () => {
   it('recognises only agent CLIs, by program name', () => {
     expect(isAgentProgram('claude --resume x')).toBe(true)
     expect(isAgentProgram('/usr/local/bin/codex --remote unix://')).toBe(true)
+    expect(isAgentProgram('C:\\Users\\a\\.local\\bin\\claude.exe --resume x')).toBe(true)
     expect(isAgentProgram('pnpm test')).toBe(false)
     expect(isAgentProgram(undefined)).toBe(false)
   })

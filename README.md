@@ -68,9 +68,10 @@ path is in every prompt.
 
 ## Quick start
 
-You need macOS, a recent Node with Yarn, git, and at least one agent CLI on your `PATH`:
+You need macOS or Windows, a recent Node (24) with Yarn, git, and at least one agent CLI on your `PATH`:
 [Claude Code](https://docs.claude.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex)
-0.159.3 or later.
+0.159.3 or later. On Windows, also [Git for Windows](https://git-scm.com/download/win): its Git Bash is
+the terminal shell, as Claude Code requires.
 
 ```sh
 git clone https://github.com/anoguez/styr.git
@@ -85,15 +86,16 @@ Then:
    **Settings → Preferences**, set a default working directory for agents, usually a folder holding
    your repos. Use the dropdown beside the title to create **workspaces** — separate boards with
    their own tasks, agents and settings.
-2. **New task** (`⌘N`): give it a title, a description and the repository it applies to. `⇧⌘N` opens
-   a single-line quick add that drops the task in Backlog as _Needs spec_.
+2. **New task** (`⌘N`, `Ctrl+N` on Windows): give it a title, a description and the repository it
+   applies to. `⇧⌘N` (`Ctrl+Shift+N`) opens a single-line quick add that drops the task in Backlog as
+   _Needs spec_.
 3. Hover the card and press **▶ Agent** (pick the provider in the task dialog). The task moves to In Progress and a terminal tab opens
    with the agent already working.
 4. **Settings → Integrations**: copy the `claude mcp add styr …` or `codex mcp add styr …` command for your provider and run it once, so agents
    can query and create tasks.
 
-To install it as an app instead, download the signed DMG from
-[Releases](https://github.com/anoguez/styr/releases), or build one yourself (see
+To install it as an app instead, download the signed DMG (macOS) or `Styr-Setup-<version>.exe`
+(Windows) from [Releases](https://github.com/anoguez/styr/releases), or build one yourself (see
 [Building and packaging](docs/building.md)).
 
 ## How it fits together
@@ -119,8 +121,10 @@ picks the changes up.
 
 ## Status
 
-Early and moving fast. Styr is developed and tested on macOS (Apple silicon). Other platforms
-aren't supported yet: the menu bar integration, packaging and signing are macOS-specific.
+Early and moving fast. Styr is developed on macOS (Apple silicon) and also runs on Windows (x64).
+The Windows installer is not code-signed yet, so SmartScreen asks once before the first run. Codex's
+live status connects to its app-server daemon over a Unix socket and is untested on Windows. Linux
+isn't supported yet.
 
 ## Support
 

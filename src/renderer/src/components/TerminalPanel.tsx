@@ -28,11 +28,10 @@ import { Button } from './ui.js'
 import { TerminalSurface, type TerminalTaskRequest } from './TerminalSurface.js'
 import { useTerminalRuntimes } from '../lib/useTerminalRuntimes.js'
 import { sessionLabel, type SessionLabel } from '../lib/sessionLabel.js'
+import { FILE_MANAGER } from '../lib/platform.js'
+import { fileName } from '../lib/terminalPath.js'
 
-function basename(path: string): string {
-  const trimmed = path.length > 1 ? path.replace(/\/+$/, '') : path
-  return trimmed.slice(trimmed.lastIndexOf('/') + 1) || trimmed
-}
+const basename = fileName
 
 function TerminalTab({
   session,
@@ -232,7 +231,7 @@ export function TerminalPanel({
           {folder ? (
             <button
               type="button"
-              title={`${folder} — reveal in Finder`}
+              title={`${folder} — reveal in ${FILE_MANAGER}`}
               className="inline-flex h-6 items-center gap-1.5 rounded-md border border-transparent px-2 font-mono text-[11px] text-dim hover:bg-raised/70 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
               onClick={() => void window.api.terminal.revealDirectory(folder)}
             >
