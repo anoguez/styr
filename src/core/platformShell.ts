@@ -12,6 +12,8 @@ export function defaultShell(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform
 ): string {
+  // Most Linux systems (and WSL distros) ship bash, not zsh.
+  if (platform === 'linux') return env.SHELL ?? '/bin/bash'
   if (platform !== 'win32') return env.SHELL ?? '/bin/zsh'
   return findGitBash(env) ?? 'powershell.exe'
 }

@@ -20,6 +20,7 @@ import {
   sessionTask
 } from './terminal/ptyManager.js'
 import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
+import { linuxIconPath } from './appIcon.js'
 import { createTray, destroyTray } from './tray.js'
 import { initUpdater } from './updater.js'
 import { forgetContext, initUsage } from './usage.js'
@@ -58,7 +59,7 @@ function installAppMenu(): void {
 }
 
 /**
- * Windows has no app menu, and its edit roles bind bare Ctrl+C/V/X/A/Z — keys the terminal needs
+ * Windows and Linux have no app menu, and their edit roles bind bare Ctrl+C/V/X/A/Z — keys the terminal needs
  * (Ctrl+C interrupts). The menu bar is never shown under the overlay title bar, so the menu exists
  * only for its accelerators: window close, reload, devtools and zoom. Force Reload is left out
  * because its Ctrl+Shift+R is the terminal's Retry on Windows, and it would kill every session.
@@ -103,7 +104,9 @@ function createWindow(): BrowserWindow {
           // Native minimise/maximise/close drawn over the renderer's 44px header; the renderer
           // recolours them to the theme through `app:titleBarColors`.
           titleBarStyle: 'hidden',
-          titleBarOverlay: { color: '#0f1c27', symbolColor: '#97a7b4', height: 44 }
+          titleBarOverlay: { color: '#0f1c27', symbolColor: '#97a7b4', height: 44 },
+          // Windows takes the icon from the .exe; Linux has to be given one.
+          ...(process.platform === 'linux' ? { icon: linuxIconPath() } : {})
         }),
     backgroundColor: '#0b0d12',
     webPreferences: {

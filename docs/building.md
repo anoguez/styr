@@ -13,6 +13,7 @@
 | `yarn package`                      | Build a signed macOS `.app` and `.dmg` into `dist/`, notarised if the `APPLE_*` variables are set |
 | `yarn package:adhoc`                | The same with an ad-hoc signature, for building without a Developer ID                            |
 | `yarn package:win`                  | Build the Windows installer (`dist/Styr-Setup-<version>.exe`), unsigned                           |
+| `yarn package:linux`                | Build the Linux `.deb` and AppImage (x64); run it on Linux or inside WSL2                         |
 | `yarn icon`                         | Regenerate `resources/icon.png` (any OS) and `icon.icns` + the tray icon (macOS) from the SVGs    |
 
 `yarn lint`, `yarn format:check` and `yarn build` are the checks; CI runs them on every pull request,
@@ -54,6 +55,28 @@ standard install folders, or the `git.exe` on `PATH`), because launch commands a
 status hooks are POSIX shell. Without Git for Windows it falls back to PowerShell, where agent
 launches will not work. `mod` in shortcuts is Ctrl; inside the terminal, Ctrl+letter goes to the
 shell and Ctrl+Shift+letter reaches the command bound to Ctrl+letter.
+
+## Installing it on Linux, or in WSL2
+
+Build on Linux itself (a WSL2 distro counts): node-pty has no Linux prebuild, so `yarn install`
+compiles it against Electron. On Ubuntu (24.04 shown) that needs a compiler, and Electron needs a few
+libraries a WSL2 distro often lacks:
+
+```sh
+sudo apt update && sudo apt install -y build-essential libnss3 libasound2t64 libxss1 libfuse2t64
+```
+
+Then, in a clone inside the Linux filesystem (not under `/mnt/c`, which is much slower):
+
+```sh
+yarn install && yarn package:linux
+```
+
+That produces `dist/Styr-<version>-amd64.deb` (`sudo apt install ./dist/Styr-*.deb`, then run
+`styr`) and `dist/Styr-<version>-x86_64.AppImage`, which updates itself and needs FUSE 2
+(`libfuse2t64`). Under WSL2, Windows 11 shows the window through WSLg, and the app, its git, the
+repositories and the agents all live in Linux, so nothing crosses into Windows. The shell defaults to
+`$SHELL`, else bash. `mod` in shortcuts is Ctrl, with the same terminal rules as on Windows.
 
 ## Signing and notarisation
 

@@ -68,7 +68,7 @@ path is in every prompt.
 
 ## Quick start
 
-You need macOS or Windows, a recent Node (24) with Yarn, git, and at least one agent CLI on your `PATH`:
+You need macOS, Windows or Linux, a recent Node (24) with Yarn, git, and at least one agent CLI on your `PATH`:
 [Claude Code](https://docs.claude.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex)
 0.159.3 or later. On Windows, also [Git for Windows](https://git-scm.com/download/win): its Git Bash is
 the terminal shell, as Claude Code requires.
@@ -94,8 +94,9 @@ Then:
 4. **Settings → Integrations**: copy the `claude mcp add styr …` or `codex mcp add styr …` command for your provider and run it once, so agents
    can query and create tasks.
 
-To install it as an app instead, download the signed DMG (macOS) or `Styr-Setup-<version>.exe`
-(Windows) from [Releases](https://github.com/anoguez/styr/releases), or build one yourself (see
+To install it as an app instead, download the signed DMG (macOS), `Styr-Setup-<version>.exe`
+(Windows), or the `.deb`/AppImage (Linux, including WSL2) from
+[Releases](https://github.com/anoguez/styr/releases), or build one yourself (see
 [Building and packaging](docs/building.md)).
 
 ## How it fits together
@@ -121,10 +122,11 @@ picks the changes up.
 
 ## Status
 
-Early and moving fast. Styr is developed on macOS (Apple silicon) and also runs on Windows (x64).
-The Windows installer is not code-signed yet, so SmartScreen asks once before the first run. Codex's
-live status connects to its app-server daemon over a Unix socket and is untested on Windows. Linux
-isn't supported yet.
+Early and moving fast. Styr is developed on macOS (Apple silicon) and also runs on Windows (x64)
+and Linux (x64), including inside WSL2 on Windows 11, where it runs as a Linux app through WSLg.
+Windows and Linux support are newer and less tested than macOS. The Windows installer is not
+code-signed yet, so SmartScreen asks once before the first run. Codex's live status connects to its
+app-server daemon over a Unix socket and is untested on Windows.
 
 ## Support
 
