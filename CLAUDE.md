@@ -44,8 +44,8 @@ add a line here only for a rule that must hold in every change.
   every workspace). Never read `STYR_WORKSPACE_ID` in the main process, and never leave
   `pinWorkspace` set across an `await`.
 - **Settings keys.** Every key is in exactly one of `GLOBAL_SETTING_KEYS` or `WORKSPACE_SETTING_KEYS`
-  (`types.ts`); a test enforces it. `loadSettings` results are deep-frozen and cached — spread before
-  changing. `pathsInWorkspace` is paths only; use `loadSettings(id)` for behaviour.
+  (`types/settings.ts`); a test enforces it. `loadSettings` results are deep-frozen and cached —
+  spread before changing. `pathsInWorkspace` is paths only; use `loadSettings(id)` for behaviour.
 - **Worktrees.** Pass a `Checkout` (`{repoPath, key, baseBranch?}`), not loose values; key it with
   `worktreeKey`. Worktree failure is never fatal (fall back to the repo with a warning).
   `prompt.ts` is imported by the renderer, so it must not import `worktree.ts` or any `node:*`.
@@ -90,9 +90,13 @@ add a line here only for a rule that must hold in every change.
 
 ## Types
 
-`src/core/types.ts` holds every domain type; `src/core/taskSchema.ts` holds the zod schemas that
-validate anything crossing a process boundary. Extend these rather than declaring new shapes — the
-renderer, preload, IPC layer and MCP server all share them.
+Domain types live in one file per domain under `src/core/types/` (`task`, `agents`, `settings`,
+`workspaces`, `terminal`); the external-source types live in `src/core/sources/types.ts`.
+`src/core/types.ts` re-exports all of them and holds the theme (`DEFAULT_THEME`), so import from
+`@core/types` or `./types.js` as before. `src/core/taskSchema.ts` holds the zod schemas that validate
+anything crossing a process boundary. Extend these rather than declaring new shapes — the renderer,
+preload, IPC layer and MCP server all share them. A new domain file goes in `types/` (which
+`tsconfig.web.json` already includes) and needs an `export *` in the barrel.
 
 ## Build specifics
 

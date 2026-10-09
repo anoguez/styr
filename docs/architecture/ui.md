@@ -200,7 +200,7 @@ knowledge lived in four places that had to agree by hand — the keydown chain i
 `isAppShortcut` produced a shortcut that worked everywhere _except_ when the terminal had focus,
 while also leaking a byte to the shell. Nothing may reintroduce a second list:
 
-- `SHORTCUT_COMMANDS` in `types.ts` is the command set. `runShortcutCommand` (`lib/appShell.ts`)
+- `SHORTCUT_COMMANDS` in `types/settings.ts` is the command set. `runShortcutCommand` (`lib/appShell.ts`)
   switches on it exhaustively, so adding a command is a compile error until it is handled.
 - The palette's Actions group is generated from the same list, so a new command is reachable by name
   without being bound to anything.
@@ -235,7 +235,7 @@ A shell's commands are drawn as **blocks over xterm**, never instead of it: xter
 character, so ANSI, TUIs, selection and scrollback are untouched. The pipeline, in order:
 
 - `ptyManager` stamps each `COMMAND_STARTED`/`COMMAND_FINISHED` with its **offset in the output
-  stream** (`TerminalMark`, in `types.ts`) and sends marks beside the data, in `terminal:data` and in
+  stream** (`TerminalMark`, in `types/terminal.ts`) and sends marks beside the data, in `terminal:data` and in
   the backlog (`TerminalOutput`). Marks are kept as absolute offsets and trimmed with the backlog, so a
   reload rebuilds the same blocks.
 - `lib/terminalOutput.ts` writes the data in pieces and calls `mark` between them; the empty

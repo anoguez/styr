@@ -31,5 +31,5 @@ Worktree failure is never fatal: `checkoutFor` in `launch.ts` falls back to the 
 and returns a `warning`, which `ipc.ts` writes to the task activity log. A blocked launch would be
 worse than a shared working directory.
 
-`WORKTREE_BRANCH_PREFIX` lives in `types.ts` because `prompt.ts` needs it too, and `prompt.ts` is
+`WORKTREE_BRANCH_PREFIX` lives in `types/workspaces.ts` because `prompt.ts` needs it too, and `prompt.ts` is
 imported by the renderer — it must not reach for `worktree.ts`, which uses `node:child_process`.
