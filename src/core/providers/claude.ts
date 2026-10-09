@@ -36,13 +36,25 @@ function hookCommand(dir: string, taskId: string, event: string): string {
   )
 }
 
+/**
+ * Only the notifications that need you. `idle_prompt` (still at the prompt a minute after `Stop`)
+ * is left out: it would overwrite the `Stop` record, and with it the turn's last message, to say
+ * nothing new.
+ */
+const NOTIFICATION_MATCHER = 'permission_prompt|elicitation_dialog'
+
 export function buildHookSettings(settings: Settings, taskId: string): string {
   const dir = agentsDir(settings)
   const events = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'Notification', 'Stop']
   const hooks = Object.fromEntries(
     events.map((event) => [
       event,
-      [{ hooks: [{ type: 'command', command: hookCommand(dir, taskId, event) }] }]
+      [
+        {
+          ...(event === 'Notification' ? { matcher: NOTIFICATION_MATCHER } : {}),
+          hooks: [{ type: 'command', command: hookCommand(dir, taskId, event) }]
+        }
+      ]
     ])
   )
   return JSON.stringify({ hooks }, null, 2)

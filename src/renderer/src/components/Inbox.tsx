@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { AGENT_STATE_LABELS } from '@core/agentState.js'
+import { AGENT_STATE_LABELS, shownAgentState } from '@core/agentState.js'
 import type { AgentStatus } from '@core/agentState.js'
 import type { DiffStat } from '@core/diff.js'
 import {
@@ -43,14 +43,14 @@ const STATUS_DOT: Record<TaskStatus, string> = {
 }
 
 function itemDot(item: InboxItem): string {
-  if (item.agent) return AGENT_TONE[item.agent.state]
+  if (item.agent) return AGENT_TONE[shownAgentState(item.agent.state, item.task)]
   if (item.kind === 'spec' || item.kind === 'blocked') return 'text-[var(--color-col-review-text)]'
   if (item.kind === 'done') return 'text-[var(--color-col-done)]'
   return 'text-edge-strong'
 }
 
 function itemStatus(item: InboxItem): string {
-  if (item.agent) return AGENT_STATE_LABELS[item.agent.state]
+  if (item.agent) return AGENT_STATE_LABELS[shownAgentState(item.agent.state, item.task)]
   if (item.kind === 'spec') return 'Needs a spec'
   if (item.kind === 'blocked') return 'Blocked'
   if (item.kind === 'done') return 'Done'

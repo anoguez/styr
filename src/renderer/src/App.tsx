@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AGENT_STATE_LABELS, isAgentArchived, type AgentState } from '@core/agentState.js'
+import {
+  AGENT_STATE_LABELS,
+  isAgentArchived,
+  shownAgents,
+  type AgentState
+} from '@core/agentState.js'
 import { planDraft, terminalDraft } from '@core/derivedTask.js'
 import { planningPrompt, planTitle } from '@core/planning.js'
 import { openTaskCounts } from '@core/boardCounts.js'
@@ -93,6 +98,8 @@ export default function App(): ReactNode {
   } = useTasks(query, settings?.doneCap ?? DEFAULT_DONE_CAP, showAllDone)
   const agents = useAgents()
   const lookup = useMemo(() => taskLookup(allTasks), [allTasks])
+  // What the views label each agent; Dispatch and the PR/review buttons keep the hook's `agents`.
+  const shown = useMemo(() => shownAgents(agents, allTasks), [agents, allTasks])
   // Done keeps its recency order; the other columns sort by priority, then working agents.
   const board = useMemo(() => {
     const state = (id: string): AgentState | undefined => agents.get(id)?.state
@@ -191,17 +198,17 @@ export default function App(): ReactNode {
     const tasks = Object.values(board).flat()
     return sortAgentRows(
       tasks
-        .filter((task) => agents.has(task.id) || task.agentSession)
+        .filter((task) => shown.has(task.id) || task.agentSession)
         .filter((task) => !isAgentArchived(task))
         .map((task) => ({
           task,
-          agent: agents.get(task.id),
+          agent: shown.get(task.id),
           session: sessions.find(
             (session) => session.taskId === task.id && session.workspaceId === activeWorkspaceId
           )
         }))
     )
-  }, [board, agents, sessions, activeWorkspaceId])
+  }, [board, shown, sessions, activeWorkspaceId])
 
   const counts = useMemo(
     () => ({
@@ -924,7 +931,7 @@ export default function App(): ReactNode {
                 ) : (
                   <Board
                     board={board}
-                    agents={agents}
+                    agents={shown}
                     queued={queued}
                     onOpen={setEditing}
                     onLaunch={(task) => void launchAgent(task.id)}
@@ -983,6 +990,7 @@ export default function App(): ReactNode {
                     <TerminalPanel
                       sessions={sessions}
                       agents={agents}
+                      shownAgents={shown}
                       activeId={activeSession}
                       expanded={terminalExpanded}
                       theme={activeTheme}

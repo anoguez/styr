@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { EVENT_STATE, type AgentStatus } from './agentState.js'
+import { EVENT_STATE, type AgentState, type AgentStatus } from './agentState.js'
 import { workspaceDir } from './config.js'
 import type { Settings } from './types.js'
 
@@ -8,7 +8,28 @@ interface HookRecord {
   taskId?: string
   event?: string
   at?: string
-  payload?: { session_id?: string; last_assistant_message?: string } | null
+  payload?: {
+    session_id?: string
+    last_assistant_message?: string
+    notification_type?: string
+    message?: string
+  } | null
+}
+
+/**
+ * Claude Code sends a `Notification` a minute after a turn ends just to say it is still at the
+ * prompt. That is the `Stop` it followed, not a request for you, so it reads as idle — otherwise the
+ * same finished turn showed Idle or Waiting on you depending on when you looked. Hooks now match
+ * only the notifications that need you (`buildHookSettings`); this covers sessions launched before.
+ */
+function stateOf(record: HookRecord): AgentState | undefined {
+  if (!record.event) return undefined
+  const payload = record.payload
+  const idlePrompt =
+    payload?.notification_type === 'idle_prompt' ||
+    (!payload?.notification_type && payload?.message === 'Claude is waiting for your input')
+  if (record.event === 'Notification' && idlePrompt) return 'idle'
+  return EVENT_STATE[record.event]
 }
 
 /** A folder of the app's own state inside the workspace, created on first use. */
@@ -36,7 +57,7 @@ export function readAgentStatus(settings: Settings, taskId: string): AgentStatus
   if (!existsSync(file)) return null
   try {
     const record = JSON.parse(readFileSync(file, 'utf8')) as HookRecord
-    const state = record.event ? EVENT_STATE[record.event] : undefined
+    const state = stateOf(record)
     if (!state || !record.taskId) return null
     return {
       taskId: record.taskId,

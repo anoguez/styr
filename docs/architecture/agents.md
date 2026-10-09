@@ -93,6 +93,17 @@ loading _additional_ settings, so the user's own hooks survive). Hooks write
 
 `idle` (label "Idle", from `Stop`) means the turn ended with the session still open — never "task complete", which is the task's status. Do not label it Finished.
 
+The `Notification` hook matches only `permission_prompt|elicitation_dialog`. Claude Code also sends
+an `idle_prompt` notification a minute after `Stop`; hooked, it overwrote the `Stop` record (and its
+last message), so a finished turn read Idle or Waiting on you depending on when you looked.
+`agentStore` still reads an `idle_prompt` record as `idle`, for sessions launched before the matcher.
+
+`shownAgentState` is the label the views use: an idle agent on an In Review task with Dispatch off
+(`orchestrate: false`) reads _Waiting on you_, since only you can move it on; a dispatched one stays
+_Idle_. It is display only — Dispatch slots, the Create PR / review buttons and the "ask once it
+stops" guards keep the hook's state, and the tray and workspace switcher count review separately
+(`awaitsReview`).
+
 `SessionStart` maps to `ready`, never `working` — a resume fires it with no turn in flight, and
 calling that "Working" is a lie the user will notice immediately. `PreToolUse` is registered purely
 so state recovers from `waiting` once a permission prompt is answered; without it a session stays
