@@ -20,10 +20,11 @@ named export, so it is imported as the default export.
 
 `.github/workflows/release.yml` runs release-please on every push to `main`. It keeps a release PR
 open that bumps `package.json` and writes `CHANGELOG.md` from conventional commits; merging it tags
-the release as a **draft** (`draft` + `force-tag-creation` in `release-please-config.json`), and a
-macOS job then builds, signs, notarises, verifies, attaches the files and only then publishes it.
-Never publish before the files are attached: a public release without `latest-mac.yml` is one the
-updater sees but cannot install. Commit
+the release as a **draft** (`draft` + `force-tag-creation` in `release-please-config.json`). A
+macOS job builds, signs, notarises, verifies and attaches its files; a Windows job builds and
+attaches the (unsigned) NSIS installer and `latest.yml`; a `publish` job that needs both then
+publishes it. Never publish before the files are attached: a public release without
+`latest-mac.yml` or `latest.yml` is one the updater sees but cannot install. Commit
 messages must therefore be conventional (`feat:`, `fix:`, `docs:` …) or they are left out of the
 changelog. `scripts/setup-signing-secrets.sh <p12>` sets the five signing secrets on the repo from a
 `.p12` exported in Keychain Access — never from `security export`, which cannot reach the

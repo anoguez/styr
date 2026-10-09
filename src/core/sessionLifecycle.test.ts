@@ -105,6 +105,7 @@ function harness(): Harness {
       watch: async (_socket, key, id) => void calls.push(`watch ${key} ${id}`),
       release: (key) => calls.push(`release ${key}`)
     },
+    ensureAgentCli: async () => undefined,
     prepareCodex: async () => '/sock',
     planLaunch: (_settings, t, options) => ({
       provider: options.provider ?? 'claude',
@@ -206,6 +207,17 @@ describe('startForTask', () => {
     await expect(lifecycle.startForTask('TASK-1', { provider: 'codex' })).rejects.toThrow(
       'Codex is disabled'
     )
+  })
+
+  it('refuses a launch whose CLI is missing before writing anything', async () => {
+    const h = harness()
+    h.ports.ensureAgentCli = async () => {
+      throw new Error('Claude Code (`claude`) was not found by Git Bash.')
+    }
+    await expect(createSessionLifecycle(h.ports).startForTask('TASK-1')).rejects.toThrow(
+      'was not found'
+    )
+    expect(h.calls).toEqual([])
   })
 
   it('writes nothing when the workspace changes while Codex is checked', async () => {

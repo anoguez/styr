@@ -49,6 +49,17 @@ they started with. Whether the daemon honours the override is unverified against
 
 The MCP install command for Codex sets `STYR_MCP_AUTHOR=codex` so board notes are attributed.
 
+## CLI check before launch
+
+Every launch (`sessionLifecycle.startForTask`, and the resume path in `ipc.ts`) first runs
+`ensureAgentCli`: `<command> --version` through the terminal's own shell with `commandShellArgs`, so
+the PATH is the one the launch will see (zsh or `$SHELL` on macOS, Git Bash on Windows). It runs
+before anything is written, so a missing CLI refuses the launch with a fix-it message instead of a
+"command not found" tab and a task stuck In Progress. Only successes are cached (by platform, shell
+and command), so installing the CLI works on the next click. On Windows a non-POSIX shell is refused
+without running anything. The pure decision and the per-OS install commands are in
+`core/agentCli.ts`; Settings → Agents shows the same check for the unsaved command and shell.
+
 ## Launching Claude
 
 `src/core/launch.ts` builds the command. It lives in core, not `main/`, because it needs no Electron

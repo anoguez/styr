@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { rankBy } from '../lib/fuzzy.js'
 import { splitQuery, type PaletteMode } from '../lib/paletteMode.js'
 import { inputClass } from './ui.js'
+import { formatAccelerator } from '@core/shortcuts.js'
 
 export type CommandGroup = 'Tasks' | 'Agents' | 'Terminals' | 'Workspaces' | 'Settings' | 'Actions'
 
@@ -147,7 +148,7 @@ export function CommandPalette({
                     ) : null}
                     {selected && entry.altLabel ? (
                       <span className="shrink-0 rounded bg-chrome px-1.5 py-[1px] text-[10px] text-faint">
-                        ⌘↵ {entry.altLabel}
+                        {formatAccelerator('mod+enter')} {entry.altLabel}
                       </span>
                     ) : null}
                   </button>

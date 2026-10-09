@@ -3,7 +3,6 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { agentsDir, supportDir } from '../agentStore.js'
-import { shellQuote } from '../shell.js'
 import type { Settings } from '../types.js'
 import type { AgentProvider } from './types.js'
 
@@ -71,8 +70,8 @@ export const claudeProvider: AgentProvider = {
   id: 'claude',
   label: 'Claude Code',
 
-  buildCommand({ settings, taskId, sessionId, resume, forkFrom, prompt }) {
-    const hookArg = `--settings '${shellQuote(writeHookSettings(settings, taskId))}'`
+  buildCommand({ settings, taskId, sessionId, resume, forkFrom, prompt, syntax }) {
+    const hookArg = `--settings ${syntax.quote(writeHookSettings(settings, taskId))}`
     // `--session-id` is only accepted beside `--resume` together with `--fork-session`, which is what
     // lets a fork's id be known before the CLI starts.
     const sessionArg = forkFrom
@@ -83,7 +82,7 @@ export const claudeProvider: AgentProvider = {
     const promptArg = prompt ? ` ${prompt}` : ''
     // Auto mode hands permission prompts to Claude Code's classifier; it is not bypassPermissions.
     const modeArg = settings.claudeApprovalMode === 'auto' ? ' --permission-mode auto' : ''
-    return `${settings.claudeCommand} ${hookArg}${modeArg} ${sessionArg}${promptArg}`
+    return `${syntax.invoke(settings.claudeCommand)} ${hookArg}${modeArg} ${sessionArg}${promptArg}`
   },
 
   newSessionId: () => randomUUID(),
@@ -95,8 +94,8 @@ export const claudeProvider: AgentProvider = {
     return file ? new Date(statSync(file).mtimeMs).toISOString() : undefined
   },
 
-  mcpInstallCommand: (serverEntry) =>
-    `claude mcp add styr --scope user -- node '${shellQuote(serverEntry)}'`,
+  mcpInstallCommand: (serverEntry, syntax) =>
+    `claude mcp add styr --scope user -- node ${syntax.quote(serverEntry)}`,
 
   // Inherited, these make a launched `claude` treat itself as a child of the parent session: it
   // turns transcript saving off, so the next launch finds no transcript and starts a fresh chat

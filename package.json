@@ -20,7 +20,8 @@
     "mcp": "node ./out/main/mcp/index.mjs",
     "package": "yarn build && node --env-file-if-exists=.env node_modules/electron-builder/cli.js",
     "package:adhoc": "yarn build && electron-builder -c.mac.identity=-",
-    "postinstall": "electron-builder install-app-deps",
+    "package:win": "yarn build && electron-builder --win --x64 -c.npmRebuild=false",
+    "postinstall": "node scripts/postinstall.mjs",
     "icon": "node scripts/make-icon.mjs",
     "prepare": "husky"
   },

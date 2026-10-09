@@ -44,6 +44,27 @@ mac:
   # (node-pty, better-sqlite3) under an ad-hoc signature, so it stays disabled for that path.
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
+win:
+  # The NSIS installer is both what people download and what electron-updater installs; latest.yml
+  # (written alongside) is the Windows update feed, as latest-mac.yml is for macOS.
+  target:
+    - target: nsis
+      arch: x64
+  # Derived from icon.svg by `yarn icon`; electron-builder converts it to .ico.
+  icon: resources/icon.png
+  # Unsigned for now: Windows shows a SmartScreen prompt on first run. No signing secrets are needed,
+  # and electron-updater skips publisher verification for an unsigned app.
+nsis:
+  # A per-user install needs no administrator rights, so updates install without a UAC prompt.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Styr
+  artifactName: Styr-Setup-${version}.${ext}
+  # Agents keep their data in ~/.styr and the workspace folders, never in the install directory.
+  deleteAppDataOnUninstall: false
 dmg:
   # Sign the DMG itself, not just the app inside it. scripts/notarize-dmg.mjs then notarises and
   # staples it: a signed but unnotarised DMG is rejected by Gatekeeper.

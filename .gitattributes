@@ -1,0 +1,6 @@
+# LF everywhere, including Windows checkouts (where core.autocrlf would otherwise write CRLF and
+# Prettier's format:check would flag every file).
+* text=auto eol=lf
+
+*.icns binary
+*.png binary

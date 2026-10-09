@@ -101,6 +101,21 @@ export const SHORTCUT_SCOPES: Record<ShortcutCommand, ShortcutScope> = {
   terminalTab9: 'window'
 }
 
+/**
+ * The physical key `mod` stands for: Command on macOS, Control elsewhere. Stored bindings say `mod`
+ * so they read the same on every platform. Defaults to macOS; the renderer sets it once at startup
+ * (core has no DOM to ask, and the MCP server never reads keys).
+ */
+let primaryModifier: 'meta' | 'ctrl' = 'meta'
+
+export function setPrimaryModifier(modifier: 'meta' | 'ctrl'): void {
+  primaryModifier = modifier
+}
+
+export function usesControlAsPrimary(): boolean {
+  return primaryModifier === 'ctrl'
+}
+
 /** What a key event happened in. Required, so no caller can forget that scope exists. */
 export interface ShortcutContext {
   terminalFocused: boolean
@@ -113,8 +128,13 @@ export interface ShortcutContext {
 export function acceleratorFor(event: ShortcutKeyEvent): string | null {
   if (MODIFIER_KEYS.has(event.key)) return null
   const parts: string[] = []
-  if (event.metaKey) parts.push('mod')
-  if (event.ctrlKey) parts.push('ctrl')
+  if (primaryModifier === 'meta') {
+    if (event.metaKey) parts.push('mod')
+    if (event.ctrlKey) parts.push('ctrl')
+  } else {
+    if (event.ctrlKey) parts.push('mod')
+    if (event.metaKey) parts.push('meta')
+  }
   if (event.altKey) parts.push('alt')
   if (event.shiftKey) parts.push('shift')
   parts.push(event.key.toLowerCase())
@@ -136,11 +156,21 @@ export function commandForEvent(
 ): ShortcutCommand | null {
   const pressed = acceleratorFor(event)
   if (!pressed) return null
-  for (const command of SHORTCUT_COMMANDS) {
-    if (SHORTCUT_SCOPES[command] === 'terminal' && !context.terminalFocused) continue
-    if (bindings[command].includes(pressed)) return command
+  const bound = (accelerator: string): ShortcutCommand | null => {
+    for (const command of SHORTCUT_COMMANDS) {
+      if (SHORTCUT_SCOPES[command] === 'terminal' && !context.terminalFocused) continue
+      if (bindings[command].includes(accelerator)) return command
+    }
+    return null
   }
-  return null
+  if (primaryModifier === 'meta' || !context.terminalFocused) return bound(pressed)
+  // Where `mod` is Control, Ctrl+letter in a terminal is a control character the shell needs
+  // (Ctrl+R searches history, Ctrl+D ends input, Ctrl+W deletes a word), so it always reaches the
+  // shell. As in Windows Terminal and VS Code, Ctrl+Shift+letter reaches the command instead, unless
+  // something is bound to that combination itself.
+  if (/^mod\+[a-z]$/.test(pressed)) return null
+  const shifted = /^mod\+shift\+([a-z])$/.exec(pressed)
+  return bound(pressed) ?? (shifted ? bound(`mod+${shifted[1]}`) : null)
 }
 
 const SYMBOLS: Record<string, string> = {
@@ -160,10 +190,27 @@ const KEY_NAMES: Record<string, string> = {
   ' ': 'Space'
 }
 
-/** An accelerator written the way macOS writes it, for display only. */
+const WORDS: Record<string, string> = {
+  mod: 'Ctrl',
+  ctrl: 'Ctrl',
+  meta: 'Win',
+  alt: 'Alt',
+  shift: 'Shift'
+}
+
+const KEY_WORDS: Record<string, string> = {
+  ...KEY_NAMES,
+  enter: 'Enter'
+}
+
+/** An accelerator written the way the platform writes it (⇧⌘N on macOS, Ctrl+Shift+N elsewhere). */
 export function formatAccelerator(accelerator: string): string {
   const parts = accelerator.split('+')
   const key = parts.pop() ?? ''
+  if (primaryModifier === 'ctrl') {
+    const name = KEY_WORDS[key] ?? (key.length === 1 ? key.toUpperCase() : key)
+    return [...parts.map((part) => WORDS[part] ?? part), name].join('+')
+  }
   const modifiers = parts.map((part) => SYMBOLS[part] ?? part).join('')
   return modifiers + (KEY_NAMES[key] ?? (key.length === 1 ? key.toUpperCase() : key))
 }
@@ -175,7 +222,9 @@ export function shortcutHint(bindings: ShortcutBindings, command: ShortcutComman
 }
 
 export function isReserved(accelerator: string): boolean {
-  return RESERVED.has(accelerator)
+  // Where Control is `mod`, the terminal's Ctrl+C arrives as `mod+c`.
+  const physical = primaryModifier === 'ctrl' ? accelerator.replace(/^mod\+/, 'ctrl+') : accelerator
+  return RESERVED.has(physical)
 }
 
 /**

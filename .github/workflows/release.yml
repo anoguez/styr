@@ -3,9 +3,9 @@ name: Release
 on:
   push:
     branches: [main]
-  # Manual run: a full signed and notarised build. Without a tag the DMG is kept as a workflow
-  # artifact, to check signing before cutting a release; with one, that tag is rebuilt and its
-  # release gets the DMG, which recovers a release whose build failed.
+  # Manual run: a full signed and notarised macOS build plus the Windows installer. Without a tag
+  # they are kept as workflow artifacts, to check signing before cutting a release; with one, that
+  # tag is rebuilt and its release gets the files, which recovers a release whose build failed.
   workflow_dispatch:
     inputs:
       tag:
@@ -174,15 +174,70 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # release-please creates the release as a draft (see release-please-config.json), so nothing
-      # is public — and installed copies see no new version — until every file is attached. A failed
-      # build leaves the draft unpublished rather than a release with nothing to download.
-      - name: Publish the release
-        if: ${{ env.TAG != '' }}
-        run: gh release edit "$TAG" --draft=false --latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Remove the signing keychain
         if: ${{ always() }}
         run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+  # Unsigned for now (no Windows certificate): Windows shows a SmartScreen prompt on first run.
+  build-windows:
+    needs: release-please
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: yarn
+
+      # postinstall skips the native rebuild on Windows: node-pty and better-sqlite3 load their
+      # N-API prebuilds (see scripts/postinstall.mjs).
+      - run: yarn install --frozen-lockfile
+
+      - run: yarn build
+
+      - name: Package
+        run: yarn electron-builder --win --x64 -c.npmRebuild=false --publish never
+
+      - name: Keep the build as a workflow artifact
+        if: ${{ env.TAG == '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: styr-windows
+          path: |
+            dist/*.exe
+            dist/latest.yml
+
+      - name: Upload to release
+        if: ${{ env.TAG != '' }}
+        # The installer, its blockmap and latest.yml are the Windows update feed.
+        run: gh release upload "$TAG" dist/*.exe dist/*.exe.blockmap dist/latest.yml --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # release-please creates the release as a draft (see release-please-config.json), so nothing is
+  # public — and installed copies see no new version — until every platform's files are attached.
+  # A failed build on either platform leaves the draft unpublished rather than a release with
+  # files missing.
+  publish:
+    needs: [release-please, build-macos, build-windows]
+    if: ${{ always() && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && (needs.release-please.outputs.tag_name || inputs.tag) != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}

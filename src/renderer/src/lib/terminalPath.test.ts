@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { displayPath } from './terminalPath.js'
+import { displayPath, fileName } from './terminalPath.js'
 
 describe('displayPath', () => {
   it('names the repository when at its root', () => {
@@ -26,5 +26,28 @@ describe('displayPath', () => {
 
   it('handles the filesystem root', () => {
     expect(displayPath('/', null)).toEqual({ name: '/', rest: '' })
+  })
+
+  it('reads Windows paths the same way', () => {
+    expect(displayPath('C:\\Users\\a\\styr\\src', 'C:\\Users\\a\\styr')).toEqual({
+      name: 'styr',
+      rest: '/ src'
+    })
+    expect(displayPath('C:\\Users\\a\\Downloads', null)).toEqual({
+      name: 'Downloads',
+      rest: 'C:/Users/a'
+    })
+  })
+})
+
+describe('fileName', () => {
+  it('takes the last segment of POSIX and Windows paths', () => {
+    expect(fileName('/Users/a/notes.md')).toBe('notes.md')
+    expect(fileName('C:\\Users\\a\\notes.md')).toBe('notes.md')
+    expect(fileName('C:\\Users\\a\\repo\\')).toBe('repo')
+  })
+
+  it('leaves a backslash in a macOS name alone', () => {
+    expect(fileName('/Users/a/odd\\name')).toBe('odd\\name')
   })
 })

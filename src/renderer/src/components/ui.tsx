@@ -7,6 +7,7 @@ import {
   type SelectHTMLAttributes
 } from 'react'
 import { hexToHsl, hslToHex } from '../lib/palette.js'
+import { fileName } from '../lib/terminalPath.js'
 
 type Variant = 'primary' | 'ghost' | 'subtle' | 'danger'
 
@@ -375,7 +376,7 @@ export function FileListInput({
             <li key={file} className="group flex items-center gap-3 px-3 py-2">
               <span className="shrink-0 text-faint">◎</span>
               <span className="truncate text-[12.5px] text-ink" title={file}>
-                {file.split('/').pop()}
+                {fileName(file)}
               </span>
               <span
                 className="min-w-0 flex-1 truncate text-right text-[11px] text-faint"

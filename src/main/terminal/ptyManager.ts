@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { spawn, type IPty } from 'node-pty'
 import { nanoid } from 'nanoid'
 import { usageEnv } from '../usage.js'
+import { resolveShell } from '@core/platformShell.js'
 import { withoutSessionMarkers } from '@core/providers/index.js'
 import type {
   TerminalMark,
@@ -108,20 +109,21 @@ export function onTerminalRuntimeState(listener: RuntimeListener): void {
 export function createSession(options: SpawnOptions): TerminalSessionInfo {
   const id = nanoid(10)
   const cwd = resolveCwd(options.cwd)
-  const shell = options.shell || process.env.SHELL || '/bin/zsh'
-  const environment = sanitisedEnv(id, options.env)
-  const child = spawn(shell, ['-l'], {
+  const shell = resolveShell(options.shell)
+  const environment = { ...shell.environment, ...sanitisedEnv(id, options.env) }
+  const child = spawn(shell.path, shell.interactiveArgs, {
     name: 'xterm-256color',
     cols: 100,
     rows: 30,
     cwd,
-    env: { ...environment, ...shellIntegrationEnvironment(shell, environment) }
+    env: { ...environment, ...shellIntegrationEnvironment(shell.path, environment) }
   })
 
   const info: TerminalSessionInfo = {
     id,
     title: options.title ?? 'Terminal',
     cwd,
+    dialect: shell.syntax.dialect,
     ...(options.taskId ? { taskId: options.taskId } : {}),
     ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
     ...(options.provider ? { provider: options.provider } : {}),

@@ -4,9 +4,9 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import type { ShortcutBindings, ThemeSettings } from '@core/types.js'
 import { terminalTheme } from '../lib/palette.js'
-import { isAppShortcut, multilineSequence } from '../lib/terminalKeys.js'
+import { clipboardKey, isAppShortcut, multilineSequence } from '../lib/terminalKeys.js'
 import { BlockTracker, type BlockLayout } from '../lib/blockTracker.js'
-import { shellQuote } from '@core/shell.js'
+import { syntaxFor, type ShellDialect } from '@core/shell.js'
 import { TerminalOutputSynchronizer } from '../lib/terminalOutput.js'
 
 export interface TerminalSelection {
@@ -29,6 +29,7 @@ export type { BlockLayout }
 
 export function TerminalView({
   sessionId,
+  dialect,
   active,
   theme,
   bindings,
@@ -39,6 +40,8 @@ export function TerminalView({
   onHoverLine
 }: {
   sessionId: string
+  /** What the session's shell speaks, for quoting dropped paths. */
+  dialect?: ShellDialect
   active: boolean
   theme: ThemeSettings
   bindings: ShortcutBindings
@@ -57,6 +60,9 @@ export function TerminalView({
   const terminalRef = useRef<Terminal | null>(null)
   const bindingsRef = useRef(bindings)
   bindingsRef.current = bindings
+  // Read from the drop handler, which is bound once with the terminal (it is never remounted).
+  const syntaxRef = useRef(syntaxFor(dialect))
+  syntaxRef.current = syntaxFor(dialect)
   const onSelectionRef = useRef(onSelection)
   onSelectionRef.current = onSelection
   const onFullscreenRef = useRef(onFullscreenChange)
@@ -92,6 +98,15 @@ export function TerminalView({
     terminal.open(element)
 
     terminal.attachCustomKeyEventHandler((event) => {
+      const clipboard = clipboardKey(event, terminal.hasSelection())
+      if (clipboard === 'copy') {
+        event.preventDefault()
+        void navigator.clipboard.writeText(terminal.getSelection())
+        terminal.clearSelection()
+        return false
+      }
+      // Left to the browser, whose paste event xterm turns into a (bracketed) paste.
+      if (clipboard === 'paste') return false
       const sequence = multilineSequence(event)
       if (sequence !== null) {
         event.preventDefault()
@@ -188,7 +203,9 @@ export function TerminalView({
       const paths = window.api.terminal.pathsForFiles(files)
       // paste() applies bracketed paste, so an agent CLI reads the paths as pasted text
       // (Claude Code turns a pasted image path into an attachment).
-      if (paths.length > 0) terminal.paste(paths.map((p) => `'${shellQuote(p)}'`).join(' ') + ' ')
+      if (paths.length > 0) {
+        terminal.paste(paths.map((p) => syntaxRef.current.quote(p)).join(' ') + ' ')
+      }
       terminal.focus()
     }
     element.addEventListener('dragover', allowDrop)

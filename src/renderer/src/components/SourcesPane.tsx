@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { CliStatus, SourceConfig, SourceSyncState, SourceTarget } from '@core/types.js'
 import { Button, Card, CardRow, Chip, Hint, Segmented, Select, Switch, inputBase } from './ui.js'
+import { PLATFORM } from '../lib/platform.js'
 
 const PROVIDER = 'github'
 
@@ -19,14 +20,14 @@ function cliCopy(status: CliStatus | null): {
         title: 'GitHub CLI not found',
         detail:
           'Styr talks to GitHub through the gh command, so it keeps no token of its own. Install it, then check again.',
-        command: 'brew install gh'
+        command: PLATFORM === 'win32' ? 'winget install --id GitHub.cli' : 'brew install gh'
       }
     case 'outdated':
       return {
         tone: 'warn',
         title: `gh ${status.version} is too old`,
         detail: `Version ${status.minimum} or newer is needed.`,
-        command: 'brew upgrade gh'
+        command: PLATFORM === 'win32' ? 'winget upgrade --id GitHub.cli' : 'brew upgrade gh'
       }
     case 'unauthenticated':
       return {

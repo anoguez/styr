@@ -25,6 +25,8 @@ import {
 } from '@core/taskPreset.js'
 import { Button, Chip, DiffCount, Modal, Select } from './ui.js'
 import { SourceLink } from './SourceLink.js'
+import { formatAccelerator } from '@core/shortcuts.js'
+import { fileName } from '../lib/terminalPath.js'
 
 interface FormState {
   title: string
@@ -460,7 +462,7 @@ export function TaskDialog({
       cycle: task ? findCycle(task.id, [other.id], lookup) !== null : false
     }))
 
-  const repoFolder = form.repoPath.trim().replace(/\/+$/, '').split('/').pop() ?? ''
+  const repoFolder = fileName(form.repoPath.trim())
 
   const payload = {
     title: form.title.trim(),
@@ -689,7 +691,7 @@ export function TaskDialog({
                             <path d="M4 2.5h5l3 3v8H4z" />
                             <path d="M9 2.5v3h3" />
                           </Icon>
-                          <span className="whitespace-nowrap">{file.split('/').pop()}</span>
+                          <span className="whitespace-nowrap">{fileName(file)}</span>
                           <span className="truncate font-mono text-[10.5px] text-faint">
                             {file.replace(/\/[^/]+$/, '')}
                           </span>
@@ -1261,7 +1263,9 @@ export function TaskDialog({
               className="inline-flex h-[30px] items-center gap-2 rounded-lg border border-edge-strong bg-raised/70 px-3 text-[12.5px] font-medium text-dim transition-colors hover:bg-raised hover:text-ink disabled:pointer-events-none disabled:opacity-40"
             >
               Save
-              <kbd className="font-mono text-[10px] text-faint">⌘↵</kbd>
+              <kbd className="font-mono text-[10px] text-faint">
+                {formatAccelerator('mod+enter')}
+              </kbd>
             </button>
             {form.status !== 'done' ? (
               <button
