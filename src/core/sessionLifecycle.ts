@@ -111,7 +111,7 @@ export interface SessionPorts {
 export function launchPatch(
   settings: Settings,
   task: Task,
-  plan: Pick<LaunchPlan, 'provider' | 'worktreePath'>,
+  plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase'>,
   templateId: string | undefined,
   sessionId?: string,
   sessionLabel?: string,
@@ -122,6 +122,8 @@ export function launchPatch(
   if (plan.worktreePath && task.worktreePath !== plan.worktreePath) {
     patch.worktreePath = plan.worktreePath
   }
+  // "Current branch" resolves when the worktree is cut; keep it, or the diff measures from main.
+  if (plan.worktreeBase && !task.baseBranch) patch.baseBranch = plan.worktreeBase
   if (!sessionId) return patch
 
   if (task.agentSession?.id !== sessionId || task.agentSession?.provider !== plan.provider) {
@@ -154,7 +156,7 @@ export function createSessionLifecycle(ports: SessionPorts) {
   function saveLaunchMetadata(
     workspaceId: string,
     taskId: string,
-    plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'warning'>,
+    plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase' | 'warning'>,
     templateId: string | undefined,
     sessionId?: string,
     sessionLabel?: string

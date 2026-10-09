@@ -19,6 +19,8 @@ export interface WorktreeResult {
   path: string
   branch: string
   created: boolean
+  /** On creation, the branch the task branch was cut from — what its diff and landing compare with. */
+  baseBranch?: string
 }
 
 /**
@@ -37,11 +39,13 @@ export function ensureWorktree(checkout: Checkout): WorktreeResult {
   git(['worktree', 'prune'], repoPath)
   if (existsSync(path)) return { path, branch, created: false }
 
-  const args = branchExists(repoPath, branch)
-    ? ['worktree', 'add', path, branch]
-    : ['worktree', 'add', '-b', branch, path, startPointFor(checkout)]
-  git(args, repoPath)
-  return { path, branch, created: true }
+  if (branchExists(repoPath, branch)) {
+    git(['worktree', 'add', path, branch], repoPath)
+    return { path, branch, created: true }
+  }
+  const start = startPointFor(checkout)
+  git(['worktree', 'add', '-b', branch, path, start.ref], repoPath)
+  return { path, branch, created: true, baseBranch: start.branch }
 }
 
 /**
@@ -50,9 +54,9 @@ export function ensureWorktree(checkout: Checkout): WorktreeResult {
  * offline must not block a launch), then start from the remote tip of the branch the checkout is
  * on (its upstream, or `origin/<name>`), so `main` and `release/x.y.z` checkouts both advance.
  * The remote tip is used only when HEAD is strictly behind it; if HEAD is ahead or diverged it is
- * kept, as that is the user's own state.
+ * kept, as that is the user's own state. `branch` names the branch that start point stands for.
  */
-function startPointFor({ repoPath, baseBranch }: Checkout): string {
+function startPointFor({ repoPath, baseBranch }: Checkout): { ref: string; branch?: string } {
   let fetched = true
   try {
     git(['fetch', '--quiet', 'origin'], repoPath, 30_000)
@@ -63,21 +67,31 @@ function startPointFor({ repoPath, baseBranch }: Checkout): string {
     // An explicit choice wins: the fetched remote tip, else the local branch. A branch that has
     // since vanished falls through to the automatic choice rather than failing the launch.
     const remote = `origin/${baseBranch}`
-    if (fetched && refExists(repoPath, remote)) return remote
-    if (refExists(repoPath, baseBranch)) return baseBranch
-    if (refExists(repoPath, remote)) return remote
+    if (fetched && refExists(repoPath, remote)) return { ref: remote, branch: baseBranch }
+    if (refExists(repoPath, baseBranch)) return { ref: baseBranch, branch: baseBranch }
+    if (refExists(repoPath, remote)) return { ref: remote, branch: baseBranch }
   }
-  if (!fetched) return 'HEAD'
+  const head = { ref: 'HEAD', branch: currentBranch(repoPath) }
+  if (!fetched) return head
   for (const remote of remoteCandidates(repoPath)) {
     if (!refExists(repoPath, remote)) continue
     try {
       git(['merge-base', '--is-ancestor', 'HEAD', remote], repoPath)
-      return remote
+      return { ref: remote, branch: remote.replace(/^origin\//, '') }
     } catch {
-      return 'HEAD'
+      return head
     }
   }
-  return 'HEAD'
+  return head
+}
+
+function currentBranch(repoPath: string): string | undefined {
+  try {
+    const current = git(['rev-parse', '--abbrev-ref', 'HEAD'], repoPath)
+    return current && current !== 'HEAD' ? current : undefined
+  } catch {
+    return undefined // unborn HEAD
+  }
 }
 
 function remoteCandidates(repoPath: string): string[] {
@@ -87,12 +101,8 @@ function remoteCandidates(repoPath: string): string[] {
   } catch {
     // no upstream configured
   }
-  try {
-    const current = git(['rev-parse', '--abbrev-ref', 'HEAD'], repoPath)
-    if (current && current !== 'HEAD') candidates.push(`origin/${current}`)
-  } catch {
-    // unborn HEAD
-  }
+  const current = currentBranch(repoPath)
+  if (current) candidates.push(`origin/${current}`)
   const base = baseBranchFor(repoPath)
   if (base) candidates.push(`origin/${base}`)
   return candidates

@@ -145,6 +145,16 @@ describe('launchPatch', () => {
     })
   })
 
+  it('records the branch a new worktree was cut from when none was chosen', () => {
+    const cut = { ...plan, worktreeBase: 'release/1.1.0' }
+    expect(launchPatch(settings, task(), cut, undefined)).toMatchObject({
+      baseBranch: 'release/1.1.0'
+    })
+    expect(launchPatch(settings, task({ baseBranch: 'main' }), cut, undefined)).not.toHaveProperty(
+      'baseBranch'
+    )
+  })
+
   it('leaves other statuses and a matching worktree alone', () => {
     const t = task({ status: 'in_review', worktreePath: '/wt' })
     expect(launchPatch(settings, t, plan, undefined)).toEqual({})

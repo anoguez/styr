@@ -108,6 +108,53 @@ describe('worktree management', () => {
       expect(runGit(['rev-parse', 'HEAD'], path).trim()).toBe(release)
     })
 
+    describe('diff against a release branch', () => {
+      function releaseClone(): { clone: string } {
+        const { origin, clone } = cloneWithOrigin()
+        runGit(['checkout', '-b', 'release/1.1.0'], origin)
+        commit(origin, 'release-only.txt')
+        runGit(['checkout', 'main'], origin)
+        commit(origin, 'main-only.txt')
+        runGit(['fetch', 'origin'], clone)
+        return { clone }
+      }
+
+      function diffPaths(checkout: Checkout): { paths: string[]; baseName?: string } {
+        const path = checkoutPath(checkout)
+        commit(path, 'task.txt')
+        const diff = taskDiff(checkout, true)
+        if ('error' in diff) throw new Error(diff.error)
+        return { paths: diff.files.map((file) => file.path), baseName: diff.baseName }
+      }
+
+      it('compares with the branch the user picked', () => {
+        const { clone } = releaseClone()
+        const checkout = co(clone, 'TASK-0006', 'release/1.1.0')
+        ensureWorktree(checkout)
+
+        expect(diffPaths(checkout)).toEqual({ paths: ['task.txt'], baseName: 'release/1.1.0' })
+      })
+
+      it('reports the checked-out branch an automatic worktree started from, for its diff', () => {
+        const { clone } = releaseClone()
+        runGit(['checkout', 'release/1.1.0'], clone)
+        const { baseBranch } = ensureWorktree(co(clone, 'TASK-0007'))
+
+        expect(baseBranch).toBe('release/1.1.0')
+        expect(diffPaths(co(clone, 'TASK-0007', baseBranch))).toEqual({
+          paths: ['task.txt'],
+          baseName: 'release/1.1.0'
+        })
+      })
+
+      it('reports no base when reusing an existing worktree', () => {
+        const { clone } = releaseClone()
+        ensureWorktree(co(clone, 'TASK-0008', 'release/1.1.0'))
+
+        expect(ensureWorktree(co(clone, 'TASK-0008')).baseBranch).toBeUndefined()
+      })
+    })
+
     it('falls back to the automatic start when the chosen branch is gone', () => {
       const { clone } = cloneWithOrigin()
       const head = runGit(['rev-parse', 'HEAD'], clone).trim()
@@ -151,9 +198,10 @@ describe('worktree management', () => {
     expect(created).toEqual({
       path: expectedPath,
       branch: branchNameFor(taskId),
-      created: true
+      created: true,
+      baseBranch: 'main'
     })
-    expect(resumed).toEqual({ ...created, created: false })
+    expect(resumed).toEqual({ path: expectedPath, branch: created.branch, created: false })
     expect(isGitRepo(created.path)).toBe(true)
     expect(readGitBranch(created.path)).toBe(created.branch)
   })
