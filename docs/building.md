@@ -84,14 +84,16 @@ conventional commits:
    `feat:` commits bump the minor version (before 1.0), everything else the patch.
 2. Merging the release PR tags `vX.Y.Z` and creates the GitHub release **as a draft**, invisible
    to visitors and to the updater.
-3. A macOS runner builds, signs, notarises and verifies the app, and a Windows runner builds the
-   installer; each attaches its files to the draft. A final job publishes it once both succeeded.
+3. A macOS runner builds, signs, notarises and verifies the app and attaches its files to the
+   draft. A final job publishes it once that succeeded. (The Windows build job is commented out
+   in `release.yml` for now; Windows installers are built locally with `yarn package:win`.)
    A release only goes public once it is complete; if a build fails, the draft stays unpublished
    and can be rebuilt with **Run workflow** and its tag.
 
 Each release carries the DMG for people installing by hand, plus `Styr-x.y.z-arm64-mac.zip`, its
 `.blockmap` and `latest-mac.yml`: the update feed installed copies read through electron-updater.
-For Windows it carries `Styr-Setup-x.y.z.exe`, its `.blockmap` and `latest.yml`.
+Once the Windows job is re-enabled, it will also carry `Styr-Setup-x.y.z.exe`, its `.blockmap`
+and `latest.yml`.
 The feed location comes from the `publish` block in `electron-builder.yml`. Because releases are
 published only after those files are attached, an installed copy never sees a release without them;
 if one ever lacks `latest-mac.yml` anyway (a release edited by hand), the app reports "up to date"

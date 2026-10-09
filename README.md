@@ -95,9 +95,9 @@ Then:
 4. **Settings → Integrations**: copy the `claude mcp add styr …` or `codex mcp add styr …` command for your provider and run it once, so agents
    can query and create tasks.
 
-To install it as an app instead, download the signed DMG (macOS) or `Styr-Setup-<version>.exe`
-(Windows) from [Releases](https://github.com/anoguez/styr/releases), or build one yourself (see
-[Building and packaging](docs/building.md)).
+To install it as an app instead, download the signed DMG (macOS) from
+[Releases](https://github.com/anoguez/styr/releases), or build one yourself (see
+[Building and packaging](docs/building.md); on Windows, `yarn package:win`).
 
 ## How it fits together
 
