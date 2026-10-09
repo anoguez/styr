@@ -1,7 +1,7 @@
 # Styr
 
 [![Latest release](https://img.shields.io/github/v/release/anoguez/styr)](https://github.com/anoguez/styr/releases/latest)
-![Test coverage](https://img.shields.io/badge/coverage-88.89%25-brightgreen)
+![Test coverage](https://img.shields.io/badge/coverage-88.90%25-brightgreen)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/noguez)
 
 **An agentic IDE built around a kanban board.** Write tasks, and Styr launches a coding agent (Claude Code

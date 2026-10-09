@@ -36,8 +36,11 @@ survive when the label does not.
 
 ## Settings
 
-`SettingsDialog` is a nav plus one pane per section, driven by the `SECTIONS` array — add a section
-there and to the `section === '…'` blocks rather than lengthening a single scroll. `Modal` takes
+`SettingsDialog` is a nav plus one pane per section, driven by the `SECTIONS` array in
+`components/settings/sections.ts` — add a section there, give it a `settings/<Name>Section.tsx`
+taking `SectionProps` (`draft`, `patch`), and render it from the dialog's `section === '…'` list
+rather than lengthening a single scroll. The pure parts — unsaved-change counting, the nav filter,
+template and provider edits — live in `sections.ts` and `settings/draft.ts` with tests. `Modal` takes
 `flush` to hand its padding and scrolling to a child that manages its own panes.
 
 The dialog is a `Modal` with `bare`: it draws no header or footer of its own, and `SettingsDialog`

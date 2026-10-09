@@ -136,3 +136,67 @@ export const SECTIONS = [
 }[]
 
 export type SectionId = (typeof SECTIONS)[number]['id']
+
+export type Section = (typeof SECTIONS)[number]
+type SectionScope = Section['scope']
+
+/** What a section pane edits: the dialog's draft and a way to change part of it. */
+export interface SectionProps {
+  draft: Settings
+  patch: (changes: Partial<Settings>) => void
+}
+
+/** Where a section's values are stored and which workspaces they reach. */
+export function scopeNoteFor(scope: SectionScope, workspaceName: string): string {
+  return scope === 'app'
+    ? 'Stored in ~/.styr/config.json and shared by every workspace.'
+    : `Stored in the ${workspaceName} workspace folder and applies to it only.`
+}
+
+/** A section behind an experimental flag shows only while the flag is on. */
+export function sectionShown(section: Section, experimental: ExperimentalSettings): boolean {
+  return !('flag' in section) || experimental[section.flag]
+}
+
+/**
+ * Unsaved changes, judged per `Settings` key over each section's `keys`: which sections have any,
+ * and how many keys differ in all.
+ */
+export function unsavedChanges(
+  draft: Settings,
+  baseline: Settings
+): { sections: ReadonlySet<SectionId>; count: number } {
+  const isChanged = (key: keyof Settings): boolean =>
+    JSON.stringify(draft[key]) !== JSON.stringify(baseline[key])
+  return {
+    sections: new Set(SECTIONS.filter((item) => item.keys.some(isChanged)).map((item) => item.id)),
+    count: SECTIONS.reduce((count, item) => count + item.keys.filter(isChanged).length, 0)
+  }
+}
+
+const NAV_GROUPS = [
+  { label: 'Workspace', picker: true, key: 'workspace' },
+  { label: 'Integrations', picker: false, key: 'integrations' },
+  { label: 'All workspaces', picker: false, key: 'app' }
+] as const
+
+export interface NavGroup {
+  label: string
+  /** The group headed by the workspace picker. */
+  picker: boolean
+  items: Section[]
+}
+
+/** The nav: shown sections matching the search box, under their group; empty groups drop out. */
+export function settingsNav(search: string, experimental: ExperimentalSettings): NavGroup[] {
+  const query = search.trim().toLowerCase()
+  const matches = (item: Section): boolean =>
+    sectionShown(item, experimental) &&
+    (!query || `${item.label} ${item.words}`.toLowerCase().includes(query))
+  const groupOf = (item: Section): string => ('group' in item ? item.group : item.scope)
+  return NAV_GROUPS.map(({ label, picker, key }) => ({
+    label,
+    picker,
+    items: SECTIONS.filter((item) => groupOf(item) === key && matches(item))
+  })).filter((group) => group.items.length > 0)
+}
