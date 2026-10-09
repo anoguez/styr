@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.2](https://github.com/anoguez/styr/compare/v0.22.1...v0.22.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* diff a worktree against the branch it was cut from ([#105](https://github.com/anoguez/styr/issues/105)) ([b825d4d](https://github.com/anoguez/styr/commit/b825d4da59f338c94b44d0736adc922311214215))
+
 ## [0.22.1](https://github.com/anoguez/styr/compare/v0.22.0...v0.22.1) (2026-10-07)
 
 
