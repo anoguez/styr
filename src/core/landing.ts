@@ -1,6 +1,6 @@
-import { branchNameFor, type Checkout } from './worktree.js'
-import type { CleanupResult, Landing } from './worktreeLanding.js'
-import { worktreeKey, type Task, type TaskStatus } from './types.js'
+import { branchNameFor } from './worktree.js'
+import { checkoutOf, type Checkout, type CheckoutGit } from './taskCheckout.js'
+import type { Task, TaskStatus } from './types.js'
 
 /** git is slow enough (~0.2s a task) that re-checking every kept worktree on each write froze the app. */
 export const LANDING_TTL_MS = 5 * 60_000
@@ -70,15 +70,9 @@ export function isRepeatNote(
   return last?.message === message
 }
 
-/** The git half of the decision, injected so the rules can be tested without a repository. */
-export interface LandingGit {
-  refListing(repoPath: string): string | undefined
-  branchLanding(checkout: Checkout): Landing | undefined
-  cleanupLandedTask(checkout: Checkout): CleanupResult
-}
-
 export interface LandingPorts {
-  git: LandingGit
+  /** The git half of the decision: `checkoutGit`, or a fake so the rules test without a repository. */
+  git: CheckoutGit
   /** Lives as long as the process: it is what keeps a write from re-running git for every task. */
   cache: LandingCache
   workspaceId: string
@@ -132,14 +126,14 @@ export function settleTasks(tasks: readonly LandingTask[], ports: LandingPorts):
     const { repoPath } = task
     if (!task.useWorktree || !repoPath) continue
     if (task.status !== 'in_review' && !(task.status === 'done' && task.worktreePath)) continue
-    const key = worktreeKey(workspaceId, task.id)
+    const checkout = checkoutOf(workspaceId, task, repoPath)
     const cacheKey = `${workspaceId}:${task.id}`
     const taskWrites: LandingWrite[] = []
     try {
-      const refs = refsFingerprint(listingFor(repoPath), key, task.baseBranch)
+      const refs = refsFingerprint(listingFor(repoPath), checkout.key, task.baseBranch)
       const fingerprint = `${task.status}|${task.worktreePath ?? ''}|${refs}`
       if (cache.isFresh(cacheKey, fingerprint)) continue
-      settle(task, { repoPath, key, baseBranch: task.baseBranch }, git, taskWrites)
+      settle(task, checkout, git, taskWrites)
       if (taskWrites.length > 0) cache.forget(cacheKey)
       else cache.remember(cacheKey, fingerprint)
     } catch (error) {
@@ -153,7 +147,12 @@ export function settleTasks(tasks: readonly LandingTask[], ports: LandingPorts):
   return { writes, errors }
 }
 
-function settle(task: LandingTask, checkout: Checkout, git: LandingGit, out: LandingWrite[]): void {
+function settle(
+  task: LandingTask,
+  checkout: Checkout,
+  git: CheckoutGit,
+  out: LandingWrite[]
+): void {
   if (task.status === 'in_review') {
     const landing = git.branchLanding(checkout)
     if (!landing?.landed) return
@@ -170,7 +169,7 @@ function settle(task: LandingTask, checkout: Checkout, git: LandingGit, out: Lan
 function cleanup(
   task: LandingTask,
   checkout: Checkout,
-  git: LandingGit,
+  git: CheckoutGit,
   out: LandingWrite[]
 ): void {
   const result = git.cleanupLandedTask(checkout)

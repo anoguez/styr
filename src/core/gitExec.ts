@@ -4,7 +4,7 @@ import { basename, dirname, join } from 'node:path'
 import { MAX_PATCH_BYTES } from './diff.js'
 import { WORKTREE_BRANCH_PREFIX } from './types.js'
 
-// Shared by worktree.ts, worktreeLanding.ts and worktreeDiff.ts only; nothing else imports it.
+// Private to the checkout cluster: imported by worktree.ts, worktreeLanding.ts and worktreeDiff.ts only.
 
 const REPOSITORY_CONTEXT_ENV = [
   'GIT_ALTERNATE_OBJECT_DIRECTORIES',

@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  LandingCache,
-  isRepeatNote,
-  settleTasks,
-  type LandingGit,
-  type LandingTask
-} from './landing.js'
+import { LandingCache, isRepeatNote, settleTasks, type LandingTask } from './landing.js'
+import type { CheckoutGit } from './taskCheckout.js'
 
 describe('LandingCache', () => {
   it('is fresh only for the same fingerprint', () => {
@@ -44,9 +39,9 @@ const task = (over: Partial<LandingTask> = {}): LandingTask => ({
   ...over
 })
 
-function ports(over: Partial<LandingGit> = {}, cache = new LandingCache(1000, () => 0)) {
+function ports(over: Partial<CheckoutGit> = {}, cache = new LandingCache(1000, () => 0)) {
   const calls = { listing: 0, landing: 0, cleanup: 0 }
-  const git: LandingGit = {
+  const git: CheckoutGit = {
     refListing: () => {
       calls.listing++
       return 'refs/heads/styr/TASK-0001 aaa'
