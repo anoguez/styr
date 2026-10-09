@@ -17,6 +17,8 @@ export interface LaunchPlan {
   sessionId: string
   resumed: boolean
   worktreePath?: string
+  /** The branch a worktree created by this launch was cut from. */
+  worktreeBase?: string
   warning?: string
 }
 
@@ -41,6 +43,7 @@ function taskCheckout(settings: Settings, task: Task, repoPath: string): Worktre
 interface Checkout {
   cwd: string
   worktreePath?: string
+  worktreeBase?: string
   warning?: string
 }
 
@@ -54,7 +57,7 @@ function checkoutFor(settings: Settings, task: Task): Checkout {
   if (!task.useWorktree) return { cwd: repo }
   try {
     const worktree = ensureWorktree(taskCheckout(settings, task, repo))
-    return { cwd: worktree.path, worktreePath: worktree.path }
+    return { cwd: worktree.path, worktreePath: worktree.path, worktreeBase: worktree.baseBranch }
   } catch (error) {
     return {
       cwd: repo,
@@ -149,6 +152,7 @@ export function planLaunch(
     sessionId,
     resumed: resumable,
     worktreePath: checkout.worktreePath,
+    worktreeBase: checkout.worktreeBase,
     warning: checkout.warning
   }
 }

@@ -22,6 +22,11 @@ overrides that automatic choice: the worktree starts from the fetched `origin/<b
 local branch, and a branch that has since vanished falls back to the automatic start. Unset means
 automatic. It is fixed once `worktreePath` exists, since the branch is already cut.
 
+An automatic start still records a base: `ensureWorktree` reports the branch it cut from, and
+`launchPatch` writes it to `Task.baseBranch` when that is unset. Without it the diff, the landing
+check and the PR prompt fall back to `baseBranchFor` (the repository default), so a task started
+from a `release/x.y.z` checkout would be measured against `main`.
+
 Worktree failure is never fatal: `checkoutFor` in `launch.ts` falls back to the plain repository
 and returns a `warning`, which `ipc.ts` writes to the task activity log. A blocked launch would be
 worse than a shared working directory.
