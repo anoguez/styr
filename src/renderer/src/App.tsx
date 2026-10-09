@@ -17,7 +17,6 @@ import {
   DEFAULT_SHORTCUTS,
   DEFAULT_THEME,
   SHORTCUT_COMMANDS,
-  ORCHESTRATION_LANES,
   TASK_STATUS_LABELS,
   globalSettingsFor,
   workspaceSettingsFor,
@@ -37,7 +36,7 @@ import { Inbox } from './components/Inbox.js'
 import type { TerminalTaskRequest } from './components/TerminalSurface.js'
 import { buildInbox } from '@core/inbox.js'
 import { useAutoDispatch } from './hooks/useAutoDispatch.js'
-import { OrchestrateDialog } from './components/OrchestrateDialog.js'
+import { OrchestrateDialog, StopAutoRunDialog } from './components/OrchestrateDialog.js'
 import { CommandPalette, type CommandEntry, type PaletteMode } from './components/CommandPalette.js'
 import { StatusBar } from './components/StatusBar.js'
 import { useUpdates } from './hooks/useUpdates.js'
@@ -48,7 +47,7 @@ import { QuickTaskDialog } from './components/QuickTaskDialog.js'
 import { TaskDialog } from './components/TaskDialog.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
 import { sessionLabel } from './lib/sessionLabel.js'
-import { orchestrateHint } from './lib/orchestrateHint.js'
+import { dispatchButton } from './lib/orchestrateHint.js'
 import { DispatchingContext, dispatchingIds } from './lib/dispatchRun.js'
 import { useTerminalSessions } from './hooks/useTerminalSessions.js'
 import { Button, Chip, Modal, inputClass } from './components/ui.js'
@@ -377,7 +376,19 @@ export default function App(): ReactNode {
 
   const autoDispatch = useAutoDispatch(activeWorkspaceId)
   useEffect(() => window.api.orchestrate.onAutoStarted(adoptSession), [adoptSession])
-  const orchestrateTitle = useMemo(() => orchestrateHint(orchestration), [orchestration])
+  const dispatchState = useMemo(
+    () => dispatchButton(orchestration, autoDispatch.state, isDispatching),
+    [orchestration, autoDispatch.state, isDispatching]
+  )
+  // A manual run and Auto-run both light the button and the header's sweep.
+  const dispatchLive = dispatchState.mode === 'dispatching' || dispatchState.mode === 'auto'
+  // Starting Auto-run is harmless; stopping it is confirmed, since it ends the workspace's only run.
+  const [confirmingAutoStop, setConfirmingAutoStop] = useState(false)
+  const { setOn: setAutoOn } = autoDispatch
+  const requestAutoChange = useCallback(
+    (on: boolean) => (on ? setAutoOn(true) : setConfirmingAutoStop(true)),
+    [setAutoOn]
+  )
 
   const openSettings = useCallback((section?: SectionId) => {
     setSettingsSection(section)
@@ -412,7 +423,7 @@ export default function App(): ReactNode {
         case 'orchestrate':
           return setConfirmingOrchestrate(true)
         case 'toggleAutoDispatch':
-          return autoDispatch.setOn(!autoDispatch.state.on)
+          return requestAutoChange(!autoDispatch.state.on)
         case 'newShell':
           return void newShell()
         case 'closeShell':
@@ -449,6 +460,7 @@ export default function App(): ReactNode {
     },
     [
       autoDispatch,
+      requestAutoChange,
       openSettings,
       newShell,
       closeSession,
@@ -837,14 +849,16 @@ export default function App(): ReactNode {
               <Button
                 onClick={() => setConfirmingOrchestrate(true)}
                 disabled={orchestration === null}
-                title={isDispatching ? 'Dispatch is running' : orchestrateTitle}
-                className={isDispatching ? 'dispatch-running disabled:opacity-100' : ''}
+                title={dispatchState.title}
+                className={dispatchLive ? 'dispatch-running disabled:opacity-100' : ''}
               >
-                {isDispatching ? (
+                {dispatchLive ? (
                   <span
                     aria-hidden
                     className="size-[7px] shrink-0 animate-pulse rounded-full bg-[var(--color-accent-text)]"
                   />
+                ) : dispatchState.mode === 'paused' ? (
+                  <span aria-hidden className="size-[7px] shrink-0 rounded-full bg-danger" />
                 ) : (
                   <svg
                     width="13"
@@ -861,30 +875,20 @@ export default function App(): ReactNode {
                     <path d="M13.5 2.5 7 9" />
                   </svg>
                 )}
-                {isDispatching ? 'Dispatching' : 'Dispatch'}
-                {!isDispatching && orchestration && orchestration.dispatch.length > 0 ? (
+                {dispatchState.label}
+                {dispatchState.badge > 0 ? (
                   <span className="inline-flex h-[18px] items-center rounded-md bg-accent/20 px-1.5 font-mono text-[10.5px] font-semibold text-[var(--color-accent-text)]">
-                    {orchestration.dispatch.length}
+                    {dispatchState.mode === 'auto'
+                      ? `${dispatchState.badge} running`
+                      : dispatchState.badge}
                   </span>
                 ) : null}
               </Button>
-              {autoDispatch.state.on ? (
-                <Button
-                  onClick={() => autoDispatch.setOn(false)}
-                  title="Stop Auto-run: no new tasks start; running agents finish"
-                >
-                  Auto-run
-                  {orchestration
-                    ? ` · ${ORCHESTRATION_LANES.reduce((n, lane) => n + orchestration.occupied[lane], 0)} running`
-                    : ''}{' '}
-                  · Stop
-                </Button>
-              ) : null}
               <Button variant="primary" onClick={() => setCreating(true)}>
                 New task
               </Button>
             </div>
-            {isDispatching ? (
+            {dispatchLive ? (
               <span
                 aria-hidden
                 className="dispatch-sweep pointer-events-none absolute inset-x-0 -bottom-px h-0.5"
@@ -1092,6 +1096,16 @@ export default function App(): ReactNode {
               onConfirm={() =>
                 void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))
               }
+            />
+          ) : null}
+
+          {confirmingAutoStop ? (
+            <StopAutoRunDialog
+              onClose={() => setConfirmingAutoStop(false)}
+              onConfirm={() => {
+                setConfirmingAutoStop(false)
+                setAutoOn(false)
+              }}
             />
           ) : null}
 

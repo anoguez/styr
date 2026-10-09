@@ -217,6 +217,10 @@ wired in `ipc.ts`); the rules are pure in `core/autoDispatch.ts`.
 - **Startup grace.** 30s after launch before the first pass; an explicit toggle skips it.
 - The flag is switched only by `orchestrate:autoSet`; `persistSettings` keeps the on-disk value so an
   open Settings draft cannot undo a Stop, and a new workspace's seed copy starts with it off.
+- **One button.** A workspace has at most one Auto-run, so it has no button of its own: the header's
+  Dispatch button shows its state (`dispatchButton` in `lib/orchestrateHint.ts` — `auto` with the
+  running count, `paused` after the breaker, else plain Dispatch) and opens the dialog that holds the
+  switch. Stopping always asks first — inline in the dialog, `StopAutoRunDialog` from the palette.
 - Auto-launched sessions reach the renderer through `orchestrate:autoStarted` (it adopts them like a
   manual launch). Not built: the tray item and a Settings pane control.
 

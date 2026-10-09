@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OrchestrationSummary } from '@core/types.js'
-import { orchestrateHint } from './orchestrateHint.js'
+import { dispatchButton, orchestrateHint } from './orchestrateHint.js'
 
 const lanes = (n: number): OrchestrationSummary['capacity'] => ({
   spec: n,
@@ -55,5 +55,35 @@ describe('orchestrateHint', () => {
 
   it('falls back when there is nothing to say', () => {
     expect(orchestrateHint(summary())).toBe('Nothing ready to start')
+  })
+})
+
+describe('dispatchButton', () => {
+  const entry = {
+    taskId: 'TASK-0001',
+    title: 't',
+    lane: 'implement' as const,
+    provider: 'claude' as const
+  }
+
+  it('is plain Dispatch with the waiting count when Auto-run is off', () => {
+    const button = dispatchButton(summary({ dispatch: [entry] }), { on: false }, false)
+    expect(button).toMatchObject({ mode: 'idle', label: 'Dispatch', badge: 1 })
+  })
+
+  it('shows a manual run in progress', () => {
+    expect(dispatchButton(summary(), { on: false }, true).mode).toBe('dispatching')
+  })
+
+  it('becomes Auto-run with the running count when it is on', () => {
+    const occupied = { spec: 1, implement: 2, review: 0 }
+    const button = dispatchButton(summary({ occupied, dispatch: [entry] }), { on: true }, true)
+    expect(button).toMatchObject({ mode: 'auto', label: 'Auto-run', badge: 3 })
+  })
+
+  it('says when the breaker paused Auto-run', () => {
+    const button = dispatchButton(summary(), { on: false, paused: 'limit' }, false)
+    expect(button.mode).toBe('paused')
+    expect(button.title).toMatch(/too many tasks/)
   })
 })

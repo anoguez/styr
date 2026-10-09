@@ -1,11 +1,11 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   ORCHESTRATION_LANES,
   ORCHESTRATION_LANE_LABELS,
   type AutoDispatchState,
   type OrchestrationSummary
 } from '@core/types.js'
-import { Button, Card, Modal, SwitchRow } from './ui.js'
+import { Button, Card, CardRow, Modal, SwitchRow } from './ui.js'
 
 export function OrchestrateDialog({
   summary,
@@ -20,6 +20,7 @@ export function OrchestrateDialog({
   onConfirm: () => void
   onClose: () => void
 }): ReactNode {
+  const [confirmingStop, setConfirmingStop] = useState(false)
   const count = summary.dispatch.length
   const running = ORCHESTRATION_LANES.reduce((sum, lane) => sum + summary.occupied[lane], 0)
   const notes = [
@@ -55,11 +56,30 @@ export function OrchestrateDialog({
       <div className="flex flex-col gap-4">
         <Card>
           <SwitchRow
-            checked={auto.on}
-            onChange={onAutoChange}
-            label="Auto-run"
+            checked={auto.on && !confirmingStop}
+            onChange={(on) => {
+              if (!on) return setConfirmingStop(true)
+              setConfirmingStop(false)
+              if (!auto.on) onAutoChange(true)
+            }}
+            label={auto.on ? `Auto-run · ${running} running` : 'Auto-run'}
             hint="Start eligible tasks automatically as agents finish and new tasks become ready, while Styr is open. Turning it off starts nothing new; agents already running finish."
           />
+          {confirmingStop && auto.on ? (
+            <CardRow className="flex items-center justify-end gap-2 px-3.5 py-2.5">
+              <span className="mr-auto text-[12px] text-dim">Stop Auto-run?</span>
+              <Button onClick={() => setConfirmingStop(false)}>Keep running</Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setConfirmingStop(false)
+                  onAutoChange(false)
+                }}
+              >
+                Stop Auto-run
+              </Button>
+            </CardRow>
+          ) : null}
         </Card>
         {auto.paused ? (
           <p className="text-[11.5px] text-danger">
@@ -122,6 +142,35 @@ export function OrchestrateDialog({
           </ul>
         ) : null}
       </div>
+    </Modal>
+  )
+}
+
+/** Stopping Auto-run is confirmed: it ends the workspace's only automatic run. */
+export function StopAutoRunDialog({
+  onConfirm,
+  onClose
+}: {
+  onConfirm: () => void
+  onClose: () => void
+}): ReactNode {
+  return (
+    <Modal
+      title="Stop Auto-run?"
+      subtitle="No new tasks start in this workspace."
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Keep running</Button>
+          <Button variant="danger" onClick={onConfirm}>
+            Stop Auto-run
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[12.5px] text-dim">
+        Agents already running finish their work. You can turn Auto-run back on from Dispatch.
+      </p>
     </Modal>
   )
 }
