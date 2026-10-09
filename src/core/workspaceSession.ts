@@ -1,5 +1,19 @@
-import { isAgentArchived, agentKey, type AgentStatus } from './agentState.js'
-import { DEFAULT_WORKSPACE_ID, type Settings, type Task, type WorkspaceInfo } from './types.js'
+import {
+  AGENT_STATES,
+  AGENT_STATE_ORDER,
+  isAgentArchived,
+  agentKey,
+  type AgentState,
+  type AgentStatus
+} from './agentState.js'
+import { awaitsReview } from './inbox.js'
+import {
+  DEFAULT_WORKSPACE_ID,
+  type Settings,
+  type Task,
+  type WorkspaceAgentActivity,
+  type WorkspaceInfo
+} from './types.js'
 
 /**
  * What switching, deleting and saving settings need from the outside world. The ordering between
@@ -94,6 +108,8 @@ export interface TrayModel {
   /** Active workspace's non-archived agents, then the background ones. */
   statuses: AgentStatus[]
   titles: Map<string, string>
+  /** `agentKey`s of agents whose task awaits your review (`awaitsReview`). */
+  awaitingReview: Set<string>
 }
 
 /**
@@ -106,14 +122,20 @@ export function buildTrayModel(
   settings: Pick<Settings, 'activeWorkspaceId'>,
   workspaces: WorkspaceInfo[],
   statuses: AgentStatus[],
-  tasks: Pick<Task, 'id' | 'title' | 'status' | 'archivedAt'>[],
-  background: { statuses: AgentStatus[]; titles: Map<string, string> }
+  tasks: (Pick<Task, 'id' | 'title' | 'status' | 'archivedAt'> &
+    Partial<Pick<Task, 'readiness'>>)[],
+  background: {
+    statuses: AgentStatus[]
+    titles: Map<string, string>
+    awaitingReview?: ReadonlySet<string>
+  }
 ): TrayModel {
   const active = workspaces.find((workspace) => workspace.id === settings.activeWorkspaceId)
   const label = workspaces.length > 1 ? active?.name : undefined
   const byId = new Map(tasks.map((task) => [task.id, task]))
   const listed: AgentStatus[] = []
   const titles = new Map<string, string>()
+  const awaitingReview = new Set(background.awaitingReview)
   for (const status of statuses) {
     const task = byId.get(status.taskId)
     if (!task || isAgentArchived(task)) continue
@@ -124,7 +146,35 @@ export function buildTrayModel(
     }
     listed.push(tagged)
     titles.set(agentKey(tagged), task.title)
+    if (awaitsReview(task, status.state)) awaitingReview.add(agentKey(tagged))
   }
   for (const [key, title] of background.titles) titles.set(key, title)
-  return { statuses: [...listed, ...background.statuses], titles }
+  return { statuses: [...listed, ...background.statuses], titles, awaitingReview }
+}
+
+function emptyCounts(): Record<AgentState, number> {
+  return Object.fromEntries(AGENT_STATES.map((state) => [state, 0])) as Record<AgentState, number>
+}
+
+/**
+ * Rolls the tray's agent list up per workspace for the workspace switcher. It takes the tray model
+ * rather than reading anything, so it adds no disk reads to the hook path and the switcher and the
+ * menu bar can never disagree. A status without a workspace is skipped: the tray tags every row it
+ * keeps.
+ */
+export function workspaceActivity(
+  model: Pick<TrayModel, 'statuses' | 'awaitingReview'>
+): Record<string, WorkspaceAgentActivity> {
+  const activity: Record<string, WorkspaceAgentActivity> = {}
+  for (const status of model.statuses) {
+    if (!status.workspaceId) continue
+    const entry = (activity[status.workspaceId] ??= { counts: emptyCounts(), review: 0 })
+    entry.counts[status.state] += 1
+    if (model.awaitingReview.has(agentKey(status))) entry.review += 1
+    if (status.state === 'exited') continue
+    if (!entry.top || AGENT_STATE_ORDER[status.state] < AGENT_STATE_ORDER[entry.top]) {
+      entry.top = status.state
+    }
+  }
+  return activity
 }

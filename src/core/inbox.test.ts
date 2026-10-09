@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentState, AgentStatus } from './agentState.js'
-import { buildInbox } from './inbox.js'
+import { buildInbox, summariseInbox } from './inbox.js'
 import type { Task } from './types.js'
 
 function task(id: string, extra: Partial<Task> = {}): Task {
@@ -96,5 +96,39 @@ describe('buildInbox', () => {
       new Map()
     )
     expect(ids(inbox.done)).toEqual(['D'])
+  })
+})
+
+describe('summariseInbox', () => {
+  it('counts each group and splits Needs you by kind', () => {
+    const summary = summariseInbox(
+      buildInbox(
+        [
+          task('A', { status: 'in_progress' }),
+          task('B', { readiness: 'needs_spec' }),
+          task('C', { status: 'in_review' }),
+          task('D', { status: 'in_progress' }),
+          task('E'),
+          task('F', { status: 'done' })
+        ],
+        new Map([
+          ['A', agent('A', 'waiting')],
+          ['C', agent('C', 'idle')],
+          ['D', agent('D', 'working')]
+        ])
+      )
+    )
+    expect(summary).toEqual({ needs: 3, running: 1, next: 1, waiting: 1, review: 1, spec: 1 })
+  })
+
+  it('is all zeroes for an empty board', () => {
+    expect(summariseInbox(buildInbox([], new Map()))).toEqual({
+      needs: 0,
+      running: 0,
+      next: 0,
+      waiting: 0,
+      review: 0,
+      spec: 0
+    })
   })
 })

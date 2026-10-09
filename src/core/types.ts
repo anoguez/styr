@@ -1,3 +1,6 @@
+import type { AgentState } from './agentState.js'
+import type { InboxGroup } from './inbox.js'
+
 export const TASK_STATUSES = ['backlog', 'in_progress', 'in_review', 'done'] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number]
 
@@ -156,6 +159,28 @@ export interface WorkspaceOverview {
   activeId: string
   workspaces: (WorkspaceInfo & { taskCount: number; liveSessions: number })[]
 }
+
+/** How many of a workspace's live agents are in each state, and the most urgent of them. */
+export interface WorkspaceAgentActivity {
+  counts: Record<AgentState, number>
+  /** Idle agents whose task is In Review — the Inbox's "ready for your review". */
+  review: number
+  /** Most urgent by `AGENT_STATE_ORDER`; unset when every agent has exited. */
+  top?: Exclude<AgentState, 'exited'>
+}
+
+/**
+ * Every workspace's agent rollup, pushed on each agent event. `activeId` is the workspace that was
+ * active when it was computed, so a switch never counts the new board's agents as background.
+ */
+export interface WorkspacesActivity {
+  activeId: string
+  byWorkspace: Record<string, WorkspaceAgentActivity>
+}
+
+/** A workspace's Inbox group sizes, with "Needs you" broken down by why. */
+export type WorkspaceBoardSummary = Record<Exclude<InboxGroup, 'done'>, number> &
+  Record<'waiting' | 'review' | 'spec', number>
 
 /**
  * What names a task's worktree and branch. Task ids are per workspace, so two workspaces can both

@@ -22,7 +22,9 @@ import type {
   TerminalOutput,
   TerminalRuntimeState,
   UpdateState,
-  WorkspaceOverview
+  WorkspaceBoardSummary,
+  WorkspaceOverview,
+  WorkspacesActivity
 } from '../core/types.js'
 
 export interface TerminalSpawnRequest {
@@ -147,7 +149,12 @@ const api = {
     rename: (id: string, name: string): Promise<WorkspaceOverview> =>
       ipcRenderer.invoke('workspaces:rename', id, name),
     remove: (id: string): Promise<WorkspaceOverview> => ipcRenderer.invoke('workspaces:delete', id),
-    onChanged: (handler: () => void): (() => void) => subscribe('workspaces:changed', handler)
+    onChanged: (handler: () => void): (() => void) => subscribe('workspaces:changed', handler),
+    activity: (): Promise<WorkspacesActivity> => ipcRenderer.invoke('workspaces:activity'),
+    onActivity: (handler: (activity: WorkspacesActivity) => void): (() => void) =>
+      subscribe('workspaces:activity', handler as (...args: never[]) => void),
+    boardSummary: (): Promise<Record<string, WorkspaceBoardSummary>> =>
+      ipcRenderer.invoke('workspaces:boardSummary')
   },
   settings: {
     get: (workspaceId?: string): Promise<Settings> =>

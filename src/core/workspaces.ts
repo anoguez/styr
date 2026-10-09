@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { agentKey, isAgentArchived, type AgentStatus } from './agentState.js'
+import { awaitsReview } from './inbox.js'
 import { readAllAgentStatuses } from './agentStore.js'
 import { pathsInWorkspace, workspaceDir } from './config.js'
 import { saveWorkspaceSettings } from './settingsStore.js'
@@ -9,6 +10,8 @@ import {
   DEFAULT_WORKSPACE_ID,
   DEFAULT_WORKSPACE_NAME,
   type Settings,
+  type Task,
+  type TaskReadiness,
   type TaskStatus,
   type WorkspaceInfo,
   type WorkspaceSettings
@@ -129,39 +132,53 @@ export function workspaceTaskCount(settings: Settings, id: string): number {
 export interface TaskSummary {
   title: string
   status: TaskStatus
+  readiness: TaskReadiness
   archivedAt?: string
 }
 
 /**
- * Titles and statuses of a workspace's markdown tasks, read without side effects — the menu bar
- * needs them for workspaces whose index is not open, and must never adopt or rewrite files there.
+ * A workspace's markdown tasks, parsed without side effects — for workspaces whose index is not
+ * open, where nothing may adopt or rewrite a file. A file that does not parse is skipped, as the
+ * index skips it.
  */
-export function readTaskSummaries(settings: Settings, id: string): Map<string, TaskSummary> {
+export function readWorkspaceTasks(settings: Settings, id: string): Task[] {
   const dir = join(workspaceDir(settings, id), 'tasks')
-  const summaries = new Map<string, TaskSummary>()
-  if (!existsSync(dir)) return summaries
+  if (!existsSync(dir)) return []
+  const tasks: Task[] = []
   for (const name of readdirSync(dir)) {
     if (name.startsWith('.') || !['.md', '.markdown'].includes(extname(name).toLowerCase()))
       continue
     try {
       const filePath = join(dir, name)
-      const task = parseTaskMarkdown(readFileSync(filePath, 'utf8'), filePath)
-      summaries.set(task.id, {
-        title: task.title,
-        status: task.status,
-        archivedAt: task.archivedAt
-      })
+      tasks.push(parseTaskMarkdown(readFileSync(filePath, 'utf8'), filePath))
     } catch {
-      // a half-edited file simply has no title in the menu
+      // a half-edited file is left for the user to fix
     }
   }
-  return summaries
+  return tasks
+}
+
+/** Titles and statuses of a workspace's tasks, for the menu bar. Reads like `readWorkspaceTasks`. */
+export function readTaskSummaries(settings: Settings, id: string): Map<string, TaskSummary> {
+  return new Map(
+    readWorkspaceTasks(settings, id).map((task) => [
+      task.id,
+      {
+        title: task.title,
+        status: task.status,
+        readiness: task.readiness,
+        archivedAt: task.archivedAt
+      }
+    ])
+  )
 }
 
 export interface BackgroundAgents {
   statuses: AgentStatus[]
   /** Task titles keyed like `agentKey`, for the menu. */
   titles: Map<string, string>
+  /** `agentKey`s of agents whose task awaits your review, for the workspace switcher. */
+  awaitingReview: Set<string>
 }
 
 /**
@@ -173,6 +190,7 @@ export interface BackgroundAgents {
 export function readBackgroundAgents(settings: Settings, activeId: string): BackgroundAgents {
   const statuses: AgentStatus[] = []
   const titles = new Map<string, string>()
+  const awaitingReview = new Set<string>()
   for (const workspace of listWorkspaces(settings)) {
     if (workspace.id === activeId) continue
     const scoped = pathsInWorkspace(settings, workspace.id)
@@ -184,8 +202,10 @@ export function readBackgroundAgents(settings: Settings, activeId: string): Back
       if (summary && isAgentArchived(summary)) continue
       const tagged = { ...status, workspaceId: workspace.id, workspaceName: workspace.name }
       statuses.push(tagged)
-      if (summary) titles.set(agentKey(tagged), summary.title)
+      if (!summary) continue
+      titles.set(agentKey(tagged), summary.title)
+      if (awaitsReview(summary, status.state)) awaitingReview.add(agentKey(tagged))
     }
   }
-  return { statuses, titles }
+  return { statuses, titles, awaitingReview }
 }

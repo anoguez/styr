@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { WorkspaceOverview } from '@core/types.js'
+import type { WorkspaceOverview, WorkspacesActivity } from '@core/types.js'
 
 const EMPTY: WorkspaceOverview = { activeId: 'default', workspaces: [] }
+const NO_ACTIVITY: WorkspacesActivity = { activeId: 'default', byWorkspace: {} }
 
 export interface Workspaces {
   overview: WorkspaceOverview
   names: ReadonlyMap<string, string>
+  /** Every workspace's live agent rollup, pushed by the main process on each agent event. */
+  activity: WorkspacesActivity
   apply: (next: WorkspaceOverview) => void
 }
 
@@ -16,6 +19,7 @@ export interface Workspaces {
  */
 export function useWorkspaces(): Workspaces {
   const [overview, setOverview] = useState<WorkspaceOverview>(EMPTY)
+  const [activity, setActivity] = useState<WorkspacesActivity>(NO_ACTIVITY)
 
   useEffect(() => {
     const load = (): void => void window.api.workspaces.list().then(setOverview)
@@ -23,9 +27,21 @@ export function useWorkspaces(): Workspaces {
     return window.api.workspaces.onChanged(load)
   }, [])
 
+  useEffect(() => {
+    let pushed = false
+    const unsubscribe = window.api.workspaces.onActivity((next) => {
+      pushed = true
+      setActivity(next)
+    })
+    void window.api.workspaces.activity().then((first) => {
+      if (!pushed) setActivity(first)
+    })
+    return unsubscribe
+  }, [])
+
   const names = useMemo(
     () => new Map(overview.workspaces.map((workspace) => [workspace.id, workspace.name])),
     [overview]
   )
-  return { overview, names, apply: setOverview }
+  return { overview, names, activity, apply: setOverview }
 }
