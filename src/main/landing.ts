@@ -1,7 +1,7 @@
 import { addNote, updateTask } from '@core/taskStore.js'
 import { loadSettings } from '@core/settingsStore.js'
 import { LandingCache, settleTasks, type LandingWrite } from '@core/landing.js'
-import { branchLanding, cleanupLandedTask, refListing } from '@core/worktreeLanding.js'
+import { checkoutGit } from '@core/taskCheckout.js'
 import { queryTasks } from './taskIndex.js'
 
 const cache = new LandingCache()
@@ -14,7 +14,7 @@ const cache = new LandingCache()
  */
 export function settleLandedTasks(): boolean {
   const { writes, errors } = settleTasks(queryTasks(), {
-    git: { refListing, branchLanding, cleanupLandedTask },
+    git: checkoutGit,
     cache,
     workspaceId: loadSettings().activeWorkspaceId
   })

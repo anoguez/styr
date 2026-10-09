@@ -1,8 +1,7 @@
-import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   branchNameFor,
   checkoutPath,
@@ -12,56 +11,28 @@ import {
   readGitBranch,
   type Checkout
 } from './worktree.js'
-import { branchLanding, cleanupLandedTask, refListing } from './worktreeLanding.js'
-import { taskDiff, taskFilePatch } from './worktreeDiff.js'
-import { refsFingerprint } from './landing.js'
+import {
+  GIT_TEST_TIMEOUT_MS,
+  removeTemporaryDirectories,
+  runGit,
+  temporaryDirectory,
+  temporaryRepository
+} from './gitFixture.js'
+import { taskCheckout } from './taskCheckout.js'
+import { DEFAULT_WORKSPACE_ID } from './types.js'
 
 function co(repoPath: string, key: string, baseBranch?: string): Checkout {
   return { repoPath, key, baseBranch }
 }
 
-const temporaryDirectories: string[] = []
-const GIT_REPOSITORY_CONTEXT = [
-  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-  'GIT_COMMON_DIR',
-  'GIT_DIR',
-  'GIT_IMPLICIT_WORK_TREE',
-  'GIT_INDEX_FILE',
-  'GIT_OBJECT_DIRECTORY',
-  'GIT_PREFIX',
-  'GIT_WORK_TREE'
-]
-
-function temporaryRepository(): string {
-  const repository = mkdtempSync(join(tmpdir(), 'styr-worktree-test-'))
-  temporaryDirectories.push(repository)
-  runGit(['init', '--initial-branch=main'], repository)
-  runGit(['config', 'user.name', 'Styr test'], repository)
-  runGit(['config', 'user.email', 'test@example.com'], repository)
-  writeFileSync(join(repository, 'README.md'), '# Test repository\n')
-  runGit(['add', 'README.md'], repository)
-  runGit(['commit', '-m', 'Initial commit'], repository)
-  return repository
-}
-
-function runGit(args: string[], cwd: string): string {
-  const env = { ...process.env }
-  for (const key of GIT_REPOSITORY_CONTEXT) delete env[key]
-  return execFileSync('git', args, { cwd, env, encoding: 'utf8' })
-}
-
-afterEach(() => {
-  for (const directory of temporaryDirectories.splice(0)) {
-    rmSync(directory, { recursive: true, force: true })
-  }
-})
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS })
+afterEach(removeTemporaryDirectories)
 
 describe('worktree management', () => {
   describe('start point', () => {
     function cloneWithOrigin(): { origin: string; clone: string } {
       const origin = temporaryRepository()
-      const clone = mkdtempSync(join(tmpdir(), 'styr-worktree-clone-'))
-      temporaryDirectories.push(clone)
+      const clone = temporaryDirectory('styr-worktree-clone-')
       runGit(['clone', origin, clone], tmpdir())
       runGit(['config', 'user.name', 'Styr test'], clone)
       runGit(['config', 'user.email', 'test@example.com'], clone)
@@ -122,7 +93,9 @@ describe('worktree management', () => {
       function diffPaths(checkout: Checkout): { paths: string[]; baseName?: string } {
         const path = checkoutPath(checkout)
         commit(path, 'task.txt')
-        const diff = taskDiff(checkout, true)
+        // In the default workspace a checkout's key is its task id.
+        const { key: id, repoPath, baseBranch } = checkout
+        const diff = taskCheckout(DEFAULT_WORKSPACE_ID, { id, repoPath, baseBranch }).diff()
         if ('error' in diff) throw new Error(diff.error)
         return { paths: diff.files.map((file) => file.path), baseName: diff.baseName }
       }
@@ -207,166 +180,10 @@ describe('worktree management', () => {
   })
 
   it('rejects a directory that is not a Git repository', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'styr-not-a-repository-test-'))
-    temporaryDirectories.push(directory)
+    const directory = temporaryDirectory('styr-not-a-repository-test-')
 
     expect(() => ensureWorktree(co(directory, 'TASK-0043'))).toThrow(
       `${directory} is not a git repository`
     )
-  })
-})
-
-describe('landing and cleanup', () => {
-  function commitOnTask(repository: string, taskId: string, file = 'feature.txt'): string {
-    const { path, branch } = ensureWorktree(co(repository, taskId))
-    writeFileSync(join(path, file), 'work\n')
-    runGit(['add', file], path)
-    runGit(['commit', '-m', 'Do the work'], path)
-    return branch
-  }
-  const branches = (repository: string): string => runGit(['branch', '--list'], repository)
-
-  it('does not count a fresh branch as landed, nor unmerged commits', () => {
-    const repository = temporaryRepository()
-    ensureWorktree(co(repository, 'TASK-0050'))
-    expect(branchLanding(co(repository, 'TASK-0050'))?.landed).toBe(false)
-
-    commitOnTask(repository, 'TASK-0051')
-    expect(branchLanding(co(repository, 'TASK-0051'))).toMatchObject({
-      base: 'main',
-      ahead: 1,
-      landed: false
-    })
-  })
-
-  it('fingerprints the refs a landing answer depends on, and only those', () => {
-    const repository = temporaryRepository()
-    const branch = commitOnTask(repository, 'TASK-0060')
-    commitOnTask(repository, 'TASK-0061', 'other.txt')
-    const before = refsFingerprint(refListing(repository), 'TASK-0060')
-
-    // another task committing again does not matter to this one
-    writeFileSync(join(checkoutPath(co(repository, 'TASK-0061')), 'more.txt'), 'x\n')
-    runGit(['add', 'more.txt'], checkoutPath(co(repository, 'TASK-0061')))
-    runGit(['commit', '-m', 'More'], checkoutPath(co(repository, 'TASK-0061')))
-    expect(refsFingerprint(refListing(repository), 'TASK-0060')).toBe(before)
-
-    // the base moving does
-    runGit(['merge', '--ff-only', branch], repository)
-    expect(refsFingerprint(refListing(repository), 'TASK-0060')).not.toBe(before)
-  })
-
-  it('has a stable fingerprint when git cannot list refs', () => {
-    expect(refsFingerprint(undefined, 'TASK-0062')).toBe('unavailable')
-    expect(refListing('/nonexistent-styr-dir')).toBeUndefined()
-  })
-
-  it('cleans up after a fast-forward merge', () => {
-    const repository = temporaryRepository()
-    const branch = commitOnTask(repository, 'TASK-0052')
-    runGit(['merge', '--ff-only', branch], repository)
-
-    expect(branchLanding(co(repository, 'TASK-0052'))).toMatchObject({ ahead: 0, landed: true })
-    const result = cleanupLandedTask(co(repository, 'TASK-0052'))
-    expect(result.worktreeRemoved).toBe(true)
-    expect(existsSync(checkoutPath(co(repository, 'TASK-0052')))).toBe(false)
-    expect(branches(repository)).not.toContain(branch)
-  })
-
-  it('force-deletes a squash-merged branch only after the content check', () => {
-    const repository = temporaryRepository()
-    const branch = commitOnTask(repository, 'TASK-0053')
-    runGit(['merge', '--squash', branch], repository)
-    runGit(['commit', '-m', 'Squashed'], repository)
-
-    expect(branchLanding(co(repository, 'TASK-0053'))).toMatchObject({ ahead: 1, landed: true })
-    cleanupLandedTask(co(repository, 'TASK-0053'))
-    expect(branches(repository)).not.toContain(branch)
-  })
-
-  it('keeps the worktree and branch when the work has not landed', () => {
-    const repository = temporaryRepository()
-    const branch = commitOnTask(repository, 'TASK-0054')
-
-    const result = cleanupLandedTask(co(repository, 'TASK-0054'))
-    expect(result.worktreeRemoved).toBe(false)
-    expect(result.notes.join(' ')).toContain('not on main')
-    expect(branches(repository)).toContain(branch)
-  })
-
-  it('leaves a dirty worktree and its branch in place', () => {
-    const repository = temporaryRepository()
-    const branch = commitOnTask(repository, 'TASK-0055')
-    runGit(['merge', '--ff-only', branch], repository)
-    writeFileSync(join(checkoutPath(co(repository, 'TASK-0055')), 'scratch.txt'), 'wip\n')
-
-    const result = cleanupLandedTask(co(repository, 'TASK-0055'))
-    expect(result.worktreeRemoved).toBe(false)
-    expect(result.notes.join(' ')).toContain('uncommitted')
-    expect(branches(repository)).toContain(branch)
-  })
-
-  it('measures landing against the task base branch', () => {
-    const repository = temporaryRepository()
-    runGit(['branch', 'release/1.0'], repository)
-    const branch = commitOnTask(repository, 'TASK-0056')
-    runGit(['checkout', 'release/1.0'], repository)
-    runGit(['merge', '--ff-only', branch], repository)
-    runGit(['checkout', 'main'], repository)
-
-    expect(branchLanding(co(repository, 'TASK-0056'))?.landed).toBe(false)
-    expect(branchLanding(co(repository, 'TASK-0056', 'release/1.0'))).toMatchObject({
-      base: 'release/1.0',
-      landed: true
-    })
-    expect(cleanupLandedTask(co(repository, 'TASK-0056', 'release/1.0')).worktreeRemoved).toBe(true)
-  })
-
-  it('falls back to the automatic base when the task base is gone', () => {
-    const repository = temporaryRepository()
-    commitOnTask(repository, 'TASK-0057')
-    expect(branchLanding(co(repository, 'TASK-0057', 'vanished'))).toMatchObject({ base: 'main' })
-  })
-})
-
-describe('taskDiff', () => {
-  it('combines committed, uncommitted, untracked and renamed work', () => {
-    const repository = temporaryRepository()
-    const { path } = ensureWorktree(co(repository, 'TASK-0001'))
-    writeFileSync(join(path, 'committed.txt'), 'one\n')
-    runGit(['add', '.'], path)
-    runGit(['commit', '-m', 'work'], path)
-    runGit(['mv', 'README.md', 'READ ME.md'], path)
-    writeFileSync(join(path, 'committed.txt'), 'one\ntwo\n')
-    writeFileSync(join(path, 'new file.txt'), 'fresh\n')
-
-    const diff = taskDiff(co(repository, 'TASK-0001'), true)
-    if ('error' in diff) throw new Error(diff.error)
-    const byPath = Object.fromEntries(diff.files.map((file) => [file.path, file]))
-    expect(byPath['committed.txt']).toMatchObject({ status: 'added', additions: 2 })
-    expect(byPath['READ ME.md']).toMatchObject({ status: 'renamed', oldPath: 'README.md' })
-    expect(byPath['new file.txt']).toMatchObject({
-      status: 'added',
-      additions: 1,
-      origin: 'untracked'
-    })
-    expect(byPath['committed.txt']).toMatchObject({ origin: 'both', uncommitted: true })
-    expect(diff).toMatchObject({ kind: 'changes', baseName: 'main', totalFiles: 3 })
-
-    const patch = taskFilePatch(co(repository, 'TASK-0001'), true, 'new file.txt')
-    expect(patch).toHaveProperty('patch')
-    expect(taskFilePatch(co(repository, 'TASK-0001'), true, '../etc/passwd')).toEqual({
-      placeholder: 'unchanged'
-    })
-  })
-
-  it('is empty for a branch with no changes and errors without a worktree', () => {
-    const repository = temporaryRepository()
-    ensureWorktree(co(repository, 'TASK-0002'))
-    expect(taskDiff(co(repository, 'TASK-0002'), true)).toMatchObject({
-      kind: 'empty',
-      files: []
-    })
-    expect(taskDiff(co(repository, 'TASK-0003'), true)).toMatchObject({ kind: 'gone' })
   })
 })

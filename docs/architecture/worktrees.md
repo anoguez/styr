@@ -4,13 +4,28 @@ Moved from CLAUDE.md verbatim; read it before touching this area.
 
 ## Worktrees
 
-Git worktree code is split in four, all in `src/core/`: `gitExec.ts` (private: the git runners, ref
-helpers, and the `Checkout` value), `worktree.ts` (lifecycle: ensure, remove, branches), `worktreeLanding.ts`
-(`branchLanding`, `cleanupLandedTask`) and `worktreeDiff.ts` (`taskDiff`, `taskFilePatch`,
-`workingTreeSummary`). A `Checkout` is `{repoPath, key, baseBranch?}`; the worktree path and branch derive
-from it (`checkoutPath`, `branchNameFor`), so pass it instead of the loose triple. `ensureWorktree` is idempotent so a resume lands in the same
-checkout. Worktrees are created beside the repo (`<repo>.worktrees/<taskId>`) — inside it they would
-show as untracked files in the user's project.
+A task's checkout has one front door, `core/taskCheckout.ts`. `taskCheckout(workspaceId, task)`
+returns a `TaskCheckout` keyed by the task — `diff()`, `filePatch(path, full)`, `landing()` and
+`removeWorktree()` — and decides the worktree/repository split once (`useWorktree !== false`: an
+unset flag on an older task file still counts as a worktree task). `checkoutOf(workspaceId, task,
+repoPath)` is the only place a task becomes a `Checkout`; `launch.ts` and `settleTasks` use it too,
+and `ipc.ts` never builds one. The git a landing pass runs (`refListing`, `branchLanding`,
+`cleanupLandedTask`) is the one adapter, `CheckoutGit`: `checkoutGit` is real git and
+`landing.test.ts` fakes it. Diffs have no fake — nothing varies there, so their tests use real
+repositories (`gitFixture.ts`).
+
+Behind it, all in `src/core/`: `gitExec.ts` (private: the git runners, ref helpers, and the
+`Checkout` value), `worktree.ts` (lifecycle and directory-level helpers: ensure, remove, branches,
+`readGitBranch`, `findGitRoot`, `workingTreeSummary`), `worktreeLanding.ts` (`branchLanding`,
+`cleanupLandedTask`, `refListing`) and `worktreeDiff.ts` (`taskDiff`, `taskFilePatch`). Outside
+the cluster, reach the last two only through `taskCheckout.ts`. The landing rules (`settleTasks`, `LandingCache`,
+`refsFingerprint`) are in `core/landing.ts`, run by `main/landing.ts` — see
+[agents.md](agents.md).
+
+A `Checkout` is `{repoPath, key, baseBranch?}`; the worktree path and branch derive from it
+(`checkoutPath`, `branchNameFor`), so pass it instead of the loose triple. `ensureWorktree` is
+idempotent so a resume lands in the same checkout. Worktrees are created beside the repo
+(`<repo>.worktrees/<taskId>`) — inside it they would show as untracked files in the user's project.
 
 A new worktree branch starts, after a best-effort `git fetch`, from the remote tip of the branch the
 main checkout is on (its upstream, else `origin/<current>`, else `origin/<base>`) — so `main` and

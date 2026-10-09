@@ -1,13 +1,13 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { clearAgentStatus, supportDir } from './agentStore.js'
-import { checkoutPath, ensureWorktree, type Checkout as WorktreeCheckout } from './worktree.js'
-import { isGitRepo } from './gitExec.js'
+import { checkoutPath, ensureWorktree, isGitRepo } from './worktree.js'
+import { checkoutOf } from './taskCheckout.js'
 import { buildPrompt, resolveTemplateFor } from './prompt.js'
 import { providerById, providerFor } from './providers/index.js'
 import { shellQuote } from './shell.js'
 import { resolveShell } from './platformShell.js'
-import { worktreeKey, type Settings, type Task } from './types.js'
+import type { Settings, Task } from './types.js'
 
 export { shellQuote }
 
@@ -30,15 +30,7 @@ export function workingDirFor(settings: Settings, task: Task): string {
 /** Where the session will run, without creating anything — safe to call when previewing a prompt. */
 export function plannedCwd(settings: Settings, task: Task): string {
   const repo = workingDirFor(settings, task)
-  return task.useWorktree ? checkoutPath(taskCheckout(settings, task, repo)) : repo
-}
-
-function taskCheckout(settings: Settings, task: Task, repoPath: string): WorktreeCheckout {
-  return {
-    repoPath,
-    key: worktreeKey(settings.activeWorkspaceId, task.id),
-    baseBranch: task.baseBranch
-  }
+  return task.useWorktree ? checkoutPath(checkoutOf(settings.activeWorkspaceId, task, repo)) : repo
 }
 
 interface Checkout {
@@ -57,7 +49,7 @@ function checkoutFor(settings: Settings, task: Task): Checkout {
   const repo = workingDirFor(settings, task)
   if (!task.useWorktree) return { cwd: repo }
   try {
-    const worktree = ensureWorktree(taskCheckout(settings, task, repo))
+    const worktree = ensureWorktree(checkoutOf(settings.activeWorkspaceId, task, repo))
     return { cwd: worktree.path, worktreePath: worktree.path, worktreeBase: worktree.baseBranch }
   } catch (error) {
     return {

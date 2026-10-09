@@ -34,10 +34,9 @@ import {
   baseBranchFor,
   listBranches,
   readGitBranch,
-  removeWorktree,
-  type Checkout
+  workingTreeSummary
 } from '@core/worktree.js'
-import { taskDiff, taskFilePatch, workingTreeSummary } from '@core/worktreeDiff.js'
+import { taskCheckout } from '@core/taskCheckout.js'
 import { createSessionLifecycle, monitorKey } from '@core/sessionLifecycle.js'
 import {
   buildTrayModel,
@@ -58,7 +57,6 @@ import { planOrchestration, providerForLane, type OrchestrationPlan } from '@cor
 import {
   globalSettingsFor,
   workspaceSettingsFor,
-  worktreeKey,
   type AutoDispatchPause,
   type BrokenSettingsFile,
   type OrchestrationLane,
@@ -255,14 +253,6 @@ function workspaceBoardSummaries(): Record<string, WorkspaceBoardSummary> {
 
 let diffStatsRun: Promise<Record<string, DiffStat>> | undefined
 
-function checkoutOf(
-  task: { id: string; baseBranch?: string },
-  repoPath: string,
-  workspaceId: string
-): Checkout {
-  return { repoPath, key: worktreeKey(workspaceId, task.id), baseBranch: task.baseBranch }
-}
-
 /**
  * Per-task change totals for the cards. The git work is synchronous, so the loop yields between
  * tasks (~0.2s each): IPC, the watcher and the terminals keep being served in the gaps.
@@ -272,9 +262,10 @@ async function computeDiffStats(): Promise<Record<string, DiffStat>> {
   const stats: Record<string, DiffStat> = {}
   for (const task of queryTasks()) {
     // Done work has landed (or is being cleaned up); a count there is noise.
-    if (!task.worktreePath || !task.repoPath || task.status === 'done' || task.archivedAt) continue
+    const { repoPath } = task
+    if (!task.worktreePath || !repoPath || task.status === 'done' || task.archivedAt) continue
     await new Promise((resolve) => setImmediate(resolve))
-    const diff = taskDiff(checkoutOf(task, task.repoPath, workspaceId), task.useWorktree !== false)
+    const diff = taskCheckout(workspaceId, { ...task, repoPath }).diff()
     if ('error' in diff || diff.kind !== 'changes') continue
     stats[task.id] = {
       added: diff.totalAdditions,
@@ -303,8 +294,7 @@ const taskWrites = createTaskWrites({
   reorderTasks,
   setArchived,
   deleteTask,
-  removeWorktree: (task) =>
-    removeWorktree(checkoutOf(task, task.repoPath, loadSettings().activeWorkspaceId)),
+  removeWorktree: (task) => taskCheckout(loadSettings().activeWorkspaceId, task).removeWorktree(),
   notifyTasks: notifyTasksChanged,
   notifyAgents: notifyAgentsChanged
 })
@@ -509,10 +499,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('git:taskDiff', (_event, taskId: unknown): DiffResult => {
     const task = diffTask(taskId)
     if ('error' in task) return task
-    return taskDiff(
-      checkoutOf(task, task.repoPath, loadSettings().activeWorkspaceId),
-      task.useWorktree !== false
-    )
+    return taskCheckout(loadSettings().activeWorkspaceId, task).diff()
   })
   ipcMain.handle(
     'git:filePatch',
@@ -521,9 +508,7 @@ export function registerIpcHandlers(): void {
       if ('error' in task) return task
       const file = z.string().min(1).safeParse(path)
       if (!file.success) return { error: 'Invalid path' }
-      return taskFilePatch(
-        checkoutOf(task, task.repoPath, loadSettings().activeWorkspaceId),
-        task.useWorktree !== false,
+      return taskCheckout(loadSettings().activeWorkspaceId, task).filePatch(
         file.data,
         full === true
       )
