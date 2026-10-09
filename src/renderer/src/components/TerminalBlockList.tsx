@@ -468,7 +468,7 @@ function PromptInput({
           {!typed && text === '' && hints.length > 0 ? (
             <span
               aria-hidden
-              className="text-faint pointer-events-none absolute top-0 left-4 flex items-center gap-2.5 font-sans text-[11.5px]"
+              className="text-faint pointer-events-none absolute top-0 right-0 flex items-center gap-2.5 font-sans text-[11.5px]"
               style={{ height: look.lineHeight }}
             >
               {hints.map((hint) => (
