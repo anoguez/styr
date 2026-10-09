@@ -3,6 +3,8 @@
     "src/renderer/src/**/*",
     "src/preload/*.d.ts",
     "src/core/types.ts",
+    "src/core/types/*.ts",
+    "src/core/sources/types.ts",
     "src/core/taskSchema.ts",
     "src/core/prompt.ts",
     "src/core/shell.ts",

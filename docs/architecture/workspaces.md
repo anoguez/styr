@@ -72,7 +72,7 @@ same records, with no cross-check against live terminals. The wording lives in
 
 Every setting is in exactly one of `GLOBAL_SETTING_KEYS` (`storageDir`, `activeWorkspaceId`,
 `updates`, `shortcuts` — kept in `~/.styr/config.json`) or `WORKSPACE_SETTING_KEYS` (everything
-else — kept in `<workspaceDir>/settings.json`), both in `types.ts`. A test holds `settingsSchema`
+else — kept in `<workspaceDir>/settings.json`), both in `types/settings.ts`. A test holds `settingsSchema`
 to the two lists, so a new key needs a deliberate choice. The file is in the workspace folder, not
 `.styr/`, because `.styr/` is a cache that must be safe to delete. `Settings` stays the merged
 shape, so consumers never see the split. The workspace keys include machine-specific paths (shell,
@@ -139,7 +139,7 @@ The MCP install commands are built from the _active_ workspace's CLI command, be
 registered once per machine; the Integrations hints say so rather than pretending it is per
 workspace.
 
-`worktreeKey(workspaceId, taskId)` (in `types.ts`, because `prompt.ts` needs it) names a task's
+`worktreeKey(workspaceId, taskId)` (in `types/workspaces.ts`, because `prompt.ts` needs it) names a task's
 worktree and branch: bare id for Default so old worktrees still resolve, `<workspace>-<id>` for the
 rest. Pass the key as `Checkout.key` (see Worktrees).
 
