@@ -92,14 +92,9 @@ import {
   unlinkTask
 } from './sourceSync.js'
 import { adapterFor, runCommand, sourceProviders } from '@core/sources/index.js'
-import {
-  taskDraftSchema,
-  taskFilterSchema,
-  taskPatchSchema,
-  settingsChangeSchema,
-  workspaceIdSchema
-} from '@core/taskSchema.js'
-import { TASK_STATUSES, type Task, type TaskStatus } from '@core/types.js'
+import { taskFilterSchema, settingsChangeSchema, workspaceIdSchema } from '@core/taskSchema.js'
+import type { Task, TaskStatus } from '@core/types.js'
+import { createTaskWrites } from './taskWrites.js'
 import { closeIndex, findTask, queryTasks, syncIndex } from './taskIndex.js'
 import { startWatching, startWatchingAgents } from './watcher.js'
 import { updateTray } from './tray.js'
@@ -300,6 +295,20 @@ export function notifyTasksChanged(): void {
   autoDispatch.request()
 }
 
+const taskWrites = createTaskWrites({
+  findTask,
+  createTask,
+  updateTask,
+  addNote,
+  reorderTasks,
+  setArchived,
+  deleteTask,
+  removeWorktree: (task) =>
+    removeWorktree(checkoutOf(task, task.repoPath, loadSettings().activeWorkspaceId)),
+  notifyTasks: notifyTasksChanged,
+  notifyAgents: notifyAgentsChanged
+})
+
 const lifecycle = createSessionLifecycle({
   settings: loadSettings,
   findTask,
@@ -493,14 +502,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('tasks:get', (_event, id: string) => findTask(id))
   ipcMain.handle('tasks:problems', () => brokenTaskFiles())
 
-  ipcMain.handle('tasks:removeWorktree', (_event, taskId: string) => {
-    const task = findTask(taskId)
-    if (!task?.repoPath) return null
-    removeWorktree(checkoutOf(task, task.repoPath, loadSettings().activeWorkspaceId))
-    const updated = updateTask(task.id, { worktreePath: undefined })
-    notifyTasksChanged()
-    return updated
-  })
+  ipcMain.handle('tasks:removeWorktree', (_event, taskId: string) =>
+    taskWrites.removeWorktree(taskId)
+  )
   ipcMain.handle('git:branches', (_event, repoPath: string) => listBranches(repoPath))
   ipcMain.handle('git:taskDiff', (_event, taskId: unknown): DiffResult => {
     const task = diffTask(taskId)
@@ -534,42 +538,20 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle('agents:list', () => agentStatuses())
 
-  ipcMain.handle('tasks:create', (_event, draft: unknown) => {
-    const task = createTask(taskDraftSchema.parse(draft))
-    notifyTasksChanged()
-    return task
-  })
-
-  ipcMain.handle('tasks:update', (_event, id: string, patch: unknown) => {
-    const task = updateTask(id, taskPatchSchema.parse(patch))
-    notifyTasksChanged()
-    return task
-  })
-
-  ipcMain.handle('tasks:note', (_event, id: string, author: string, message: string) => {
-    const task = addNote(id, author, message)
-    notifyTasksChanged()
-    return task
-  })
-
-  ipcMain.handle('tasks:reorder', (_event, status: TaskStatus, orderedIds: string[]) => {
-    if (!TASK_STATUSES.includes(status)) throw new Error(`Unknown status ${status}`)
-    const tasks = reorderTasks(status, orderedIds)
-    notifyTasksChanged()
-    return tasks
-  })
-
-  ipcMain.handle('tasks:archive', (_event, id: string, archived: boolean) => {
-    const task = setArchived(id, archived)
-    notifyTasksChanged()
-    notifyAgentsChanged()
-    return task
-  })
-
-  ipcMain.handle('tasks:delete', (_event, id: string) => {
-    deleteTask(id)
-    notifyTasksChanged()
-  })
+  ipcMain.handle('tasks:create', (_event, draft: unknown) => taskWrites.create(draft))
+  ipcMain.handle('tasks:update', (_event, id: string, patch: unknown) =>
+    taskWrites.update(id, patch)
+  )
+  ipcMain.handle('tasks:note', (_event, id: string, author: string, message: string) =>
+    taskWrites.note(id, author, message)
+  )
+  ipcMain.handle('tasks:reorder', (_event, status: TaskStatus, orderedIds: string[]) =>
+    taskWrites.reorder(status, orderedIds)
+  )
+  ipcMain.handle('tasks:archive', (_event, id: string, archived: boolean) =>
+    taskWrites.archive(id, archived)
+  )
+  ipcMain.handle('tasks:delete', (_event, id: string) => taskWrites.delete(id))
 
   ipcMain.handle('tasks:reveal', (_event, id: string) => {
     const task = findTask(id)
@@ -763,11 +745,9 @@ export function registerIpcHandlers(): void {
     })
   })
 
-  ipcMain.handle('tasks:forgetSession', (_event, taskId: string) => {
-    const task = updateTask(taskId, { agentSession: undefined })
-    notifyTasksChanged()
-    return task
-  })
+  ipcMain.handle('tasks:forgetSession', (_event, taskId: string) =>
+    taskWrites.forgetSession(taskId)
+  )
 
   // Removes the agent from the board: ends its live terminal, drops its status and forgets the
   // current chat. The chat history on the task stays.
@@ -782,10 +762,7 @@ export function registerIpcHandlers(): void {
     }
     codexMonitor.release(monitorKey(workspaceId, id))
     clearAgentStatus(settings, id)
-    const task = findTask(id)
-    if (task?.agentSession) updateTask(id, { agentSession: undefined })
-    notifyTasksChanged()
-    notifyAgentsChanged()
+    taskWrites.removeAgent(id)
   })
 
   ipcMain.handle('terminal:previewPrompt', (_event, taskId: string, templateId?: string) => {
