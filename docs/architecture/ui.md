@@ -142,7 +142,7 @@ almost nothing, which is why nobody noticed it was from the old palette.
 ## Preferences
 
 `Settings.taskDefaults` (`orchestrate`, `useWorktree`) only seeds the new-task form in `toForm`
-(`TaskDialog`). Existing tasks keep their saved values, so changing a default never rewrites a
+(`lib/taskForm.ts`). Existing tasks keep their saved values, so changing a default never rewrites a
 task. Preferences is the first `SECTIONS` entry and the dialog's default section.
 
 ## Title bar

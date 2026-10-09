@@ -14,82 +14,22 @@ import {
   type TaskStatus
 } from '@core/types.js'
 import type { TaskDiff } from '@core/diff.js'
-import { danglingBlockers, findCycle, indexTasks } from '@core/blocking.js'
-import { resolveTemplateFor } from '@core/prompt.js'
-import {
-  canAddPreset,
-  matchesPreset,
-  newPresetId,
-  presetFields,
-  presetFromFields
-} from '@core/taskPreset.js'
+import { indexTasks } from '@core/blocking.js'
 import { Button, Chip, DiffCount, Modal, Select } from './ui.js'
 import { SourceLink } from './SourceLink.js'
 import { formatAccelerator } from '@core/shortcuts.js'
 import { fileName } from '../lib/terminalPath.js'
-
-interface FormState {
-  title: string
-  status: TaskStatus
-  priority: TaskPriority
-  readiness: TaskReadiness
-  project: string
-  tags: string[]
-  repoPath: string
-  prUrl: string
-  useWorktree: boolean
-  baseBranch: string
-  orchestrate: boolean
-  blockedBy: string[]
-  contextFiles: string[]
-  promptTemplateId: string
-  provider: 'claude' | 'codex'
-  description: string
-}
+import {
+  blockerState,
+  choosePreset,
+  initialForm,
+  savePresetPlan,
+  taskPayload,
+  templateNames,
+  type TaskForm
+} from '../lib/taskForm.js'
 
 type TabKey = 'brief' | 'chats' | 'activity' | 'prompt'
-
-function toForm(task: Task | null, settings: Settings): FormState {
-  return {
-    title: task?.title ?? '',
-    status: task?.status ?? 'backlog',
-    priority: task?.priority ?? 'medium',
-    readiness: task?.readiness ?? 'ready',
-    project: task?.project ?? '',
-    tags: task?.tags ?? [],
-    repoPath: task?.repoPath ?? settings.defaultRepoPath,
-    prUrl: task?.prUrl ?? '',
-    useWorktree: task?.useWorktree ?? settings.taskDefaults.useWorktree,
-    baseBranch: task?.baseBranch ?? '',
-    orchestrate: task?.orchestrate ?? settings.taskDefaults.orchestrate,
-    blockedBy: task?.blockedBy ?? [],
-    contextFiles: task?.contextFiles ?? [],
-    promptTemplateId: task?.promptTemplateId ?? '',
-    provider: task?.provider ?? settings.defaultProvider,
-    description: task?.description ?? ''
-  }
-}
-
-/** The form with a preset's values laid over it; an empty preset title keeps what was typed. */
-function withPreset(form: FormState, preset: TaskPreset, settings: Settings): FormState {
-  const fields = presetFields(preset, settings)
-  return { ...form, ...fields, title: fields.title || form.title }
-}
-
-function formPresetFields(form: FormState): ReturnType<typeof presetFields> {
-  return {
-    title: form.title,
-    description: form.description,
-    tags: form.tags,
-    priority: form.priority,
-    readiness: form.readiness,
-    useWorktree: form.useWorktree,
-    orchestrate: form.orchestrate,
-    provider: form.provider,
-    promptTemplateId: form.promptTemplateId,
-    baseBranch: form.baseBranch
-  }
-}
 
 const STATUS_DOT: Record<TaskStatus, string> = {
   backlog: 'var(--color-col-backlog)',
@@ -354,10 +294,7 @@ export function TaskDialog({
     }
   }, [task])
   const startPreset = task ? undefined : settings.taskPresets.find((p) => p.id === presetId)
-  const [form, setForm] = useState<FormState>(() => {
-    const base = toForm(task, settings)
-    return startPreset ? withPreset(base, startPreset, settings) : base
-  })
+  const [form, setForm] = useState<TaskForm>(() => initialForm(task, settings, startPreset))
   const [appliedPresetId, setAppliedPresetId] = useState(startPreset?.id ?? '')
   const [presetName, setPresetName] = useState<string | null>(null)
   const [linkedTask, setLinkedTask] = useState<Task | null>(null)
@@ -389,99 +326,39 @@ export function TaskDialog({
   // update that record instead of creating a duplicate.
   const [saved, setSaved] = useState<Task | null>(task)
 
-  const patch = (changes: Partial<FormState>): void =>
+  const patch = (changes: Partial<TaskForm>): void =>
     setForm((current) => ({ ...current, ...changes }))
 
   function applyPreset(id: string): void {
-    const previous = settings.taskPresets.find((p) => p.id === appliedPresetId)
-    const untouched = previous
-      ? matchesPreset(formPresetFields(form), previous, settings)
-      : !form.title.trim() && !form.description.trim()
-    const next = settings.taskPresets.find((p) => p.id === id)
-    if (!next) {
-      // Back to None: clear only what the previous preset put there.
-      if (previous && untouched)
-        setForm(toForm(null, { ...settings, defaultRepoPath: form.repoPath }))
-      setAppliedPresetId('')
-      return
-    }
-    const typed = (form.title.trim() || form.description.trim()) && !untouched
-    if (typed && !window.confirm("Replace what you've typed with this preset?")) return
-    setForm((current) => withPreset(current, next, settings))
-    setAppliedPresetId(next.id)
+    const choice = choosePreset(form, appliedPresetId, id, settings)
+    if (choice.confirm && !window.confirm("Replace what you've typed with this preset?")) return
+    if (choice.form) setForm(choice.form)
+    setAppliedPresetId(choice.presetId)
   }
 
   async function savePreset(): Promise<void> {
-    const name = (presetName ?? '').trim()
-    if (!name) return
-    const existing = settings.taskPresets.find(
-      (p) => p.name.trim().toLowerCase() === name.toLowerCase()
-    )
-    if (existing && !window.confirm(`Replace the existing "${existing.name}" preset?`)) return
-    if (!existing && !canAddPreset(settings.taskPresets)) {
+    const plan = savePresetPlan(settings.taskPresets, presetName ?? '', form)
+    if (plan.kind === 'empty') return
+    if (plan.kind === 'full') {
       window.alert('This workspace already has the maximum number of presets.')
       return
     }
-    const made = presetFromFields(
-      existing?.id ?? newPresetId(settings.taskPresets, name),
-      name,
-      formPresetFields(form)
-    )
-    await onSavePresets(
-      existing
-        ? settings.taskPresets.map((p) => (p.id === existing.id ? made : p))
-        : [...settings.taskPresets, made]
-    )
-    setAppliedPresetId(made.id)
+    if (plan.replaces && !window.confirm(`Replace the existing "${plan.replaces.name}" preset?`))
+      return
+    await onSavePresets(plan.presets)
+    setAppliedPresetId(plan.presetId)
     setPresetName(null)
   }
 
-  const routedName = resolveTemplateFor(settings, {
-    status: form.status,
-    readiness: form.readiness
-  }).name
-  const templateName = form.promptTemplateId
-    ? (settings.promptTemplates.find((template) => template.id === form.promptTemplateId)?.name ??
-      routedName)
-    : routedName
-
+  const { routed: routedName, effective: templateName } = templateNames(settings, form)
   const lookup = indexTasks(allTasks)
-  const missingBlockers = danglingBlockers({ blockedBy: form.blockedBy }, lookup)
-  const existingCycle = task ? findCycle(task.id, form.blockedBy, lookup) : null
-  const blockerChoices = allTasks
-    .filter(
-      (other) =>
-        other.id !== task?.id &&
-        !other.archivedAt &&
-        other.status !== 'done' &&
-        !form.blockedBy.includes(other.id)
-    )
-    .map((other) => ({
-      id: other.id,
-      title: other.title,
-      cycle: task ? findCycle(task.id, [other.id], lookup) !== null : false
-    }))
-
+  const {
+    missing: missingBlockers,
+    cycle: existingCycle,
+    choices: blockerChoices
+  } = blockerState(task?.id, form.blockedBy, allTasks)
   const repoFolder = fileName(form.repoPath.trim())
-
-  const payload = {
-    title: form.title.trim(),
-    status: form.status,
-    priority: form.priority,
-    readiness: form.readiness,
-    project: form.project.trim() || repoFolder || undefined,
-    tags: form.tags,
-    repoPath: form.repoPath.trim() || undefined,
-    prUrl: form.prUrl.trim() || undefined,
-    useWorktree: form.useWorktree,
-    baseBranch: form.baseBranch || undefined,
-    orchestrate: form.orchestrate,
-    blockedBy: form.blockedBy,
-    contextFiles: form.contextFiles,
-    promptTemplateId: form.promptTemplateId || undefined,
-    provider: form.provider,
-    description: form.description
-  }
+  const payload = taskPayload(form)
 
   async function save(): Promise<Task | null> {
     if (!payload.title) {
