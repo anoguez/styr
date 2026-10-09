@@ -108,7 +108,8 @@ renderer, preload, IPC layer and MCP server all share them.
   by `setPrimaryModifier` in the renderer; show keys with `formatAccelerator`/`shortcutHint`.
 - `out/main/**` is in `asarUnpack`. The MCP server is launched by plain `node`, which cannot read
   inside an asar archive, so `app:mcpCommand` resolves it under `app.asar.unpacked` when packaged.
-  Anything else that must be run by a non-Electron process needs the same treatment.
+  Anything else that must be run by a non-Electron process needs the same treatment. An AppImage
+  mounts itself only while running, so there `mcpEntry.ts` copies `out/main` to `~/.styr/mcp-server`.
 - Anything that builds a shell command from a path must run it through `shellQuote`.
   `app:mcpCommand` is copy-pasted by the user into a terminal, and a path with a space (an
   install location, a home folder) silently splits into two arguments without it.

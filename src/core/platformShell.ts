@@ -34,15 +34,17 @@ export interface TerminalShell {
 }
 
 /**
- * The shell a terminal opens when Settings names none: `$SHELL`, else zsh, outside Windows. On
- * Windows, Git Bash first — Claude Code runs its hooks and its own commands
- * through it — then PowerShell 7, and Windows PowerShell only when neither is installed. `$SHELL` is
- * ignored on Windows: set by an MSYS shell, it is a path like `/usr/bin/bash` only that shell knows.
+ * The shell a terminal opens when Settings names none: `$SHELL`, else zsh on macOS and bash on
+ * Linux. On Windows, Git Bash first — Claude Code runs its hooks and its own commands through it —
+ * then PowerShell 7, and Windows PowerShell only when neither is installed. `$SHELL` is ignored on
+ * Windows: set by an MSYS shell, it is a path like `/usr/bin/bash` only that shell knows.
  */
 export function defaultShell(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform
 ): string {
+  // Most Linux systems (and WSL distros) ship bash, not zsh.
+  if (platform === 'linux') return env.SHELL ?? '/bin/bash'
   if (platform !== 'win32') return env.SHELL ?? '/bin/zsh'
   return findGitBash(env) ?? findPwsh(env) ?? 'powershell.exe'
 }

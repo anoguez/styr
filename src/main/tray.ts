@@ -1,4 +1,5 @@
 import { Menu, Notification, Tray, app, nativeImage } from 'electron'
+import { linuxIconPath } from './appIcon.js'
 import {
   AGENT_STATE_LABELS,
   agentKey,
@@ -86,6 +87,10 @@ export function createTray(next: TrayHandlers): void {
       .then((image) => tray?.setImage(image))
       .catch(() => undefined)
     tray.on('click', () => handlers?.onShowWindow())
+  } else if (process.platform === 'linux') {
+    // Same reason as Windows: a black template glyph disappears on a dark panel. Linux trays show
+    // the menu on click themselves, so no click handler.
+    tray.setImage(nativeImage.createFromPath(linuxIconPath()).resize({ width: 22, height: 22 }))
   }
 }
 

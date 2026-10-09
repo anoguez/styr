@@ -54,6 +54,40 @@ win:
   icon: resources/icon.png
   # Unsigned for now: Windows shows a SmartScreen prompt on first run. No signing secrets are needed,
   # and electron-updater skips publisher verification for an unsigned app.
+linux:
+  # The .deb is the easy install on Ubuntu, including under WSL2 (sudo apt install ./Styr…deb). The
+  # AppImage is what electron-updater updates in place; latest-linux.yml is its feed. An AppImage
+  # needs FUSE 2 (libfuse2t64 on Ubuntu 24.04), or --appimage-extract-and-run.
+  target:
+    - target: AppImage
+      arch: x64
+    - target: deb
+      arch: x64
+  icon: resources/icon.png
+  category: Development
+  executableName: styr
+  synopsis: Kanban board that dispatches AI coding agents
+  maintainer: Anderson Noguez <2653291+anoguez@users.noreply.github.com>
+  artifactName: Styr-${version}-${arch}.${ext}
+  # Neither the window nor the tray gets an icon from the executable on Linux (see appIcon.ts).
+  extraResources:
+    - from: resources/icon.png
+      to: icon.png
+deb:
+  # Electron's runtime libraries; WSL2 distros in particular often lack libnss3 and libasound2.
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libasound2
+    # GPU buffer management Chromium loads at startup; a minimal or WSL distro may not have Mesa's.
+    - libgbm1
 nsis:
   # A per-user install needs no administrator rights, so updates install without a UAC prompt.
   oneClick: false

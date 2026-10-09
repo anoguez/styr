@@ -20,14 +20,24 @@ function cliCopy(status: CliStatus | null): {
         title: 'GitHub CLI not found',
         detail:
           'Styr talks to GitHub through the gh command, so it keeps no token of its own. Install it, then check again.',
-        command: PLATFORM === 'win32' ? 'winget install --id GitHub.cli' : 'brew install gh'
+        command:
+          PLATFORM === 'win32'
+            ? 'winget install --id GitHub.cli'
+            : PLATFORM === 'linux'
+              ? 'sudo apt install gh'
+              : 'brew install gh'
       }
     case 'outdated':
       return {
         tone: 'warn',
         title: `gh ${status.version} is too old`,
         detail: `Version ${status.minimum} or newer is needed.`,
-        command: PLATFORM === 'win32' ? 'winget upgrade --id GitHub.cli' : 'brew upgrade gh'
+        command:
+          PLATFORM === 'win32'
+            ? 'winget upgrade --id GitHub.cli'
+            : PLATFORM === 'linux'
+              ? 'sudo apt install --only-upgrade gh'
+              : 'brew upgrade gh'
       }
     case 'unauthenticated':
       return {

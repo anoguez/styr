@@ -11,6 +11,11 @@ describe('defaultShell', () => {
     expect(defaultShell({}, 'darwin')).toBe('/bin/zsh')
   })
 
+  it('keeps $SHELL on Linux and falls back to bash, which every distro has', () => {
+    expect(defaultShell({ SHELL: '/usr/bin/zsh' }, 'linux')).toBe('/usr/bin/zsh')
+    expect(defaultShell({}, 'linux')).toBe('/bin/bash')
+  })
+
   it('ignores an MSYS $SHELL on Windows', () => {
     expect(defaultShell({ SHELL: '/usr/bin/bash', Path: '' }, 'win32')).not.toBe('/usr/bin/bash')
   })

@@ -11,13 +11,15 @@ import { promisify } from 'node:util'
 const MAC = process.platform === 'darwin'
 const BROWSERS = MAC
   ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
-  : [
-      join(process.env.ProgramFiles ?? '', 'Google/Chrome/Application/chrome.exe'),
-      join(process.env['ProgramFiles(x86)'] ?? '', 'Google/Chrome/Application/chrome.exe'),
-      join(process.env.LOCALAPPDATA ?? '', 'Google/Chrome/Application/chrome.exe'),
-      join(process.env['ProgramFiles(x86)'] ?? '', 'Microsoft/Edge/Application/msedge.exe'),
-      join(process.env.ProgramFiles ?? '', 'Microsoft/Edge/Application/msedge.exe')
-    ]
+  : process.platform === 'linux'
+    ? ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']
+    : [
+        join(process.env.ProgramFiles ?? '', 'Google/Chrome/Application/chrome.exe'),
+        join(process.env['ProgramFiles(x86)'] ?? '', 'Google/Chrome/Application/chrome.exe'),
+        join(process.env.LOCALAPPDATA ?? '', 'Google/Chrome/Application/chrome.exe'),
+        join(process.env['ProgramFiles(x86)'] ?? '', 'Microsoft/Edge/Application/msedge.exe'),
+        join(process.env.ProgramFiles ?? '', 'Microsoft/Edge/Application/msedge.exe')
+      ]
 const CHROME = BROWSERS.find((path) => existsSync(path))
 const SOURCE = 'resources/icon.svg'
 const OUTPUT = 'resources/icon.icns'
