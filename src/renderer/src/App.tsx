@@ -20,6 +20,7 @@ import {
   type OrchestrationSummary,
   type ShortcutCommand,
   type Task,
+  type TaskPreset,
   type ThemeSettings
 } from '@core/types.js'
 import { AgentsSidebar, sortAgentRows, type AgentRow } from './components/AgentsSidebar.js'
@@ -282,10 +283,13 @@ export default function App(): ReactNode {
 
   /** ⌘↵ in Quick add: an agent splits the request into tasks; the throwaway task is archived after. */
   const planTasks = useCallback(
-    async (request: string): Promise<void> => {
+    async (request: string, preset?: TaskPreset): Promise<void> => {
       if (!settings) throw new Error('Settings have not loaded yet')
       const task = await window.api.tasks.create(
-        planDraft({ title: planTitle(request), description: planningPrompt(request) }, settings)
+        planDraft(
+          { title: planTitle(request), description: planningPrompt(request, preset) },
+          settings
+        )
       )
       await launchAgent(task.id)
     },
