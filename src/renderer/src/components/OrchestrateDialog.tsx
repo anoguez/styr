@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   ORCHESTRATION_LANES,
   ORCHESTRATION_LANE_LABELS,
@@ -10,17 +10,21 @@ import { Button, Card, Modal, SwitchRow } from './ui.js'
 export function OrchestrateDialog({
   summary,
   auto,
-  onAutoChange,
   onConfirm,
   onClose
 }: {
   summary: OrchestrationSummary
   auto: AutoDispatchState
-  onAutoChange: (on: boolean) => void
-  onConfirm: () => void
+  /** Starts the listed tasks (if any) and applies the Auto-run choice made in the dialog. */
+  onConfirm: (autoOn: boolean) => void
   onClose: () => void
 }): ReactNode {
+  // The switch is a draft: Auto-run changes only when the dialog is confirmed, never on toggle.
+  const [autoOn, setAutoOn] = useState(auto.on)
   const count = summary.dispatch.length
+  const autoChanged = autoOn !== auto.on
+  const canConfirm = count > 0 || autoChanged
+  const confirm = (): void => onConfirm(autoOn)
   const running = ORCHESTRATION_LANES.reduce((sum, lane) => sum + summary.occupied[lane], 0)
   const notes = [
     summary.idleSessions > 0
@@ -42,12 +46,13 @@ export function OrchestrateDialog({
           : 'Nothing is ready to start right now.'
       }
       onClose={onClose}
-      onSubmit={count > 0 ? onConfirm : onClose}
+      onSubmit={canConfirm ? confirm : onClose}
       footer={
         <>
-          <Button onClick={onClose}>{count > 0 ? 'Cancel' : 'Close'}</Button>
-          <Button variant="primary" onClick={onConfirm} disabled={count === 0}>
-            Start {count} <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↵</kbd>
+          <Button onClick={onClose}>{canConfirm ? 'Cancel' : 'Close'}</Button>
+          <Button variant="primary" onClick={confirm} disabled={!canConfirm}>
+            {count > 0 ? `Start ${count}` : 'Apply'}{' '}
+            <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↵</kbd>
           </Button>
         </>
       }
@@ -55,8 +60,8 @@ export function OrchestrateDialog({
       <div className="flex flex-col gap-4">
         <Card>
           <SwitchRow
-            checked={auto.on}
-            onChange={onAutoChange}
+            checked={autoOn}
+            onChange={setAutoOn}
             label="Auto-run"
             hint="Start eligible tasks automatically as agents finish and new tasks become ready, while Styr is open. Turning it off starts nothing new; agents already running finish."
           />
@@ -68,7 +73,7 @@ export function OrchestrateDialog({
               : 'Paused: three launches in a row failed.'}
           </p>
         ) : null}
-        {!auto.on && running > 0 ? (
+        {!autoOn && running > 0 ? (
           <p className="text-[11.5px] text-faint">
             {running} dispatched task{running === 1 ? '' : 's'} still running — they will finish; no
             new ones start.

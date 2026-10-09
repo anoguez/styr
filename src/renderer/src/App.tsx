@@ -365,6 +365,17 @@ export default function App(): ReactNode {
   const isDispatching = dispatching.size > 0
 
   const autoDispatch = useAutoDispatch(activeWorkspaceId)
+  const { state: autoDispatchState, setOn: setAutoDispatch } = autoDispatch
+  // Start the listed tasks before switching Auto-run on, so its first pass does not race them.
+  const confirmOrchestrate = useCallback(
+    async (summary: OrchestrationSummary, autoOn: boolean) => {
+      setConfirmingOrchestrate(false)
+      if (summary.dispatch.length > 0)
+        await runOrchestrate(summary.dispatch.map((entry) => entry.taskId))
+      if (autoOn !== autoDispatchState.on) setAutoDispatch(autoOn)
+    },
+    [runOrchestrate, autoDispatchState.on, setAutoDispatch]
+  )
   useEffect(() => window.api.orchestrate.onAutoStarted(adoptSession), [adoptSession])
   const orchestrateTitle = useMemo(() => orchestrateHint(orchestration), [orchestration])
 
@@ -1075,11 +1086,8 @@ export default function App(): ReactNode {
             <OrchestrateDialog
               summary={orchestration}
               auto={autoDispatch.state}
-              onAutoChange={autoDispatch.setOn}
               onClose={() => setConfirmingOrchestrate(false)}
-              onConfirm={() =>
-                void runOrchestrate(orchestration.dispatch.map((entry) => entry.taskId))
-              }
+              onConfirm={(autoOn) => void confirmOrchestrate(orchestration, autoOn)}
             />
           ) : null}
 

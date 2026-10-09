@@ -204,6 +204,8 @@ wired in `ipc.ts`); the rules are pure in `core/autoDispatch.ts`.
 - **Breaker.** `AUTO_LAUNCH_LIMIT` per rolling hour per workspace, and `AUTO_FAILURE_LIMIT`
   consecutive failed launches, switch Auto-run off with a notification.
 - **Startup grace.** 30s after launch before the first pass; an explicit toggle skips it.
+- The Dispatch dialog's Auto-run switch is a draft: it is applied on confirm (after the listed tasks
+  start, so the first pass does not race them), and Cancel discards it.
 - The flag is switched only by `orchestrate:autoSet`; `persistSettings` keeps the on-disk value so an
   open Settings draft cannot undo a Stop, and a new workspace's seed copy starts with it off.
 - Auto-launched sessions reach the renderer through `orchestrate:autoStarted` (it adopts them like a
