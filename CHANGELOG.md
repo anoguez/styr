@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/anoguez/styr/compare/v0.22.2...v0.23.0) (2026-10-09)
+
+
+### Features
+
+* show what other workspaces need from you beside the workspace switcher ([#107](https://github.com/anoguez/styr/issues/107)) ([e58a22b](https://github.com/anoguez/styr/commit/e58a22b6ed44828fc8e94a3a640113cc996d01bb))
+
 ## [0.22.2](https://github.com/anoguez/styr/compare/v0.22.1...v0.22.2) (2026-10-09)
 
 

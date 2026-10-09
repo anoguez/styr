@@ -1,6 +1,6 @@
 {
   "name": "styr",
-  "version": "0.22.2",
+  "version": "0.23.0",
   "description": "An agentic IDE: a kanban board that dispatches AI coding agents into embedded terminals, with an MCP server so agents can drive the board",
   "main": "./out/main/index.mjs",
   "author": "Anderson Noguez",
