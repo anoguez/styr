@@ -21,6 +21,12 @@ export interface TerminalShell {
    * the PATH matches what a launch in the terminal will see.
    */
   commandArgs(line: string): string[]
+  /**
+   * Arguments that run `line` the way a terminal tab would, with the interactive profile too
+   * (`~/.zshrc`, where installers such as Claude Code's put their PATH). Its stdout may carry what
+   * that profile prints, so use it only to ask whether a command starts, never to parse output.
+   */
+  terminalCommandArgs(line: string): string[]
   /** Extra environment for a terminal running it. */
   environment: Record<string, string>
   /** Why agents cannot be launched from it, in words; undefined when they can. */
@@ -90,20 +96,30 @@ export function resolveShell(
         syntax,
         interactiveArgs: ['-l'],
         commandArgs: (line) => ['-l', '-c', line],
+        terminalCommandArgs: (line) => ['-i', '-l', '-c', line],
         // Git Bash's login profile changes to $HOME unless CHERE_INVOKING is set, which would drop
         // a task's worktree as the working directory.
         environment: windows ? { CHERE_INVOKING: '1' } : {}
       }
-    case 'pwsh':
+    case 'pwsh': {
+      // -Command loads the same profile an interactive session does, so one form serves both.
+      const run = (line: string): string[] => [
+        ...(windows ? [] : ['-Login']),
+        '-NoLogo',
+        '-Command',
+        line
+      ]
       return {
         path,
         label: 'PowerShell 7',
         syntax,
         // -Login is how pwsh reads a login profile on macOS and Linux; Windows has no such notion.
         interactiveArgs: windows ? ['-NoLogo'] : ['-Login', '-NoLogo'],
-        commandArgs: (line) => [...(windows ? [] : ['-Login']), '-NoLogo', '-Command', line],
+        commandArgs: run,
+        terminalCommandArgs: run,
         environment: {}
       }
+    }
     case 'windows-powershell':
       return {
         path,
@@ -111,6 +127,7 @@ export function resolveShell(
         syntax,
         interactiveArgs: ['-NoLogo'],
         commandArgs: (line) => ['-NoLogo', '-Command', line],
+        terminalCommandArgs: (line) => ['-NoLogo', '-Command', line],
         environment: {},
         unsupported:
           'Windows PowerShell 5.1 passes arguments that contain quotes to programs incorrectly, ' +
@@ -123,6 +140,7 @@ export function resolveShell(
         syntax,
         interactiveArgs: [],
         commandArgs: (line) => ['/d', '/s', '/c', line],
+        terminalCommandArgs: (line) => ['/d', '/s', '/c', line],
         environment: {},
         unsupported: `Command Prompt cannot pass a multi-line prompt to an agent. ${SUGGESTION}`
       }

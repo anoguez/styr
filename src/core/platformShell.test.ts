@@ -24,6 +24,8 @@ describe('resolveShell on macOS and Linux', () => {
       expect(shell.syntax.dialect).toBe('posix')
       expect(shell.interactiveArgs).toEqual(['-l'])
       expect(shell.commandArgs('claude --version')).toEqual(['-l', '-c', 'claude --version'])
+      // The CLI check also reads ~/.zshrc, where installers put their PATH, as a terminal tab does.
+      expect(shell.terminalCommandArgs('x')).toEqual(['-i', '-l', '-c', 'x'])
       expect(shell.environment).toEqual({})
       expect(shell.unsupported).toBeUndefined()
     }

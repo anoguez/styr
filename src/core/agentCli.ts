@@ -1,4 +1,5 @@
 import type { TerminalShell } from './platformShell.js'
+import { providerById } from './providers/index.js'
 import { COMMAND_NOT_FOUND } from './shell.js'
 import type { AgentCliReport, AgentCliStatus } from './types.js'
 
@@ -30,14 +31,9 @@ export interface AgentCliTarget {
   platform: NodeJS.Platform
 }
 
-const LABELS: Record<Provider, string> = { claude: 'Claude Code', codex: 'Codex' }
-
 /** The official install command for `provider` on `platform`, as the user would paste it. */
 export function installCommandFor(provider: Provider, platform: string): string {
-  if (provider === 'codex') return 'npm install -g @openai/codex'
-  return platform === 'win32'
-    ? 'irm https://claude.ai/install.ps1 | iex'
-    : 'curl -fsSL https://claude.ai/install.sh | bash'
+  return providerById(provider).installCommand(platform)
 }
 
 function firstLine(text: string): string {
@@ -45,7 +41,7 @@ function firstLine(text: string): string {
 }
 
 function problemFor(target: AgentCliTarget, status: AgentCliStatus): string {
-  const label = LABELS[target.provider]
+  const label = providerById(target.provider).label
   const shell = target.shell.label
   switch (status.state) {
     case 'ready':
@@ -69,7 +65,7 @@ function problemFor(target: AgentCliTarget, status: AgentCliStatus): string {
 
 /**
  * Checks that `target.command` starts from `target.shell` by asking it for its version, through the
- * same shell, with the same profile, that a launch is typed into — so the PATH is the one the agent
+ * same shell, with the same profiles, that a launch is typed into — so the PATH is the one the agent
  * will see. The probe is written in the shell's own syntax and exits 127 when the command does not
  * exist, whatever the shell.
  */
@@ -93,7 +89,7 @@ export async function checkAgentCli(
 
   if (shell.unsupported) return report({ state: 'unsupported_shell' })
   const line = shell.syntax.exitIfNotFound(`${shell.syntax.invoke(target.command)} --version`)
-  const result = await run(shell.path, shell.commandArgs(line), shell.environment)
+  const result = await run(shell.path, shell.terminalCommandArgs(line), shell.environment)
   if (result.code === 0) {
     const version = /\d+\.\d+\.\d+[\w.-]*/.exec(result.stdout)?.[0] ?? firstLine(result.stdout)
     return report({ state: 'ready', version: version || 'unknown version' })
@@ -104,4 +100,16 @@ export async function checkAgentCli(
       ? firstLine(result.stderr) || `the shell ${shell.path} could not be started`
       : firstLine(result.stderr) || firstLine(result.stdout) || `exit code ${result.code}`
   return report({ state: 'failed', detail })
+}
+
+/**
+ * Why a launch is refused, or undefined when it may go ahead. Only a CLI the shell does not find, or
+ * a shell that cannot carry a launch, is refused. Any other failure of `--version` (a timeout, a
+ * noisy profile, an error from the CLI) lets the launch through, so the terminal shows what really
+ * happens instead of an uncertain check blocking every agent.
+ */
+export function launchRefusal(report: AgentCliReport): string | undefined {
+  const { state } = report.status
+  if (state === 'ready' || state === 'failed') return undefined
+  return report.installCommand ? `${report.problem}\n\n${report.installCommand}` : report.problem
 }

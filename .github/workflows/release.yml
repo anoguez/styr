@@ -215,13 +215,14 @@ jobs:
         with:
           name: styr-windows
           path: |
-            dist/*.exe
+            dist/Styr-Setup-*.exe
             dist/latest.yml
 
       - name: Upload to release
         if: ${{ env.TAG != '' }}
-        # The installer, its blockmap and latest.yml are the Windows update feed.
-        run: gh release upload "$TAG" dist/*.exe dist/*.exe.blockmap dist/latest.yml --clobber
+        # The installer, its blockmap and latest.yml are the Windows update feed. Named, not `*.exe`:
+        # electron-builder can leave its intermediate uninstaller exe in dist/.
+        run: gh release upload "$TAG" dist/Styr-Setup-*.exe dist/Styr-Setup-*.exe.blockmap dist/latest.yml --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

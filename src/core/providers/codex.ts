@@ -72,6 +72,8 @@ export const codexProvider: AgentProvider = {
     const file = codexTranscript(id, root)
     return file ? new Date(statSync(file).mtimeMs).toISOString() : undefined
   },
+  command: (settings) => settings.codexCommand,
+  installCommand: () => 'npm install -g @openai/codex',
   mcpInstallCommand: (entry, syntax) =>
     `codex mcp add styr --env STYR_MCP_AUTHOR=codex -- node ${syntax.quote(entry)}`,
   sessionEnvKeys: ['CODEX_THREAD_ID', 'CODEX_SESSION_ID']

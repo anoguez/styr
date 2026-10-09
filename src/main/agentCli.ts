@@ -1,6 +1,12 @@
 import { execFile } from 'node:child_process'
-import { checkAgentCli, type AgentCliTarget, type ShellRunner } from '@core/agentCli.js'
+import {
+  checkAgentCli,
+  launchRefusal,
+  type AgentCliTarget,
+  type ShellRunner
+} from '@core/agentCli.js'
 import { resolveShell } from '@core/platformShell.js'
+import { providerById } from '@core/providers/index.js'
 import type { AgentCliReport, Settings } from '@core/types.js'
 
 const CHECK_TIMEOUT_MS = 15_000
@@ -56,23 +62,21 @@ export async function agentCliStatus(request: {
   return report
 }
 
-/** Refuses (throws) when the provider's CLI cannot start from the terminal's shell. */
+/** Refuses (throws) when a launch of `provider` cannot work from the terminal's shell. */
 export async function ensureAgentCli(
   provider: AgentCliReport['provider'],
   settings: Settings
 ): Promise<void> {
   const target: AgentCliTarget = {
     provider,
-    command: provider === 'claude' ? settings.claudeCommand : settings.codexCommand,
+    command: providerById(provider).command(settings),
     shell: resolveShell(settings.shell),
     platform: process.platform
   }
   if (verified.has(keyOf(target))) return
   const report = await checkAgentCli(target, runShell)
-  if (report.status.state !== 'ready') {
-    throw new Error(
-      report.installCommand ? `${report.problem}\n\n${report.installCommand}` : report.problem
-    )
-  }
-  verified.set(keyOf(target), report)
+  if (report.status.state === 'ready') return void verified.set(keyOf(target), report)
+  const refusal = launchRefusal(report)
+  if (refusal) throw new Error(refusal)
+  console.warn(`[agent-cli] ${report.problem} Launching anyway.`)
 }

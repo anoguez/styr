@@ -94,6 +94,12 @@ export const claudeProvider: AgentProvider = {
     return file ? new Date(statSync(file).mtimeMs).toISOString() : undefined
   },
 
+  command: (settings) => settings.claudeCommand,
+  installCommand: (platform) =>
+    platform === 'win32'
+      ? 'irm https://claude.ai/install.ps1 | iex'
+      : 'curl -fsSL https://claude.ai/install.sh | bash',
+
   mcpInstallCommand: (serverEntry, syntax) =>
     `claude mcp add styr --scope user -- node ${syntax.quote(serverEntry)}`,
 

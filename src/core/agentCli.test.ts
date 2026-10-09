@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   checkAgentCli,
   installCommandFor,
+  launchRefusal,
   type AgentCliTarget,
   type ShellRun,
   type ShellRunner
@@ -37,10 +38,10 @@ function runner(result: ShellRun): ShellRunner & { calls: Call[] } {
 }
 
 describe('checkAgentCli', () => {
-  it('asks the login shell for the version on macOS, as the terminal would run it', async () => {
+  it('asks an interactive login shell for the version on macOS, as the terminal would run it', async () => {
     const run = runner({ code: 0, stdout: '2.1.294 (Claude Code)\n', stderr: '' })
     const report = await checkAgentCli(mac, run)
-    expect(run.calls).toEqual([['/bin/zsh', ['-l', '-c', 'claude --version'], {}]])
+    expect(run.calls).toEqual([['/bin/zsh', ['-i', '-l', '-c', 'claude --version'], {}]])
     expect(report.status).toEqual({ state: 'ready', version: '2.1.294' })
     expect(report.shellLabel).toBe('zsh')
     expect(report.problem).toBe('')
@@ -50,7 +51,7 @@ describe('checkAgentCli', () => {
     const run = runner({ code: 0, stdout: '2.1.294 (Claude Code)', stderr: '' })
     await checkAgentCli(gitBash, run)
     expect(run.calls).toEqual([
-      [GIT_BASH, ['-l', '-c', 'claude --version'], { CHERE_INVOKING: '1' }]
+      [GIT_BASH, ['-i', '-l', '-c', 'claude --version'], { CHERE_INVOKING: '1' }]
     ])
   })
 
@@ -71,7 +72,7 @@ describe('checkAgentCli', () => {
       { ...mac, provider: 'codex', command: 'codex --profile work' },
       run
     )
-    expect(run.calls[0]![1]).toEqual(['-l', '-c', 'codex --profile work --version'])
+    expect(run.calls[0]![1]).toEqual(['-i', '-l', '-c', 'codex --profile work --version'])
     expect(report.status).toEqual({ state: 'ready', version: '0.160.0' })
   })
 
@@ -125,5 +126,24 @@ describe('installCommandFor', () => {
     expect(installCommandFor('claude', 'darwin')).toContain('install.sh')
     expect(installCommandFor('claude', 'win32')).toContain('install.ps1')
     expect(installCommandFor('codex', 'win32')).toBe('npm install -g @openai/codex')
+  })
+})
+
+describe('launchRefusal', () => {
+  it('refuses a missing CLI with its install command, and an unsupported shell', async () => {
+    const missing = await checkAgentCli(mac, runner({ code: 127, stdout: '', stderr: '' }))
+    expect(launchRefusal(missing)).toContain('curl -fsSL https://claude.ai/install.sh | bash')
+    const ps51 = { ...gitBash, shell: resolveShell('powershell.exe', 'win32') }
+    expect(
+      launchRefusal(await checkAgentCli(ps51, runner({ code: 0, stdout: '', stderr: '' })))
+    ).toContain('Windows PowerShell')
+  })
+
+  it('lets a launch through when the check itself failed, not the CLI lookup', async () => {
+    const ready = await checkAgentCli(mac, runner({ code: 0, stdout: '2.1.0', stderr: '' }))
+    expect(launchRefusal(ready)).toBeUndefined()
+    const timedOut = await checkAgentCli(mac, runner({ code: null, stdout: '', stderr: 'timeout' }))
+    expect(timedOut.status.state).toBe('failed')
+    expect(launchRefusal(timedOut)).toBeUndefined()
   })
 })

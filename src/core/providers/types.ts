@@ -37,6 +37,10 @@ export interface AgentProvider {
   sessionExists(sessionId: string, homeRoot?: string): boolean
   /** When a past conversation was last written, for dating a chat we only learned about later. */
   sessionTime(sessionId: string, homeRoot?: string): string | undefined
+  /** The command line that starts this CLI, as configured in Settings → Integrations. */
+  command(settings: Settings): string
+  /** The official command that installs this CLI on `platform`, as the user would paste it. */
+  installCommand(platform: string): string
   /** The command a user runs once to give this CLI the board's MCP server. */
   mcpInstallCommand(serverEntry: string, syntax: ShellSyntax): string
   /**
