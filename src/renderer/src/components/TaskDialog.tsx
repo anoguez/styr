@@ -648,7 +648,7 @@ export function TaskDialog({
                   <textarea
                     aria-label="Description (markdown)"
                     value={form.description}
-                    placeholder="Paste a wayfinder spec here, or write the brief yourself."
+                    placeholder="Describe the task: what to do, and how you will know it is done."
                     onChange={(event) => patch({ description: event.target.value })}
                     className="min-h-60 w-full flex-1 resize-none rounded-[10px] border border-edge bg-chrome px-3.5 py-3 font-mono text-[12px] leading-[1.65] text-ink outline-none placeholder:text-faint focus:border-accent"
                   />
