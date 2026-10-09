@@ -121,6 +121,7 @@ function TerminalTab({
 export function TerminalPanel({
   sessions,
   agents,
+  shownAgents,
   activeId,
   expanded,
   theme,
@@ -141,6 +142,8 @@ export function TerminalPanel({
 }: {
   sessions: TerminalSessionInfo[]
   agents: Map<string, AgentStatus>
+  /** `agents` as the views label them (`shownAgents`); `agents` gates the PR and review buttons. */
+  shownAgents: Map<string, AgentStatus>
   activeId: string | null
   expanded: boolean
   theme: ThemeSettings
@@ -216,7 +219,7 @@ export function TerminalPanel({
                   runtime={runtimes.get(session.id)}
                   agent={
                     session.taskId && session.workspaceId === workspaces.activeId
-                      ? agents.get(session.taskId)
+                      ? shownAgents.get(session.taskId)
                       : undefined
                   }
                   active={session.id === activeId}
@@ -307,6 +310,11 @@ export function TerminalPanel({
                 agentStatus={
                   session.taskId && session.workspaceId === workspaces.activeId
                     ? agents.get(session.taskId)
+                    : undefined
+                }
+                shownState={
+                  session.taskId && session.workspaceId === workspaces.activeId
+                    ? shownAgents.get(session.taskId)?.state
                     : undefined
                 }
                 onFullscreenChange={setSessionFullscreen}
