@@ -171,11 +171,26 @@ latches on the first drag so a user's chosen height is never reset by a later to
 
 ## App shell
 
-`App` keeps which view, sidebar and dialogs are showing in one reducer, `appShellReducer`
-(`lib/appShell.ts`). Esc, a workspace switch and every shortcut command are actions on it, so the
-rules — Esc closes only the dialogs without Esc handling of their own, the palette key toggles its
-mode, stopping Auto-run is confirmed — are tested without rendering `App`. A new dialog adds a
-field and its actions there rather than another `useState` in `App`.
+`App.tsx` only wires hooks to views. Keep it that way: behaviour goes in a hook or `lib/`, markup in
+a component.
+
+- `useAppShell` — which view, sidebar and dialogs are showing: `appShellReducer` (`lib/appShell.ts`)
+  plus the remembered view and the reset on workspace switch. Esc, a workspace switch and every
+  shortcut command are actions on it, so its rules are tested without rendering `App`. A new dialog
+  adds a field and its actions there, not another `useState` in `App`.
+- `useBoardView` — the sorted board, shown agents, the task lookup and the tab titles/states.
+- `useAgentLauncher` — everything that opens a terminal tab (shells, launches, resumes, Ask review and
+  fork, tasks from terminal output and Quick add plans), and `activateTask`.
+- `useDispatch` — the Dispatch plan, the run in progress, Auto-run and the header button's state.
+- `useCommands` — the keydown chain, `runShortcutCommand` and the palette's entries.
+- `usePendingActivation` — menu bar requests that wait for the board to load.
+
+The title bar is `components/header/`: `AppHeader` lays out three slots and mirrors them off macOS,
+filled with `BrandMark`, `WorkspaceSwitcher`, `SearchBox`, `ViewTabs` and `DispatchButton`.
+
+`TaskDialog` is the same shape: it holds the form and composes `components/task/` (`TaskHeader`, the
+tabs in `TaskTabs`/`BriefTab`, `TaskSidebar` with its field groups, `TaskFooter`). Its rules are in
+`lib/taskForm.ts`. Shared stroke icons are in `components/icons.tsx`.
 
 ## Shortcuts
 

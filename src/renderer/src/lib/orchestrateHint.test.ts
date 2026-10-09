@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OrchestrationSummary } from '@core/types.js'
-import { dispatchButton, orchestrateHint } from './orchestrateHint.js'
+import { dispatchButton, isDispatchLive, orchestrateHint } from './orchestrateHint.js'
 
 const lanes = (n: number): OrchestrationSummary['capacity'] => ({
   spec: n,
@@ -85,5 +85,14 @@ describe('dispatchButton', () => {
     const button = dispatchButton(summary(), { on: false, paused: 'limit' }, false)
     expect(button.mode).toBe('paused')
     expect(button.title).toMatch(/too many tasks/)
+  })
+})
+
+describe('isDispatchLive', () => {
+  it('is live during a manual run and while Auto-run is on', () => {
+    expect(isDispatchLive({ mode: 'dispatching' })).toBe(true)
+    expect(isDispatchLive({ mode: 'auto' })).toBe(true)
+    expect(isDispatchLive({ mode: 'idle' })).toBe(false)
+    expect(isDispatchLive({ mode: 'paused' })).toBe(false)
   })
 })
