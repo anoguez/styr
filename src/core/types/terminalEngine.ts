@@ -39,7 +39,8 @@ export const TERMINAL_ENGINE_CAPABILITIES: Record<TerminalEngineId, TerminalEngi
     bracketedPaste: true
   },
   native: {
-    commandBlocks: false,
+    // Needs a package with command marks (0.2.0 and later); an older one draws no blocks.
+    commandBlocks: true,
     webLinks: false,
     mouseReporting: false,
     scrollbackSelection: false,
@@ -170,9 +171,33 @@ export interface TerminalEngineEnvironment {
   summary: string
 }
 
+/**
+ * A shell command and the buffer lines it covers, whichever engine tracks it. Lines are absolute:
+ * 0 is the oldest line still in the scrollback, so they shift as history is trimmed.
+ */
+export interface TrackedBlock {
+  id: string
+  command: string
+  startedAt: number
+  endedAt?: number
+  exitCode?: number
+  /** Buffer line of the command's own row (the prompt it was typed on). */
+  startLine: number
+  /** Buffer line after the last output row, so output is `startLine + 1 … endLine - 1`. */
+  endLine: number
+  /** Still running: `endLine` follows the cursor. */
+  open: boolean
+}
+
 /** The answer to the renderer's request to show a session with the native engine. */
 export type NativeAttachResult =
-  | { ok: true; attachId: number; frame: EngineFrame; info: NativeEngineInfo }
+  | {
+      ok: true
+      attachId: number
+      frame: EngineFrame
+      blocks: TrackedBlock[]
+      info: NativeEngineInfo
+    }
   | { ok: false; reason: NativeUnavailableReason; detail: string }
 
 /**
@@ -182,7 +207,10 @@ export type NativeAttachResult =
 export interface NativeFrameEvent {
   id: string
   attachId: number
-  frame: EngineFrame
+  /** Absent when only the blocks changed. */
+  frame?: EngineFrame
+  /** The session's command blocks, present when they changed. */
+  blocks?: TrackedBlock[]
 }
 
 /** Sent when a native engine stops for a session; the renderer mounts xterm.js in its place. */

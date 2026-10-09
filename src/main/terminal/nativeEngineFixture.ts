@@ -15,6 +15,8 @@ export class FakeEngine implements NativeTerminalEngine {
   seq = 0
   dirty = true
   responses = ''
+  /** Marked lines by id, numbered like `screenLines()` (the fake keeps no separate history). */
+  readonly marks = new Map<string, number>()
   /** Makes the next call to the named method throw, as a poisoned native engine would. */
   failOn: keyof NativeTerminalEngine | null = null
 
@@ -92,6 +94,25 @@ export class FakeEngine implements NativeTerminalEngine {
 
   dispose(): void {
     this.disposed = true
+  }
+
+  cursorPosition(): { line: number; col: number } {
+    this.check('cursorPosition')
+    const lines = this.screenLines()
+    return { line: lines.length - 1, col: lines.at(-1)!.length }
+  }
+
+  markLine(id: string, offset: number): number | null {
+    this.check('markLine')
+    const line = this.cursorPosition().line + offset
+    if (line < 0) return null
+    this.marks.set(id, line)
+    return line
+  }
+
+  markedLines(): { id: string; line: number }[] {
+    this.check('markedLines')
+    return [...this.marks].map(([id, line]) => ({ id, line }))
   }
 
   private screenLines(): string[] {

@@ -81,6 +81,8 @@ export function TerminalEngineView({
           handle={props.handle}
           onSelection={props.onSelection}
           onFullscreenChange={props.onFullscreenChange}
+          onBlocks={props.onBlocks}
+          onHoverLine={props.onHoverLine}
           onFallback={fallBack}
         />
       ) : engine === 'xterm' ? (

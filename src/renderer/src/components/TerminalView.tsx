@@ -16,12 +16,15 @@ export interface TerminalSelection {
   y: number
 }
 
-/** What the surface may ask of xterm without owning it. */
+/**
+ * What the surface may ask of a terminal engine without owning it. xterm.js answers at once; the
+ * native engine's buffer is in the main process, so it answers with a promise.
+ */
 export interface TerminalHandle {
   /** The whole scrollback and screen as plain text. */
-  text: () => string
+  text: () => string | Promise<string>
   /** Buffer lines `from` (inclusive) to `to` (exclusive) as plain text. */
-  lines: (from: number, to: number) => string
+  lines: (from: number, to: number) => string | Promise<string>
   focus: () => void
 }
 

@@ -23,9 +23,10 @@ import { terminalTheme } from '../lib/palette.js'
 import { clipboardKey, isAppShortcut, multilineSequence } from '../lib/terminalKeys.js'
 import { usesControlAsPrimary } from '@core/shortcuts.js'
 import { ScreenModel } from '../lib/nativeTerminal/screen.js'
+import { BlockFeed, lineAtOffset, nativeBlockLayout } from '../lib/nativeTerminal/blocks.js'
 import { encodeKey, pasteSequence } from '../lib/nativeTerminal/keys.js'
 import { paletteFromTheme, runStyle, type RunPalette } from '../lib/nativeTerminal/style.js'
-import type { TerminalHandle, TerminalSelection } from './TerminalView.js'
+import type { BlockLayout, TerminalHandle, TerminalSelection } from './TerminalView.js'
 
 const LINE_HEIGHT = 1.25
 
@@ -49,6 +50,8 @@ export function NativeTerminalView({
   handle,
   onSelection,
   onFullscreenChange,
+  onBlocks,
+  onHoverLine,
   onFallback
 }: {
   sessionId: string
@@ -59,6 +62,10 @@ export function NativeTerminalView({
   handle?: MutableRefObject<TerminalHandle | null>
   onSelection?: (selection: TerminalSelection | null) => void
   onFullscreenChange?: (fullscreen: boolean) => void
+  /** Where the shell's commands sit in the buffer, as `TerminalView` reports them for xterm.js. */
+  onBlocks?: (layout: BlockLayout) => void
+  /** The buffer line under the pointer, or null when it is outside the terminal. */
+  onHoverLine?: (line: number | null) => void
   onFallback: (reason: NativeUnavailableReason, detail: string) => void
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
@@ -79,6 +86,10 @@ export function NativeTerminalView({
   onFullscreenRef.current = onFullscreenChange
   const onFallbackRef = useRef(onFallback)
   onFallbackRef.current = onFallback
+  const onBlocksRef = useRef(onBlocks)
+  onBlocksRef.current = onBlocks
+  const onHoverRef = useRef(onHoverLine)
+  onHoverRef.current = onHoverLine
 
   const write = (data: string): void => {
     const screen = model.current?.current
@@ -89,6 +100,7 @@ export function NativeTerminalView({
   const fontSizeRef = useRef(theme.terminalFontSize)
   fontSizeRef.current = theme.terminalFontSize
   const pushSizeRef = useRef<(() => void) | null>(null)
+  const renderRef = useRef<(() => void) | null>(null)
 
   // A font change alters the cell, so the grid is recomputed once the new style has applied.
   useEffect(() => {
@@ -106,6 +118,7 @@ export function NativeTerminalView({
     let frameRequest = 0
     let size = { cols: 0, rows: 0 }
     let fullscreen = false
+    const blocks = new BlockFeed()
 
     const render = (): void => {
       if (frameRequest) return
@@ -116,9 +129,13 @@ export function NativeTerminalView({
           fullscreen = state.altScreen
           onFullscreenRef.current?.(fullscreen)
         }
+        if (state) {
+          onBlocksRef.current?.(nativeBlockLayout(state, blocks.blocks, cellRef.current.height))
+        }
         setVersion((version) => version + 1)
       })
     }
+    renderRef.current = render
     const fail = (reason: NativeUnavailableReason, detail: string): void => {
       if (disposed) return
       disposed = true
@@ -149,7 +166,9 @@ export function NativeTerminalView({
       if (event.id !== sessionId) return
       // Before the attach reply the engine's id is unknown; the model holds the frame until then.
       if (attachId !== null && event.attachId !== attachId) return
-      if (screen.push(event.frame)) render()
+      const moved = event.blocks ? blocks.received(event.attachId, event.blocks) : false
+      const changed = event.frame ? screen.push(event.frame) : false
+      if (changed || moved) render()
     })
     const offFailed = window.api.terminal.native.onFailed((failure) => {
       if (failure.id === sessionId) fail(failure.reason, failure.detail)
@@ -164,6 +183,7 @@ export function NativeTerminalView({
         if (disposed) return
         if (!result.ok) return fail(result.reason, result.detail)
         attachId = result.attachId
+        blocks.attached(result.attachId, result.blocks)
         screen.reset(result.frame)
         window.api.terminal.resize(sessionId, size.cols, size.rows)
         render()
@@ -185,9 +205,9 @@ export function NativeTerminalView({
     if (handle) {
       handle.current = {
         focus: () => element.focus(),
-        // The engine's scrollback is in the main process; synchronously only the screen is known.
-        text: () => screen.text(),
-        lines: () => ''
+        // The engine and its scrollback are in the main process.
+        text: () => window.api.terminal.native.text(sessionId),
+        lines: (from, to) => window.api.terminal.native.lines(sessionId, from, to)
       }
     }
 
@@ -199,6 +219,7 @@ export function NativeTerminalView({
       offExit()
       observer.disconnect()
       pushSizeRef.current = null
+      renderRef.current = null
       window.api.terminal.native.detach(sessionId)
       if (handle) handle.current = null
       if (fullscreen) onFullscreenRef.current?.(false)
@@ -206,6 +227,9 @@ export function NativeTerminalView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
+
+  // The blocks are placed by cell height, so a new cell re-reports them without waiting for output.
+  useEffect(() => renderRef.current?.(), [cell])
 
   useEffect(() => {
     if (!active) return
@@ -274,6 +298,18 @@ export function NativeTerminalView({
     window.api.terminal.native.scroll(sessionId, -whole)
   }
 
+  const hovered = useRef<number | null>(null)
+  const hover = (line: number | null): void => {
+    if (line === hovered.current) return
+    hovered.current = line
+    onHoverRef.current?.(line)
+  }
+  const onMouseMove = (event: MouseEvent<HTMLDivElement>): void => {
+    if (!state || !host.current) return
+    const offset = event.clientY - host.current.getBoundingClientRect().top
+    hover(lineAtOffset(state, offset, cell.height))
+  }
+
   const onMouseUp = (event: MouseEvent<HTMLDivElement>): void => {
     const text = selectedText()
     if (!text.trim() || !host.current) {
@@ -326,6 +362,8 @@ export function NativeTerminalView({
       onPaste={onPaste}
       onWheel={onWheel}
       onMouseUp={onMouseUp}
+      onMouseMove={onMouseMove}
+      onMouseLeave={() => hover(null)}
       onFocus={() => focusReport(true)}
       onBlur={() => focusReport(false)}
       onDragOver={onDragOver}

@@ -33,6 +33,10 @@ export interface NativeTerminalEngine {
   lines: (from: number, to: number) => string
   reset: () => void
   dispose: () => void
+  /** Command marks, since package 0.2.0; an engine without them draws no command blocks. */
+  cursorPosition?: () => { line: number; col: number }
+  markLine?: (id: string, offset: number) => number | null
+  markedLines?: () => { id: string; line: number }[]
 }
 
 export interface NativeEngineFactory {

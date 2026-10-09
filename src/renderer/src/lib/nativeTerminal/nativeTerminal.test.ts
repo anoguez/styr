@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { EngineFrame, EngineFrameLine } from '@core/types.js'
+import type { EngineFrame, EngineFrameLine, TrackedBlock } from '@core/types.js'
 import { ScreenModel } from './screen.js'
 import { encodeKey, pasteSequence, type KeyInput } from './keys.js'
 import { colourOf, paletteFromTheme, runStyle } from './style.js'
 import { EngineChoice } from './engineChoice.js'
+import { BlockFeed, lineAtOffset, nativeBlockLayout } from './blocks.js'
 
 function line(row: number, text: string, wrapped = false): EngineFrameLine {
   return { row, wrapped, runs: [{ text, width: text.length, fg: -1, bg: -1, flags: 0 }] }
@@ -256,5 +257,60 @@ describe('EngineChoice', () => {
       selected: 'xterm',
       fallbackReason: 'missing-package'
     })
+  })
+})
+
+describe('native command blocks', () => {
+  const block = (id: string, startLine: number): TrackedBlock => ({
+    id,
+    command: 'ls',
+    startedAt: 1,
+    startLine,
+    endLine: startLine + 2,
+    open: false
+  })
+
+  it('numbers the viewport as xterm.js does, following the scroll position', () => {
+    const live = frame(1, [], { rows: 10, historySize: 40, displayOffset: 0 })
+    expect(nativeBlockLayout(live, [block('a', 45)], 18)).toEqual({
+      blocks: [block('a', 45)],
+      viewportY: 40,
+      rows: 10,
+      cellHeight: 18,
+      top: 0,
+      alternate: false
+    })
+    const scrolled = frame(2, [], { rows: 10, historySize: 40, displayOffset: 15 })
+    expect(nativeBlockLayout(scrolled, [], 18).viewportY).toBe(25)
+    expect(nativeBlockLayout(frame(3, [], { altScreen: true }), [], 18).alternate).toBe(true)
+  })
+
+  it('finds the buffer line under the pointer, and nothing outside the rows', () => {
+    const viewport = frame(1, [], { rows: 10, historySize: 40, displayOffset: 5 })
+    expect(lineAtOffset(viewport, 0, 18)).toBe(35)
+    expect(lineAtOffset(viewport, 18 * 3 + 17, 18)).toBe(38)
+    expect(lineAtOffset(viewport, -1, 18)).toBeNull()
+    expect(lineAtOffset(viewport, 18 * 10, 18)).toBeNull()
+    expect(lineAtOffset(viewport, 10, 0)).toBeNull()
+  })
+
+  it('takes blocks from the attach reply, then from events of the same engine', () => {
+    const feed = new BlockFeed()
+    feed.attached(1, [block('a', 0)])
+    expect(feed.blocks).toEqual([block('a', 0)])
+    expect(feed.received(2, [block('stale', 0)])).toBe(false)
+    expect(feed.received(1, [block('a', 0), block('b', 3)])).toBe(true)
+    expect(feed.blocks.map((b) => b.id)).toEqual(['a', 'b'])
+  })
+
+  it('prefers an event that overtook the attach reply over the reply itself', () => {
+    const feed = new BlockFeed()
+    expect(feed.received(4, [block('newer', 2)])).toBe(false)
+    feed.attached(4, [block('older', 2)])
+    expect(feed.blocks.map((b) => b.id)).toEqual(['newer'])
+    const other = new BlockFeed()
+    other.received(3, [block('previous engine', 2)])
+    other.attached(4, [block('reply', 2)])
+    expect(other.blocks.map((b) => b.id)).toEqual(['reply'])
   })
 })

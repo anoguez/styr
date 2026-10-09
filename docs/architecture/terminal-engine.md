@@ -69,19 +69,40 @@ at 1 MiB (the host splits backlog and bursts at `WRITE_CHUNK` UTF-16 units, neve
 pair), scrollback at `NATIVE_SCROLLBACK` lines, a frame at one viewport, and queued replies at 64 KiB.
 OSC 52 clipboard reads are ignored by the engine. Bracketed paste strips an embedded end marker.
 
+## Command blocks
+
+The native engine draws the same blocks as xterm.js (`ui.md`, "Terminal command blocks"): the
+surface's `TerminalBlocks` overlay, fed the same `BlockLayout`. Only where the lines come from differs.
+
+- `NativeTerminalHost` writes each chunk in pieces split at its `TerminalMark`s, as `writeOutput`
+  does for xterm.js, so the engine's cursor is where the shell was. A `start` mark calls
+  `markLine(id, -1)` (the command's own row); an `end` mark records the block's span from that row to
+  the cursor (plus its row when the output had no final newline).
+- The engine tags the row inside its grid, so the mark follows the row through scrolling, reflow and
+  trimming and disappears with it. The tag carries a per-engine nonce: output cannot forge or move
+  one. A command whose mark is gone is forgotten, which bounds the host's map by the buffer.
+- Blocks travel with frames (`NativeFrameEvent.blocks`, sent only when they change) and with the
+  attach reply, computed from the backlog's marks, so a remount rebuilds them. `BlockFeed` resolves
+  an event overtaking the reply; `nativeBlockLayout` numbers the viewport as xterm.js does
+  (`viewportY = historySize - displayOffset`).
+- `TerminalHandle.text`/`lines` return a promise for the native engine (its buffer is in the main
+  process), so copy and Ask agent read the whole scrollback rather than the visible screen.
+- A finished block's span is fixed when it ends, so a resize that reflows its output can move its
+  end by the rows the reflow added or removed; its start stays exact.
+
 ## Capabilities and known limitations (experimental level)
 
-| Capability                                                                | xterm.js                   | Styr Terminal                                                                 |
-| ------------------------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------- |
-| Command blocks                                                            | yes                        | no — blocks need buffer markers; none are reported                            |
-| Clickable links                                                           | yes                        | no                                                                            |
-| Mouse reporting to programs                                               | yes                        | no — reported in `modes.mouse`, not forwarded                                 |
-| Select/copy beyond screen                                                 | yes                        | no — DOM selection of the visible screen; "Copy all output" copies the screen |
-| Bracketed paste, file drop                                                | yes                        | yes                                                                           |
-| Alternate screen (vim, TUIs)                                              | yes                        | yes — wheel sends arrow keys, as xterm.js does                                |
-| IME composition                                                           | yes                        | no                                                                            |
-| Hyperlinks (OSC 8), images (sixel, kitty, iTerm2), kitty keyboard, OSC 52 | partly                     | no                                                                            |
-| Screen readers                                                            | xterm's accessibility tree | `role="log"` over plain text rows                                             |
+| Capability                                                                | xterm.js                   | Styr Terminal                                                                  |
+| ------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------ |
+| Command blocks                                                            | yes                        | yes — with a package that has command marks (0.2.0 and later)                  |
+| Clickable links                                                           | yes                        | no                                                                             |
+| Mouse reporting to programs                                               | yes                        | no — reported in `modes.mouse`, not forwarded                                  |
+| Select/copy beyond screen                                                 | yes                        | partly — DOM selection is the visible screen; copy actions read the scrollback |
+| Bracketed paste, file drop                                                | yes                        | yes                                                                            |
+| Alternate screen (vim, TUIs)                                              | yes                        | yes — wheel sends arrow keys, as xterm.js does                                 |
+| IME composition                                                           | yes                        | no                                                                             |
+| Hyperlinks (OSC 8), images (sixel, kitty, iTerm2), kitty keyboard, OSC 52 | partly                     | no                                                                             |
+| Screen readers                                                            | xterm's accessibility tree | `role="log"` over plain text rows                                              |
 
 Wide characters render in fixed two-cell boxes; fonts without a glyph may still look misaligned.
 High-DPI follows the browser's own text rendering (no canvas).

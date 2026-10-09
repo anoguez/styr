@@ -70,7 +70,7 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
     emit('\x1b[?1049h\x1b[2J\x1b[Hfull screen')
     expect(frames.at(-1)!.frame).toMatchObject({ altScreen: true, full: true })
     emit('\x1b[?1049l')
-    expect(frames.at(-1)!.frame.altScreen).toBe(false)
+    expect(frames.at(-1)!.frame?.altScreen).toBe(false)
 
     host.resize('s', 20, 3)
     while (deferred.length) deferred.shift()!()
@@ -79,6 +79,35 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
     host.detach('s')
     expect(host.has('s')).toBe(false)
     expect(failures).toEqual([])
+  })
+
+  it('turns command marks into blocks that follow their lines', () => {
+    const { factory, status } = load()
+    const sent: NativeFrameEvent[] = []
+    const deferred: (() => void)[] = []
+    const host = new NativeTerminalHost({
+      factory: () => factory,
+      status: () => status,
+      backlog: () => ({ data: '', sequence: 0, marks: [] }),
+      writeToPty: () => {},
+      sendFrame: (event) => sent.push(event),
+      sendFailure: () => {},
+      defer: (task) => deferred.push(task)
+    })
+    const attached = host.attach('s', 20, 4)
+    if (!attached.ok) throw new Error(attached.detail)
+    const at = Date.now()
+    const start = { offset: 6, kind: 'start' as const, id: 'c1', command: 'ls', at }
+    const end = { offset: 9, kind: 'end' as const, id: 'c1', exitCode: 0, at: at + 5 }
+    host.write('s', { data: '$ ls\r\na\r\n', sequence: 1, marks: [start, end] })
+    host.write('s', { data: 'x\r\n'.repeat(6), sequence: 2, marks: [] })
+    while (deferred.length) deferred.shift()!()
+    const blocks = sent.findLast((event) => event.blocks)?.blocks
+    expect(blocks).toEqual([
+      expect.objectContaining({ id: 'c1', command: 'ls', startLine: 0, endLine: 2, open: false })
+    ])
+    expect(host.lines('s', 0, 2)).toBe('$ ls\na')
+    host.detach('s')
   })
 
   it('survives adversarial input without throwing', () => {

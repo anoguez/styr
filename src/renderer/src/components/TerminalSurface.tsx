@@ -570,12 +570,12 @@ export function TerminalSurface({
   }, [])
 
   const contextFor = useCallback(
-    (preferSelection: boolean): TerminalContext => {
+    async (preferSelection: boolean): Promise<TerminalContext> => {
       const last = runtime?.lastCommand
       const text =
         (preferSelection ? selection?.text : undefined) ??
         last?.output ??
-        handle.current?.text() ??
+        (await handle.current?.text()) ??
         ''
       return {
         cwd,
@@ -596,7 +596,7 @@ export function TerminalSurface({
       if (!onCreateTask) return
       const request: TerminalTaskRequest = taskFromTerminal(
         kind,
-        context ?? contextFor(preferSelection)
+        context ?? (await contextFor(preferSelection))
       )
       if (kind === 'ask') Object.assign(request, { launch: true, repoPath: git.root ?? undefined })
       setSelection(null)
@@ -617,14 +617,16 @@ export function TerminalSurface({
   const openAsk = useCallback(
     (preferSelection: boolean) => {
       if (!onCreateTask) return
-      const context = contextFor(preferSelection)
-      const attached =
-        preferSelection && selection
-          ? 'Your selection'
-          : context.command
-            ? `Output of ${context.command}`
-            : 'This terminal'
-      setAsking({ context, attached })
+      // The selection is read before the first await, so focusing the prompt cannot lose it.
+      void contextFor(preferSelection).then((context) => {
+        const attached =
+          preferSelection && selection
+            ? 'Your selection'
+            : context.command
+              ? `Output of ${context.command}`
+              : 'This terminal'
+        setAsking({ context, attached })
+      })
     },
     [contextFor, onCreateTask, selection]
   )
@@ -692,7 +694,7 @@ export function TerminalSurface({
 
   const handOffWork = useCallback(async (): Promise<void> => {
     try {
-      const text = handle.current?.text() ?? runtime?.lastCommand?.output ?? ''
+      const text = (await handle.current?.text()) ?? runtime?.lastCommand?.output ?? ''
       const result = await window.api.terminal.handOff(session.id, text)
       setNotice(
         result.agentAsked
@@ -709,7 +711,11 @@ export function TerminalSurface({
     if (command && canChange) write(`${command}\r`)
   }, [runtime, canChange, write])
 
-  const copyAll = useCallback(() => copy(handle.current?.text() ?? '', 'all output'), [copy])
+  const copyAll = useCallback(
+    () =>
+      void Promise.resolve(handle.current?.text() ?? '').then((text) => copy(text, 'all output')),
+    [copy]
+  )
 
   const failed =
     runtime !== undefined &&
@@ -737,23 +743,25 @@ export function TerminalSurface({
       ? null
       : (shellBlocks.find((block) => hoverLine >= block.startLine && hoverLine < block.endLine)
           ?.id ?? null))
-  const outputOf = (block: TrackedBlock): string =>
-    handle.current?.lines(block.startLine + 1, block.endLine) ?? ''
-  const contextOfBlock = (block: TrackedBlock): TerminalContext => ({
+  const outputOf = async (block: TrackedBlock): Promise<string> =>
+    (await handle.current?.lines(block.startLine + 1, block.endLine)) ?? ''
+  const contextOfBlock = async (block: TrackedBlock): Promise<TerminalContext> => ({
     cwd,
     command: block.command,
     exitCode: block.exitCode,
-    text: outputOf(block)
+    text: await outputOf(block)
   })
+  const askAboutBlock = (kind: TerminalTaskKind, block: TrackedBlock): void =>
+    void contextOfBlock(block).then((context) => sendToAgent(kind, false, context))
   const blockActions: BlockActions = {
-    copyOutput: (block) => copy(outputOf(block), 'output'),
+    copyOutput: (block) => void outputOf(block).then((text) => copy(text, 'output')),
     copyCommand: (block) => copy(block.command, 'command'),
     retry: (block) => {
       if (canChange) write(`${block.command}\r`)
     },
-    fix: (block) => void sendToAgent('fix', false, contextOfBlock(block)),
-    explain: (block) => void sendToAgent('explain', false, contextOfBlock(block)),
-    createTask: (block) => void sendToAgent('output', false, contextOfBlock(block)),
+    fix: (block) => askAboutBlock('fix', block),
+    explain: (block) => askAboutBlock('explain', block),
+    createTask: (block) => askAboutBlock('output', block),
     interrupt: () => write(INTERRUPT)
   }
   // Handing off only makes sense while an agent is running; a task's exited session is a bare shell.

@@ -3,6 +3,7 @@ import type {
   NativeEngineFailure,
   NativeEngineStatus,
   NativeFrameEvent,
+  TerminalMark,
   TerminalOutput
 } from '@core/types.js'
 import { TerminalOutputSynchronizer } from '../../renderer/src/lib/terminalOutput.js'
@@ -270,5 +271,120 @@ describe('handoff to xterm.js', () => {
     expect(shown).toBe(expected.join(''))
     // The shell session itself was never touched.
     expect(session.sequence).toBe(expected.length)
+  })
+})
+
+describe('NativeTerminalHost command blocks', () => {
+  const at = 1_000
+  const start = (offset: number, id = 'c1', command = 'ls'): TerminalMark => ({
+    offset,
+    kind: 'start',
+    id,
+    command,
+    at
+  })
+  const end = (offset: number, id = 'c1', exitCode = 0): TerminalMark => ({
+    offset,
+    kind: 'end',
+    id,
+    exitCode,
+    at: at + 250
+  })
+  const output = (data: string, marks: TerminalMark[], sequence = 1): TerminalOutput => ({
+    data,
+    sequence,
+    marks
+  })
+
+  it('marks the command row and closes the block where its output ended', () => {
+    const { host, frames, flush } = setup()
+    host.attach('s1', 80, 24)
+    host.write('s1', output('$ ls\r\na\r\nb\r\n$ ', [start(6), end(12)]))
+    flush()
+    expect(FakeEngine.instances[0]!.written).toBe('$ ls\r\na\r\nb\r\n$ ')
+    expect(frames.at(-1)!.blocks).toEqual([
+      {
+        id: 'c1',
+        command: 'ls',
+        startedAt: at,
+        endedAt: at + 250,
+        exitCode: 0,
+        startLine: 0,
+        endLine: 3,
+        open: false
+      }
+    ])
+  })
+
+  it('lets a running command follow the cursor, and sends blocks only when they change', () => {
+    const { host, frames, flush } = setup()
+    host.attach('s1', 80, 24)
+    host.write('s1', output('$ build\r\n', [start(9, 'c1', 'build')]))
+    flush()
+    expect(frames.at(-1)!.blocks).toMatchObject([{ startLine: 0, endLine: 1, open: true }])
+    host.write('s1', output('step 1\r\nstep 2', [], 2))
+    flush()
+    expect(frames.at(-1)!.blocks).toMatchObject([{ startLine: 0, endLine: 3, open: true }])
+    host.resize('s1', 100, 30)
+    flush()
+    expect(frames.at(-1)!.frame).toBeDefined()
+    expect(frames.at(-1)!.blocks).toBeUndefined()
+  })
+
+  it('rebuilds blocks from the backlog marks on attach', () => {
+    const backlog = output('$ ls\r\na\r\n', [start(6), end(9)])
+    const { host } = setup({ backlog: () => backlog })
+    const result = host.attach('s1', 80, 24)
+    expect(result.ok && result.blocks).toMatchObject([{ id: 'c1', startLine: 0, endLine: 2 }])
+  })
+
+  it('forgets a command once its line has left the buffer', () => {
+    const { host, frames, flush } = setup()
+    host.attach('s1', 80, 24)
+    host.write('s1', output('$ ls\r\na\r\n', [start(6), end(9)]))
+    flush()
+    FakeEngine.instances[0]!.marks.delete('c1')
+    host.write('s1', output('more\r\n', [], 2))
+    flush()
+    expect(frames.at(-1)!.blocks).toEqual([])
+  })
+
+  it('ignores an end without a start and a start the engine could not mark', () => {
+    const { host, frames, flush } = setup()
+    host.attach('s1', 80, 24)
+    // At the very first row there is no row above the cursor to mark.
+    host.write('s1', output('x', [start(0, 'c0'), end(1, 'c9')]))
+    flush()
+    expect(frames.at(-1)!.blocks).toBeUndefined()
+    expect(FakeEngine.instances[0]!.written).toBe('x')
+  })
+
+  it('writes everything but draws no blocks with an engine that cannot mark lines', () => {
+    const factory: NativeEngineFactory = {
+      info,
+      create: (options) =>
+        Object.assign(new FakeEngine(options), {
+          markLine: undefined,
+          markedLines: undefined,
+          cursorPosition: undefined
+        })
+    }
+    const { host, frames, flush } = setup({ factory: () => factory })
+    const result = host.attach('s1', 80, 24)
+    host.write('s1', output('$ ls\r\na\r\n', [start(6), end(9)]))
+    flush()
+    expect(result.ok && result.blocks).toEqual([])
+    expect(FakeEngine.instances[0]!.written).toBe('$ ls\r\na\r\n')
+    expect(frames.every((event) => event.blocks === undefined)).toBe(true)
+  })
+
+  it('falls back when reading the marks throws', () => {
+    const { host, failures, flush } = setup()
+    host.attach('s1', 80, 24)
+    FakeEngine.instances[0]!.failOn = 'markedLines'
+    host.write('s1', output('$ ls\r\na\r\n', [start(6), end(9)]))
+    flush()
+    expect(failures).toMatchObject([{ id: 's1', reason: 'runtime-error' }])
+    expect(host.has('s1')).toBe(false)
   })
 })
