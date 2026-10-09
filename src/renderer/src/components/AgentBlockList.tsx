@@ -14,6 +14,7 @@ import type {
   StyrBlock
 } from '@core/types/blocks.js'
 import { CommandInput, type Look } from './TerminalBlockList.js'
+import type { AgentCommand } from '@core/agentConversation.js'
 import { quiet } from './TerminalBlocks.js'
 
 /** Lines of a diff shown before "Show all". */
@@ -35,6 +36,7 @@ export function AgentBlockList({
   font,
   inputRef,
   history,
+  commands,
   onSubmit,
   onInterrupt,
   onAllow,
@@ -51,6 +53,8 @@ export function AgentBlockList({
   font: CSSProperties
   inputRef: RefObject<HTMLTextAreaElement | null>
   history: string[]
+  /** The CLI's slash commands, for the input's menu. */
+  commands?: AgentCommand[]
   onSubmit: (data: string) => void
   onInterrupt: () => void
   onAllow: () => void
@@ -101,6 +105,7 @@ export function AgentBlockList({
           look={look}
           inputRef={inputRef}
           history={history}
+          commands={commands}
           bracketed
           hints={[]}
           label={`Message ${label}`}

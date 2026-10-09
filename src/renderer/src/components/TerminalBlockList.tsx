@@ -9,6 +9,8 @@ import {
   type RefObject
 } from 'react'
 import type { EngineFrameLine, EngineRun, FinishedCommandBlock } from '@core/types.js'
+import type { AgentCommand } from '@core/agentConversation.js'
+import { matchCommands, slashQuery } from '../lib/nativeTerminal/commandMenu.js'
 import { formatAccelerator } from '@core/shortcuts.js'
 import {
   commandHistory,
@@ -399,6 +401,7 @@ export function CommandInput({
   hints,
   label = 'Command',
   trailing,
+  commands,
   onSubmit,
   onClearBlocks,
   onEscape
@@ -415,13 +418,49 @@ export function CommandInput({
   onClearBlocks?: () => void
   /** Escape, when it means something here (interrupting an agent). */
   onEscape?: () => void
+  /** The program's slash commands, offered in a menu while `/name` is typed. */
+  commands?: AgentCommand[]
 }): ReactNode {
   const [text, setText] = useState('')
   const [typed, setTyped] = useState(false)
   const cursor = useRef<HistoryCursor>({ index: null, draft: '' })
+  const [picked, setPicked] = useState(0)
+  // Escape closes the menu for the text as typed; typing on opens it again.
+  const [closedFor, setClosedFor] = useState<string | null>(null)
+  const query = commands && commands.length > 0 ? slashQuery(text) : null
+  const matches = query !== null && closedFor !== text ? matchCommands(query, commands ?? []) : []
+  const choice = matches[Math.min(picked, matches.length - 1)]
+
+  const reset = (): void => {
+    setText('')
+    setPicked(0)
+    cursor.current = { index: null, draft: '' }
+  }
+
+  /** Keys the open command menu takes; true when it took this one. */
+  const menuKey = (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    if (!choice || event.nativeEvent.isComposing) return false
+    const plain = !event.ctrlKey && !event.metaKey && !event.altKey
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const step = event.key === 'ArrowDown' ? 1 : -1
+      setPicked((index) => (index + step + matches.length) % matches.length)
+    } else if (event.key === 'Tab' && plain) {
+      setText(`/${choice.name} `)
+      setPicked(0)
+    } else if (event.key === 'Enter' && plain && !event.shiftKey) {
+      onSubmit(submission(`/${choice.name}`, bracketed))
+      reset()
+    } else if (event.key === 'Escape') {
+      setClosedFor(text)
+    } else return false
+    event.preventDefault()
+    event.stopPropagation()
+    return true
+  }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     const element = event.currentTarget
+    if (menuKey(event)) return
     if (event.key === 'Escape' && onEscape && !event.nativeEvent.isComposing) {
       event.preventDefault()
       event.stopPropagation()
@@ -465,6 +504,17 @@ export function CommandInput({
           ❯
         </span>
         <div className="relative min-w-0 flex-1">
+          {choice ? (
+            <CommandMenu
+              commands={matches}
+              picked={choice}
+              onPick={(command) => {
+                onSubmit(submission(`/${command.name}`, bracketed))
+                reset()
+                inputRef.current?.focus()
+              }}
+            />
+          ) : null}
           <textarea
             ref={inputRef}
             value={text}
@@ -473,12 +523,15 @@ export function CommandInput({
             autoCapitalize="off"
             autoCorrect="off"
             aria-label={label}
+            aria-expanded={choice ? true : undefined}
+            aria-controls={choice ? 'styr-command-menu' : undefined}
             className="text-ink caret-accent block w-full resize-none border-0 bg-transparent p-0 outline-none focus-visible:outline-none"
             // Inline, because the app's focus ring is an unlayered rule that utilities cannot beat.
             style={{ font: 'inherit', lineHeight: `${look.lineHeight}px`, outline: 'none' }}
             onChange={(event) => {
               setText(event.target.value)
               setTyped(true)
+              setPicked(0)
               if (cursor.current.index !== null) cursor.current = { ...cursor.current, index: null }
             }}
             onKeyDown={onKeyDown}
@@ -500,6 +553,53 @@ export function CommandInput({
         {trailing}
       </div>
     </section>
+  )
+}
+
+/** The program's slash commands that fit what is typed, above the input, as its own menu has them. */
+function CommandMenu({
+  commands,
+  picked,
+  onPick
+}: {
+  commands: AgentCommand[]
+  picked: AgentCommand
+  onPick: (command: AgentCommand) => void
+}): ReactNode {
+  const list = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [picked])
+  return (
+    <div
+      ref={list}
+      id="styr-command-menu"
+      role="listbox"
+      aria-label="Commands"
+      className="border-edge-strong bg-panel absolute bottom-full left-0 z-20 mb-1 max-h-64 w-[min(36rem,100%)] overflow-y-auto rounded-lg border p-1 font-sans shadow-xl"
+    >
+      {commands.map((command) => {
+        const selected = command === picked
+        return (
+          <div
+            key={command.name}
+            role="option"
+            aria-selected={selected}
+            className={`flex cursor-pointer items-baseline gap-3 rounded-md px-2 py-1 text-[12px] ${
+              selected ? 'bg-raised text-ink' : 'text-dim'
+            }`}
+            // Mouse down, not click: the input keeps its focus.
+            onMouseDown={(event) => {
+              event.preventDefault()
+              onPick(command)
+            }}
+          >
+            <span className="text-ink shrink-0 font-mono text-[11.5px]">/{command.name}</span>
+            <span className="text-faint min-w-0 truncate">{command.description}</span>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 

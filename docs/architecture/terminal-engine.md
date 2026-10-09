@@ -132,6 +132,10 @@ while the agent waits, and Styr's `❯` input. It is provider-agnostic end to en
 - Everything the view sends goes to the CLI's PTY as if typed: a prompt (a bracketed paste for
   several lines) and Enter, Escape to interrupt or deny, Enter to allow. The CLI still decides
   everything; "<agent> view" shows its own TUI for menus and dialogs, and "Styr view" returns.
+- The file may carry the CLI's slash commands (`commands`; Claude's from `$.command.list()`), which
+  the input offers in a menu while `/name` is typed (`commandMenu.ts`). A command may answer in the
+  CLI's own interface (a picker, a dialog), so sending one shows that view, and the next change to
+  the conversation brings Styr's back.
 - Styr's mod is put first in `CLAUDE_CODE_PLUGIN_DIRS`: of two plugins with one name the earlier
   loads, and an inherited list may hold another Styr install's copy.
 

@@ -34,12 +34,20 @@ export interface ConversationMessage {
   toolUses: ConversationToolUse[]
 }
 
+/** A command the CLI runs by `/name` (built-in, plugin or MCP), as its own menu lists it. */
+export interface AgentCommand {
+  name: string
+  description: string
+}
+
 export interface AgentConversation {
   /** When it was written (ISO). */
   at: string
   /** A turn is running. */
   working: boolean
   messages: ConversationMessage[]
+  /** The slash commands the CLI offers now, in its own order; absent when its source has none. */
+  commands?: AgentCommand[]
 }
 
 /** How one CLI's tool call reads in a block: what it works on, how it went, what it changed. */
@@ -57,6 +65,7 @@ export interface ConversationAdapter {
 }
 
 const MAX_MESSAGES = 300
+const MAX_COMMANDS = 300
 const MAX_TEXT = 8_000
 const MAX_FIELD = 4_000
 
@@ -116,7 +125,22 @@ export function parseAgentConversation(source: string): AgentConversation | null
         : []
     })
   }
-  return { at: text(raw.at, 64), working: raw.working === true, messages }
+  const commands = Array.isArray(raw.commands)
+    ? raw.commands
+        .slice(0, MAX_COMMANDS)
+        .filter(isRecord)
+        .map((command) => ({
+          name: text(command.name, 64).replace(/^\//, ''),
+          description: text(command.description, 200)
+        }))
+        .filter((command) => /^[\w:.-]+$/.test(command.name))
+    : undefined
+  return {
+    at: text(raw.at, 64),
+    working: raw.working === true,
+    messages,
+    ...(commands ? { commands } : {})
+  }
 }
 
 const lines = (value: string): string[] => (value === '' ? [] : value.split('\n'))

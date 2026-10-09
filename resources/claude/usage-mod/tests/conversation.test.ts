@@ -26,10 +26,16 @@ test('writes the conversation in Styr’s neutral shape when a turn completes', 
     }
     ]
   }))
+  on('command.list', async () => ({
+    value: [{ name: 'compact', description: 'Clear history but keep a summary', source: 'builtin' }]
+  }))
   on('turn.complete', async () => ({ text: 'Done.' }))
   await $.turn.complete({ reason: 'answer', answer: 'Done.', durationMs: 5, isAborted: false, turnId: 'turn1' })
   const file = JSON.parse(written[FILE] ?? '{}')
   expect(file.working).toBe(false)
+  expect(file.commands).toEqual([
+    { name: 'compact', description: 'Clear history but keep a summary' }
+  ])
   expect(file.messages).toEqual([
     { role: 'user', text: 'fix it', toolUses: [] },
     {

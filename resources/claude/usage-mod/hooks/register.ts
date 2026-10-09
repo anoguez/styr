@@ -52,7 +52,21 @@ function clipInput(input: Record<string, unknown>): Record<string, unknown> {
   return out
 }
 
-/** Writes the conversation so far for Styr, and whether a turn is running. */
+/** The slash commands on offer, refreshed when the session starts and after each turn. */
+let commands: { name: string; description: string }[] = []
+
+async function listCommands($: Engine): Promise<void> {
+  try {
+    commands = (await $.command.list()).map(({ name, description }) => ({
+      name,
+      description: clip(description, 200)
+    }))
+  } catch {
+    // Keep the last list.
+  }
+}
+
+/** Writes the conversation so far for Styr, whether a turn is running, and the commands. */
 async function conversation($: Engine, working: boolean): Promise<void> {
   try {
     const file = await $.env.get('STYR_CONVERSATION_FILE')
@@ -68,7 +82,10 @@ async function conversation($: Engine, working: boolean): Promise<void> {
         ...(use.isError ? { isError: true } : {})
       }))
     }))
-    await $.fs.write(file, JSON.stringify({ at: new Date().toISOString(), working, messages }))
+    await $.fs.write(
+      file,
+      JSON.stringify({ at: new Date().toISOString(), working, messages, commands })
+    )
   } catch {
     // The block view is a convenience; never disturb the session.
   }
@@ -78,6 +95,7 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     await record($)
+    await listCommands($)
     await conversation($, false)
     return result
   })
@@ -87,7 +105,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     await record($)
-    $.clock.after(500, () => void conversation($, false))
+    $.clock.after(500, () => void listCommands($).then(() => conversation($, false)))
     return result
   })
 

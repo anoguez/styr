@@ -55,6 +55,28 @@ describe('parseAgentConversation', () => {
     })
   })
 
+  it('reads the commands the CLI offers, and drops ones that are not names', () => {
+    const parsed = parseAgentConversation(
+      JSON.stringify({
+        at: '',
+        working: false,
+        messages: [],
+        commands: [
+          { name: 'compact', description: 'Summarise' },
+          { name: '/review', description: 'Review a PR' },
+          { name: 'rm -rf', description: 'no' },
+          { description: 'nameless' },
+          'junk'
+        ]
+      })
+    )
+    expect(parsed?.commands).toEqual([
+      { name: 'compact', description: 'Summarise' },
+      { name: 'review', description: 'Review a PR' }
+    ])
+    expect(parseAgentConversation(file(false, []))?.commands).toBeUndefined()
+  })
+
   it('refuses what is not a conversation file', () => {
     expect(parseAgentConversation('not json')).toBeNull()
     expect(parseAgentConversation('[]')).toBeNull()

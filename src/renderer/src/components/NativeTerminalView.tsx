@@ -300,6 +300,15 @@ export function NativeTerminalView({
   const adapter = provider ? conversationAdapter(provider) : undefined
   const conversation = useAgentConversation(sessionId)
   const [tuiFor, setTuiFor] = useState<string | null>(null)
+  const commandSent = useRef<{ at: string; messages: number } | null>(null)
+  useEffect(() => {
+    const sent = commandSent.current
+    if (!sent || !conversation || conversation.at === sent.at) return
+    if (conversation.working || conversation.messages.length !== sent.messages) {
+      commandSent.current = null
+      setTuiFor(null)
+    }
+  }, [conversation])
   const agentReady = Boolean(running && adapter && conversation)
   const agentMode = agentReady && tuiFor !== running?.id
   const agentBlockList = useMemo(
@@ -501,7 +510,16 @@ export function NativeTerminalView({
           font={font}
           inputRef={inputRef}
           history={conversation && adapter ? promptHistory(conversation, adapter) : []}
-          onSubmit={write}
+          commands={conversation?.commands}
+          onSubmit={(data) => {
+            write(data)
+            // A command may answer in the CLI's own interface (a picker, a dialog), which only its
+            // view draws: show it, and come back once the conversation moves on.
+            if (data.startsWith('/') && running && conversation) {
+              commandSent.current = { at: conversation.at, messages: conversation.messages.length }
+              setTuiFor(running.id)
+            }
+          }}
           onInterrupt={() => window.api.terminal.write(sessionId, '\x1b')}
           onAllow={() => window.api.terminal.write(sessionId, '\r')}
           onDeny={() => window.api.terminal.write(sessionId, '\x1b')}
