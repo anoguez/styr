@@ -6,6 +6,7 @@ import type { AgentRow } from '../lib/agentRows.js'
 import type { Task } from '@core/types.js'
 import type { DiffStat } from '@core/diff.js'
 import { Button, DiffStatButton } from './ui.js'
+import { SubagentRows } from './SubagentRows.js'
 
 function BranchGlyph(): ReactNode {
   return (
@@ -78,6 +79,8 @@ function AgentRowItem({
             {agent.lastMessage}
           </span>
         ) : null}
+
+        <SubagentRows subagents={agent?.subagents ?? []} />
 
         <span className="font-mono text-[10px] text-faint">{task.id}</span>
 

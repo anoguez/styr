@@ -154,6 +154,37 @@ resume is visible even before its first hook fires. `sortAgentRows` ranks waitin
 record if its timestamp is newer (compared as parsed dates — the hook writes second precision and
 this writes milliseconds, so a string compare gets it backwards) — a hook write always beats a stale override.
 
+### Subagents
+
+Helpers an agent spawns (Claude Code's Agent tool, a Codex child thread) show as rows on the agent's
+sidebar card and as a running count on its terminal tab and context bar. They are part of their
+parent: they never add to a count, a badge, the tray, the Inbox, the sort order or Orchestrate.
+
+- **Records.** Subagent events never touch the parent's status file. Each is its own file in
+  `<agentsDir>/<taskId>.subagents/` — Claude's hook names it by seconds plus the hook shell's pid,
+  so parallel stops cannot collide — in the usual `{taskId, event, at, payload}` shape. Claude hooks
+  `SubagentStart`/`SubagentStop` and writes `UserPromptSubmit` there a second time as a turn marker.
+  The agents watcher runs at depth 1 to see the folder.
+- **Fold.** `readSubagents` in `agentStore.ts` pairs events by `agent_id` in mtime order (the hook's
+  `at` is whole seconds). A done row stays until your next turn, then its files and the older turn
+  markers are deleted. A `UserPromptSubmit` whose prompt is a `<task-notification>` is Claude Code
+  waking the parent because a background subagent finished — not your turn, so it clears nothing.
+  A foreground subagent (meta `requestShape`) still running at your next turn was cut off by an
+  interrupt that sent no stop, so it is dropped too; a background one or one of unknown shape is not.
+  `clearAgentStatus` (every launch) and `TerminalExit` drop the folder. Other workspaces' statuses
+  skip the fold (`subagents: false`); only the tray reads them.
+- **Labels.** Claude's hook payload has only `agent_type`; the Agent tool's description is in an
+  undocumented `subagents/agent-<id>.meta.json` beside the session transcript, read best-effort
+  (hits cached, misses retried) along with `requestShape`. Codex gives `agentNickname`/`agentRole` on `thread/started`.
+- **Codex.** `ThreadBindings` never claims a thread with a parent (or a `subAgent` source) for a fresh
+  launch — it used to take the first thread in the cwd. Helper threads belong to whoever owns their
+  parent, at any depth; idle is a stop, active again a start. The task thread going idle → active is
+  a new turn (`turnStarted`), written to the folder by `recordCodexUpdate`.
+- **Parent state** still comes from the parent's file. A subagent's `PreToolUse` and `Notification`
+  carry `agent_id` and still land there (Working, Waiting on you). A background subagent that outlives
+  the parent's `Stop` cannot leave it stuck on Working: Claude Code follows its stop with a new
+  parent turn and `Stop` (verified on 2.1.289).
+
 ## Orchestration
 
 `orchestrate:run` takes the task ids the confirmation dialog showed and intersects them with a

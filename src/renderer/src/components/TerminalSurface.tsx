@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { AGENT_STATE_LABELS, type AgentStatus } from '@core/agentState.js'
+import {
+  AGENT_STATE_LABELS,
+  runningSubagents,
+  subagentCountLabel,
+  type AgentStatus
+} from '@core/agentState.js'
 import { isAgentProgram } from '@core/handoff.js'
 import { syntaxFor } from '@core/shell.js'
 import { shortcutHint } from '@core/shortcuts.js'
@@ -191,6 +196,7 @@ function ContextBar({
   fallbackCwd,
   isAgent,
   agentState,
+  subagents = 0,
   blocksOn,
   branch,
   repoRoot,
@@ -219,6 +225,8 @@ function ContextBar({
   /** An agent CLI is running: it is shown by its state, not as a command with a timer. */
   isAgent?: boolean
   agentState?: AgentStatus['state']
+  /** Running subagents of that agent, shown after its state. */
+  subagents?: number
   /** Commands report themselves in blocks over the terminal, so the bar leaves them out. */
   blocksOn?: boolean
   branch: string | null
@@ -344,6 +352,11 @@ function ContextBar({
             className={`size-1.5 shrink-0 rounded-full bg-current ${agentState === 'working' ? 'wd-pulse' : ''}`}
           />
           {agentState ? <span className="shrink-0">{AGENT_STATE_LABELS[agentState]}</span> : null}
+          {subagents ? (
+            <span title={`${subagentCountLabel(subagents)} running`} className="truncate text-dim">
+              · {subagentCountLabel(subagents)}
+            </span>
+          ) : null}
         </span>
       ) : running && !blocksOn ? (
         <>
@@ -897,6 +910,7 @@ export function TerminalSurface({
           fallbackCwd={session.cwd}
           isAgent={agent}
           agentState={shownState ?? agentStatus?.state}
+          subagents={runningSubagents(agentStatus)}
           blocksOn={blocksOn}
           branch={git.branch}
           repoRoot={git.root}

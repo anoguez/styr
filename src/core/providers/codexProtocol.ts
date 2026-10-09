@@ -24,7 +24,8 @@ export function isSupportedCodexVersion(version: readonly number[]): boolean {
 export const CODEX_UPGRADE_HINT = `Install Codex CLI ${MIN_CODEX_VERSION.join('.')} or later (\`codex update\`), or set the Codex command in Settings → Integrations.`
 
 /** Hook-style event names, so Codex shares `EVENT_STATE` with every other provider. */
-export type CodexEvent = 'SessionStart' | 'UserPromptSubmit' | 'Notification' | 'Stop'
+export type CodexEvent =
+  'SessionStart' | 'UserPromptSubmit' | 'Notification' | 'Stop' | 'SubagentStart' | 'SubagentStop'
 
 interface ThreadStatus {
   type?: string
@@ -57,10 +58,42 @@ export function eventForStatus(
   return { threadId, event: waiting ? 'Notification' : 'UserPromptSubmit' }
 }
 
-/** A user-facing thread. Ephemeral threads (title generation and the like) are not agents. */
+/**
+ * Who started a thread. `thread_spawn` is the agent spawning a helper, which belongs to the thread
+ * named as its parent; the other `subAgent` sources (review, compact, memory consolidation) are
+ * Codex's own housekeeping and belong to nobody.
+ */
+function spawnOf(
+  thread: Record<string, unknown>
+): { parentThreadId: string; label: string } | 'internal' | undefined {
+  const subAgent = asRecord(thread.source)?.subAgent
+  const spawn = asRecord(asRecord(subAgent)?.thread_spawn)
+  if (subAgent !== undefined && !spawn) return 'internal'
+  const parent = thread.parentThreadId ?? spawn?.parent_thread_id
+  if (typeof parent !== 'string') return undefined
+  const names = [thread.agentNickname, spawn?.agent_nickname, thread.agentRole, spawn?.agent_role]
+  const label = names.find((name): name is string => typeof name === 'string' && name.trim() !== '')
+  return { parentThreadId: parent, label: label?.trim() ?? 'Subagent' }
+}
+
+/** A thread the agent spawned to help it, with the thread that spawned it. */
+export function spawnedThread(
+  params: unknown
+): { threadId: string; parentThreadId: string; label: string } | undefined {
+  const thread = asRecord(asRecord(params)?.thread)
+  if (!thread || thread.ephemeral === true || typeof thread.id !== 'string') return undefined
+  const spawn = spawnOf(thread)
+  return spawn && spawn !== 'internal' ? { threadId: thread.id, ...spawn } : undefined
+}
+
+/**
+ * A user-facing thread. Ephemeral threads (title generation and the like) are not agents, and a
+ * subagent's thread is its parent's helper — claiming it for a launch would bind the task to it.
+ */
 export function startedThread(params: unknown): { threadId: string; cwd: string } | undefined {
   const thread = asRecord(asRecord(params)?.thread)
   if (!thread || thread.ephemeral === true || typeof thread.id !== 'string') return undefined
+  if (spawnOf(thread)) return undefined
   const environment = Array.isArray(thread.environments)
     ? asRecord(thread.environments[0])
     : undefined
@@ -73,6 +106,10 @@ export interface ThreadUpdate {
   event: CodexEvent
   /** Set when the thread was just matched to a launch, so its real id can be saved for resume. */
   boundSessionId?: string
+  /** The event is about this helper of the task's agent, not about the agent itself. */
+  subagent?: { id: string; label: string }
+  /** The task's own thread went from idle to active: a new turn, which clears done subagents. */
+  turnStarted?: boolean
 }
 
 /**
@@ -83,6 +120,12 @@ export interface ThreadUpdate {
 export class ThreadBindings {
   private readonly threads = new Map<string, string>()
   private readonly expected: { taskId: string; cwd: string }[] = []
+  private readonly subagents = new Map<
+    string,
+    { taskId: string; label: string; running: boolean }
+  >()
+  /** The last event each task thread reported, to tell a new turn from a turn carrying on. */
+  private readonly lastEvent = new Map<string, CodexEvent>()
 
   get size(): number {
     return this.threads.size + this.expected.length
@@ -99,14 +142,35 @@ export class ThreadBindings {
   }
 
   release(taskId: string): void {
-    for (const [threadId, owner] of this.threads)
-      if (owner === taskId) this.threads.delete(threadId)
+    for (const [threadId, owner] of this.threads) {
+      if (owner !== taskId) continue
+      this.threads.delete(threadId)
+      this.lastEvent.delete(threadId)
+    }
+    for (const [threadId, subagent] of this.subagents)
+      if (subagent.taskId === taskId) this.subagents.delete(threadId)
     for (let index = this.expected.length - 1; index >= 0; index -= 1) {
       if (this.expected[index]?.taskId === taskId) this.expected.splice(index, 1)
     }
   }
 
+  /** The task a thread works for: its own thread, or a helper of it at any depth. */
+  private ownerOf(threadId: string): string | undefined {
+    return this.threads.get(threadId) ?? this.subagents.get(threadId)?.taskId
+  }
+
   onStarted(params: unknown): ThreadUpdate | undefined {
+    const spawned = spawnedThread(params)
+    if (spawned) {
+      const taskId = this.ownerOf(spawned.parentThreadId)
+      if (!taskId) return undefined
+      this.subagents.set(spawned.threadId, { taskId, label: spawned.label, running: true })
+      return {
+        taskId,
+        event: 'SubagentStart',
+        subagent: { id: spawned.threadId, label: spawned.label }
+      }
+    }
     const started = startedThread(params)
     if (!started) return undefined
     const known = this.threads.get(started.threadId)
@@ -120,8 +184,34 @@ export class ThreadBindings {
 
   onStatus(params: unknown): ThreadUpdate | undefined {
     const change = eventForStatus(params)
-    const taskId = change ? this.threads.get(change.threadId) : undefined
-    return change && taskId ? { taskId, event: change.event } : undefined
+    if (!change) return undefined
+    const subagent = this.subagents.get(change.threadId)
+    if (subagent) return this.onSubagentStatus(change.threadId, subagent, change.event)
+    const taskId = this.threads.get(change.threadId)
+    if (!taskId) return undefined
+    const previous = this.lastEvent.get(change.threadId)
+    this.lastEvent.set(change.threadId, change.event)
+    const turnStarted =
+      change.event === 'UserPromptSubmit' && (previous === undefined || previous === 'Stop')
+    return turnStarted
+      ? { taskId, event: change.event, turnStarted }
+      : { taskId, event: change.event }
+  }
+
+  /** Idle is done, active again (a follow-up) is running again; repeats report nothing. */
+  private onSubagentStatus(
+    threadId: string,
+    subagent: { taskId: string; label: string; running: boolean },
+    event: CodexEvent
+  ): ThreadUpdate | undefined {
+    const running = event !== 'Stop'
+    if (running === subagent.running) return undefined
+    subagent.running = running
+    return {
+      taskId: subagent.taskId,
+      event: running ? 'SubagentStart' : 'SubagentStop',
+      subagent: { id: threadId, label: subagent.label }
+    }
   }
 }
 

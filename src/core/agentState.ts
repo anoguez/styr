@@ -18,9 +18,54 @@ export interface AgentStatus {
   sessionId?: string
   lastMessage?: string
   branch?: string
+  /** Helpers the agent spawned in its current session, oldest first. Absent when there are none. */
+  subagents?: SubagentStatus[]
   /** Set for agents of other workspaces (tray, notifications); task ids repeat across them. */
   workspaceId?: string
   workspaceName?: string
+}
+
+/**
+ * A helper agent the task's agent spawned (Claude Code's Agent tool, a Codex child thread). It is
+ * part of its parent, not an agent of its own: it never adds to a count, a badge or the sort order.
+ */
+export interface SubagentStatus {
+  id: string
+  label: string
+  state: 'running' | 'done'
+  startedAt: string
+  endedAt?: string
+  lastMessage?: string
+}
+
+/** Subagent records go to their own folder, never the parent's status file (`agentStore.ts`). */
+export const SUBAGENT_EVENTS = ['SubagentStart', 'SubagentStop'] as const
+
+export function runningSubagents(status: Pick<AgentStatus, 'subagents'> | undefined): number {
+  return status?.subagents?.filter((subagent) => subagent.state === 'running').length ?? 0
+}
+
+export function subagentCountLabel(count: number): string {
+  return `${count} subagent${count === 1 ? '' : 's'}`
+}
+
+/** Up to this many rows show in full; past it the card shows `SUBAGENTS_SHOWN` and a toggle. */
+export const SUBAGENTS_IN_FULL = 4
+export const SUBAGENTS_SHOWN = 3
+
+/** What a card shows of its subagents: the rows, and the toggle text when some are folded away. */
+export function visibleSubagents(
+  subagents: readonly SubagentStatus[],
+  expanded: boolean
+): { rows: readonly SubagentStatus[]; toggle?: string } {
+  if (subagents.length <= SUBAGENTS_IN_FULL) return { rows: subagents }
+  if (expanded) return { rows: subagents, toggle: 'Show fewer' }
+  const hidden = subagents.slice(SUBAGENTS_SHOWN)
+  const running = hidden.filter((subagent) => subagent.state === 'running').length
+  return {
+    rows: subagents.slice(0, SUBAGENTS_SHOWN),
+    toggle: `+${hidden.length} more${running ? ` · ${running} running` : ''}`
+  }
 }
 
 /** Task ids are only unique within a workspace, so anything keyed across workspaces needs both. */

@@ -194,7 +194,7 @@ export function readBackgroundAgents(settings: Settings, activeId: string): Back
   for (const workspace of listWorkspaces(settings)) {
     if (workspace.id === activeId) continue
     const scoped = pathsInWorkspace(settings, workspace.id)
-    const found = readAllAgentStatuses(scoped)
+    const found = readAllAgentStatuses(scoped, { subagents: false })
     if (found.length === 0) continue
     const summaries = readTaskSummaries(settings, workspace.id)
     for (const status of found) {
