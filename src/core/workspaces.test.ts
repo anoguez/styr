@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -171,16 +180,59 @@ describe('background agents', () => {
       )
     task('TASK-0001', 'Needs me', 'in_progress')
     task('TASK-0002', 'Finished', 'done')
+    task('TASK-0003', 'Review me', 'in_review')
     agentStore.recordAgentEvent(scoped, 'TASK-0001', 'Notification')
     agentStore.recordAgentEvent(scoped, 'TASK-0002', 'Notification')
+    agentStore.recordAgentEvent(scoped, 'TASK-0003', 'Stop')
     agentStore.recordAgentEvent(settings, 'TASK-0009', 'Notification')
 
-    const { statuses, titles } = workspaces.readBackgroundAgents(settings, 'default')
-    expect(statuses.map((s) => s.taskId)).toEqual(['TASK-0001'])
-    expect(statuses[0]).toMatchObject({ workspaceId: 'client-a', workspaceName: 'Client A' })
+    const { statuses, titles, awaitingReview } = workspaces.readBackgroundAgents(
+      settings,
+      'default'
+    )
+    expect(statuses.map((s) => s.taskId).sort()).toEqual(['TASK-0001', 'TASK-0003'])
+    expect([...awaitingReview]).toEqual(['client-a:TASK-0003'])
+    expect(statuses.find((s) => s.taskId === 'TASK-0001')).toMatchObject({
+      workspaceId: 'client-a',
+      workspaceName: 'Client A'
+    })
     expect(titles.get('client-a:TASK-0001')).toBe('Needs me')
     expect(workspaces.readBackgroundAgents(settings, 'client-a').statuses[0]?.taskId).toBe(
       'TASK-0009'
     )
+  })
+})
+
+describe('readWorkspaceTasks', () => {
+  it('parses task files without writing to any of them, skipping the ones that do not parse', async () => {
+    const { workspaces, config } = await modules()
+    const storage = join(home, 'Styr')
+    const settings = settingsFor(storage)
+    const other = workspaces.createWorkspace(settings, 'Client A', SEED)
+    const dir = config.tasksDir(config.pathsInWorkspace(settings, other.id))
+    const files = {
+      'TASK-0001.md': `---\nid: TASK-0001\ntitle: Valid\nstatus: in_review\npriority: medium\nreadiness: ready\ntags: []\norchestrate: false\nuseWorktree: false\norder: 1\ncreatedAt: '2026-01-01T00:00:00.000Z'\nupdatedAt: '2026-01-01T00:00:00.000Z'\n---\nbody\n`,
+      'plain.md': '# Just a note\n\nNo frontmatter here.\n',
+      'broken.md': '---\nid: TASK-0002\nstatus: not-a-status\n---\nbody\n',
+      'notes.txt': 'ignored'
+    }
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content)
+    const before = Object.keys(files).map((name) => statSync(join(dir, name)).mtimeMs)
+
+    const tasks = workspaces.readWorkspaceTasks(settings, other.id)
+
+    expect(tasks.map((task) => [task.id, task.title, task.status])).toEqual([
+      ['TASK-0001', 'Valid', 'in_review']
+    ])
+    expect(readdirSync(dir).sort()).toEqual(Object.keys(files).sort())
+    for (const [name, content] of Object.entries(files)) {
+      expect(readFileSync(join(dir, name), 'utf8')).toBe(content)
+    }
+    expect(Object.keys(files).map((name) => statSync(join(dir, name)).mtimeMs)).toEqual(before)
+  })
+
+  it('returns nothing for a workspace without a tasks folder', async () => {
+    const { workspaces } = await modules()
+    expect(workspaces.readWorkspaceTasks(settingsFor(join(home, 'Empty')), 'default')).toEqual([])
   })
 })

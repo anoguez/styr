@@ -1,6 +1,71 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { WorkspaceOverview } from '@core/types.js'
+import type {
+  WorkspaceAgentActivity,
+  WorkspaceBoardSummary,
+  WorkspaceOverview,
+  WorkspacesActivity
+} from '@core/types.js'
+import { AGENT_TONE } from '../lib/agentTone.js'
+import {
+  ACTIVITY_LABELS,
+  agentActivityLabel,
+  backgroundBadge,
+  boardCounts,
+  boardSummaryLabel,
+  elsewhereNotice,
+  type BoardCountGroup
+} from '../lib/workspaceStatus.js'
 import { Button, Field, Modal, inputClass } from './ui.js'
+
+const COUNT_TONE: Record<BoardCountGroup, string> = {
+  needs: AGENT_TONE.waiting,
+  running: AGENT_TONE.working,
+  next: 'text-faint'
+}
+
+/**
+ * A workspace row's second line: its most urgent agent and its open Inbox groups. Status is a glyph
+ * plus words, never a bare colour dot at the row start — those mark which workspace it is elsewhere.
+ */
+function WorkspaceStatusLine({
+  activity,
+  summary
+}: {
+  activity?: WorkspaceAgentActivity
+  summary?: WorkspaceBoardSummary
+}): ReactNode {
+  const top = activity?.top
+  const counts = boardCounts(summary)
+  if (!top && counts.length === 0) return null
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[10.5px]">
+      {top ? (
+        <span
+          role="img"
+          aria-label={`Agents: ${agentActivityLabel(activity)}`}
+          className={`size-[6px] shrink-0 rounded-full bg-current ${AGENT_TONE[top]} ${
+            top === 'working' ? 'wd-pulse' : ''
+          }`}
+        />
+      ) : null}
+      {counts.length > 0 ? (
+        counts.map((count, index) => (
+          <span key={count.group} className={COUNT_TONE[count.group]}>
+            {index > 0 ? <span className="mr-1.5 text-faint">·</span> : null}
+            {count.label}
+          </span>
+        ))
+      ) : top ? (
+        <span className={AGENT_TONE[top]}>{ACTIVITY_LABELS[top]}</span>
+      ) : null}
+    </span>
+  )
+}
+
+function rowTitle(activity?: WorkspaceAgentActivity, summary?: WorkspaceBoardSummary): string {
+  const agents = agentActivityLabel(activity)
+  return [boardSummaryLabel(summary), agents ? `Agents: ${agents}` : ''].filter(Boolean).join(' — ')
+}
 
 /**
  * The navbar's workspace menu. Only the button opts out of window dragging, never a wrapper — a
@@ -8,6 +73,7 @@ import { Button, Field, Modal, inputClass } from './ui.js'
  */
 export function WorkspaceSwitcher({
   overview,
+  activity,
   open,
   onOpenChange,
   onSwitch,
@@ -15,6 +81,7 @@ export function WorkspaceSwitcher({
   onManage
 }: {
   overview: WorkspaceOverview
+  activity: WorkspacesActivity
   open: boolean
   onOpenChange: (open: boolean) => void
   onSwitch: (id: string) => void
@@ -24,6 +91,17 @@ export function WorkspaceSwitcher({
   const root = useRef<HTMLDivElement>(null)
   const current =
     overview.workspaces.find((workspace) => workspace.id === overview.activeId)?.name ?? 'Default'
+  const badge = backgroundBadge(activity, overview.workspaces)
+  const notice = elsewhereNotice(activity, overview.workspaces)
+  const [summaries, setSummaries] = useState<Record<string, WorkspaceBoardSummary>>({})
+
+  useEffect(() => {
+    if (!open) return
+    window.api.workspaces
+      .boardSummary()
+      .then(setSummaries)
+      .catch((error: unknown) => console.error('Could not load workspace summaries:', error))
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -45,16 +123,22 @@ export function WorkspaceSwitcher({
     'flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left text-[12px] text-dim hover:bg-raised hover:text-ink'
 
   return (
-    <div ref={root} className="relative shrink-0">
+    <div ref={root} className="relative flex shrink-0 items-center gap-2">
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Switch workspace"
+        title={badge ? `Switch workspace — ${badge.label}` : 'Switch workspace'}
         className="flex max-w-[180px] items-center gap-1.5 rounded-lg border border-edge-strong px-2.5 py-1 text-[12px] font-medium text-ink transition-colors hover:bg-raised/70 [-webkit-app-region:no-drag]"
         onClick={() => onOpenChange(!open)}
       >
         <span className="truncate">{current}</span>
+        {badge?.state === 'working' ? (
+          <span className={`flex shrink-0 items-center ${AGENT_TONE.working}`}>
+            <span aria-hidden className="size-[7px] rounded-full border-[1.5px] border-current" />
+            <span className="sr-only">{badge.label}</span>
+          </span>
+        ) : null}
         <svg viewBox="0 0 10 10" className="size-[9px] shrink-0 text-dim" aria-hidden>
           <path
             d="M2 3.5 5 6.5 8 3.5"
@@ -66,10 +150,25 @@ export function WorkspaceSwitcher({
           />
         </svg>
       </button>
+      {notice ? (
+        <button
+          type="button"
+          title={`${notice.label} — ${notice.targetId ? 'click to switch' : 'click to choose'}`}
+          className={`flex max-w-[220px] items-center gap-1.5 rounded-lg bg-[var(--color-col-review)]/15 px-2 py-1 text-[11.5px] font-medium transition-colors hover:bg-[var(--color-col-review)]/25 [-webkit-app-region:no-drag] ${AGENT_TONE.waiting}`}
+          onClick={() => {
+            if (notice.targetId) onSwitch(notice.targetId)
+            else onOpenChange(true)
+          }}
+        >
+          <span aria-hidden className="size-[6px] shrink-0 rounded-full bg-current" />
+          <span className="truncate">{notice.text}</span>
+          <span className="sr-only">. {notice.label}</span>
+        </button>
+      ) : null}
       {open ? (
         <div
           role="menu"
-          className="absolute left-0 top-full z-40 mt-1.5 flex w-60 flex-col gap-0.5 rounded-xl border border-edge-strong bg-panel p-1.5 shadow-[0_16px_40px_-8px_rgba(0,0,0,0.7)] [-webkit-app-region:no-drag]"
+          className="absolute left-0 top-full z-40 mt-1.5 flex w-72 flex-col gap-0.5 rounded-xl border border-edge-strong bg-panel p-1.5 shadow-[0_16px_40px_-8px_rgba(0,0,0,0.7)] [-webkit-app-region:no-drag]"
         >
           {overview.workspaces.map((workspace) => (
             <button
@@ -77,13 +176,22 @@ export function WorkspaceSwitcher({
               type="button"
               role="menuitemradio"
               aria-checked={workspace.id === overview.activeId}
+              title={
+                rowTitle(activity.byWorkspace[workspace.id], summaries[workspace.id]) || undefined
+              }
               className={item}
               onClick={() => {
                 onOpenChange(false)
                 if (workspace.id !== overview.activeId) onSwitch(workspace.id)
               }}
             >
-              <span className="truncate">{workspace.name}</span>
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate">{workspace.name}</span>
+                <WorkspaceStatusLine
+                  activity={activity.byWorkspace[workspace.id]}
+                  summary={summaries[workspace.id]}
+                />
+              </span>
               <span className="flex shrink-0 items-center gap-2 text-[11px] text-faint">
                 {workspace.taskCount}
                 {workspace.id === overview.activeId ? (

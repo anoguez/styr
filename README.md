@@ -1,7 +1,7 @@
 # Styr
 
 [![Latest release](https://img.shields.io/github/v/release/anoguez/styr)](https://github.com/anoguez/styr/releases/latest)
-![Test coverage](https://img.shields.io/badge/coverage-89.64%25-brightgreen)
+![Test coverage](https://img.shields.io/badge/coverage-89.98%25-brightgreen)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/noguez)
 
 **An agentic IDE built around a kanban board.** Write tasks, and Styr launches a coding agent (Claude Code
@@ -84,7 +84,8 @@ Then:
 1. **Settings → Storage**: pick a folder for the app's own data (the default is `~/Styr`). In
    **Settings → Preferences**, set a default working directory for agents, usually a folder holding
    your repos. Use the dropdown beside the title to create **workspaces** — separate boards with
-   their own tasks, agents and settings.
+   their own tasks, agents and settings. A pill beside it (e.g. _2 need you in Client A_) says another
+   workspace has waiting agents or work ready for review; click it to switch there.
 2. **New task** (`⌘N`): give it a title, a description and the repository it applies to. `⇧⌘N` opens
    a single-line quick add that drops the task in Backlog as _Needs spec_.
 3. Hover the card and press **▶ Agent** (pick the provider in the task dialog). The task moves to In Progress and a terminal tab opens

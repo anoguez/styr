@@ -34,6 +34,40 @@ undo a workspace created or deleted since. The agents watcher covers every works
 because the tray and notifications span all of them (`readBackgroundAgents`); the tasks watcher,
 index, landing and Orchestrate cover the active one only.
 
+### Workspace status in the switcher
+
+The navbar switcher shows two things, fed two ways on purpose:
+
+- **Live agent rollup** — the trigger badge (background waiting/working) and each row's glyph.
+  `workspaceActivity` (`core/workspaceSession.ts`) rolls up `TrayModel.statuses`, which
+  `notifyAgentsChanged` already builds for every workspace with archived/Done agents dropped, so
+  it adds no disk reads to the hook path and the switcher can never disagree with the menu bar.
+  It is pushed on `workspaces:activity` — not `workspaces:changed`, which refetches the whole
+  overview (a readdir per workspace) and would run on every `PreToolUse`. The `workspaces:activity`
+  invoke serves the last value for a window's first paint. The payload carries the `activeId` it
+  was computed against, and the badge excludes by that, so the broadcast that a switch sends before
+  `workspaces:changed` never counts the new board's agents as background. `top` follows
+  `AGENT_STATE_ORDER` (the tray's order), ignoring `exited`. The badge also counts tasks ready
+  for review (`awaitsReview` in `core/inbox.ts`, the Inbox's own rule): `buildTrayModel` and
+  `readBackgroundAgents` already hold each agent's task, so they mark `awaitingReview` keys at no
+  extra cost. Specs are left out of the badge — no agent event marks them, so counting them would
+  mean reading task files on every hook event; they show in the open menu. When something needs
+  you, it shows as a pill beside the switcher (`elsewhereNotice`) that switches to that workspace,
+  or opens the menu when several need you; working-only shows as a hollow ring on the button.
+- **Board counts** — each row's needs / running / up next. `workspaces:boardSummary` runs only when
+  the menu opens (a user action, so no timer and nothing on the hook path). The active workspace
+  comes from the index, the others from `readWorkspaceTasks`, which parses task files read-only and
+  skips broken ones. Both go through `buildInbox` + `summariseInbox`, so the switcher matches the
+  Inbox. Agents come from `readAllAgentStatuses` (not `agentStatuses()`): the Inbox never reads the
+  branch, and it saves a git call per task. A workspace that fails to read is left out, and its row
+  shows the agent glyph only. The reader never adopts, so a background workspace's plain `.md`
+  note (no frontmatter) or `.json` task is not counted until you switch there and the index picks
+  it up.
+
+A stale `working` record after a crash shows as working, as it does in the tray — both read the
+same records, with no cross-check against live terminals. The wording lives in
+`renderer/lib/workspaceStatus.ts`: `idle` is "turn ended", never finished.
+
 ### Workspace settings
 
 Every setting is in exactly one of `GLOBAL_SETTING_KEYS` (`storageDir`, `activeWorkspaceId`,

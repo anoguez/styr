@@ -1,6 +1,6 @@
-import { isAgentArchived, type AgentStatus } from './agentState.js'
+import { isAgentArchived, type AgentState, type AgentStatus } from './agentState.js'
 import { indexTasks, openBlockers } from './blocking.js'
-import type { Task } from './types.js'
+import type { Task, WorkspaceBoardSummary } from './types.js'
 
 export const INBOX_GROUPS = ['needs', 'running', 'next', 'done'] as const
 export type InboxGroup = (typeof INBOX_GROUPS)[number]
@@ -41,6 +41,17 @@ export interface InboxItem {
 }
 
 /**
+ * Whether a task sits in "Needs you" for review: its agent ended its turn on an In Review task that
+ * does not still need a spec. Shared with the workspace switcher so the two cannot disagree.
+ */
+export function awaitsReview(
+  task: { status: Task['status']; readiness?: Task['readiness'] },
+  state: AgentState | undefined
+): boolean {
+  return state === 'idle' && task.status === 'in_review' && task.readiness !== 'needs_spec'
+}
+
+/**
  * Sorts the board into what needs you, what is running, what is next and what is finished. It is
  * derived from the same tasks and agent states as the board and writes nothing, so the two views
  * cannot disagree about a task. A working agent outranks everything: a task being worked on is not
@@ -75,11 +86,11 @@ export function classifyTask(
       at: fallbackAt
     }
   }
-  if (agent?.state === 'idle' && task.status === 'in_review') {
+  if (awaitsReview(task, agent?.state)) {
     return {
       group: 'needs',
       kind: 'review',
-      reason: agent.lastMessage ?? 'Idle — ready for your review.',
+      reason: agent?.lastMessage ?? 'Idle — ready for your review.',
       at
     }
   }
@@ -148,4 +159,18 @@ export function buildInbox(
   groups.done = groups.done.filter((item) => !item.task.archivedAt)
   for (const group of INBOX_GROUPS) groups[group].sort(compareItems)
   return groups
+}
+
+/** The group sizes the workspace switcher shows, with "Needs you" split by why. */
+export function summariseInbox(groups: Record<InboxGroup, InboxItem[]>): WorkspaceBoardSummary {
+  const needsOfKind = (kind: InboxKind): number =>
+    groups.needs.filter((item) => item.kind === kind).length
+  return {
+    needs: groups.needs.length,
+    running: groups.running.length,
+    next: groups.next.length,
+    waiting: needsOfKind('waiting'),
+    review: needsOfKind('review'),
+    spec: needsOfKind('spec')
+  }
 }

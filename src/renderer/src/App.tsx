@@ -104,7 +104,12 @@ export default function App(): ReactNode {
     }
   }, [rawBoard, agents])
   const workspaces = useWorkspaces()
-  const { overview, names: workspaceNames, apply: applyWorkspaces } = workspaces
+  const {
+    overview,
+    names: workspaceNames,
+    activity: workspaceActivity,
+    apply: applyWorkspaces
+  } = workspaces
   const activeWorkspaceId = settings?.activeWorkspaceId ?? overview.activeId
   const diffStats = useDiffStats(activeWorkspaceId)
   const [switcherOpen, setSwitcherOpen] = useState(false)
@@ -746,6 +751,7 @@ export default function App(): ReactNode {
 
             <WorkspaceSwitcher
               overview={overview}
+              activity={workspaceActivity}
               open={switcherOpen}
               onOpenChange={setSwitcherOpen}
               onSwitch={(id) => void switchWorkspace(id)}

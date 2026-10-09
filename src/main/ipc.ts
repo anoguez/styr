@@ -39,15 +39,21 @@ import {
 } from '@core/worktree.js'
 import { taskDiff, taskFilePatch, workingTreeSummary } from '@core/worktreeDiff.js'
 import { createSessionLifecycle, monitorKey } from '@core/sessionLifecycle.js'
-import { buildTrayModel, createWorkspaceSession } from '@core/workspaceSession.js'
+import {
+  buildTrayModel,
+  createWorkspaceSession,
+  workspaceActivity
+} from '@core/workspaceSession.js'
 import {
   createWorkspace,
   listWorkspaces,
   readBackgroundAgents,
+  readWorkspaceTasks,
   renameWorkspace,
   workspaceTaskCount
 } from '@core/workspaces.js'
 import { createAutoDispatch } from '@core/autoDispatchRunner.js'
+import { buildInbox, summariseInbox } from '@core/inbox.js'
 import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
 import {
   globalSettingsFor,
@@ -58,7 +64,9 @@ import {
   type OrchestrationLane,
   type OrchestrationSummary,
   type TerminalSessionInfo,
-  type WorkspaceOverview
+  type WorkspaceBoardSummary,
+  type WorkspaceOverview,
+  type WorkspacesActivity
 } from '@core/types.js'
 import {
   addNote,
@@ -206,7 +214,45 @@ export function notifyAgentsChanged(): void {
     readBackgroundAgents(settings, settings.activeWorkspaceId)
   )
   updateTray(model.statuses, model.titles)
+  latestActivity = {
+    activeId: settings.activeWorkspaceId,
+    byWorkspace: workspaceActivity(model)
+  }
+  broadcast('workspaces:activity', latestActivity)
   autoDispatch.request()
+}
+
+/**
+ * The last rollup `notifyAgentsChanged` pushed, so a window's first paint needs no hook event.
+ * Startup runs it before the first window opens; the fallback only covers a call before that.
+ */
+let latestActivity: WorkspacesActivity | undefined
+
+function currentActivity(): WorkspacesActivity {
+  return latestActivity ?? { activeId: loadSettings().activeWorkspaceId, byWorkspace: {} }
+}
+
+/**
+ * Inbox group sizes per workspace, for the switcher's menu. Built on demand — it parses every
+ * background workspace's task files, which is fine on a click but not on every hook event. The
+ * active board comes from the index; the others are read from disk without writing. A workspace that
+ * cannot be read is left out, so the menu shows its agent state alone.
+ */
+function workspaceBoardSummaries(): Record<string, WorkspaceBoardSummary> {
+  const settings = loadSettings()
+  const summaries: Record<string, WorkspaceBoardSummary> = {}
+  for (const workspace of listWorkspaces(settings)) {
+    try {
+      const active = workspace.id === settings.activeWorkspaceId
+      const scoped = active ? settings : pathsInWorkspace(settings, workspace.id)
+      const tasks = active ? queryTasks() : readWorkspaceTasks(settings, workspace.id)
+      const agents = new Map(readAllAgentStatuses(scoped).map((status) => [status.taskId, status]))
+      summaries[workspace.id] = summariseInbox(buildInbox(tasks, agents))
+    } catch (error) {
+      console.error(`Could not summarise workspace ${workspace.id}:`, error)
+    }
+  }
+  return summaries
 }
 
 let diffStatsRun: Promise<Record<string, DiffStat>> | undefined
@@ -588,6 +634,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('settings:brokenFiles', () => brokenSettingsFiles())
 
   ipcMain.handle('workspaces:list', () => workspaceOverview())
+  ipcMain.handle('workspaces:activity', () => currentActivity())
+  ipcMain.handle('workspaces:boardSummary', () => workspaceBoardSummaries())
   ipcMain.handle('workspaces:switch', (_event, id: string) => {
     switchWorkspace(id)
     return workspaceOverview()

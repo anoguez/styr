@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentStatus } from './agentState.js'
+import type { AgentState, AgentStatus } from './agentState.js'
 import type { Settings } from './types.js'
 import {
   buildTrayModel,
   createWorkspaceSession,
+  workspaceActivity,
   type WorkspaceSessionPorts
 } from './workspaceSession.js'
 
@@ -229,5 +230,76 @@ describe('buildTrayModel', () => {
     expect(model.statuses.map((s) => s.taskId)).toEqual(['A', 'Z'])
     expect(model.titles.get('a:A')).toBe('Title A')
     expect(model.titles.get('b:Z')).toBe('Background')
+  })
+
+  it('marks idle agents on In Review tasks as awaiting review, with the background ones', () => {
+    const model = buildTrayModel(
+      { activeWorkspaceId: 'a' },
+      WORKSPACES,
+      [
+        agent('A', { state: 'idle' }),
+        agent('B', { state: 'working' }),
+        agent('C', { state: 'idle' })
+      ],
+      [
+        task('A', { status: 'in_review' }),
+        task('B', { status: 'in_review' }),
+        task('C', { status: 'in_review', readiness: 'needs_spec' })
+      ],
+      { statuses: [], titles: new Map(), awaitingReview: new Set(['b:Z']) }
+    )
+    expect([...model.awaitingReview].sort()).toEqual(['a:A', 'b:Z'])
+  })
+})
+
+describe('workspaceActivity', () => {
+  const at = '2026-01-01T00:00:00Z'
+  const status = (workspaceId: string | undefined, taskId: string, state: AgentState) =>
+    ({ workspaceId, taskId, state, at }) as AgentStatus
+  const rollup = (statuses: AgentStatus[], awaitingReview: string[] = []) =>
+    workspaceActivity({ statuses, awaitingReview: new Set(awaitingReview) })
+
+  it('counts each workspace’s agents by state and picks the most urgent', () => {
+    const activity = rollup([
+      status('default', 'TASK-0001', 'working'),
+      status('default', 'TASK-0002', 'waiting'),
+      status('default', 'TASK-0003', 'idle'),
+      status('a', 'TASK-0001', 'idle'),
+      status('a', 'TASK-0002', 'ready')
+    ])
+    expect(activity.default).toEqual({
+      counts: { ready: 0, working: 1, waiting: 1, idle: 1, exited: 0 },
+      review: 0,
+      top: 'waiting'
+    })
+    expect(activity.a?.top).toBe('ready')
+    expect(activity.a?.counts.idle).toBe(1)
+  })
+
+  it('counts agents whose task awaits review, keyed by workspace and task', () => {
+    const activity = rollup(
+      [status('a', 'TASK-0001', 'idle'), status('b', 'TASK-0001', 'idle')],
+      ['a:TASK-0001']
+    )
+    expect(activity.a?.review).toBe(1)
+    expect(activity.b?.review).toBe(0)
+  })
+
+  it('never picks an exited agent as the top state', () => {
+    const activity = rollup([
+      status('a', 'TASK-0001', 'exited'),
+      status('b', 'TASK-0001', 'exited'),
+      status('b', 'TASK-0002', 'idle')
+    ])
+    expect(activity.a).toEqual({
+      counts: { ready: 0, working: 0, waiting: 0, idle: 0, exited: 1 },
+      review: 0
+    })
+    expect(activity.b?.top).toBe('idle')
+  })
+
+  it('skips untagged statuses and is empty without agents', () => {
+    expect(rollup([status(undefined, 'TASK-0001', 'waiting')])).toEqual({})
+    expect(rollup([])).toEqual({})
   })
 })

@@ -358,6 +358,12 @@ when workspaces arrived); every other workspace is `<storage>/workspaces/<id>/`,
   workspace; a tab from another workspace is labelled with that workspace's name.
 - The menu bar, dock badge and notifications cover **every** workspace, so an agent waiting in a
   background workspace is not missed. Choosing one switches to its workspace.
+- Beside the workspace dropdown, a pill such as **2 need you in Client A** appears when agents in
+  another workspace are waiting on you or have finished a turn on a task in review. Click it to
+  switch there (or to choose, when several workspaces need you). A hollow ring on the dropdown
+  means agents elsewhere are only working. Open
+  it to see each workspace's most urgent agent and how many tasks need you, are running or are up
+  next — the same counts its Inbox shows.
 - Worktrees of non-default workspaces are `<repo>.worktrees/<workspace>-<task id>` on branch
   `styr/<workspace>-<task id>`, so two workspaces can both have a `TASK-0001` on one repo.
 - Deleting a workspace moves its folder to the Trash and is refused while it has terminal tabs.
