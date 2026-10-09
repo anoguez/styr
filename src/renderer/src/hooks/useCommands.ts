@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { commandForEvent } from '@core/shortcuts.js'
 import type { ShortcutCommand, TerminalSessionInfo } from '@core/types.js'
 import type { CommandEntry } from '../components/CommandPalette.js'
@@ -18,7 +18,6 @@ import { isTerminalTarget } from '../lib/terminalKeys.js'
  */
 export function useCommands({
   dispatch,
-  searchRef,
   changesOpen,
   terminals,
   newShell,
@@ -27,7 +26,6 @@ export function useCommands({
   actions
 }: {
   dispatch: (action: AppShellAction) => void
-  searchRef: RefObject<HTMLInputElement | null>
   /** The Changes viewer is modal: its own keys must not reach the board. */
   changesOpen: boolean
   terminals: {
@@ -50,10 +48,6 @@ export function useCommands({
     (command: ShortcutCommand) =>
       runShortcutCommand(command, {
         dispatch,
-        focusSearch: () => {
-          searchRef.current?.focus()
-          searchRef.current?.select()
-        },
         toggleTerminal,
         autoRunOn,
         startAutoRun: () => setAutoOn(true),
@@ -66,7 +60,6 @@ export function useCommands({
       }),
     [
       dispatch,
-      searchRef,
       toggleTerminal,
       autoRunOn,
       setAutoOn,

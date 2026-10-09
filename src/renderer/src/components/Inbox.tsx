@@ -374,7 +374,7 @@ export function Inbox({
 
   const visible = INBOX_GROUPS.filter((group) => !filter || group === filter)
   const flat = visible.flatMap((group) => groups[group])
-  // A selection that left the list (finished, filtered out, searched away) falls to the first row.
+  // A selection that left the list (finished or filtered out) falls to the first row.
   const selected = flat.find((item) => item.task.id === selectedId) ?? flat[0]
   const today = new Date().toDateString()
   // There is no status history, so "moved" is any task written today.

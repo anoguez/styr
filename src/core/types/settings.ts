@@ -13,7 +13,6 @@ export const SHORTCUT_COMMANDS = [
   'quickTask',
   'quickOpen',
   'commandPalette',
-  'focusSearch',
   'viewBoard',
   'viewInbox',
   'settings',
@@ -56,9 +55,8 @@ export type ShortcutBindings = Record<ShortcutCommand, string[]>
 export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   newTask: ['mod+n'],
   quickTask: ['mod+shift+n'],
-  quickOpen: ['mod+p'],
+  quickOpen: ['mod+p', 'mod+f'],
   commandPalette: ['mod+shift+p', 'mod+k'],
-  focusSearch: ['mod+f'],
   viewBoard: ['ctrl+1'],
   viewInbox: ['ctrl+2'],
   settings: ['mod+,'],

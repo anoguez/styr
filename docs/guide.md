@@ -479,7 +479,7 @@ app and cannot be dismissed by clicking away from it.
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Base**                                     | Every surface and text colour in the app                                                                                                                      |
 | **Gradient background**                      | Washes the base with a hint of the accent                                                                                                                     |
-| **Accent**                                   | Buttons, active states, search focus, queue badges, project chips                                                                                             |
+| **Accent**                                   | Buttons, active states, focused controls, queue badges, project chips                                                                                         |
 | **Backlog / In Progress / In Review / Done** | Column dots and rules, card borders, **and the matching agent states** — In Progress tints _Working_, In Review tints _Waiting on you_, Done tints _Finished_ |
 | **Interface font**                           | The whole UI                                                                                                                                                  |
 | **Terminal font / size**                     | The embedded terminal, applied to open sessions without restarting them                                                                                       |
@@ -550,7 +550,7 @@ the combination you want. These are the defaults:
 | ------------------ | ---------------------------------------------------- |
 | `⌘P` or `⌘K`       | Command palette                                      |
 | `⌘N`               | New task                                             |
-| `⌘F`               | Focus search                                         |
+| `⌘F`               | Search tasks                                         |
 | `⌘,`               | Open Settings                                        |
 | ``⌃` `` or ``⌘` `` | Toggle the terminal panel                            |
 | `⌘T`               | New terminal tab — only while a terminal has focus   |

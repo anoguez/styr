@@ -68,10 +68,10 @@ keyed by session id — remounting would destroy the xterm instance and its scro
 
 Tab labels come from `sessionLabel` in `renderer/src/lib/sessionLabel.ts`, shared with the command
 palette's Terminals group. A task tab shows the task's _current_ title from the board, so a rename
-(a spec run often retitles a task) updates the tab, with the task id as a secondary label. The board
-is filtered by search, so the title recorded on the session at launch is the fallback — never print
-`session.title` directly for a task session. `replay` marks a read-back of a past chat so it can be
-told apart from the live tab of the same task.
+(a spec run often retitles a task) updates the tab, with the task id as a secondary label. The task
+may no longer be on the board, so the title recorded on the session at launch is the fallback — never
+print `session.title` directly for a task session. `replay` marks a read-back of a past chat so it
+can be told apart from the live tab of the same task.
 
 The active tab scrolls itself into view. Title-width tabs overflow the strip quickly, and a tab
 focused from the sidebar or the palette would otherwise be activated off-screen.
@@ -186,7 +186,7 @@ a component.
 - `usePendingActivation` — menu bar requests that wait for the board to load.
 
 The title bar is `components/header/`: `AppHeader` lays out three slots and mirrors them off macOS,
-filled with `BrandMark`, `WorkspaceSwitcher`, `SearchBox`, `ViewTabs` and `DispatchButton`.
+filled with `BrandMark`, `WorkspaceSwitcher`, `ViewTabs` and `DispatchButton`.
 
 `TaskDialog` is the same shape: it holds the form and composes `components/task/` (`TaskHeader`, the
 tabs in `TaskTabs`/`BriefTab`, `TaskSidebar` with its field groups, `TaskFooter`). Its rules are in
@@ -289,4 +289,6 @@ The header's Board/Inbox switch (`⌘1`/`⌘2`, the `viewBoard`/`viewInbox` comm
 and it writes nothing, so the two views cannot disagree. A working agent outranks `needs_spec`.
 Actions reuse the board's own handlers (launch, activate, changes, status update, archive); the
 inbox cannot answer a permission prompt, so a waiting agent's action is "Open terminal". The view
-is `App` state remembered in the renderer's `localStorage` (`styr:view`) — a per-machine convenience, not a setting, so it stays out of the config files — and the search box filters both views.
+is `App` state remembered in the renderer's `localStorage` (`styr:view`) — a per-machine convenience,
+not a setting, so it stays out of the config files — and task search is available from the command
+palette.

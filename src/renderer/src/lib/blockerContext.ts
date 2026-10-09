@@ -4,7 +4,7 @@ import type { Task } from '@core/types.js'
 
 const EMPTY: ReadonlyMap<string, Task> = new Map()
 
-/** Every task in the workspace by id, whatever the search or the Done cap is hiding. */
+/** Every task in the workspace by id, including Done tasks hidden by the board cap. */
 export const TaskLookupContext = createContext<ReadonlyMap<string, Task>>(EMPTY)
 
 export function taskLookup(tasks: readonly Task[]): ReadonlyMap<string, Task> {
