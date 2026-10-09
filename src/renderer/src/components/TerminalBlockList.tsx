@@ -122,10 +122,10 @@ export function TerminalBlockList({
             look={look}
             inputRef={inputRef}
             history={commandHistory(state)}
-            bracketed={screen?.modes.bracketedPaste ?? false}
             // As the design has it: only a new shell shows the hint, until its first keystroke.
             hints={fresh.current ? hints : []}
-            onSubmit={onSubmit}
+            // A shell reads the line and Enter in one write; several lines go as one paste.
+            onSubmit={(text) => onSubmit(submission(text, screen?.modes.bracketedPaste ?? false))}
             onClearBlocks={onClearBlocks}
           />
         )}
@@ -397,7 +397,6 @@ export function CommandInput({
   look,
   inputRef,
   history,
-  bracketed,
   hints,
   label = 'Command',
   trailing,
@@ -409,12 +408,12 @@ export function CommandInput({
   look: Look
   inputRef: RefObject<HTMLTextAreaElement | null>
   history: string[]
-  bracketed: boolean
   hints: InputHint[]
   label?: string
   /** Shown at the end of the row whatever is typed. */
   trailing?: ReactNode
-  onSubmit: (data: string) => void
+  /** The line as typed; the caller sends it in whatever form its program expects. */
+  onSubmit: (text: string) => void
   onClearBlocks?: () => void
   /** Escape, when it means something here (interrupting an agent). */
   onEscape?: () => void
@@ -448,7 +447,7 @@ export function CommandInput({
       setText(`/${choice.name} `)
       setPicked(0)
     } else if (event.key === 'Enter' && plain && !event.shiftKey) {
-      onSubmit(submission(`/${choice.name}`, bracketed))
+      onSubmit(`/${choice.name}`)
       reset()
     } else if (event.key === 'Escape') {
       setClosedFor(text)
@@ -477,7 +476,7 @@ export function CommandInput({
     event.stopPropagation()
     if (action.kind === 'submit') {
       if (!text.trim()) return
-      onSubmit(submission(text, bracketed))
+      onSubmit(text)
       setText('')
       cursor.current = { index: null, draft: '' }
     } else if (action.kind === 'discard') {
@@ -509,7 +508,7 @@ export function CommandInput({
               commands={matches}
               picked={choice}
               onPick={(command) => {
-                onSubmit(submission(`/${command.name}`, bracketed))
+                onSubmit(`/${command.name}`)
                 reset()
                 inputRef.current?.focus()
               }}

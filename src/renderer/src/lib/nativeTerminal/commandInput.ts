@@ -56,6 +56,19 @@ export function submission(text: string, bracketed: boolean): string {
   return `${pasteSequence(text, bracketed)}\r`
 }
 
+/** How long after a prompt's paste its Enter is sent; see `agentPrompt`. */
+export const AGENT_ENTER_DELAY_MS = 120
+
+/**
+ * What an agent CLI's TUI gets for a submitted prompt: the text as one bracketed paste, then Enter
+ * as a keystroke of its own, `AGENT_ENTER_DELAY_MS` later. An agent's input box takes a burst of
+ * input that arrives at once as a paste, so an Enter written with the text is a newline in the
+ * box, not a submit; on its own it is the key the person would press.
+ */
+export function agentPrompt(text: string): { paste: string; enter: string } {
+  return { paste: pasteSequence(text, true), enter: '\r' }
+}
+
 /**
  * Steps through `history` (oldest first). `index` is null while editing a new command, whose text
  * is kept in `draft` and comes back after the newest entry.

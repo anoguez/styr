@@ -14,7 +14,7 @@ import {
   rowsText
 } from './blockList.js'
 import { ScreenModel } from './screen.js'
-import { inputAction, stepHistory, submission } from './commandInput.js'
+import { agentPrompt, inputAction, stepHistory, submission } from './commandInput.js'
 
 const row = (index: number, text: string, wrapped = false): EngineFrameLine => ({
   row: index,
@@ -196,6 +196,16 @@ describe('command input', () => {
       '\x1b[200~for x in 1 2\rdo echo $x\rdone\x1b[201~\r'
     )
     expect(submission('a\nb', false)).toBe('a\rb\r')
+  })
+
+  it('hands an agent its prompt as a paste, with Enter kept apart', () => {
+    // Written together, an agent's input box takes the Enter as part of the paste: a newline.
+    expect(agentPrompt('fix the watcher')).toEqual({
+      paste: '\x1b[200~fix the watcher\x1b[201~',
+      enter: '\r'
+    })
+    expect(agentPrompt('one\ntwo').paste).toBe('\x1b[200~one\rtwo\x1b[201~')
+    expect(agentPrompt('/compact').paste).not.toContain('\r')
   })
 
   it('steps through history and returns to the draft', () => {
