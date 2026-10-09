@@ -228,6 +228,52 @@ jobs:
   #       env:
   #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # The Linux build is disabled until the .deb and AppImage have been tested more. To turn it back
+  # on, uncomment this job and add `build-linux` back to `publish` (its `needs` and its `if`).
+  # # Also what runs under WSL2 (WSLg) on Windows. Builds on Linux, because node-pty ships no Linux
+  # # prebuild and is compiled against Electron here by postinstall.
+  # build-linux:
+  #   needs: release-please
+  #   if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: write
+  #   env:
+  #     TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
+  #   steps:
+  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  #       with:
+  #         ref: ${{ env.TAG }}
+  #
+  #     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+  #       with:
+  #         node-version: 24
+  #         cache: yarn
+  #
+  #     - run: yarn install --frozen-lockfile
+  #
+  #     - run: yarn build
+  #
+  #     - name: Package
+  #       run: yarn electron-builder --linux --x64 --publish never
+  #
+  #     - name: Keep the build as a workflow artifact
+  #       if: ${{ env.TAG == '' }}
+  #       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+  #       with:
+  #         name: styr-linux
+  #         path: |
+  #           dist/*.AppImage
+  #           dist/*.deb
+  #           dist/latest-linux.yml
+  #
+  #     - name: Upload to release
+  #       if: ${{ env.TAG != '' }}
+  #       # The AppImage and latest-linux.yml are the Linux update feed; the .deb is for apt installs.
+  #       run: gh release upload "$TAG" dist/*.AppImage dist/*.deb dist/latest-linux.yml --clobber
+  #       env:
+  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # release-please creates the release as a draft (see release-please-config.json), so nothing is
   # public — and installed copies see no new version — until every platform's files are attached.
   # A failed build leaves the draft unpublished rather than a release with files missing.

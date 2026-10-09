@@ -30,11 +30,11 @@ function describe(error: unknown): string {
 /**
  * Releases are published only after the build attaches the update files, so this should not
  * happen — but a release published by hand, or one from before the updater existed (v0.2.0), has
- * no latest-mac.yml. That is not a failure the user can act on: the version they have is still the
- * newest one installable.
+ * no update manifest (latest-mac.yml, latest.yml on Windows, latest-linux.yml). That is not a
+ * failure the user can act on: the version they have is still the newest one installable.
  */
 function isMissingUpdateManifest(error: unknown): boolean {
-  return /latest-mac\.yml/.test(describe(error)) && /404|Cannot find/i.test(String(error))
+  return /latest(-mac|-linux)?\.yml/.test(describe(error)) && /404|Cannot find/i.test(String(error))
 }
 
 function check(): void {

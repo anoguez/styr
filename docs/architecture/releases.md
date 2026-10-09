@@ -22,9 +22,9 @@ named export, so it is imported as the default export.
 open that bumps `package.json` and writes `CHANGELOG.md` from conventional commits; merging it tags
 the release as a **draft** (`draft` + `force-tag-creation` in `release-please-config.json`). A
 macOS job builds, signs, notarises, verifies and attaches its files; a `publish` job that needs it
-then publishes it. A Windows job (the unsigned NSIS installer and `latest.yml`) is written but
-commented out until the installer has been tested; re-enabling it means adding it back to
-`publish`'s `needs` and `if`. Never publish before the files are attached: a public release without
+then publishes it. A Windows job (the unsigned NSIS installer and `latest.yml`) and a Linux job
+(the AppImage, `.deb` and `latest-linux.yml`) are written but commented out until those builds
+have been tested; re-enabling one means adding it back to `publish`'s `needs` and `if`. Never publish before the files are attached: a public release without
 `latest-mac.yml` or `latest.yml` is one the updater sees but cannot install. Commit
 messages must therefore be conventional (`feat:`, `fix:`, `docs:` …) or they are left out of the
 changelog. `scripts/setup-signing-secrets.sh <p12>` sets the five signing secrets on the repo from a

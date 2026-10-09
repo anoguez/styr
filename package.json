@@ -4,6 +4,7 @@
   "description": "An agentic IDE: a kanban board that dispatches AI coding agents into embedded terminals, with an MCP server so agents can drive the board",
   "main": "./out/main/index.mjs",
   "author": "Anderson Noguez",
+  "homepage": "https://github.com/anoguez/styr",
   "license": "FSL-1.1-MIT",
   "private": true,
   "scripts": {
@@ -21,6 +22,7 @@
     "package": "yarn build && node --env-file-if-exists=.env node_modules/electron-builder/cli.js",
     "package:adhoc": "yarn build && electron-builder -c.mac.identity=-",
     "package:win": "yarn build && electron-builder --win --x64 -c.npmRebuild=false",
+    "package:linux": "yarn build && electron-builder --linux --x64",
     "postinstall": "node scripts/postinstall.mjs",
     "icon": "node scripts/make-icon.mjs",
     "prepare": "husky"

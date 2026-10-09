@@ -116,6 +116,7 @@ import {
 } from './terminal/ptyManager.js'
 import { CodexMonitor, prepareCodex } from './codexMonitor.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
+import { mcpEntry } from './mcpEntry.js'
 import { resolveShell } from '@core/platformShell.js'
 
 function broadcast(channel: string, payload?: unknown): void {
@@ -586,7 +587,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('diagnostics:stop', () => stopSampling())
   ipcMain.handle('app:info', () => ({ isPackaged: app.isPackaged, version: app.getVersion() }))
   ipcMain.on('app:titleBarColors', (event, background: string, symbols: string) => {
-    if (process.platform !== 'win32') return
+    // macOS draws traffic lights, not an overlay; Windows and Linux both use the overlay.
+    if (process.platform === 'darwin') return
     BrowserWindow.fromWebContents(event.sender)?.setTitleBarOverlay({
       color: String(background),
       symbolColor: String(symbols)
@@ -594,10 +596,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') => {
-    const root = app.isPackaged
-      ? join(process.resourcesPath, 'app.asar.unpacked')
-      : app.getAppPath()
-    const entry = join(root, 'out', 'main', 'mcp', 'index.mjs')
+    const entry = mcpEntry()
     return providerFor({
       ...loadSettings(),
       defaultProvider: provider ?? 'claude'
@@ -693,22 +692,24 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('settings:pickApp', async (event) => {
     const parent = BrowserWindow.fromWebContents(event.sender)
     const windows = process.platform === 'win32'
+    const linux = process.platform === 'linux'
     const options: OpenDialogOptions = {
       properties: ['openFile'],
-      defaultPath: windows ? process.env.ProgramFiles : '/Applications',
-      filters: [
-        windows
-          ? { name: 'Programs', extensions: ['exe'] }
-          : { name: 'Applications', extensions: ['app'] }
-      ]
+      defaultPath: windows ? process.env.ProgramFiles : linux ? '/usr/bin' : '/Applications',
+      // Linux programs have no extension to filter on.
+      filters: windows
+        ? [{ name: 'Programs', extensions: ['exe'] }]
+        : linux
+          ? []
+          : [{ name: 'Applications', extensions: ['app'] }]
     }
     const result = parent
       ? await dialog.showOpenDialog(parent, options)
       : await dialog.showOpenDialog(options)
     const picked = result.canceled ? undefined : result.filePaths[0]
-    // Windows has no `open -a`, so the program is kept by path and run directly.
+    // Windows and Linux have no `open -a`, so the program is kept by path and run directly.
     if (!picked) return null
-    return windows ? picked : basename(picked, '.app')
+    return process.platform === 'darwin' ? basename(picked, '.app') : picked
   })
 
   ipcMain.handle('settings:pickFiles', async (event, startIn?: string) => {
@@ -819,9 +820,11 @@ export function registerIpcHandlers(): void {
     const opened =
       process.platform === 'win32'
         ? await launchDetached(findVsCodeWindows(), path)
-        : await new Promise<boolean>((resolve) =>
-            execFile('open', ['-a', 'Visual Studio Code', path], (error) => resolve(!error))
-          )
+        : process.platform === 'linux'
+          ? await launchDetached('code', path)
+          : await new Promise<boolean>((resolve) =>
+              execFile('open', ['-a', 'Visual Studio Code', path], (error) => resolve(!error))
+            )
     if (opened) return 'code'
     // VS Code is optional, so fall back to the folder rather than failing.
     return (await shell.openPath(path)) ? 'failed' : 'folder'
@@ -908,13 +911,13 @@ async function listInstalledApps(): Promise<string[]> {
 }
 
 /**
- * Opens a file or folder in the app chosen in Settings (macOS `open -a`; on Windows the program's
- * path), else the system default. Returns an error string, or '' on success, like `shell.openPath`.
+ * Opens a file or folder in the app chosen in Settings (macOS `open -a`; on Windows and Linux the
+ * program's path), else the system default. Returns an error string, or '' on success, like `shell.openPath`.
  */
 async function openPathWith(path: string): Promise<string> {
   const appName = loadSettings().openFilesWith.trim()
   if (!appName) return shell.openPath(path)
-  if (process.platform === 'win32') {
+  if (process.platform !== 'darwin') {
     if (await launchDetached(appName, path)) return ''
     const fallback = await shell.openPath(path)
     return fallback || `Could not open with ${appName}`
