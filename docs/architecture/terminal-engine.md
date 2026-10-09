@@ -96,6 +96,18 @@ normal and application cursor mode, `vim`, `less`, `htop`, `git log`, `claude`, 
 own Rust tests and corpus cover the parser side (private repo); the public tests cover selection,
 loading, the host, fallback order, keys, frames and styles with the `nativeEngineFixture` fake.
 
+`nativeEngine.integration.test.ts` runs the real loader and host against a real build of the
+package. It is skipped unless `STYR_TERMINAL_PATH` names the package directory, so public CI never
+needs it. To check the binary in Styr's own Electron runtime:
+
+```sh
+ELECTRON_RUN_AS_NODE=1 STYR_TERMINAL_PATH=<styr-terminal>/packages/node \
+  node_modules/.bin/electron node_modules/vitest/vitest.mjs run src/main/terminal/nativeEngine.integration.test.ts
+```
+
+For a dev run of the app with the engine: `STYR_TERMINAL_PATH=<styr-terminal>/packages/node
+STYR_EXPERIMENTAL_TERMINAL=1 yarn dev`.
+
 ## Platforms
 
 `NATIVE_ENGINE_TARGETS` lists where it is built and verified: **darwin-arm64** only, matching the
