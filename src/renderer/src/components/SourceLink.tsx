@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { ipcMessage } from '../lib/ipcMessage.js'
 import type { Settings, Task } from '@core/types.js'
 import { Button, inputBase } from './ui.js'
 
@@ -29,12 +30,7 @@ export function SourceLink({
       onTask(await action())
       setText('')
     } catch (failure) {
-      setError(
-        (failure instanceof Error ? failure.message : String(failure)).replace(
-          /^Error invoking remote method '[^']+': (Error: )?/,
-          ''
-        )
-      )
+      setError(ipcMessage(failure))
     } finally {
       setBusy(false)
     }

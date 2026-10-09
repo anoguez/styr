@@ -1,23 +1,11 @@
 import type { ReactNode } from 'react'
-import { AGENT_STATE_LABELS, compareAgentStatus, type AgentStatus } from '@core/agentState.js'
+import { AGENT_STATE_LABELS } from '@core/agentState.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
 import { timeAgo } from '../lib/timeAgo.js'
-import type { Task, TerminalSessionInfo } from '@core/types.js'
+import type { AgentRow } from '../lib/agentRows.js'
+import type { Task } from '@core/types.js'
 import type { DiffStat } from '@core/diff.js'
 import { Button, DiffStatButton } from './ui.js'
-
-export interface AgentRow {
-  task: Task
-  agent?: AgentStatus
-  session?: TerminalSessionInfo
-}
-
-export function sortAgentRows(rows: AgentRow[]): AgentRow[] {
-  return [...rows].sort((a, b) => {
-    if (a.agent && b.agent) return compareAgentStatus(a.agent, b.agent)
-    return Number(Boolean(b.agent)) - Number(Boolean(a.agent))
-  })
-}
 
 function BranchGlyph(): ReactNode {
   return (

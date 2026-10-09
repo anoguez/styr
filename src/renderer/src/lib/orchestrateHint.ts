@@ -28,6 +28,18 @@ export function orchestrateHint(orchestration: OrchestrationSummary | null): str
 
 export type DispatchButtonMode = 'idle' | 'dispatching' | 'auto' | 'paused'
 
+export interface DispatchButtonState {
+  mode: DispatchButtonMode
+  label: string
+  badge: number
+  title: string
+}
+
+/** A manual run and Auto-run both light the button and the header's sweep. */
+export function isDispatchLive(state: Pick<DispatchButtonState, 'mode'>): boolean {
+  return state.mode === 'dispatching' || state.mode === 'auto'
+}
+
 /**
  * The one Dispatch button in the header carries Auto-run too: a workspace has at most one Auto-run,
  * so its state is the button's state rather than a second button beside it.
@@ -36,7 +48,7 @@ export function dispatchButton(
   orchestration: OrchestrationSummary | null,
   auto: AutoDispatchState,
   dispatching: boolean
-): { mode: DispatchButtonMode; label: string; badge: number; title: string } {
+): DispatchButtonState {
   const running = orchestration
     ? ORCHESTRATION_LANES.reduce((sum, lane) => sum + orchestration.occupied[lane], 0)
     : 0

@@ -36,8 +36,11 @@ survive when the label does not.
 
 ## Settings
 
-`SettingsDialog` is a nav plus one pane per section, driven by the `SECTIONS` array — add a section
-there and to the `section === '…'` blocks rather than lengthening a single scroll. `Modal` takes
+`SettingsDialog` is a nav plus one pane per section, driven by the `SECTIONS` array in
+`components/settings/sections.ts` — add a section there, give it a `settings/<Name>Section.tsx`
+taking `SectionProps` (`draft`, `patch`), and render it from the dialog's `section === '…'` list
+rather than lengthening a single scroll. The pure parts — unsaved-change counting, the nav filter,
+template and provider edits — live in `sections.ts` and `settings/draft.ts` with tests. `Modal` takes
 `flush` to hand its padding and scrolling to a child that manages its own panes.
 
 The dialog is a `Modal` with `bare`: it draws no header or footer of its own, and `SettingsDialog`
@@ -45,7 +48,9 @@ supplies the nav (a "Workspace" group headed by the workspace picker, an "All wo
 below it, filtered by each section's `words` from the search box), a header with the section blurb
 and a scope chip, and a footer carrying the dirty status, Discard and Save (⌘↵). Dirty state is
 derived by comparing `draft` to the saved settings over each section's `keys`, so a new section must
-list the `Settings` keys it edits. The dialog height is fixed so switching sections does not resize
+list the `Settings` keys it edits. Save keeps the dialog open: `useWorkspaceTarget.markSaved` makes what was
+written the new baseline (and clears a broken-file notice), so the footer reads "All changes saved"
+and later edits count from there. The dialog height is fixed so switching sections does not resize
 it. This layout follows the Claude Design file; change the design first, then the dialog.
 
 Reusable form pieces live in `ui.tsx`: `Card`/`CardRow`, `Eyebrow`, `Hint`, `Switch`/`SwitchRow`,
@@ -139,7 +144,7 @@ almost nothing, which is why nobody noticed it was from the old palette.
 ## Preferences
 
 `Settings.taskDefaults` (`orchestrate`, `useWorktree`) only seeds the new-task form in `toForm`
-(`TaskDialog`). Existing tasks keep their saved values, so changing a default never rewrites a
+(`lib/taskForm.ts`). Existing tasks keep their saved values, so changing a default never rewrites a
 task. Preferences is the first `SECTIONS` entry and the dialog's default section.
 
 ## Title bar
@@ -164,6 +169,29 @@ at 11px.
 The terminal opens at `TERMINAL_OPEN_RATIO` of the window height, but `manuallyResized` in `App`
 latches on the first drag so a user's chosen height is never reset by a later toggle.
 
+## App shell
+
+`App.tsx` only wires hooks to views. Keep it that way: behaviour goes in a hook or `lib/`, markup in
+a component.
+
+- `useAppShell` — which view, sidebar and dialogs are showing: `appShellReducer` (`lib/appShell.ts`)
+  plus the remembered view and the reset on workspace switch. Esc, a workspace switch and every
+  shortcut command are actions on it, so its rules are tested without rendering `App`. A new dialog
+  adds a field and its actions there, not another `useState` in `App`.
+- `useBoardView` — the sorted board, shown agents, the task lookup and the tab titles/states.
+- `useAgentLauncher` — everything that opens a terminal tab (shells, launches, resumes, Ask review and
+  fork, tasks from terminal output and Quick add plans), and `activateTask`.
+- `useDispatch` — the Dispatch plan, the run in progress, Auto-run and the header button's state.
+- `useCommands` — the keydown chain, `runShortcutCommand` and the palette's entries.
+- `usePendingActivation` — menu bar requests that wait for the board to load.
+
+The title bar is `components/header/`: `AppHeader` lays out three slots and mirrors them off macOS,
+filled with `BrandMark`, `WorkspaceSwitcher`, `SearchBox`, `ViewTabs` and `DispatchButton`.
+
+`TaskDialog` is the same shape: it holds the form and composes `components/task/` (`TaskHeader`, the
+tabs in `TaskTabs`/`BriefTab`, `TaskSidebar` with its field groups, `TaskFooter`). Its rules are in
+`lib/taskForm.ts`. Shared stroke icons are in `components/icons.tsx`.
+
 ## Shortcuts
 
 `src/core/shortcuts.ts` is the single source of truth for what key does what. Before it, the same
@@ -172,8 +200,8 @@ knowledge lived in four places that had to agree by hand — the keydown chain i
 `isAppShortcut` produced a shortcut that worked everywhere _except_ when the terminal had focus,
 while also leaking a byte to the shell. Nothing may reintroduce a second list:
 
-- `SHORTCUT_COMMANDS` in `types.ts` is the command set. `App.runCommand` switches on it exhaustively,
-  so adding a command is a compile error until it is handled.
+- `SHORTCUT_COMMANDS` in `types.ts` is the command set. `runShortcutCommand` (`lib/appShell.ts`)
+  switches on it exhaustively, so adding a command is a compile error until it is handled.
 - The palette's Actions group is generated from the same list, so a new command is reachable by name
   without being bound to anything.
 - Every `⌘…` label comes from `shortcutHint`. No component types an accelerator as a string literal.
@@ -238,15 +266,17 @@ and testing it should not require a DOM or an xterm instance.
 
 ## Command palette
 
-`CommandPalette.tsx` renders a flat, pre-ranked list; `App.tsx` owns the entries. Every entry is a
-`CommandEntry` with a `run`, so the palette never knows what an action does — adding a destination
-means pushing one more entry into the `commandEntries` memo, not touching the component.
+`CommandPalette.tsx` renders a flat, pre-ranked list; `buildCommandEntries` (`lib/commandEntries.ts`)
+builds the entries from the board and shell state `App` passes in. Every entry is a `CommandEntry`
+with a `run`, so the palette never knows what an action does — adding a destination means pushing
+one more entry there, not touching the component.
 
 `lib/fuzzy.ts` is pure and testable: `fuzzyScore` returns `null` for a non-match, so filtering and
 ranking are the same pass. Scores favour prefixes and word boundaries over scattered matches.
 
-Settings entries work because `SettingsDialog` exports `SECTIONS` and takes `initialSection` — the
-palette lists the real sections rather than a parallel list that would drift.
+Settings entries work because `SECTIONS` (`components/settings/sections.ts`) is shared and
+`SettingsDialog` takes `initialSection` — the palette lists the real sections rather than a parallel
+list that would drift.
 
 `⌘P`/`⌘K` are in `isAppShortcut` (`lib/terminalKeys.ts`), or the embedded terminal would swallow
 them and send them to the shell.

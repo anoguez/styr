@@ -31,6 +31,8 @@ export interface WorkspaceTarget {
   choose: (id: string) => void
   confirmDiscard: () => void
   cancelSwitch: () => void
+  /** After a save: what was written becomes the saved state, and a broken file is now whole. */
+  markSaved: (saved: WorkspaceSettings) => void
 }
 
 function errorMessage(error: unknown): string {
@@ -149,6 +151,19 @@ export function useWorkspaceTarget({
 
   const cancelSwitch = useCallback(() => setRequestedWorkspaceId(null), [])
 
+  const markSaved = useCallback(
+    (saved: WorkspaceSettings) => {
+      setSavedWorkspaceSettings(saved)
+      setBrokenWorkspaceIds((ids) => {
+        if (!ids.has(editedWorkspaceId)) return ids
+        const next = new Set(ids)
+        next.delete(editedWorkspaceId)
+        return next
+      })
+    },
+    [editedWorkspaceId]
+  )
+
   return {
     workspaces: overview.workspaces,
     editedWorkspaceId,
@@ -161,6 +176,7 @@ export function useWorkspaceTarget({
     notice,
     choose,
     confirmDiscard,
-    cancelSwitch
+    cancelSwitch,
+    markSaved
   }
 }

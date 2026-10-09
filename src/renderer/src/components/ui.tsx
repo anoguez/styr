@@ -6,6 +6,7 @@ import {
   type ReactNode,
   type SelectHTMLAttributes
 } from 'react'
+import { useSubmitShortcut } from '../hooks/useSubmitShortcut.js'
 import { hexToHsl, hslToHex } from '../lib/palette.js'
 import { fileName } from '../lib/terminalPath.js'
 
@@ -256,17 +257,7 @@ export function Modal({
   /** Clicking the dimmed backdrop closes the dialog. Turn off where a stray click would lose edits. */
   backdropCloses?: boolean
 }): ReactNode {
-  useEffect(() => {
-    if (!onSubmit) return
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault()
-        onSubmit?.()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onSubmit])
+  useSubmitShortcut(onSubmit)
 
   return (
     <div

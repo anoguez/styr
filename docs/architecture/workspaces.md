@@ -126,13 +126,14 @@ it completes `loadSettings` still layers the legacy values in. Any future step a
 currently runs on `config.json` only.
 Downgrading after the migration shows the shipped templates and routing in the older build.
 
-`SettingsDialog` tags each `SECTIONS` entry with `scope`. `useWorkspaceTarget` owns which workspace
-it edits: the dropdown swaps only the workspace keys of the draft (app-level edits survive), waits
-for Discard or Stay before throwing away unsaved changes, and hands over to the active workspace
-with a notice when the edited one is deleted. The theme is previewed by one effect, only while the
-active workspace's theme differs from its saved one. `useWorkspaces` is called once, in `App`; the
-dialog, `useWorkspaceTarget` and `WorkspacesPane` are handed its result, so opening Settings makes
-no extra call. `scopeNoteFor` is the one place a section says where it is stored.
+Each `SECTIONS` entry (`components/settings/sections.ts`) carries a `scope`. `useWorkspaceTarget`
+owns which workspace it edits: the dropdown swaps only the workspace keys of the draft (app-level
+edits survive), waits for Discard or Stay before throwing away unsaved changes, and hands over to
+the active workspace with a notice when the edited one is deleted. The theme is previewed by one
+effect, only while the active workspace's theme differs from its saved one. `useWorkspaces` is
+called once, in `App`; the dialog, `useWorkspaceTarget` and `WorkspacesPane` are handed its result,
+so opening Settings makes no extra call. `scopeNoteFor` is the one place a section says where it is
+stored.
 
 The MCP install commands are built from the _active_ workspace's CLI command, because the server is
 registered once per machine; the Integrations hints say so rather than pretending it is per
