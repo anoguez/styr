@@ -164,6 +164,14 @@ at 11px.
 The terminal opens at `TERMINAL_OPEN_RATIO` of the window height, but `manuallyResized` in `App`
 latches on the first drag so a user's chosen height is never reset by a later toggle.
 
+## App shell
+
+`App` keeps which view, sidebar and dialogs are showing in one reducer, `appShellReducer`
+(`lib/appShell.ts`). Esc, a workspace switch and every shortcut command are actions on it, so the
+rules — Esc closes only the dialogs without Esc handling of their own, the palette key toggles its
+mode, stopping Auto-run is confirmed — are tested without rendering `App`. A new dialog adds a
+field and its actions there rather than another `useState` in `App`.
+
 ## Shortcuts
 
 `src/core/shortcuts.ts` is the single source of truth for what key does what. Before it, the same
@@ -172,8 +180,8 @@ knowledge lived in four places that had to agree by hand — the keydown chain i
 `isAppShortcut` produced a shortcut that worked everywhere _except_ when the terminal had focus,
 while also leaking a byte to the shell. Nothing may reintroduce a second list:
 
-- `SHORTCUT_COMMANDS` in `types.ts` is the command set. `App.runCommand` switches on it exhaustively,
-  so adding a command is a compile error until it is handled.
+- `SHORTCUT_COMMANDS` in `types.ts` is the command set. `runShortcutCommand` (`lib/appShell.ts`)
+  switches on it exhaustively, so adding a command is a compile error until it is handled.
 - The palette's Actions group is generated from the same list, so a new command is reachable by name
   without being bound to anything.
 - Every `⌘…` label comes from `shortcutHint`. No component types an accelerator as a string literal.
@@ -238,15 +246,17 @@ and testing it should not require a DOM or an xterm instance.
 
 ## Command palette
 
-`CommandPalette.tsx` renders a flat, pre-ranked list; `App.tsx` owns the entries. Every entry is a
-`CommandEntry` with a `run`, so the palette never knows what an action does — adding a destination
-means pushing one more entry into the `commandEntries` memo, not touching the component.
+`CommandPalette.tsx` renders a flat, pre-ranked list; `buildCommandEntries` (`lib/commandEntries.ts`)
+builds the entries from the board and shell state `App` passes in. Every entry is a `CommandEntry`
+with a `run`, so the palette never knows what an action does — adding a destination means pushing
+one more entry there, not touching the component.
 
 `lib/fuzzy.ts` is pure and testable: `fuzzyScore` returns `null` for a non-match, so filtering and
 ranking are the same pass. Scores favour prefixes and word boundaries over scattered matches.
 
-Settings entries work because `SettingsDialog` exports `SECTIONS` and takes `initialSection` — the
-palette lists the real sections rather than a parallel list that would drift.
+Settings entries work because `SECTIONS` (`components/settings/sections.ts`) is shared and
+`SettingsDialog` takes `initialSection` — the palette lists the real sections rather than a parallel
+list that would drift.
 
 `⌘P`/`⌘K` are in `isAppShortcut` (`lib/terminalKeys.ts`), or the embedded terminal would swallow
 them and send them to the shell.

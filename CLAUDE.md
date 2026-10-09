@@ -75,7 +75,8 @@ add a line here only for a rule that must hold in every change.
   `SECTIONS` entry. External sources are read-only unless `writableSource` allows it; never call
   `adapter.writer` elsewhere.
 - **Shortcuts.** `core/shortcuts.ts` is the only key list. Labels come from `shortcutHint`; add a
-  command to `SHORTCUT_COMMANDS` and handle it in `App.runCommand`. No second list, no literal `⌘…`.
+  command to `SHORTCUT_COMMANDS` and handle it in `runShortcutCommand` (`lib/appShell.ts`). No
+  second list, no literal `⌘…`.
 - **Terminal.** Never remount `TerminalView` (it destroys scrollback): key by session id, push theme
   and bindings in via effects/refs. Command blocks are overlays on xterm, positioned from marks
   stamped with output offsets — not from runtime-state events.

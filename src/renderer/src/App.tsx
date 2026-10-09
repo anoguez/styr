@@ -1,23 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  AGENT_STATE_LABELS,
-  isAgentArchived,
-  shownAgents,
-  type AgentState
-} from '@core/agentState.js'
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
+import { shownAgents, type AgentState } from '@core/agentState.js'
 import { planDraft, terminalDraft } from '@core/derivedTask.js'
 import { planningPrompt, planTitle } from '@core/planning.js'
-import { openTaskCounts } from '@core/boardCounts.js'
 import { sortColumn } from '@core/boardOrder.js'
 import { openBlockers } from '@core/blocking.js'
 import { resolveTemplateFor } from '@core/prompt.js'
-import { commandForEvent, SHORTCUT_LABELS, shortcutHint } from '@core/shortcuts.js'
+import { commandForEvent, shortcutHint } from '@core/shortcuts.js'
 import { IS_MAC } from './lib/platform.js'
 import {
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_THEME,
-  SHORTCUT_COMMANDS,
   TASK_STATUS_LABELS,
   globalSettingsFor,
   workspaceSettingsFor,
@@ -28,7 +29,8 @@ import {
   type TaskPreset,
   type ThemeSettings
 } from '@core/types.js'
-import { AgentsSidebar, sortAgentRows, type AgentRow } from './components/AgentsSidebar.js'
+import { AgentsSidebar } from './components/AgentsSidebar.js'
+import { agentRowsFor, boardSummary } from './lib/agentRows.js'
 import { ArchiveDialog } from './components/ArchiveDialog.js'
 import { PerformanceDialog } from './components/PerformanceDialog.js'
 import { ChangesDialog } from './components/ChangesDialog.js'
@@ -38,19 +40,28 @@ import type { TerminalTaskRequest } from './components/TerminalSurface.js'
 import { buildInbox } from '@core/inbox.js'
 import { useAutoDispatch } from './hooks/useAutoDispatch.js'
 import { OrchestrateDialog, StopAutoRunDialog } from './components/OrchestrateDialog.js'
-import { CommandPalette, type CommandEntry, type PaletteMode } from './components/CommandPalette.js'
+import { CommandPalette } from './components/CommandPalette.js'
 import { StatusBar } from './components/StatusBar.js'
 import { useUpdates } from './hooks/useUpdates.js'
 import { isTerminalTarget } from './lib/terminalKeys.js'
 import { dispatchTerminalCommand } from './lib/terminalCommands.js'
-import { SECTIONS, SettingsDialog, type SectionId } from './components/SettingsDialog.js'
+import { SettingsDialog } from './components/SettingsDialog.js'
 import { QuickTaskDialog } from './components/QuickTaskDialog.js'
 import { TaskDialog } from './components/TaskDialog.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
-import { sessionLabel } from './lib/sessionLabel.js'
+import {
+  appShellReducer,
+  initialAppShell,
+  runShortcutCommand,
+  type Toggle,
+  type View
+} from './lib/appShell.js'
+import type { SectionId } from './components/settings/sections.js'
+import { buildCommandEntries } from './lib/commandEntries.js'
 import { dispatchButton } from './lib/orchestrateHint.js'
 import { DispatchingContext, dispatchingIds } from './lib/dispatchRun.js'
 import { useTerminalSessions } from './hooks/useTerminalSessions.js'
+import { useTerminalHeight } from './hooks/useTerminalHeight.js'
 import { Button, Chip, Modal, inputClass } from './components/ui.js'
 import { useSettings } from './hooks/useSettings.js'
 import { useTheme } from './hooks/useTheme.js'
@@ -68,22 +79,12 @@ import { fileName } from './lib/terminalPath.js'
 
 const VIEW_KEY = 'styr:view'
 
-type View = 'board' | 'inbox'
-
 function savedView(): View {
   try {
     return localStorage.getItem(VIEW_KEY) === 'inbox' ? 'inbox' : 'board'
   } catch {
     return 'board'
   }
-}
-
-const MIN_TERMINAL_HEIGHT = 140
-const MIN_BOARD_HEIGHT = 220
-const TERMINAL_OPEN_RATIO = 0.45
-
-function preferredTerminalHeight(): number {
-  return Math.round(window.innerHeight * TERMINAL_OPEN_RATIO)
 }
 
 export default function App(): ReactNode {
@@ -121,8 +122,6 @@ export default function App(): ReactNode {
   } = workspaces
   const activeWorkspaceId = settings?.activeWorkspaceId ?? overview.activeId
   const diffStats = useDiffStats(activeWorkspaceId)
-  const [switcherOpen, setSwitcherOpen] = useState(false)
-  const [creatingWorkspace, setCreatingWorkspace] = useState(false)
   const [pendingActivation, setPendingActivation] = useState<string | null>(null)
   const bindings = settings?.shortcuts ?? DEFAULT_SHORTCUTS
   const [previewTheme, setPreviewTheme] = useState<ThemeSettings | null>(null)
@@ -133,22 +132,14 @@ export default function App(): ReactNode {
   const newVersion =
     update?.kind === 'ready' || update?.kind === 'downloading' ? update.version : undefined
   const [orchestration, setOrchestration] = useState<OrchestrationSummary | null>(null)
-  const [confirmingOrchestrate, setConfirmingOrchestrate] = useState(false)
   /** Task ids the last Dispatch run started. */
   const [dispatchRun, setDispatchRun] = useState<string[]>([])
-  const [removingAgent, setRemovingAgent] = useState<AgentRow | null>(null)
 
-  const [editing, setEditing] = useState<Task | null>(null)
-  const [creating, setCreating] = useState(false)
-  /** The preset the New task dialog opens with, when it was started from the palette. */
-  const [creatingPreset, setCreatingPreset] = useState<string | undefined>()
-  const [quickAdding, setQuickAdding] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined)
-  const [paletteMode, setPaletteMode] = useState<PaletteMode | null>(null)
-  const [archiveOpen, setArchiveOpen] = useState(false)
-  const [performanceOpen, setPerformanceOpen] = useState(false)
-  const [view, setView] = useState<View>(savedView)
+  const [shell, dispatch] = useReducer(appShellReducer, undefined, () =>
+    initialAppShell(savedView())
+  )
+  const { view, agentsOpen, taskDialog, changes: changesTask, removingAgent } = shell
+  const taskOpen = taskDialog.mode !== 'closed'
   useEffect(() => {
     try {
       localStorage.setItem(VIEW_KEY, view)
@@ -156,7 +147,6 @@ export default function App(): ReactNode {
       // Remembering the view is a convenience; a blocked store just means it resets.
     }
   }, [view])
-  const [changesTask, setChangesTask] = useState<Task | null>(null)
 
   const {
     sessions,
@@ -169,11 +159,8 @@ export default function App(): ReactNode {
     close: closeSession,
     activateForTask
   } = useTerminalSessions()
-  const [agentsOpen, setAgentsOpen] = useState(true)
   const [terminalExpanded, setTerminalExpanded] = useState(false)
-  const [terminalHeight, setTerminalHeight] = useState(preferredTerminalHeight)
-  const dragging = useRef(false)
-  const manuallyResized = useRef(false)
+  const { height: terminalHeight, startResize } = useTerminalHeight(terminalOpen)
   const searchRef = useRef<HTMLInputElement>(null)
 
   const taskTitles = useMemo(
@@ -196,30 +183,11 @@ export default function App(): ReactNode {
     [board]
   )
 
-  const agentRows = useMemo<AgentRow[]>(() => {
-    const tasks = Object.values(board).flat()
-    return sortAgentRows(
-      tasks
-        .filter((task) => shown.has(task.id) || task.agentSession)
-        .filter((task) => !isAgentArchived(task))
-        .map((task) => ({
-          task,
-          agent: shown.get(task.id),
-          session: sessions.find(
-            (session) => session.taskId === task.id && session.workspaceId === activeWorkspaceId
-          )
-        }))
-    )
-  }, [board, shown, sessions, activeWorkspaceId])
-
-  const counts = useMemo(
-    () => ({
-      ...openTaskCounts(board),
-      waiting: agentRows.filter((row) => row.agent?.state === 'waiting').length,
-      working: agentRows.filter((row) => row.agent?.state === 'working').length
-    }),
-    [board, agentRows]
+  const agentRows = useMemo(
+    () => agentRowsFor(Object.values(board).flat(), shown, sessions, activeWorkspaceId),
+    [board, shown, sessions, activeWorkspaceId]
   )
+  const waitingCount = agentRows.filter((row) => row.agent?.state === 'waiting').length
 
   useEffect(() => {
     void window.api.app.info().then(setAppInfo)
@@ -332,7 +300,7 @@ export default function App(): ReactNode {
   const switchWorkspace = useCallback(
     async (id: string) => {
       if (id === activeWorkspaceId) return
-      if ((creating || editing) && !window.confirm('Discard the open task and switch workspace?')) {
+      if (taskOpen && !window.confirm('Discard the open task and switch workspace?')) {
         return
       }
       try {
@@ -341,13 +309,12 @@ export default function App(): ReactNode {
         window.alert(ipcMessage(error))
       }
     },
-    [activeWorkspaceId, applyWorkspaces, creating, editing]
+    [activeWorkspaceId, applyWorkspaces, taskOpen]
   )
 
   // Nothing carries over from one workspace to the next: not an open task, not a search.
   useEffect(() => {
-    setEditing(null)
-    setCreating(false)
+    dispatch({ type: 'workspaceChanged' })
     setQuery('')
   }, [activeWorkspaceId])
 
@@ -359,7 +326,7 @@ export default function App(): ReactNode {
 
   const runOrchestrate = useCallback(
     async (taskIds: string[]) => {
-      setConfirmingOrchestrate(false)
+      dispatch({ type: 'set', toggle: 'confirmDispatch', open: false })
       const started = await window.api.orchestrate.run(taskIds)
       for (const entry of started) adoptSession(entry.session)
       setDispatchRun(started.map((entry) => entry.taskId))
@@ -381,7 +348,7 @@ export default function App(): ReactNode {
   // Start the listed tasks before switching Auto-run on, so its first pass does not race them.
   const confirmOrchestrate = useCallback(
     async (summary: OrchestrationSummary, autoOn: boolean) => {
-      setConfirmingOrchestrate(false)
+      dispatch({ type: 'set', toggle: 'confirmDispatch', open: false })
       if (summary.dispatch.length > 0)
         await runOrchestrate(summary.dispatch.map((entry) => entry.taskId))
       if (autoOn !== autoDispatchState.on) setAutoDispatch(autoOn)
@@ -395,86 +362,29 @@ export default function App(): ReactNode {
   )
   // A manual run and Auto-run both light the button and the header's sweep.
   const dispatchLive = dispatchState.mode === 'dispatching' || dispatchState.mode === 'auto'
-  // Starting Auto-run is harmless; stopping it is confirmed, since it ends the workspace's only run.
-  const [confirmingAutoStop, setConfirmingAutoStop] = useState(false)
   const { setOn: setAutoOn } = autoDispatch
-  const requestAutoChange = useCallback(
-    (on: boolean) => (on ? setAutoOn(true) : setConfirmingAutoStop(true)),
-    [setAutoOn]
-  )
-
-  const openSettings = useCallback((section?: SectionId) => {
-    setSettingsSection(section)
-    setShowSettings(true)
-  }, [])
 
   const runCommand = useCallback(
-    (command: ShortcutCommand) => {
-      switch (command) {
-        case 'newTask':
-          setCreatingPreset(undefined)
-          return setCreating(true)
-        case 'quickTask':
-          return setQuickAdding(true)
-        case 'quickOpen':
-          return setPaletteMode((mode) => (mode === 'go' ? null : 'go'))
-        case 'commandPalette':
-          return setPaletteMode((mode) => (mode === 'command' ? null : 'command'))
-        case 'focusSearch':
+    (command: ShortcutCommand) =>
+      runShortcutCommand(command, {
+        dispatch,
+        focusSearch: () => {
           searchRef.current?.focus()
-          return searchRef.current?.select()
-        case 'viewBoard':
-          return setView('board')
-        case 'viewInbox':
-          return setView('inbox')
-        case 'settings':
-          return openSettings()
-        case 'toggleTerminal':
-          return toggleTerminal()
-        case 'toggleAgents':
-          return setAgentsOpen((open) => !open)
-        case 'orchestrate':
-          return setConfirmingOrchestrate(true)
-        case 'toggleAutoDispatch':
-          return requestAutoChange(!autoDispatch.state.on)
-        case 'newShell':
-          return void newShell()
-        case 'closeShell':
-          return activeSession ? void closeSession(activeSession) : undefined
-        case 'switchWorkspace':
-          return setSwitcherOpen(true)
-        case 'newWorkspace':
-          return setCreatingWorkspace(true)
-        case 'terminalTab1':
-        case 'terminalTab2':
-        case 'terminalTab3':
-        case 'terminalTab4':
-        case 'terminalTab5':
-        case 'terminalTab6':
-        case 'terminalTab7':
-        case 'terminalTab8':
-        case 'terminalTab9': {
-          // Tab N, as in a browser; with no such tab the key does nothing.
-          const target = sessions[Number(command.slice('terminalTab'.length)) - 1]
-          if (!target) return
-          return setActiveSession(target.id)
-        }
-        case 'terminalDirectory':
-        case 'terminalAskAgent':
-        case 'terminalCopyOutput':
-        case 'terminalRetry':
-        case 'terminalSplit':
-        case 'terminalAskReview':
-        case 'terminalHandOff':
-        case 'terminalCreatePr':
-          // The active terminal owns what these act on; it answers the event.
-          return dispatchTerminalCommand(command)
-      }
-    },
+          searchRef.current?.select()
+        },
+        toggleTerminal,
+        autoRunOn: autoDispatch.state.on,
+        startAutoRun: () => setAutoOn(true),
+        newShell: () => void newShell(),
+        sessions,
+        activeSession,
+        selectSession: setActiveSession,
+        closeSession: (id) => void closeSession(id),
+        terminal: dispatchTerminalCommand
+      }),
     [
-      autoDispatch,
-      requestAutoChange,
-      openSettings,
+      autoDispatch.state.on,
+      setAutoOn,
       newShell,
       closeSession,
       activeSession,
@@ -484,178 +394,59 @@ export default function App(): ReactNode {
     ]
   )
 
-  const commandEntries = useMemo<CommandEntry[]>(() => {
-    const tasks = Object.values(board).flat()
-    const dynamicLabels: Partial<Record<ShortcutCommand, string>> = {
-      toggleTerminal: terminalOpen ? 'Hide terminal' : 'Show terminal',
-      toggleAgents: agentsOpen ? 'Hide agents sidebar' : 'Show agents sidebar',
-      orchestrate: 'Dispatch — start waiting work',
-      toggleAutoDispatch: autoDispatch.state.on
-        ? 'Stop Dispatch auto-run'
-        : 'Start Dispatch auto-run'
-    }
-    const keywords: Partial<Record<ShortcutCommand, string>> = {
-      orchestrate: 'orchestrate run agents',
-      toggleAutoDispatch: 'orchestrate dispatch auto-run stop pause keep running',
-      newShell: 'terminal session',
-      closeShell: 'terminal session kill',
-      settings: 'preferences options',
-      quickTask: 'new capture backlog idea'
-    }
-    const entries: CommandEntry[] = SHORTCUT_COMMANDS.map((command) => ({
-      id: `cmd:${command}`,
-      label: dynamicLabels[command] ?? SHORTCUT_LABELS[command],
-      group: 'Actions',
-      mode: 'command',
-      hint: shortcutHint(bindings, command),
-      keywords: keywords[command],
-      run: () => runCommand(command)
-    }))
-
-    for (const preset of settings?.taskPresets ?? []) {
-      entries.push({
-        id: `preset:${preset.id}`,
-        mode: 'command',
-        label: `New task from preset: ${preset.name}`,
-        group: 'Actions',
-        keywords: 'new task template preset',
-        run: () => {
-          setCreatingPreset(preset.id)
-          setCreating(true)
+  const commandEntries = useMemo(
+    () =>
+      buildCommandEntries(
+        {
+          tasks: Object.values(board).flat(),
+          agentRows,
+          sessions,
+          taskTitles,
+          withChanges: diffStats,
+          archivedCount: archived.length,
+          presets: settings?.taskPresets ?? [],
+          experimental: settings?.experimental,
+          bindings,
+          workspaces: overview.workspaces,
+          activeWorkspaceId,
+          workspaceNames,
+          terminalOpen,
+          agentsOpen,
+          autoRunOn: autoDispatch.state.on
+        },
+        {
+          dispatch,
+          runCommand,
+          switchWorkspace: (id) => void switchWorkspace(id),
+          archiveTask: (taskId) => void window.api.tasks.archive(taskId, true),
+          launchAgent: (taskId) => void launchAgent(taskId),
+          activateTask,
+          selectSession: setActiveSession
         }
-      })
-    }
-
-    for (const workspace of overview.workspaces) {
-      if (workspace.id === activeWorkspaceId) continue
-      entries.push({
-        id: `workspace:${workspace.id}`,
-        label: `Switch to ${workspace.name}`,
-        group: 'Workspaces',
-        mode: 'command',
-        hint: `${workspace.taskCount} task${workspace.taskCount === 1 ? '' : 's'}`,
-        keywords: 'workspace board switch',
-        run: () => void switchWorkspace(workspace.id)
-      })
-    }
-    entries.push({
-      id: 'view:performance',
-      label: 'Show performance',
-      group: 'Actions',
-      mode: 'command',
-      keywords: 'slow cpu memory profile diagnostics usage lag',
-      run: () => setPerformanceOpen(true)
-    })
-    entries.push({
-      id: 'view:archive',
-      label: `View archive (${archived.length})`,
-      group: 'Actions',
-      mode: 'command',
-      keywords: 'archived unarchive restore',
-      run: () => setArchiveOpen(true)
-    })
-
-    for (const task of tasks) {
-      if (task.status === 'done') {
-        entries.push({
-          id: `archive:${task.id}`,
-          label: `Archive — ${task.title}`,
-          group: 'Tasks',
-          mode: 'command',
-          hint: task.id,
-          keywords: 'archive hide done',
-          run: () => void window.api.tasks.archive(task.id, true)
-        })
-      }
-      if (diffStats.has(task.id)) {
-        entries.push({
-          id: `changes:${task.id}`,
-          label: `View changes — ${task.title}`,
-          group: 'Tasks',
-          mode: 'command',
-          hint: task.id,
-          keywords: 'diff changes git files review',
-          run: () => setChangesTask(task)
-        })
-      }
-      entries.push({
-        id: `task:${task.id}`,
-        label: task.title,
-        group: 'Tasks',
-        mode: 'go',
-        hint: task.id,
-        keywords: `${task.status} ${task.project ?? ''} ${task.tags.join(' ')}`,
-        run: () => setEditing(task),
-        altLabel: 'start Claude',
-        runAlt: () => void launchAgent(task.id)
-      })
-    }
-
-    for (const row of agentRows) {
-      const state = row.agent ? AGENT_STATE_LABELS[row.agent.state] : 'No status'
-      entries.push({
-        id: `agent:${row.task.id}`,
-        label: `${state} — ${row.task.title}`,
-        group: 'Agents',
-        mode: 'go',
-        hint: row.task.id,
-        keywords: 'agent claude session',
-        run: () => activateTask(row.task.id)
-      })
-    }
-
-    for (const session of sessions) {
-      const { name, detail } = sessionLabel(session, taskTitles, {
-        activeId: activeWorkspaceId,
-        names: workspaceNames
-      })
-      entries.push({
-        id: `term:${session.id}`,
-        label: name,
-        hint: detail || undefined,
-        group: 'Terminals',
-        mode: 'go',
-        keywords: 'terminal tab session',
-        run: () => setActiveSession(session.id)
-      })
-    }
-
-    for (const section of SECTIONS) {
-      if ('flag' in section && !settings?.experimental[section.flag]) continue
-      entries.push({
-        id: `settings:${section.id}`,
-        label: `Settings — ${section.label}`,
-        group: 'Settings',
-        mode: 'command',
-        keywords: section.blurb,
-        run: () => openSettings(section.id)
-      })
-    }
-
-    return entries
-  }, [
-    board,
-    autoDispatch.state.on,
-    settings?.experimental,
-    settings?.taskPresets,
-    archived.length,
-    diffStats,
-    agentRows,
-    sessions,
-    taskTitles,
-    terminalOpen,
-    agentsOpen,
-    bindings,
-    runCommand,
-    setActiveSession,
-    launchAgent,
-    activateTask,
-    openSettings,
-    overview,
-    activeWorkspaceId,
-    workspaceNames,
-    switchWorkspace
-  ])
+      ),
+    [
+      board,
+      autoDispatch.state.on,
+      settings?.experimental,
+      settings?.taskPresets,
+      archived.length,
+      diffStats,
+      agentRows,
+      sessions,
+      taskTitles,
+      terminalOpen,
+      agentsOpen,
+      bindings,
+      runCommand,
+      setActiveSession,
+      launchAgent,
+      activateTask,
+      overview,
+      activeWorkspaceId,
+      workspaceNames,
+      switchWorkspace
+    ]
+  )
 
   const queued = useMemo(
     () =>
@@ -679,18 +470,7 @@ export default function App(): ReactNode {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') {
-        setCreating(false)
-        setEditing(null)
-        setShowSettings(false)
-        setConfirmingOrchestrate(false)
-        setPaletteMode(null)
-        setSwitcherOpen(false)
-        setCreatingWorkspace(false)
-        setArchiveOpen(false)
-        setChangesTask(null)
-        return
-      }
+      if (event.key === 'Escape') return dispatch({ type: 'escape' })
       // The Changes viewer is modal: its own keys (J/K, arrows) and ⌘ combos must not reach the board.
       if (changesTask) return
       const command = commandForEvent(bindings, event, {
@@ -704,30 +484,13 @@ export default function App(): ReactNode {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [bindings, runCommand, changesTask])
 
-  useEffect(() => {
-    if (terminalOpen && !manuallyResized.current) setTerminalHeight(preferredTerminalHeight())
-  }, [terminalOpen])
-
-  useEffect(() => {
-    function onMove(event: MouseEvent): void {
-      if (!dragging.current) return
-      manuallyResized.current = true
-      const height = window.innerHeight - event.clientY
-      const ceiling = Math.max(MIN_TERMINAL_HEIGHT, window.innerHeight - MIN_BOARD_HEIGHT)
-      setTerminalHeight(Math.min(Math.max(height, MIN_TERMINAL_HEIGHT), ceiling))
-    }
-    function onUp(): void {
-      dragging.current = false
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }, [])
-
   if (!settings) return <div className="p-6 text-muted">Loading…</div>
+
+  const toggle = (name: Toggle, open: boolean): void =>
+    dispatch({ type: 'set', toggle: name, open })
+  const openSettings = (section?: SectionId): void => dispatch({ type: 'openSettings', section })
+  const editTask = (task: Task): void => dispatch({ type: 'editTask', task })
+  const showChanges = (task: Task): void => dispatch({ type: 'showChanges', task })
 
   return (
     <TaskLookupContext.Provider value={lookup}>
@@ -800,10 +563,10 @@ export default function App(): ReactNode {
               <WorkspaceSwitcher
                 overview={overview}
                 activity={workspaceActivity}
-                open={switcherOpen}
-                onOpenChange={setSwitcherOpen}
+                open={shell.switcher}
+                onOpenChange={(open) => toggle('switcher', open)}
                 onSwitch={(id) => void switchWorkspace(id)}
-                onNew={() => setCreatingWorkspace(true)}
+                onNew={() => toggle('newWorkspace', true)}
                 onManage={() => openSettings('workspaces')}
               />
             </div>
@@ -857,7 +620,7 @@ export default function App(): ReactNode {
                     role="tab"
                     aria-selected={view === tab.id}
                     title={`${tab.label} view ${shortcutHint(bindings, tab.command)}`.trim()}
-                    onClick={() => setView(tab.id)}
+                    onClick={() => dispatch({ type: 'setView', view: tab.id })}
                     className={`inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors ${
                       view === tab.id
                         ? 'border-edge-strong bg-raised text-ink'
@@ -875,7 +638,7 @@ export default function App(): ReactNode {
               </div>
               <span aria-hidden className="h-[18px] w-px bg-edge" />
               <Button
-                onClick={() => setConfirmingOrchestrate(true)}
+                onClick={() => toggle('confirmDispatch', true)}
                 disabled={orchestration === null}
                 title={dispatchState.title}
                 className={dispatchLive ? 'dispatch-running disabled:opacity-100' : ''}
@@ -912,7 +675,7 @@ export default function App(): ReactNode {
                   </span>
                 ) : null}
               </Button>
-              <Button variant="primary" onClick={() => setCreating(true)}>
+              <Button variant="primary" onClick={() => dispatch({ type: 'newTask' })}>
                 New task
               </Button>
             </div>
@@ -957,10 +720,10 @@ export default function App(): ReactNode {
                     agents={agents}
                     queued={queuedPositions}
                     diffStats={diffStats}
-                    onOpen={setEditing}
+                    onOpen={editTask}
                     onLaunch={(task) => void launchAgent(task.id)}
                     onActivate={(task) => activateTask(task.id)}
-                    onShowChanges={setChangesTask}
+                    onShowChanges={showChanges}
                     onMove={(task, status) => void window.api.tasks.update(task.id, { status })}
                     onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
                   />
@@ -969,17 +732,17 @@ export default function App(): ReactNode {
                     board={board}
                     agents={shown}
                     queued={queued}
-                    onOpen={setEditing}
+                    onOpen={editTask}
                     onLaunch={(task) => void launchAgent(task.id)}
                     onArchive={(task) => void window.api.tasks.archive(task.id, !task.archivedAt)}
-                    onShowChanges={setChangesTask}
+                    onShowChanges={showChanges}
                     onOpenTerminal={(task) =>
                       void window.api.terminal
                         .create({ cwd: task.worktreePath || task.repoPath, title: task.id })
                         .then(adoptSession)
                     }
                     diffStats={diffStats}
-                    onQuickAdd={() => setQuickAdding(true)}
+                    onQuickAdd={() => toggle('quickAdd', true)}
                     doneFooter={
                       hiddenDone > 0 || showAllDone || archived.length > 0 ? (
                         <div className="mt-auto flex shrink-0 flex-col items-center gap-1 pt-1 text-[11px] text-faint">
@@ -996,7 +759,7 @@ export default function App(): ReactNode {
                             <button
                               type="button"
                               className="hover:text-ink"
-                              onClick={() => setArchiveOpen(true)}
+                              onClick={() => toggle('archive', true)}
                             >
                               {archived.length} archived — View
                             </button>
@@ -1014,9 +777,7 @@ export default function App(): ReactNode {
                   {terminalExpanded ? null : (
                     <div
                       className="h-1 shrink-0 cursor-row-resize bg-edge/60 hover:bg-accent/60"
-                      onMouseDown={() => {
-                        dragging.current = true
-                      }}
+                      onMouseDown={startResize}
                     />
                   )}
                   <div
@@ -1036,7 +797,7 @@ export default function App(): ReactNode {
                       diffStats={diffStats}
                       onShowChanges={(taskId) => {
                         const task = allTasks.find((candidate) => candidate.id === taskId)
-                        if (task) setChangesTask(task)
+                        if (task) showChanges(task)
                       }}
                       onAskReview={askReview}
                       onAskFork={askFork}
@@ -1057,10 +818,10 @@ export default function App(): ReactNode {
               <AgentsSidebar
                 rows={agentRows}
                 diffStats={diffStats}
-                onShowChanges={setChangesTask}
-                onOpenTask={setEditing}
-                onRemove={setRemovingAgent}
-                onClose={() => setAgentsOpen(false)}
+                onShowChanges={showChanges}
+                onOpenTask={editTask}
+                onRemove={(row) => dispatch({ type: 'confirmRemoveAgent', row })}
+                onClose={() => dispatch({ type: 'closeAgents' })}
                 onActivate={(row) => activateTask(row.task.id)}
               />
             ) : null}
@@ -1070,13 +831,9 @@ export default function App(): ReactNode {
             agentsOpen={agentsOpen}
             terminalOpen={terminalOpen}
             agentCount={agentRows.length}
-            waitingCount={counts.waiting}
+            waitingCount={waitingCount}
             sessionCount={sessions.length}
-            summary={`${counts.total} task${counts.total === 1 ? '' : 's'}${
-              counts.needsSpec > 0
-                ? ` · ${counts.needsSpec} need${counts.needsSpec === 1 ? 's' : ''} a spec`
-                : ''
-            }${counts.working > 0 ? ` · ${counts.working} running` : ''}`}
+            summary={boardSummary(board, agentRows)}
             bindings={bindings}
             readyUpdate={update?.kind === 'ready' ? update.version : undefined}
             onToggleAgents={() => runCommand('toggleAgents')}
@@ -1085,51 +842,50 @@ export default function App(): ReactNode {
             onInstallUpdate={() => void window.api.updates.install()}
           />
 
-          {creatingWorkspace ? (
+          {shell.newWorkspace ? (
             <NewWorkspaceDialog
               onCreate={async (name) => applyWorkspaces(await window.api.workspaces.create(name))}
-              onClose={() => setCreatingWorkspace(false)}
+              onClose={() => toggle('newWorkspace', false)}
             />
           ) : null}
 
-          {paletteMode ? (
+          {shell.palette ? (
             <CommandPalette
               // a different mode is a fresh palette, so the query starts empty
-              key={paletteMode}
+              key={shell.palette}
               entries={commandEntries}
-              initialMode={paletteMode}
-              onClose={() => setPaletteMode(null)}
+              initialMode={shell.palette}
+              onClose={() => dispatch({ type: 'closePalette' })}
             />
           ) : null}
 
-          {performanceOpen ? <PerformanceDialog onClose={() => setPerformanceOpen(false)} /> : null}
+          {shell.performance ? (
+            <PerformanceDialog onClose={() => toggle('performance', false)} />
+          ) : null}
 
-          {archiveOpen ? (
+          {shell.archive ? (
             <ArchiveDialog
               tasks={archived}
-              onOpen={(task) => {
-                setArchiveOpen(false)
-                setEditing(task)
-              }}
-              onClose={() => setArchiveOpen(false)}
+              onOpen={(task) => dispatch({ type: 'openArchived', task })}
+              onClose={() => toggle('archive', false)}
             />
           ) : null}
 
-          {confirmingOrchestrate && orchestration ? (
+          {shell.confirmDispatch && orchestration ? (
             <OrchestrateDialog
               summary={orchestration}
               auto={autoDispatch.state}
               onAutoStop={() => setAutoDispatch(false)}
-              onClose={() => setConfirmingOrchestrate(false)}
+              onClose={() => toggle('confirmDispatch', false)}
               onConfirm={(autoOn) => void confirmOrchestrate(orchestration, autoOn)}
             />
           ) : null}
 
-          {confirmingAutoStop ? (
+          {shell.confirmAutoStop ? (
             <StopAutoRunDialog
-              onClose={() => setConfirmingAutoStop(false)}
+              onClose={() => toggle('confirmAutoStop', false)}
               onConfirm={() => {
-                setConfirmingAutoStop(false)
+                toggle('confirmAutoStop', false)
                 setAutoOn(false)
               }}
             />
@@ -1139,15 +895,17 @@ export default function App(): ReactNode {
             <Modal
               title="Remove this agent?"
               subtitle={`${removingAgent.task.id} · ${removingAgent.task.title}`}
-              onClose={() => setRemovingAgent(null)}
+              onClose={() => dispatch({ type: 'confirmRemoveAgent', row: null })}
               footer={
                 <>
-                  <Button onClick={() => setRemovingAgent(null)}>Cancel</Button>
+                  <Button onClick={() => dispatch({ type: 'confirmRemoveAgent', row: null })}>
+                    Cancel
+                  </Button>
                   <Button
                     variant="danger"
                     onClick={() => {
                       const { task } = removingAgent
-                      setRemovingAgent(null)
+                      dispatch({ type: 'confirmRemoveAgent', row: null })
                       void window.api.agents.remove(task.id)
                     }}
                   >
@@ -1165,20 +923,20 @@ export default function App(): ReactNode {
             </Modal>
           ) : null}
 
-          {quickAdding && settings ? (
+          {shell.quickAdd ? (
             <QuickTaskDialog
               settings={settings}
               onPlan={planTasks}
-              onClose={() => setQuickAdding(false)}
+              onClose={() => toggle('quickAdd', false)}
             />
           ) : null}
 
-          {creating || editing ? (
+          {taskDialog.mode !== 'closed' ? (
             <TaskDialog
-              task={editing}
+              task={taskDialog.mode === 'edit' ? taskDialog.task : null}
               allTasks={allTasks}
               settings={settings}
-              presetId={creatingPreset}
+              presetId={taskDialog.mode === 'new' ? taskDialog.presetId : undefined}
               onSavePresets={(taskPresets) =>
                 save({
                   workspaceId: settings.activeWorkspaceId,
@@ -1186,35 +944,34 @@ export default function App(): ReactNode {
                   global: globalSettingsFor(settings)
                 })
               }
-              onClose={() => {
-                setCreating(false)
-                setCreatingPreset(undefined)
-                setEditing(null)
-              }}
+              onClose={() => dispatch({ type: 'closeTask' })}
               onLaunch={(taskId, templateId, provider) =>
                 void launchAgent(taskId, templateId, provider)
               }
               onResumeSession={(taskId, sessionId) => {
                 void window.api.terminal.resumeSession(taskId, sessionId).then(adoptSession)
               }}
-              onShowChanges={setChangesTask}
+              onShowChanges={showChanges}
             />
           ) : null}
 
           {changesTask ? (
-            <ChangesDialog task={changesTask} onClose={() => setChangesTask(null)} />
+            <ChangesDialog
+              task={changesTask}
+              onClose={() => dispatch({ type: 'showChanges', task: null })}
+            />
           ) : null}
 
-          {showSettings ? (
+          {shell.settings ? (
             <SettingsDialog
               settings={settings}
               workspaces={workspaces}
-              initialSection={settingsSection}
+              initialSection={shell.settings.section}
               onSave={save}
               onPreviewTheme={setPreviewTheme}
               onClose={() => {
                 setPreviewTheme(null)
-                setShowSettings(false)
+                dispatch({ type: 'closeSettings' })
               }}
             />
           ) : null}
