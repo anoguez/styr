@@ -2,6 +2,15 @@
 
 Moved from CLAUDE.md verbatim; read it before touching this area.
 
+## Task writes from the renderer
+
+`src/main/taskWrites.ts` owns every renderer-driven task mutation (create, update, note, reorder,
+archive, delete, forget session, remove agent, remove worktree): it parses the input
+(`taskDraftSchema`, `taskPatchSchema`), writes through `taskStore` and then notifies — tasks once,
+plus agents for archive and remove agent. It imports no Electron; `ipc.ts` injects the store and
+the notify callbacks as `TaskWritePorts` and maps each channel to one operation, so a new write
+handler goes through it rather than calling `notifyTasksChanged` itself.
+
 ## Task dependencies
 
 `Task.blockedBy` is a list of same-workspace task ids (ids repeat across workspaces, so there is no
