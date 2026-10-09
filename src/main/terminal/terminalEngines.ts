@@ -107,6 +107,7 @@ export function registerTerminalEngines(
     backlog: sessionBacklog,
     writeToPty: writeToSession,
     sendFrame: (event) => broadcast('terminal:nativeFrame', event),
+    sendBlocks: (event) => broadcast('terminal:nativeBlocks', event),
     sendFailure: (failure) => {
       record({
         sessionId: failure.id,
@@ -151,6 +152,7 @@ export function registerTerminalEngines(
     host.lines(String(id), Number(from), Number(to))
   )
   ipcMain.on('terminal:nativeDetach', (_event, id: string) => host.detach(String(id)))
+  ipcMain.on('terminal:nativeClearBlocks', (_event, id: string) => host.clearBlocks(String(id)))
   // The renderer reports what each view ended up with, so the report shows sessions that never
   // asked for the native engine (or were refused before attaching) as well.
   ipcMain.on('terminal:engineSelected', (_event, entry: Partial<TerminalEngineDiagnostic>) => {

@@ -53,7 +53,7 @@ export class BlockTracker {
 
   /** Call once everything before `mark` has been parsed, so the cursor is where the shell was. */
   mark(mark: TerminalMark): void {
-    if (this.terminal.buffer.active.type === 'alternate') return
+    if (this.terminal.buffer.active.type === 'alternate' || mark.kind === 'prompt') return
     if (mark.kind === 'start') {
       // The shell announces a command after Enter has moved the cursor down, so its own row is the
       // one above.

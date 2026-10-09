@@ -7,6 +7,7 @@ import {
 } from '@core/terminalEngine.js'
 import type {
   EngineFrame,
+  EngineFrameLine,
   NativeEngineInfo,
   NativeEngineStatus,
   TerminalEngineAvailability
@@ -37,6 +38,9 @@ export interface NativeTerminalEngine {
   cursorPosition?: () => { line: number; col: number }
   markLine?: (id: string, offset: number) => number | null
   markedLines?: () => { id: string; line: number }[]
+  /** Since package 0.3.0; an engine without them cannot draw the block list. */
+  styledLines?: (from: number, to: number) => EngineFrameLine[]
+  totalLines?: () => number
 }
 
 export interface NativeEngineFactory {

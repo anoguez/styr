@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type {
   NativeEngineFailure,
   NativeEngineStatus,
+  NativeBlockEvent,
   NativeFrameEvent,
   TerminalMark,
   TerminalOutput
@@ -41,6 +42,7 @@ class FakeSession {
 function setup(overrides: Partial<NativeHostPorts> = {}) {
   const session = new FakeSession()
   const frames: NativeFrameEvent[] = []
+  const blockEvents: NativeBlockEvent[] = []
   const failures: NativeEngineFailure[] = []
   const ptyWrites: string[] = []
   const deferred: (() => void)[] = []
@@ -51,6 +53,7 @@ function setup(overrides: Partial<NativeHostPorts> = {}) {
     backlog: () => session.snapshot(),
     writeToPty: (_id, data) => ptyWrites.push(data),
     sendFrame: (event) => frames.push(event),
+    sendBlocks: (event) => blockEvents.push(event),
     sendFailure: (failure) => failures.push(failure),
     defer: (task) => deferred.push(task),
     ...overrides
@@ -59,7 +62,7 @@ function setup(overrides: Partial<NativeHostPorts> = {}) {
   const flush = (): void => {
     while (deferred.length > 0) deferred.shift()!()
   }
-  return { session, host, frames, failures, ptyWrites, flush }
+  return { session, host, frames, blockEvents, failures, ptyWrites, flush }
 }
 
 beforeEach(() => {
@@ -386,5 +389,89 @@ describe('NativeTerminalHost command blocks', () => {
     flush()
     expect(failures).toMatchObject([{ id: 's1', reason: 'runtime-error' }])
     expect(host.has('s1')).toBe(false)
+  })
+})
+
+describe('NativeTerminalHost block list', () => {
+  const mark = (
+    kind: TerminalMark['kind'],
+    id: string,
+    offset: number,
+    extra = {}
+  ): TerminalMark => ({
+    offset,
+    kind,
+    id,
+    at: 1,
+    ...extra
+  })
+
+  it('switches a session to the block list at its first prompt', () => {
+    const { host, frames, blockEvents, flush } = setup()
+    host.attach('s1', 80, 24)
+    host.write('s1', { data: 'Last login\r\n', sequence: 1, marks: [] })
+    flush()
+    expect(frames).toHaveLength(1)
+    const data = '➜ ls\r\na\r\n'
+    host.write('s1', {
+      data,
+      sequence: 2,
+      marks: [
+        mark('prompt', 'p1', 0, { cwd: '/repo' }),
+        mark('start', 'c1', 6, { command: 'ls' }),
+        mark('end', 'c1', data.length, { exitCode: 0 })
+      ]
+    })
+    flush()
+    // Once listed, the session's whole-screen frames are no longer sent.
+    expect(frames).toHaveLength(1)
+    const kinds = blockEvents.flatMap((event) => event.events.map((item) => item.kind))
+    expect(kinds).toEqual(['segment', 'segment', 'finished', 'segment'])
+    const finished = blockEvents
+      .flatMap((event) => event.events)
+      .find((item) => item.kind === 'finished')
+    expect(finished?.kind === 'finished' && finished.block).toMatchObject({
+      id: 'c1',
+      command: 'ls',
+      exitCode: 0
+    })
+  })
+
+  it('rebuilds the list from the backlog when a view attaches', () => {
+    const data = '➜ ls\r\na\r\n➜ '
+    const backlog = {
+      data,
+      sequence: 3,
+      marks: [
+        mark('prompt', 'p1', 0),
+        mark('start', 'c1', 6, { command: 'ls' }),
+        mark('end', 'c1', 9, { exitCode: 0 }),
+        mark('prompt', 'p2', 9)
+      ]
+    }
+    const { host } = setup({ backlog: () => backlog })
+    const result = host.attach('s1', 80, 24)
+    if (!result.ok) throw new Error(result.detail)
+    expect(result.blockList?.finished.map((block) => block.command)).toEqual(['ls'])
+    expect(result.blockList?.active).toMatchObject({ kind: 'prompt', id: 'p2' })
+  })
+
+  it('stays a grid for a shell that never sends a prompt mark', () => {
+    const { host, blockEvents, flush } = setup()
+    const result = host.attach('s1', 80, 24)
+    host.write('s1', { data: 'bash-5.2$ ', sequence: 1, marks: [] })
+    flush()
+    expect(result.ok && result.blockList).toBeUndefined()
+    expect(blockEvents).toEqual([])
+  })
+
+  it('clears the list on request', () => {
+    const { host, blockEvents, flush } = setup()
+    host.attach('s1', 80, 24)
+    host.write('s1', { data: '➜ ', sequence: 1, marks: [mark('prompt', 'p1', 0)] })
+    flush()
+    host.clearBlocks('s1')
+    flush()
+    expect(blockEvents.at(-1)!.events.map((item) => item.kind)).toEqual(['cleared'])
   })
 })

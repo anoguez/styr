@@ -1,7 +1,12 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
-import type { NativeEngineFailure, NativeFrameEvent, TerminalOutput } from '@core/types.js'
+import type {
+  NativeBlockEvent,
+  NativeEngineFailure,
+  NativeFrameEvent,
+  TerminalOutput
+} from '@core/types.js'
 import { loadNativeEngine } from './nativeEngine.js'
 import { NativeTerminalHost } from './nativeHost.js'
 
@@ -44,6 +49,7 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
       backlog: () => ({ data: backlog, sequence, marks: [] }),
       writeToPty: (_id, data) => replies.push(data),
       sendFrame: (event) => frames.push(event),
+      sendBlocks: () => {},
       sendFailure: (failure) => failures.push(failure),
       defer: (task) => deferred.push(task)
     })
@@ -91,6 +97,7 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
       backlog: () => ({ data: '', sequence: 0, marks: [] }),
       writeToPty: () => {},
       sendFrame: (event) => sent.push(event),
+      sendBlocks: () => {},
       sendFailure: () => {},
       defer: (task) => deferred.push(task)
     })
@@ -107,6 +114,47 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
       expect.objectContaining({ id: 'c1', command: 'ls', startLine: 0, endLine: 2, open: false })
     ])
     expect(host.lines('s', 0, 2)).toBe('$ ls\na')
+    host.detach('s')
+  })
+
+  it('splits a zsh-like session into a block list with styled, wrapped rows', () => {
+    const { factory, status } = load()
+    const lists: NativeBlockEvent[] = []
+    const deferred: (() => void)[] = []
+    const host = new NativeTerminalHost({
+      factory: () => factory,
+      status: () => status,
+      backlog: () => ({ data: '', sequence: 0, marks: [] }),
+      writeToPty: () => {},
+      sendFrame: () => {},
+      sendBlocks: (event) => lists.push(event),
+      sendFailure: () => {},
+      defer: (task) => deferred.push(task)
+    })
+    host.attach('s', 10, 4)
+    const prompt = '\x1b[32m➜\x1b[0m repo ls\r\n'
+    const output = 'abcdefghijKLM\r\n'
+    const at = Date.now()
+    host.write('s', {
+      data: prompt + output,
+      sequence: 1,
+      marks: [
+        { offset: 0, kind: 'prompt', id: 'p1', at },
+        { offset: prompt.length, kind: 'start', id: 'c1', command: 'ls', at },
+        { offset: prompt.length + output.length, kind: 'end', id: 'c1', exitCode: 0, at }
+      ]
+    })
+    while (deferred.length) deferred.shift()!()
+    const finished = lists
+      .flatMap((event) => event.events)
+      .find((event) => event.kind === 'finished')
+    if (finished?.kind !== 'finished') throw new Error('no finished block')
+    expect(finished.block.prompt[0]!.runs[0]).toMatchObject({ text: '➜', fg: 2 })
+    expect(finished.block.output.map((row) => row.wrapped)).toEqual([true, false])
+    expect(finished.block.output.map((row) => row.runs.map((run) => run.text).join(''))).toEqual([
+      'abcdefghij',
+      'KLM'
+    ])
     host.detach('s')
   })
 

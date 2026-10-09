@@ -27,8 +27,8 @@ import {
 import { AskPrompt } from './AskPrompt.js'
 import { DirectoryPicker } from './DirectoryPicker.js'
 import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
-import { TerminalBlocks, type BlockActions } from './TerminalBlocks.js'
-import type { BlockLayout, TrackedBlock } from '../lib/blockTracker.js'
+import { TerminalBlocks, type ActionBlock, type BlockActions } from './TerminalBlocks.js'
+import type { BlockLayout } from '../lib/blockTracker.js'
 import { type TerminalHandle, type TerminalSelection } from './TerminalView.js'
 import { TerminalEngineView } from './TerminalEngineView.js'
 import { UsageButton } from './UsageButton.js'
@@ -526,6 +526,8 @@ export function TerminalSurface({
   })
   const [notice, setNotice] = useState<string>()
   const [layout, setLayout] = useState<BlockLayout | null>(null)
+  // The native engine is showing its own block list, which draws commands itself.
+  const [blockList, setBlockList] = useState(false)
   const [hoverLine, setHoverLine] = useState<number | null>(null)
   const [stickyBlock, setStickyBlock] = useState<string | null>(null)
   const [blockMenu, setBlockMenu] = useState<string | null>(null)
@@ -734,7 +736,7 @@ export function TerminalSurface({
   const agent = Boolean(session.taskId) || isAgentProgram(runtime?.runningCommand?.command)
   const fullscreen = altScreen && !agent
   // A shell's commands become blocks; an agent session is one long command, which is not a block.
-  const blocksOn = !agent && layout !== null && !layout.alternate
+  const blocksOn = !agent && !blockList && layout !== null && !layout.alternate
   const shellBlocks = layout?.blocks.filter((block) => !isAgentProgram(block.command)) ?? []
   const hoveredBlock =
     blockMenu ??
@@ -743,15 +745,17 @@ export function TerminalSurface({
       ? null
       : (shellBlocks.find((block) => hoverLine >= block.startLine && hoverLine < block.endLine)
           ?.id ?? null))
-  const outputOf = async (block: TrackedBlock): Promise<string> =>
-    (await handle.current?.lines(block.startLine + 1, block.endLine)) ?? ''
-  const contextOfBlock = async (block: TrackedBlock): Promise<TerminalContext> => ({
+  const outputOf = async (block: ActionBlock): Promise<string> =>
+    block.readOutput
+      ? block.readOutput()
+      : ((await handle.current?.lines(block.startLine + 1, block.endLine)) ?? '')
+  const contextOfBlock = async (block: ActionBlock): Promise<TerminalContext> => ({
     cwd,
     command: block.command,
     exitCode: block.exitCode,
     text: await outputOf(block)
   })
-  const askAboutBlock = (kind: TerminalTaskKind, block: TrackedBlock): void =>
+  const askAboutBlock = (kind: TerminalTaskKind, block: ActionBlock): void =>
     void contextOfBlock(block).then((context) => sendToAgent(kind, false, context))
   const blockActions: BlockActions = {
     copyOutput: (block) => void outputOf(block).then((text) => copy(text, 'output')),
@@ -867,6 +871,10 @@ export function TerminalSurface({
           onFullscreenChange={setAltScreen}
           onBlocks={setLayout}
           onHoverLine={setHoverLine}
+          blockActions={blockActions}
+          canRetry={canChange}
+          commandHint={`${askHint} ask agent · ${shortcutHint(bindings, 'terminalDirectory')} change directory`}
+          onBlockListChange={setBlockList}
         />
         {blocksOn && layout ? (
           <TerminalBlocks
@@ -909,7 +917,7 @@ export function TerminalSurface({
           </div>
         ) : null}
       </div>
-      {showBar && failed && runtime ? (
+      {showBar && failed && runtime && !blockList ? (
         <FailureActions
           runtime={runtime}
           onFix={() => void sendToAgent('fix')}

@@ -26,11 +26,17 @@ export interface TerminalSessionInfo {
  */
 export interface TerminalMark {
   offset: number
-  kind: 'start' | 'end'
+  /**
+   * `start` and `end` bound a command's output; `prompt` is where the shell began drawing its
+   * prompt (a new prompt's own id, with no command).
+   */
+  kind: 'start' | 'end' | 'prompt'
   /** The runtime's id for the command, shared by its start and end marks. */
   id: string
   command?: string
   exitCode?: number
+  /** The shell's directory, on a `prompt` mark. */
+  cwd?: string
   /** Epoch milliseconds. */
   at: number
 }

@@ -21,6 +21,7 @@ import type {
   TaskStatus,
   NativeAttachResult,
   NativeEngineFailure,
+  NativeBlockEvent,
   NativeFrameEvent,
   TerminalEngineAvailability,
   TerminalEngineDiagnostic,
@@ -262,6 +263,9 @@ const api = {
       lines: (id: string, from: number, to: number): Promise<string> =>
         ipcRenderer.invoke('terminal:nativeLines', id, from, to),
       detach: (id: string): void => ipcRenderer.send('terminal:nativeDetach', id),
+      clearBlocks: (id: string): void => ipcRenderer.send('terminal:nativeClearBlocks', id),
+      onBlocks: (handler: (event: NativeBlockEvent) => void): (() => void) =>
+        subscribe('terminal:nativeBlocks', handler as (...args: never[]) => void),
       onFrame: (handler: (event: NativeFrameEvent) => void): (() => void) =>
         subscribe('terminal:nativeFrame', handler as (...args: never[]) => void),
       onFailed: (handler: (failure: NativeEngineFailure) => void): (() => void) =>

@@ -196,6 +196,8 @@ export type NativeAttachResult =
       attachId: number
       frame: EngineFrame
       blocks: TrackedBlock[]
+      /** Present once the shell has drawn a prompt with Styr's shell integration. */
+      blockList?: BlockListSnapshot
       info: NativeEngineInfo
     }
   | { ok: false; reason: NativeUnavailableReason; detail: string }
@@ -218,4 +220,67 @@ export interface NativeEngineFailure {
   id: string
   reason: NativeUnavailableReason
   detail: string
+}
+
+// --- Block list (Warp-style) view of a native session. ---
+
+/**
+ * A finished command as the block list shows it. Rows are the engine's rows at the width the
+ * command ran at (`cols`), wrapped ones flagged, so the renderer can rejoin them into logical lines
+ * and let the page re-wrap them at any width.
+ */
+export interface FinishedCommandBlock {
+  id: string
+  /** Empty for the output before the first prompt (a login banner, say). */
+  command: string
+  cwd?: string
+  startedAt: number
+  endedAt: number
+  exitCode?: number
+  cols: number
+  /** The shell's own prompt, with the command as the shell echoed it. */
+  prompt: EngineFrameLine[]
+  output: EngineFrameLine[]
+  /** The output passed the block's line limit and lost its oldest rows. */
+  truncated: boolean
+}
+
+/** The live part of the session: the prompt waiting for input, or the command that is running. */
+export type ActiveSegment =
+  | { kind: 'prompt'; id: string; cwd?: string }
+  | {
+      kind: 'running'
+      id: string
+      command: string
+      cwd?: string
+      startedAt: number
+      prompt: EngineFrameLine[]
+    }
+
+/**
+ * One change to a session's block list, in order. `history` rows have scrolled off the top of the
+ * running command's screen and will not change again; `frame` is the live screen of the active
+ * segment, applied like any engine frame.
+ */
+export type BlockListEvent =
+  | { kind: 'finished'; block: FinishedCommandBlock }
+  | { kind: 'cleared' }
+  | { kind: 'segment'; segment: ActiveSegment; frame: EngineFrame }
+  | { kind: 'history'; rows: EngineFrameLine[] }
+  | { kind: 'frame'; frame: EngineFrame }
+
+/** The block list as it stands, for a view that has just attached. */
+export interface BlockListSnapshot {
+  finished: FinishedCommandBlock[]
+  active: ActiveSegment
+  /** Rows of the running command that have scrolled off its screen. */
+  history: EngineFrameLine[]
+  frame: EngineFrame
+}
+
+/** Events for one session's block list, from one engine (see `NativeFrameEvent.attachId`). */
+export interface NativeBlockEvent {
+  id: string
+  attachId: number
+  events: BlockListEvent[]
 }

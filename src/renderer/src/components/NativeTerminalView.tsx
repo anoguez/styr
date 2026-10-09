@@ -24,6 +24,9 @@ import { clipboardKey, isAppShortcut, multilineSequence } from '../lib/terminalK
 import { usesControlAsPrimary } from '@core/shortcuts.js'
 import { ScreenModel } from '../lib/nativeTerminal/screen.js'
 import { BlockFeed, lineAtOffset, nativeBlockLayout } from '../lib/nativeTerminal/blocks.js'
+import { BlockListStore } from '../lib/nativeTerminal/blockList.js'
+import { TerminalBlockList } from './TerminalBlockList.js'
+import type { BlockActions } from './TerminalBlocks.js'
 import { encodeKey, pasteSequence } from '../lib/nativeTerminal/keys.js'
 import { paletteFromTheme, runStyle, type RunPalette } from '../lib/nativeTerminal/style.js'
 import type { BlockLayout, TerminalHandle, TerminalSelection } from './TerminalView.js'
@@ -52,6 +55,10 @@ export function NativeTerminalView({
   onFullscreenChange,
   onBlocks,
   onHoverLine,
+  blockActions,
+  canRetry = false,
+  commandHint = '',
+  onBlockListChange,
   onFallback
 }: {
   sessionId: string
@@ -66,11 +73,20 @@ export function NativeTerminalView({
   onBlocks?: (layout: BlockLayout) => void
   /** The buffer line under the pointer, or null when it is outside the terminal. */
   onHoverLine?: (line: number | null) => void
+  /** What the block list's buttons do. */
+  blockActions?: BlockActions
+  canRetry?: boolean
+  /** Placeholder for the block list's command input. */
+  commandHint?: string
+  /** The session started (true) or stopped showing as a block list. */
+  onBlockListChange?: (on: boolean) => void
   onFallback: (reason: NativeUnavailableReason, detail: string) => void
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const probe = useRef<HTMLSpanElement>(null)
   const model = useRef<ScreenModel | null>(null)
+  const listRef = useRef<BlockListStore | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const [, setVersion] = useState(0)
   const [exitCode, setExitCode] = useState<number | null>(null)
   const [cell, setCell] = useState<Cell>({ width: 8, height: 16 })
@@ -90,6 +106,8 @@ export function NativeTerminalView({
   onBlocksRef.current = onBlocks
   const onHoverRef = useRef(onHoverLine)
   onHoverRef.current = onHoverLine
+  const onBlockListRef = useRef(onBlockListChange)
+  onBlockListRef.current = onBlockListChange
 
   const write = (data: string): void => {
     const screen = model.current?.current
@@ -113,6 +131,9 @@ export function NativeTerminalView({
     if (!element) return
     const screen = new ScreenModel()
     model.current = screen
+    const list = new BlockListStore()
+    listRef.current = list
+    let listShown = false
     let disposed = false
     let attachId: number | null = null
     let frameRequest = 0
@@ -124,12 +145,19 @@ export function NativeTerminalView({
       if (frameRequest) return
       frameRequest = requestAnimationFrame(() => {
         frameRequest = 0
-        const state = screen.current
-        if (state && state.altScreen !== fullscreen) {
-          fullscreen = state.altScreen
+        const listed = list.state
+        if ((listed !== null) !== listShown) {
+          listShown = listed !== null
+          onBlockListRef.current?.(listShown)
+        }
+        // A block list is full-screen only while its running command is on the alternate screen.
+        const state = listed ? listed.screen.current : screen.current
+        const alternate = Boolean(state?.altScreen && (!listed || listed.active.kind === 'running'))
+        if (state && alternate !== fullscreen) {
+          fullscreen = alternate
           onFullscreenRef.current?.(fullscreen)
         }
-        if (state) {
+        if (!listed && state) {
           onBlocksRef.current?.(nativeBlockLayout(state, blocks.blocks, cellRef.current.height))
         }
         setVersion((version) => version + 1)
@@ -170,6 +198,9 @@ export function NativeTerminalView({
       const changed = event.frame ? screen.push(event.frame) : false
       if (changed || moved) render()
     })
+    const offList = window.api.terminal.native.onBlocks((event) => {
+      if (event.id === sessionId && list.received(event)) render()
+    })
     const offFailed = window.api.terminal.native.onFailed((failure) => {
       if (failure.id === sessionId) fail(failure.reason, failure.detail)
     })
@@ -184,6 +215,7 @@ export function NativeTerminalView({
         if (!result.ok) return fail(result.reason, result.detail)
         attachId = result.attachId
         blocks.attached(result.attachId, result.blocks)
+        list.attached(result.attachId, result.blockList)
         screen.reset(result.frame)
         window.api.terminal.resize(sessionId, size.cols, size.rows)
         render()
@@ -204,7 +236,7 @@ export function NativeTerminalView({
 
     if (handle) {
       handle.current = {
-        focus: () => element.focus(),
+        focus: () => (inputRef.current ?? element).focus(),
         // The engine and its scrollback are in the main process.
         text: () => window.api.terminal.native.text(sessionId),
         lines: (from, to) => window.api.terminal.native.lines(sessionId, from, to)
@@ -215,6 +247,7 @@ export function NativeTerminalView({
       disposed = true
       cancelAnimationFrame(frameRequest)
       offFrame()
+      offList()
       offFailed()
       offExit()
       observer.disconnect()
@@ -223,7 +256,9 @@ export function NativeTerminalView({
       window.api.terminal.native.detach(sessionId)
       if (handle) handle.current = null
       if (fullscreen) onFullscreenRef.current?.(false)
+      if (listShown) onBlockListRef.current?.(false)
       model.current = null
+      listRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
@@ -231,13 +266,32 @@ export function NativeTerminalView({
   // The blocks are placed by cell height, so a new cell re-reports them without waiting for output.
   useEffect(() => renderRef.current?.(), [cell])
 
+  const list = listRef.current?.state ?? null
+  // A full-screen program in the block list gets the whole panel as a grid.
+  const takeover = Boolean(list?.active.kind === 'running' && list.screen.current?.altScreen)
+  const prompting = list !== null && list.active.kind === 'prompt'
+  /** The screen the program is drawing, whose modes decide how keys are sent. */
+  const state = list ? list.screen.current : (model.current?.current ?? null)
+  const grid = list ? (takeover ? state : null) : state
+
+  // Typing goes to Styr's input at a prompt and straight to the PTY while a command runs; the
+  // input comes and goes with the prompt, so focus follows it.
+  const segmentKey = list ? `${list.active.kind}:${list.active.id}` : 'grid'
+  const focusRef = useRef<() => void>(() => {})
+  focusRef.current = () => {
+    if (!host.current) return
+    if (prompting && inputRef.current) inputRef.current.focus()
+    else if (
+      !host.current.contains(document.activeElement) ||
+      document.activeElement === document.body
+    )
+      host.current.focus()
+  }
   useEffect(() => {
     if (!active) return
-    const frame = requestAnimationFrame(() => host.current?.focus())
+    const frame = requestAnimationFrame(() => focusRef.current())
     return () => cancelAnimationFrame(frame)
-  }, [active])
-
-  const state = model.current?.current ?? null
+  }, [active, segmentKey])
 
   const selectedText = (): string => {
     const selection = window.getSelection()
@@ -245,7 +299,11 @@ export function NativeTerminalView({
     return host.current.contains(selection.anchorNode) ? selection.toString() : ''
   }
 
+  const fromInput = (target: EventTarget): boolean => target instanceof HTMLTextAreaElement
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    // The command input handles its own keys.
+    if (fromInput(event.target)) return
     const native = event.nativeEvent
     const clipboard = clipboardKey(native, selectedText() !== '')
     if (clipboard === 'copy') {
@@ -263,6 +321,11 @@ export function NativeTerminalView({
       return
     }
     if (isAppShortcut(native, bindingsRef.current)) return
+    if (prompting) {
+      // Focus moves before the key's default action, so the character lands in the input.
+      inputRef.current?.focus()
+      return
+    }
     const sequence = encodeKey(native, {
       modes: { appCursor: state?.modes.appCursor ?? false },
       altIsMeta: usesControlAsPrimary()
@@ -272,15 +335,25 @@ export function NativeTerminalView({
     write(sequence)
   }
 
+  /** Puts text into the command input as if typed, so it can still be edited before running. */
+  const insertIntoInput = (text: string): void => {
+    inputRef.current?.focus()
+    document.execCommand('insertText', false, text)
+  }
+
   const onPaste = (event: ClipboardEvent<HTMLDivElement>): void => {
+    if (fromInput(event.target)) return
     const text = event.clipboardData.getData('text/plain')
     if (!text) return
     event.preventDefault()
+    if (prompting) return insertIntoInput(text)
     write(pasteSequence(text, state?.modes.bracketedPaste ?? false))
   }
 
   const wheelRemainder = useRef(0)
   const onWheel = (event: WheelEvent<HTMLDivElement>): void => {
+    // The block list scrolls as a page.
+    if (list && !takeover) return
     const lines = (event.deltaY + wheelRemainder.current) / cell.height
     const whole = Math.trunc(lines)
     wheelRemainder.current = (lines - whole) * cell.height
@@ -305,7 +378,7 @@ export function NativeTerminalView({
     onHoverRef.current?.(line)
   }
   const onMouseMove = (event: MouseEvent<HTMLDivElement>): void => {
-    if (!state || !host.current) return
+    if (!state || !host.current || list) return
     const offset = event.clientY - host.current.getBoundingClientRect().top
     hover(lineAtOffset(state, offset, cell.height))
   }
@@ -314,6 +387,9 @@ export function NativeTerminalView({
     const text = selectedText()
     if (!text.trim() || !host.current) {
       onSelectionRef.current?.(null)
+      // A click in the list (not on one of its controls) goes back to typing.
+      const target = event.target as HTMLElement
+      if (prompting && !target.closest('button, [role="menu"], textarea')) inputRef.current?.focus()
       return
     }
     const box = host.current.getBoundingClientRect()
@@ -337,6 +413,7 @@ export function NativeTerminalView({
     const paths = window.api.terminal.pathsForFiles(files)
     if (paths.length > 0) {
       const text = paths.map((path) => syntaxRef.current.quote(path)).join(' ') + ' '
+      if (prompting) return insertIntoInput(text)
       write(pasteSequence(text, state?.modes.bracketedPaste ?? false))
     }
     host.current?.focus()
@@ -372,14 +449,27 @@ export function NativeTerminalView({
       <span ref={probe} aria-hidden className="invisible absolute" style={font}>
         WWWWWWWWWW
       </span>
-      {state?.lines.map((line) => (
+      {list && !takeover ? (
+        <TerminalBlockList
+          state={list}
+          look={{ palette, lineHeight: cell.height }}
+          font={font}
+          inputRef={inputRef}
+          hint={commandHint}
+          canRetry={canRetry}
+          actions={blockActions}
+          onSubmit={write}
+          onClearBlocks={() => window.api.terminal.native.clearBlocks(sessionId)}
+        />
+      ) : null}
+      {grid?.lines.map((line) => (
         <Row key={line.row} line={line} cell={cell} palette={palette} />
       ))}
-      {state?.cursor.visible ? (
+      {grid?.cursor.visible ? (
         <div
           aria-hidden
           className="pointer-events-none absolute"
-          style={cursorStyle(state.cursor.shape, state.cursor.row, state.cursor.col, cell, palette)}
+          style={cursorStyle(grid.cursor.shape, grid.cursor.row, grid.cursor.col, cell, palette)}
         />
       ) : null}
       {exitCode !== null ? (

@@ -4,6 +4,7 @@ import type { EngineSelection } from '@core/terminalEngine.js'
 import { engineChoice } from '../lib/nativeTerminal/engineChoice.js'
 import { NativeTerminalView } from './NativeTerminalView.js'
 import { TerminalView } from './TerminalView.js'
+import type { BlockActions } from './TerminalBlocks.js'
 
 const FALLBACK_LABEL: Record<NativeUnavailableReason, string> = {
   disabled: 'turned off',
@@ -24,10 +25,21 @@ type Choice = TerminalEngineId | 'pending'
  */
 export function TerminalEngineView({
   nativeTerminal,
+  blockActions,
+  canRetry,
+  commandHint,
+  onBlockListChange,
   ...props
 }: ComponentProps<typeof TerminalView> & {
   /** `experimental.nativeTerminal` from Settings. */
   nativeTerminal: boolean
+  /** For the native engine's block list: what a block's buttons do. */
+  blockActions?: BlockActions
+  canRetry?: boolean
+  /** Placeholder for the block list's command input. */
+  commandHint?: string
+  /** The native engine started (true) or stopped showing its block list. */
+  onBlockListChange?: (on: boolean) => void
 }): ReactNode {
   const { sessionId } = props
   const [engine, setEngine] = useState<Choice>(() =>
@@ -83,6 +95,10 @@ export function TerminalEngineView({
           onFullscreenChange={props.onFullscreenChange}
           onBlocks={props.onBlocks}
           onHoverLine={props.onHoverLine}
+          blockActions={blockActions}
+          canRetry={canRetry ?? false}
+          commandHint={commandHint ?? ''}
+          onBlockListChange={onBlockListChange}
           onFallback={fallBack}
         />
       ) : engine === 'xterm' ? (

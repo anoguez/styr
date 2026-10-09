@@ -1,4 +1,4 @@
-import { TERMINAL_ENGINE_API_VERSION, type EngineFrame } from '@core/types.js'
+import { TERMINAL_ENGINE_API_VERSION, type EngineFrame, type EngineFrameLine } from '@core/types.js'
 import type { NativeTerminalEngine } from './nativeEngine.js'
 
 /**
@@ -113,6 +113,27 @@ export class FakeEngine implements NativeTerminalEngine {
   markedLines(): { id: string; line: number }[] {
     this.check('markedLines')
     return [...this.marks].map(([id, line]) => ({ id, line }))
+  }
+
+  /** History plus screen: the text's lines, and blank rows below them up to the screen height. */
+  totalLines(): number {
+    this.check('totalLines')
+    return Math.max(this.screenLines().length, this.rows)
+  }
+
+  styledLines(from: number, to: number): EngineFrameLine[] {
+    this.check('styledLines')
+    const lines = this.screenLines()
+    const rows: EngineFrameLine[] = []
+    for (let row = from; row < Math.min(to, this.totalLines()); row++) {
+      const text = lines[row] ?? ''
+      rows.push({
+        row,
+        wrapped: false,
+        runs: text ? [{ text, width: text.length, fg: -1, bg: -1, flags: 0 }] : []
+      })
+    }
+    return rows
   }
 
   private screenLines(): string[] {

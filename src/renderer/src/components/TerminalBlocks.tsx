@@ -3,20 +3,26 @@ import type { BlockLayout, TrackedBlock } from '../lib/blockTracker.js'
 import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
 import { formatAccelerator } from '@core/shortcuts.js'
 
+/**
+ * A block an action applies to. Over xterm.js its output is read from the buffer lines; a block
+ * list that already holds its output passes `readOutput` instead.
+ */
+export type ActionBlock = TrackedBlock & { readOutput?: () => string }
+
 export interface BlockActions {
-  copyOutput: (block: TrackedBlock) => void
-  copyCommand: (block: TrackedBlock) => void
-  retry: (block: TrackedBlock) => void
-  fix: (block: TrackedBlock) => void
-  explain: (block: TrackedBlock) => void
-  createTask: (block: TrackedBlock) => void
+  copyOutput: (block: ActionBlock) => void
+  copyCommand: (block: ActionBlock) => void
+  retry: (block: ActionBlock) => void
+  fix: (block: ActionBlock) => void
+  explain: (block: ActionBlock) => void
+  createTask: (block: ActionBlock) => void
   interrupt: () => void
 }
 
-const quiet =
+export const quiet =
   'inline-flex items-center gap-1 rounded-[5px] px-1.5 text-[11px] font-medium text-dim hover:bg-raised/70 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40'
 
-function formatDuration(ms: number): string {
+export function formatDuration(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
@@ -32,7 +38,7 @@ function useElapsed(startedAt: number, running: boolean): string {
 }
 
 /** What a block says about itself on its command row: how it is going, then how it went. */
-function BlockStatus({ block }: { block: TrackedBlock }): ReactNode {
+export function BlockStatus({ block }: { block: TrackedBlock }): ReactNode {
   const elapsed = useElapsed(block.startedAt, block.open)
   if (block.open) {
     return (

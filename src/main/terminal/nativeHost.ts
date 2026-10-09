@@ -1,6 +1,7 @@
 import { diagnosticDetail } from '@core/terminalEngine.js'
 import type {
   NativeAttachResult,
+  NativeBlockEvent,
   NativeEngineFailure,
   NativeEngineStatus,
   NativeFrameEvent,
@@ -9,6 +10,7 @@ import type {
   TrackedBlock
 } from '@core/types.js'
 import type { NativeEngineFactory, NativeTerminalEngine } from './nativeEngine.js'
+import { BlockSession, supportsBlockList } from './blockSession.js'
 
 /**
  * Runs Styr Terminal engines for the sessions the renderer shows with the native engine. The PTY is
@@ -33,6 +35,8 @@ export interface NativeHostPorts {
   /** Bytes for the PTY: the engine's answers to device queries (cursor position and the like). */
   writeToPty: (id: string, data: string) => void
   sendFrame: (event: NativeFrameEvent) => void
+  /** Changes to a session's block list (see `BlockSession`), in order. */
+  sendBlocks: (event: NativeBlockEvent) => void
   sendFailure: (failure: NativeEngineFailure) => void
   /** Runs `task` once the current burst of PTY events has been handled (`setImmediate`). */
   defer: (task: () => void) => void
@@ -57,6 +61,12 @@ interface Attached {
   commands: Map<string, Command>
   /** The blocks last sent, to send them again only when they change. */
   sentBlocks: string
+  /** The engine can draw the Warp-style block list (package 0.3.0). */
+  canList: boolean
+  /** The block list, from the shell's first prompt mark on. */
+  blockList?: BlockSession
+  size: { cols: number; rows: number }
+  create: NativeEngineFactory['create']
 }
 
 export class NativeTerminalHost {
@@ -88,15 +98,19 @@ export class NativeTerminalHost {
         : { ok: false, reason: status.reason, detail: status.detail }
     }
     let engine: NativeTerminalEngine | undefined
+    let entry: Attached | undefined
     try {
       engine = factory.create({ cols, rows, scrollback: NATIVE_SCROLLBACK })
-      const entry: Attached = {
+      entry = {
         attachId: this.nextAttachId++,
         engine,
         flushQueued: false,
         marks: supportsMarks(engine),
         commands: new Map(),
-        sentBlocks: ''
+        sentBlocks: '',
+        canList: supportsBlockList(engine),
+        size: { cols, rows },
+        create: (options) => factory.create(options)
       }
       // The backlog carries its marks, so a remount rebuilds the same blocks.
       writeMarked(entry, this.ports.backlog(id))
@@ -107,9 +121,19 @@ export class NativeTerminalHost {
       engine.takeFrame()
       const blocks = blocksOf(entry)
       entry.sentBlocks = JSON.stringify(blocks)
+      entry.blockList?.takeResponses()
+      const blockList = entry.blockList?.snapshot()
       this.attached.set(id, entry)
-      return { ok: true, attachId: entry.attachId, frame, blocks, info: factory.info }
+      return {
+        ok: true,
+        attachId: entry.attachId,
+        frame,
+        blocks,
+        ...(blockList ? { blockList } : {}),
+        info: factory.info
+      }
     } catch (error) {
+      entry?.blockList?.dispose()
       safeDispose(engine)
       return { ok: false, reason: 'init-failed', detail: diagnosticDetail(error) }
     }
@@ -126,7 +150,19 @@ export class NativeTerminalHost {
   resize(id: string, cols: number, rows: number): void {
     const entry = this.attached.get(id)
     if (!entry) return
-    this.guard(id, () => entry.engine.resize(cols, rows))
+    this.guard(id, () => {
+      entry.engine.resize(cols, rows)
+      entry.size = { cols, rows }
+      entry.blockList?.resize(cols, rows)
+    })
+    this.scheduleFlush(id)
+  }
+
+  /** Empties the session's block list (Ctrl+L in the block terminal). */
+  clearBlocks(id: string): void {
+    const entry = this.attached.get(id)
+    if (!entry?.blockList) return
+    this.guard(id, () => entry.blockList!.clear())
     this.scheduleFlush(id)
   }
 
@@ -155,6 +191,7 @@ export class NativeTerminalHost {
     const entry = this.attached.get(id)
     if (!entry) return
     this.attached.delete(id)
+    entry.blockList?.dispose()
     safeDispose(entry.engine)
   }
 
@@ -174,6 +211,21 @@ export class NativeTerminalHost {
     entry.flushQueued = false
     if (this.attached.get(id) !== entry) return
     this.guard(id, () => {
+      const list = entry.blockList
+      if (list) {
+        // The live segment's engine is the one the program is talking to; it answers queries.
+        entry.engine.takeResponses()
+        const responses = list.takeResponses()
+        if (responses) this.ports.writeToPty(id, responses)
+        // The whole-session engine keeps parsing (copy all, a fallback to the grid) but its
+        // frames are not drawn while the block list is.
+        entry.engine.takeFrame()
+        const events = list.takeEvents()
+        if (events.length > 0) {
+          this.ports.sendBlocks({ id, attachId: entry.attachId, events })
+        }
+        return
+      }
       const responses = entry.engine.takeResponses()
       if (responses) this.ports.writeToPty(id, responses)
       const frame = entry.engine.takeFrame() ?? undefined
@@ -221,22 +273,31 @@ function supportsMarks(engine: NativeTerminalEngine): boolean {
  * xterm.js in the renderer).
  */
 function writeMarked(entry: Attached, output: Pick<TerminalOutput, 'data' | 'marks'>): void {
-  if (!entry.marks || output.marks.length === 0) {
-    writeChunked(entry.engine, output.data)
+  const write = (data: string): void => {
+    writeChunked(entry.engine, data)
+    if (entry.blockList) writeChunked(entry.blockList, data)
+  }
+  if (output.marks.length === 0) {
+    write(output.data)
     return
   }
   let written = 0
   for (const mark of [...output.marks].sort((left, right) => left.offset - right.offset)) {
     const offset = Math.min(Math.max(mark.offset, written), output.data.length)
-    writeChunked(entry.engine, output.data.slice(written, offset))
-    applyMark(entry, mark)
+    write(output.data.slice(written, offset))
+    if (entry.marks) applyMark(entry, mark)
+    if (entry.blockList) entry.blockList.mark(mark)
+    else if (entry.canList && mark.kind === 'prompt') {
+      entry.blockList = new BlockSession(entry.create, entry.size, mark)
+    }
     written = offset
   }
-  writeChunked(entry.engine, output.data.slice(written))
+  write(output.data.slice(written))
 }
 
 function applyMark(entry: Attached, mark: TerminalMark): void {
   const { engine, commands } = entry
+  if (mark.kind === 'prompt') return
   if (mark.kind === 'start') {
     // The shell announces a command after Enter has moved the cursor down, so its own row is the
     // one above. No mark (the alternate screen, say) means no block.
@@ -291,7 +352,7 @@ function blocksOf(entry: Attached): TrackedBlock[] {
   return blocks.sort((left, right) => left.startLine - right.startLine)
 }
 
-function writeChunked(engine: NativeTerminalEngine, data: string): void {
+function writeChunked(engine: Pick<NativeTerminalEngine, 'write'>, data: string): void {
   let start = 0
   while (start < data.length) {
     let end = Math.min(start + WRITE_CHUNK, data.length)
