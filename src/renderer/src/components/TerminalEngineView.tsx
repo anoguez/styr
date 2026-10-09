@@ -88,6 +88,15 @@ export function TerminalEngineView({
       ) : (
         <div className="h-full w-full" hidden={!props.active} />
       )}
+      {engine === 'native' && props.active ? (
+        // While the engine is experimental, say which one is drawing, so a report can name it.
+        <div
+          aria-hidden
+          className="bg-raised text-faint border-edge pointer-events-none absolute right-1 bottom-1 z-10 rounded border px-1.5 py-0.5 text-[10px]"
+        >
+          Styr Terminal
+        </div>
+      ) : null}
       {notice && props.active ? (
         <div
           role="status"
