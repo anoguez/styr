@@ -78,6 +78,15 @@ export function createTray(next: TrayHandlers): void {
   if (tray) return
   tray = new Tray(icon())
   tray.setToolTip('Styr')
+  if (process.platform === 'win32') {
+    // The macOS glyph is a black template image, close to invisible on a dark taskbar; the app's
+    // own icon is what Windows users expect there. A left click opens the window, as on Windows.
+    void app
+      .getFileIcon(process.execPath, { size: 'small' })
+      .then((image) => tray?.setImage(image))
+      .catch(() => undefined)
+    tray.on('click', () => handlers?.onShowWindow())
+  }
 }
 
 export function updateTray(statuses: AgentStatus[], titles: Map<string, string>): void {

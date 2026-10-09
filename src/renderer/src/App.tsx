@@ -12,6 +12,7 @@ import { sortColumn } from '@core/boardOrder.js'
 import { openBlockers } from '@core/blocking.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import { commandForEvent, SHORTCUT_LABELS, shortcutHint } from '@core/shortcuts.js'
+import { IS_MAC } from './lib/platform.js'
 import {
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
@@ -63,6 +64,7 @@ import {
   WorkspaceSwitcher,
   ipcMessage
 } from './components/WorkspaceSwitcher.js'
+import { fileName } from './lib/terminalPath.js'
 
 const VIEW_KEY = 'styr:view'
 
@@ -731,67 +733,80 @@ export default function App(): ReactNode {
     <TaskLookupContext.Provider value={lookup}>
       <DispatchingContext.Provider value={dispatching}>
         <div className="flex h-full flex-col">
-          <header className="relative flex h-[44px] shrink-0 items-center gap-3 border-b border-edge bg-chrome pl-[86px] pr-3 [-webkit-app-region:drag]">
-            <span
-              aria-hidden
-              className="grid size-[22px] shrink-0 place-items-center rounded-[6px] bg-accent/15"
+          <header
+            // Styr is laid out for macOS, where the window controls sit on the left beside the brand.
+            // Windows and Linux draw them on the right, so the bar is mirrored there: the brand moves
+            // next to the controls and New task to the far edge. Positions mirror; the insides of a
+            // control (the logo and wordmark, Board | Inbox, text) never do.
+            className={`relative flex h-[44px] shrink-0 items-center gap-3 border-b border-edge bg-chrome [-webkit-app-region:drag] ${IS_MAC ? 'pl-[86px] pr-3' : 'flex-row-reverse pl-3 pr-[150px]'}`}
+          >
+            {/* On macOS these wrappers are `contents`: no box, so the bar lays out exactly as before. */}
+            <div
+              className={IS_MAC ? 'contents' : 'flex min-w-0 flex-row-reverse items-center gap-3'}
             >
-              {/* The app icon's rune. Its gradient runs between theme colours rather than the icon's
+              <span className={IS_MAC ? 'contents' : 'flex shrink-0 items-center gap-3'}>
+                <span
+                  aria-hidden
+                  className="grid size-[22px] shrink-0 place-items-center rounded-[6px] bg-accent/15"
+                >
+                  {/* The app icon's rune. Its gradient runs between theme colours rather than the icon's
               fixed ones, which match them at the default theme, so it follows a re-theme. */}
-              <svg viewBox="0 0 16 16" className="size-[15px]">
-                <defs>
-                  <linearGradient id="styr-mark" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0" style={{ stopColor: 'var(--color-accent-text)' }} />
-                    <stop offset="1" style={{ stopColor: 'var(--color-col-progress)' }} />
-                  </linearGradient>
-                </defs>
-                <polyline
-                  points="5.6,2.6 5.6,8.4 10.4,7 10.4,13.4"
-                  transform="rotate(30 8 8)"
-                  fill="none"
-                  stroke="url(#styr-mark)"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-            <span className="font-wordmark -ml-1 text-[13.5px] font-semibold tracking-[0.02em] text-ink">
-              Styr
-            </span>
-            {appInfo ? (
-              <button
-                type="button"
-                className={`text-[11px] [-webkit-app-region:no-drag] ${
-                  newVersion
-                    ? 'font-medium text-accent hover:underline'
-                    : 'text-faint hover:text-dim'
-                }`}
-                title={
-                  newVersion
-                    ? `Styr ${newVersion} is ${update?.kind === 'ready' ? 'ready to install' : 'downloading'} — open Settings`
-                    : 'Updates'
-                }
-                onClick={() => openSettings('updates')}
-              >
-                v{appInfo.version}
-              </button>
-            ) : null}
-            {appInfo && !appInfo.isPackaged ? (
-              <Chip tone="warn" title={`Running from source · v${appInfo.version}`}>
-                DEV
-              </Chip>
-            ) : null}
+                  <svg viewBox="0 0 16 16" className="size-[15px]">
+                    <defs>
+                      <linearGradient id="styr-mark" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" style={{ stopColor: 'var(--color-accent-text)' }} />
+                        <stop offset="1" style={{ stopColor: 'var(--color-col-progress)' }} />
+                      </linearGradient>
+                    </defs>
+                    <polyline
+                      points="5.6,2.6 5.6,8.4 10.4,7 10.4,13.4"
+                      transform="rotate(30 8 8)"
+                      fill="none"
+                      stroke="url(#styr-mark)"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span className="font-wordmark -ml-1 text-[13.5px] font-semibold tracking-[0.02em] text-ink">
+                  Styr
+                </span>
+              </span>
+              {appInfo ? (
+                <button
+                  type="button"
+                  className={`text-[11px] [-webkit-app-region:no-drag] ${
+                    newVersion
+                      ? 'font-medium text-accent hover:underline'
+                      : 'text-faint hover:text-dim'
+                  }`}
+                  title={
+                    newVersion
+                      ? `Styr ${newVersion} is ${update?.kind === 'ready' ? 'ready to install' : 'downloading'} — open Settings`
+                      : 'Updates'
+                  }
+                  onClick={() => openSettings('updates')}
+                >
+                  v{appInfo.version}
+                </button>
+              ) : null}
+              {appInfo && !appInfo.isPackaged ? (
+                <Chip tone="warn" title={`Running from source · v${appInfo.version}`}>
+                  DEV
+                </Chip>
+              ) : null}
 
-            <WorkspaceSwitcher
-              overview={overview}
-              activity={workspaceActivity}
-              open={switcherOpen}
-              onOpenChange={setSwitcherOpen}
-              onSwitch={(id) => void switchWorkspace(id)}
-              onNew={() => setCreatingWorkspace(true)}
-              onManage={() => openSettings('workspaces')}
-            />
+              <WorkspaceSwitcher
+                overview={overview}
+                activity={workspaceActivity}
+                open={switcherOpen}
+                onOpenChange={setSwitcherOpen}
+                onSwitch={(id) => void switchWorkspace(id)}
+                onNew={() => setCreatingWorkspace(true)}
+                onManage={() => openSettings('workspaces')}
+              />
+            </div>
 
             <div className="flex flex-1 justify-center">
               <div className="relative w-full max-w-md [-webkit-app-region:no-drag]">
@@ -816,13 +831,15 @@ export default function App(): ReactNode {
                   </button>
                 ) : (
                   <kbd className="pointer-events-none absolute right-2 top-1/2 inline-flex h-[18px] -translate-y-1/2 items-center rounded border border-edge-strong px-[5px] font-mono text-[10.5px] text-faint">
-                    ⌘F
+                    {shortcutHint(bindings, 'focusSearch')}
                   </kbd>
                 )}
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
+            <div
+              className={`flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag] ${IS_MAC ? '' : 'flex-row-reverse'}`}
+            >
               <div
                 role="tablist"
                 aria-label="View"
@@ -918,7 +935,7 @@ export default function App(): ReactNode {
               <ul className="mt-1 flex flex-col gap-0.5">
                 {problems.map((problem) => (
                   <li key={problem.filePath} className="font-mono text-[10px] text-amber-200/70">
-                    {problem.filePath.split('/').pop()} — {problem.reason.split('\n')[0]}
+                    {fileName(problem.filePath)} — {problem.reason.split('\n')[0]}
                   </li>
                 ))}
               </ul>

@@ -67,6 +67,8 @@ import { ansiLabel, TERMINAL_FONTS, TERMINAL_PALETTES, UI_FONTS } from '../hooks
 import { terminalTheme } from '../lib/palette.js'
 import { THEME_PRESETS, applyPreset } from '../lib/themePresets.js'
 import { workspaceColor } from '../lib/workspaceColor.js'
+import { AgentCliStatus } from './AgentCliStatus.js'
+import { PLATFORM } from '../lib/platform.js'
 
 const PLACEHOLDERS = [
   '{{id}}',
@@ -923,7 +925,14 @@ export function SettingsDialog({
                       placeholder="Storage folder"
                     />
                   </Field>
-                  <Field label="Shell" hint="Every terminal session starts in this shell.">
+                  <Field
+                    label="Shell"
+                    hint={
+                      PLATFORM === 'win32'
+                        ? 'Every terminal session starts in this shell. Agents launch from Git Bash or PowerShell 7 (pwsh.exe). Blank picks one for you.'
+                        : 'Every terminal session starts in this shell. Blank uses $SHELL.'
+                    }
+                  >
                     <input
                       className={`${inputBase} h-8 w-60 px-2.5 font-mono text-[11.5px]`}
                       value={draft.shell}
@@ -932,7 +941,7 @@ export function SettingsDialog({
                   </Field>
                   <Field
                     label="Open files with"
-                    hint="App that opens task files and folders. System default uses whatever macOS has set for the file type."
+                    hint="App that opens task files and folders. System default uses whatever the operating system has set for the file type."
                   >
                     <OpenWithSelect
                       value={draft.openFilesWith}
@@ -1319,9 +1328,9 @@ export function SettingsDialog({
                   ) : null}
 
                   <Hint>
-                    Click Change and press the new keys. Esc closes a dialog and ⌘↵ saves one; both
-                    are fixed. Ctrl+C, Ctrl+D, Ctrl+L, Ctrl+Z, Esc, Enter and Tab cannot be bound —
-                    the terminal needs them.
+                    Click Change and press the new keys. Esc closes a dialog and{' '}
+                    {formatAccelerator('mod+enter')} saves one; both are fixed. Ctrl+C, Ctrl+D,
+                    Ctrl+L, Ctrl+Z, Esc, Enter and Tab cannot be bound — the terminal needs them.
                   </Hint>
                 </>
               ) : null}
@@ -1720,6 +1729,15 @@ export function SettingsDialog({
                               />
                             </div>
 
+                            <div className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-2.5">
+                              <span className="pt-[3px] text-[12px] text-dim">Status</span>
+                              <AgentCliStatus
+                                provider={provider.id}
+                                command={provider.command}
+                                shell={draft.shell}
+                              />
+                            </div>
+
                             {provider.id === 'claude' ? (
                               <div className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-2.5">
                                 <span className="pt-[5px] text-[12px] text-dim">Approvals</span>
@@ -1888,7 +1906,9 @@ export function SettingsDialog({
             ) : null}
             <Button variant="primary" disabled={dirtyCount === 0} onClick={save}>
               Save
-              <kbd className="font-mono text-[10px] font-normal opacity-70">⌘↵</kbd>
+              <kbd className="font-mono text-[10px] font-normal opacity-70">
+                {formatAccelerator('mod+enter')}
+              </kbd>
             </Button>
           </footer>
         </section>

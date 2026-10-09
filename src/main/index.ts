@@ -31,6 +31,7 @@ import { forgetContext, initUsage } from './usage.js'
  * available from the menu and the traffic light.
  */
 function installAppMenu(): void {
+  if (process.platform !== 'darwin') return installWindowsMenu()
   const template: Electron.MenuItemConstructorOptions[] = [
     { role: 'appMenu' },
     { role: 'fileMenu', submenu: [{ role: 'close', accelerator: 'Shift+CmdOrCtrl+W' }] },
@@ -56,6 +57,30 @@ function installAppMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+/**
+ * Windows has no app menu, and its edit roles bind bare Ctrl+C/V/X/A/Z — keys the terminal needs
+ * (Ctrl+C interrupts). The menu bar is never shown under the overlay title bar, so the menu exists
+ * only for its accelerators: window close, reload, devtools and zoom. Force Reload is left out
+ * because its Ctrl+Shift+R is the terminal's Retry on Windows, and it would kill every session.
+ */
+function installWindowsMenu(): void {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'View',
+      submenu: [
+        { role: 'close', accelerator: 'Shift+Ctrl+W' },
+        { role: 'reload', accelerator: 'Alt+Ctrl+R' },
+        { role: 'toggleDevTools' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { role: 'togglefullscreen' }
+      ]
+    }
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
 function showWindow(): void {
   const [existing] = BrowserWindow.getAllWindows()
   const window = existing ?? createWindow()
@@ -72,8 +97,14 @@ function createWindow(): BrowserWindow {
     minWidth: 1000,
     minHeight: 640,
     show: false,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 14, y: 15 },
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 15 } }
+      : {
+          // Native minimise/maximise/close drawn over the renderer's 44px header; the renderer
+          // recolours them to the theme through `app:titleBarColors`.
+          titleBarStyle: 'hidden',
+          titleBarOverlay: { color: '#0f1c27', symbolColor: '#97a7b4', height: 44 }
+        }),
     backgroundColor: '#0b0d12',
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
@@ -111,6 +142,9 @@ function migrateSettings(): void {
 
 app.whenReady().then(() => {
   app.setName('Styr')
+  // Windows shows toast notifications only for an app with an AppUserModelID; this one matches
+  // the `appId` the installer registers its shortcut under.
+  if (process.platform === 'win32') app.setAppUserModelId('com.andersonnoguez.styr')
   migrateSettings()
   tasksDir()
   syncIndex()

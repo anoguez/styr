@@ -6,6 +6,7 @@ import {
   type OrchestrationSummary
 } from '@core/types.js'
 import { Button, Card, CardRow, Modal, SwitchRow } from './ui.js'
+import { formatAccelerator } from '@core/shortcuts.js'
 
 export function OrchestrateDialog({
   summary,
@@ -57,7 +58,9 @@ export function OrchestrateDialog({
           <Button onClick={onClose}>{canConfirm ? 'Cancel' : 'Close'}</Button>
           <Button variant="primary" onClick={confirm} disabled={!canConfirm}>
             {count > 0 ? `Start ${count}` : 'Apply'}{' '}
-            <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↵</kbd>
+            <kbd className="ml-0.5 font-mono text-[10px] opacity-70">
+              {formatAccelerator('mod+enter')}
+            </kbd>
           </Button>
         </>
       }

@@ -12,14 +12,19 @@
 | `yarn format` / `yarn format:check` | Prettier: rewrite, or only report                                                                 |
 | `yarn package`                      | Build a signed macOS `.app` and `.dmg` into `dist/`, notarised if the `APPLE_*` variables are set |
 | `yarn package:adhoc`                | The same with an ad-hoc signature, for building without a Developer ID                            |
-| `yarn icon`                         | Regenerate `resources/icon.icns` from `resources/icon.svg`                                        |
+| `yarn package:win`                  | Build the Windows installer (`dist/Styr-Setup-<version>.exe`), unsigned                           |
+| `yarn icon`                         | Regenerate `resources/icon.png` (any OS) and `icon.icns` + the tray icon (macOS) from the SVGs    |
 
 `yarn lint`, `yarn format:check` and `yarn build` are the checks; CI runs them on every pull request,
 and a pre-commit hook runs ESLint and Prettier on staged files plus the typecheck. There is no test
 suite yet.
 
 After changing dependencies, run `yarn postinstall` to rebuild the native modules (`node-pty`,
-`better-sqlite3`) against Electron.
+`better-sqlite3`) against Electron. On Windows it skips the rebuild: both modules ship N-API
+prebuilds for win32, which Electron loads as they are, so no Windows SDK is needed. (`yarn install`
+may still try to compile `better-sqlite3` on its own and fail without the SDK; use
+`yarn install --ignore-scripts`, then `node node_modules/electron/install.js` and
+`node node_modules/node-pty/scripts/post-install.js`.)
 
 ## Installing it as a Mac app
 
@@ -33,6 +38,25 @@ Drag the app into Applications, or:
 ```sh
 cp -R "dist/mac-arm64/Styr.app" /Applications/
 ```
+
+## Installing it on Windows
+
+```sh
+yarn package:win
+```
+
+That produces `dist/Styr-Setup-<version>.exe`, a per-user installer (no administrator rights), and
+`dist/win-unpacked/Styr.exe` to run without installing. The installer is unsigned, so SmartScreen
+shows **Windows protected your PC** on first run: **More info → Run anyway**.
+
+On Windows agents launch from **Git Bash** or **PowerShell 7** (`pwsh`); pick either under Settings
+→ Preferences → Shell. With none set, Styr uses Git Bash (found through `CLAUDE_CODE_GIT_BASH_PATH`,
+the standard install folders, or the `git.exe` on `PATH`), else PowerShell 7, else Windows
+PowerShell. Windows PowerShell 5.1 and Command Prompt open as terminals, but agents cannot launch
+from them: 5.1 splits arguments that contain quotes when it passes them to a program, which breaks
+the prompt. Install PowerShell 7 with `winget install Microsoft.PowerShell`. Claude Code itself still
+uses Git Bash for its hooks and its own commands. `mod` in shortcuts is Ctrl; inside the terminal, Ctrl+letter goes to the
+shell and Ctrl+Shift+letter reaches the command bound to Ctrl+letter.
 
 ## Signing and notarisation
 
@@ -60,12 +84,16 @@ conventional commits:
    `feat:` commits bump the minor version (before 1.0), everything else the patch.
 2. Merging the release PR tags `vX.Y.Z` and creates the GitHub release **as a draft**, invisible
    to visitors and to the updater.
-3. A macOS runner then builds, signs, notarises and verifies the app, attaches the files to the
-   draft, and publishes it. A release only goes public once it is complete; if the build fails, the
-   draft stays unpublished and can be rebuilt with **Run workflow** and its tag.
+3. A macOS runner builds, signs, notarises and verifies the app and attaches its files to the
+   draft. A final job publishes it once that succeeded. (The Windows build job is commented out
+   in `release.yml` for now; Windows installers are built locally with `yarn package:win`.)
+   A release only goes public once it is complete; if a build fails, the draft stays unpublished
+   and can be rebuilt with **Run workflow** and its tag.
 
 Each release carries the DMG for people installing by hand, plus `Styr-x.y.z-arm64-mac.zip`, its
 `.blockmap` and `latest-mac.yml`: the update feed installed copies read through electron-updater.
+Once the Windows job is re-enabled, it will also carry `Styr-Setup-x.y.z.exe`, its `.blockmap`
+and `latest.yml`.
 The feed location comes from the `publish` block in `electron-builder.yml`. Because releases are
 published only after those files are attached, an installed copy never sees a release without them;
 if one ever lacks `latest-mac.yml` anyway (a release edited by hand), the app reports "up to date"

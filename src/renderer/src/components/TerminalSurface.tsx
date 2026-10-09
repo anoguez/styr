@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AGENT_STATE_LABELS, type AgentStatus } from '@core/agentState.js'
 import { isAgentProgram } from '@core/handoff.js'
-import { shellQuote } from '@core/shell.js'
+import { syntaxFor } from '@core/shell.js'
 import { shortcutHint } from '@core/shortcuts.js'
 import type {
   ShortcutBindings,
@@ -31,6 +31,8 @@ import type { DiffStat } from '@core/diff.js'
 import { useClaudeUsage } from '../hooks/useClaudeUsage.js'
 import { useContextUsage } from '../hooks/useContextUsage.js'
 import { useCodexUsage } from '../hooks/useCodexUsage.js'
+import { formatAccelerator } from '@core/shortcuts.js'
+import { FILE_MANAGER } from '../lib/platform.js'
 
 const INTERRUPT = '\x03'
 const CLEAR = '\x0c'
@@ -359,7 +361,7 @@ function ContextBar({
               <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" />
             </svg>
             Interrupt
-            <Kbd>⌃C</Kbd>
+            <Kbd>{formatAccelerator('ctrl+c')}</Kbd>
           </button>
         </>
       ) : runtime.lastExitCode !== undefined && !blocksOn ? (
@@ -542,7 +544,7 @@ export function TerminalSurface({
     setPicking(false)
     // The new directory is observed back from the shell integration rather than assumed, and the
     // value is quoted so a path is never interpreted as shell syntax.
-    write(`cd -- '${shellQuote(directory)}'\r`)
+    write(`${syntaxFor(session.dialect).cd(directory)}\r`)
     handle.current?.focus()
   }
 
@@ -786,7 +788,12 @@ export function TerminalSurface({
   const groups: MenuItem[][] = [
     [
       { label: 'Copy all output', kbd: shortcutHint(bindings, 'terminalCopyOutput'), run: copyAll },
-      { label: 'Clear', kbd: '⌃L', disabled: !canChange, run: () => write(CLEAR) },
+      {
+        label: 'Clear',
+        kbd: formatAccelerator('ctrl+l'),
+        disabled: !canChange,
+        run: () => write(CLEAR)
+      },
       {
         label: 'Retry last command',
         kbd: shortcutHint(bindings, 'terminalRetry'),
@@ -809,7 +816,7 @@ export function TerminalSurface({
     ],
     [
       {
-        label: 'Reveal directory in Finder',
+        label: `Reveal directory in ${FILE_MANAGER}`,
         run: () => void window.api.terminal.revealDirectory(cwd)
       },
       {
@@ -825,6 +832,7 @@ export function TerminalSurface({
       <div className="relative min-h-0 flex-1">
         <TerminalView
           sessionId={session.id}
+          dialect={session.dialect}
           active={active}
           theme={theme}
           bindings={bindings}

@@ -4,6 +4,7 @@ import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
 import type { ContextUsage, ProviderUsage } from '../core/usage.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
+  AgentCliReport,
   AppInfo,
   AutoDispatchState,
   BrokenSettingsFile,
@@ -71,7 +72,12 @@ const api = {
     stop: (): Promise<void> => ipcRenderer.invoke('diagnostics:stop')
   },
   app: {
+    /** Read once at load; the renderer has no `process`. */
+    platform: process.platform,
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
+    /** Colours the native window controls drawn over the title bar (Windows only; a no-op elsewhere). */
+    setTitleBarColors: (background: string, symbols: string): void =>
+      ipcRenderer.send('app:titleBarColors', background, symbols),
     mcpCommand: (provider?: 'claude' | 'codex'): Promise<string> =>
       ipcRenderer.invoke('app:mcpCommand', provider)
   },
@@ -167,6 +173,12 @@ const api = {
     pickFiles: (startIn?: string): Promise<string[]> =>
       ipcRenderer.invoke('settings:pickFiles', startIn),
     listApps: (): Promise<string[]> => ipcRenderer.invoke('settings:listApps'),
+    /** Checks an agent CLI against a shell and command as typed, not yet saved. */
+    agentCliStatus: (
+      provider: 'claude' | 'codex',
+      command: string,
+      shell: string
+    ): Promise<AgentCliReport> => ipcRenderer.invoke('agents:cliStatus', provider, command, shell),
     pickApp: (): Promise<string | null> => ipcRenderer.invoke('settings:pickApp'),
     onChanged: (handler: (settings: Settings) => void): (() => void) =>
       subscribe('settings:changed', handler as (...args: never[]) => void)

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { providerForLane } from '../orchestrate.js'
+import { syntaxFor } from '../shell.js'
 import { providerById, withoutSessionMarkers } from './index.js'
 
 const workspace = mkdtempSync(join(tmpdir(), 'styr-provider-test-'))
@@ -26,7 +27,14 @@ describe('provider routing', () => {
       codexCommand: 'codex',
       codexApprovalReviewer: 'user'
     } as never
-    const input = { settings, taskId: 'T', sessionId: 'sid', resume: true, cwd: '/w' }
+    const input = {
+      settings,
+      taskId: 'T',
+      sessionId: 'sid',
+      resume: true,
+      cwd: '/w',
+      syntax: syntaxFor('posix')
+    }
     expect(providerById('claude').buildCommand(input)).toContain('--resume sid')
     expect(providerById('codex').buildCommand(input)).toContain('codex resume')
     expect(providerById('codex').buildCommand(input)).toContain(' sid')

@@ -16,6 +16,7 @@ import {
   type BoardCountGroup
 } from '../lib/workspaceStatus.js'
 import { Button, Field, Modal, inputClass } from './ui.js'
+import { IS_MAC } from '../lib/platform.js'
 
 const COUNT_TONE: Record<BoardCountGroup, string> = {
   needs: AGENT_TONE.waiting,
@@ -168,7 +169,9 @@ export function WorkspaceSwitcher({
       {open ? (
         <div
           role="menu"
-          className="absolute left-0 top-full z-40 mt-1.5 flex w-72 flex-col gap-0.5 rounded-xl border border-edge-strong bg-panel p-1.5 shadow-[0_16px_40px_-8px_rgba(0,0,0,0.7)] [-webkit-app-region:no-drag]"
+          // The switcher sits at the bar's left on macOS and its right elsewhere (the bar is mirrored),
+          // so the menu opens toward the middle of the window either way.
+          className={`absolute ${IS_MAC ? 'left-0' : 'right-0'} top-full z-40 mt-1.5 flex w-72 flex-col gap-0.5 rounded-xl border border-edge-strong bg-panel p-1.5 shadow-[0_16px_40px_-8px_rgba(0,0,0,0.7)] [-webkit-app-region:no-drag]`}
         >
           {overview.workspaces.map((workspace) => (
             <button

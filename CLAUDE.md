@@ -49,6 +49,10 @@ add a line here only for a rule that must hold in every change.
 - **Worktrees.** Pass a `Checkout` (`{repoPath, key, baseBranch?}`), not loose values; key it with
   `worktreeKey`. Worktree failure is never fatal (fall back to the repo with a warning).
   `prompt.ts` is imported by the renderer, so it must not import `worktree.ts` or any `node:*`.
+- **Shells.** Differences between shells live behind `TerminalShell` (`resolveShell`, node side) and
+  `ShellSyntax` (`syntaxFor`, pure): how to start one, run a line in it, and quote, `cd`, call a
+  command or pass a file in its dialect. Never branch on a shell's name elsewhere, and never type a
+  literal quote or `$(…)` into a terminal — ask the shell's syntax. Sessions carry their `dialect`.
 - **Providers.** Differences between agent CLIs live behind `AgentProvider`; never branch on the
   provider outside `providerFor`. Status records are provider-neutral, with `event` from `EVENT_STATE`.
 - **Launch logic** belongs in `core/sessionLifecycle.ts` with a fake-port test, not in `ipc.ts`.
@@ -97,7 +101,11 @@ renderer, preload, IPC layer and MCP server all share them.
 - `electron`, `better-sqlite3` and `node-pty` are externalised in `electron.vite.config.ts`. Both
   native modules are compiled against Electron's ABI by `electron-builder install-app-deps`, so the
   MCP server (plain `node`) must never import them.
-- After changing dependencies, re-run `yarn postinstall` to rebuild the native modules.
+- After changing dependencies, re-run `yarn postinstall` to rebuild the native modules. On Windows
+  it skips the rebuild (`scripts/postinstall.mjs`): both modules' N-API prebuilds load in Electron.
+- **Windows.** Never hardcode `/bin/zsh`, `$SHELL`, `open`, `:` as a PATH separator or `/` as the
+  only path separator. Shortcut `mod` is Ctrl there, set once
+  by `setPrimaryModifier` in the renderer; show keys with `formatAccelerator`/`shortcutHint`.
 - `out/main/**` is in `asarUnpack`. The MCP server is launched by plain `node`, which cannot read
   inside an asar archive, so `app:mcpCommand` resolves it under `app.asar.unpacked` when packaged.
   Anything else that must be run by a non-Electron process needs the same treatment.

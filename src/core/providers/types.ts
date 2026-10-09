@@ -1,3 +1,4 @@
+import type { ShellSyntax } from '../shell.js'
 import type { Settings } from '../types.js'
 
 export const AGENT_PROVIDER_IDS = ['claude', 'codex'] as const
@@ -15,6 +16,8 @@ export interface ProviderCommandInput {
   forkFrom?: string
   /** A shell expression that expands to the prompt, or undefined to submit nothing. */
   prompt?: string
+  /** The syntax of the shell the command is typed into; build every quoted part with it. */
+  syntax: ShellSyntax
 }
 
 /**
@@ -34,8 +37,12 @@ export interface AgentProvider {
   sessionExists(sessionId: string, homeRoot?: string): boolean
   /** When a past conversation was last written, for dating a chat we only learned about later. */
   sessionTime(sessionId: string, homeRoot?: string): string | undefined
+  /** The command line that starts this CLI, as configured in Settings → Integrations. */
+  command(settings: Settings): string
+  /** The official command that installs this CLI on `platform`, as the user would paste it. */
+  installCommand(platform: string): string
   /** The command a user runs once to give this CLI the board's MCP server. */
-  mcpInstallCommand(serverEntry: string): string
+  mcpInstallCommand(serverEntry: string, syntax: ShellSyntax): string
   /**
    * Environment variables the CLI sets on its own processes to mark a running session. Styr strips
    * them from every terminal it opens, so an app started from inside such a session (`yarn dev` in

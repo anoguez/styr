@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { shellQuote } from '../shell.js'
+import type { ShellSyntax } from '../shell.js'
 import type { Settings } from '../types.js'
 import type { AgentProvider } from './types.js'
 
@@ -30,6 +30,8 @@ export interface CodexCommandInput {
   /** The directory the thread works in. A remote TUI does not inherit the shell's. */
   cwd: string
   prompt?: string
+  /** The syntax of the shell the command is typed into. */
+  syntax: ShellSyntax
 }
 
 /**
@@ -39,11 +41,11 @@ export interface CodexCommandInput {
  */
 export function codexCommand(
   settings: Pick<Settings, 'codexCommand' | 'codexApprovalReviewer'>,
-  { sessionId, resume, forkFrom, cwd, prompt }: CodexCommandInput
+  { sessionId, resume, forkFrom, cwd, prompt, syntax }: CodexCommandInput
 ): string {
-  const daemonArgs = `--remote unix:// --cd '${shellQuote(cwd)}'`
-  if (resume)
-    return `${settings.codexCommand} resume ${daemonArgs} ${sessionId}${prompt ? ` ${prompt}` : ''}`
+  const codex = syntax.invoke(settings.codexCommand)
+  const daemonArgs = `--remote unix:// --cd ${syntax.quote(cwd)}`
+  if (resume) return `${codex} resume ${daemonArgs} ${sessionId}${prompt ? ` ${prompt}` : ''}`
 
   // `--approve-for-me` brings its own workspace-write sandbox and codex rejects it alongside `--sandbox`.
   // The sandbox blocks the network by default, which stops `gh` and `git push` — the board protocol
@@ -54,23 +56,25 @@ export function codexCommand(
       ? `--approve-for-me ${network}`
       : `--sandbox workspace-write --ask-for-approval on-request ${network}`
   if (forkFrom)
-    return `${settings.codexCommand} fork ${daemonArgs} ${policy} ${forkFrom}${prompt ? ` ${prompt}` : ''}`
-  return `${settings.codexCommand} ${daemonArgs} ${policy} ${prompt ?? `''`}`
+    return `${codex} fork ${daemonArgs} ${policy} ${forkFrom}${prompt ? ` ${prompt}` : ''}`
+  return `${codex} ${daemonArgs} ${policy} ${prompt ?? syntax.quote('')}`
 }
 
 export const codexProvider: AgentProvider = {
   id: 'codex',
   label: 'Codex',
   newSessionId: () => randomUUID(),
-  buildCommand({ settings, sessionId, resume, forkFrom, cwd, prompt }) {
-    return codexCommand(settings, { sessionId, resume, forkFrom, cwd, prompt })
+  buildCommand({ settings, sessionId, resume, forkFrom, cwd, prompt, syntax }) {
+    return codexCommand(settings, { sessionId, resume, forkFrom, cwd, prompt, syntax })
   },
   sessionExists: (id, root) => codexTranscript(id, root) !== undefined,
   sessionTime: (id, root) => {
     const file = codexTranscript(id, root)
     return file ? new Date(statSync(file).mtimeMs).toISOString() : undefined
   },
-  mcpInstallCommand: (entry) =>
-    `codex mcp add styr --env STYR_MCP_AUTHOR=codex -- node '${shellQuote(entry)}'`,
+  command: (settings) => settings.codexCommand,
+  installCommand: () => 'npm install -g @openai/codex',
+  mcpInstallCommand: (entry, syntax) =>
+    `codex mcp add styr --env STYR_MCP_AUTHOR=codex -- node ${syntax.quote(entry)}`,
   sessionEnvKeys: ['CODEX_THREAD_ID', 'CODEX_SESSION_ID']
 }
