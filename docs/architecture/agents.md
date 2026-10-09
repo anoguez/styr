@@ -93,6 +93,17 @@ loading _additional_ settings, so the user's own hooks survive). Hooks write
 
 `idle` (label "Idle", from `Stop`) means the turn ended with the session still open — never "task complete", which is the task's status. Do not label it Finished.
 
+The `Notification` hook matches only `permission_prompt|elicitation_dialog`. Claude Code also sends
+an `idle_prompt` notification a minute after `Stop`; hooked, it overwrote the `Stop` record (and its
+last message), so a finished turn read Idle or Waiting on you depending on when you looked.
+`agentStore` still reads an `idle_prompt` record as `idle`, for sessions launched before the matcher.
+
+`shownAgentState` is the label the views use: an idle agent on an In Review task with Dispatch off
+(`orchestrate: false`) reads _Waiting on you_, since only you can move it on; a dispatched one stays
+_Idle_. It is display only — Dispatch slots, the Create PR / review buttons and the "ask once it
+stops" guards keep the hook's state, and the tray and workspace switcher count review separately
+(`awaitsReview`).
+
 `SessionStart` maps to `ready`, never `working` — a resume fires it with no turn in flight, and
 calling that "Working" is a lie the user will notice immediately. `PreToolUse` is registered purely
 so state recovers from `waiting` once a permission prompt is answered; without it a session stays
@@ -204,10 +215,15 @@ wired in `ipc.ts`); the rules are pure in `core/autoDispatch.ts`.
 - **Breaker.** `AUTO_LAUNCH_LIMIT` per rolling hour per workspace, and `AUTO_FAILURE_LIMIT`
   consecutive failed launches, switch Auto-run off with a notification.
 - **Startup grace.** 30s after launch before the first pass; an explicit toggle skips it.
-- The Dispatch dialog's Auto-run switch is a draft: it is applied on confirm (after the listed tasks
-  start, so the first pass does not race them), and Cancel discards it.
+- Switching Auto-run **on** in the Dispatch dialog is a draft: it is applied on confirm (after the
+  listed tasks start, so the first pass does not race them), and Cancel discards it. Stopping is the
+  inline confirmation below and takes effect at once.
 - The flag is switched only by `orchestrate:autoSet`; `persistSettings` keeps the on-disk value so an
   open Settings draft cannot undo a Stop, and a new workspace's seed copy starts with it off.
+- **One button.** A workspace has at most one Auto-run, so it has no button of its own: the header's
+  Dispatch button shows its state (`dispatchButton` in `lib/orchestrateHint.ts` — `auto` with the
+  running count, `paused` after the breaker, else plain Dispatch) and opens the dialog that holds the
+  switch. Stopping always asks first — inline in the dialog, `StopAutoRunDialog` from the palette.
 - Auto-launched sessions reach the renderer through `orchestrate:autoStarted` (it adopts them like a
   manual launch). Not built: the tray item and a Settings pane control.
 

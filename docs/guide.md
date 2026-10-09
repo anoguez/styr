@@ -272,12 +272,12 @@ Position it with `{{board}}` if you want it somewhere specific; otherwise it is 
 A task in **In Review** does not need implementing — it needs reviewing. So the template is chosen
 from where the task sits, not from a single global default:
 
-| Task state                           | Template that runs                                                            |
-| ------------------------------------ | ----------------------------------------------------------------------------- |
-| `readiness: needs_spec` (any column) | **Spec the task** — wayfinder, or grilling you until the scope is pinned down |
-| Backlog / In Progress                | **Implement the task**                                                        |
-| In Review                            | **Review the work** — check the diff or PR against the acceptance criteria    |
-| Done                                 | **Follow up** — confirm it landed, capture leftovers as new tasks             |
+| Task state                           | Template that runs                                                         |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| `readiness: needs_spec` (any column) | **Spec the task** — the agent questions you until the scope is pinned down |
+| Backlog / In Progress                | **Implement the task**                                                     |
+| In Review                            | **Review the work** — check the diff or PR against the acceptance criteria |
+| Done                                 | **Follow up** — confirm it landed, capture leftovers as new tasks          |
 
 Starting Claude on a **Backlog** task moves it to **In Progress** — including when it only needs a
 spec, because writing the spec is work and the board should say so. Status and readiness are

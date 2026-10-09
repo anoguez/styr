@@ -1,4 +1,4 @@
-import type { TaskStatus } from './types.js'
+import type { Task, TaskStatus } from './types.js'
 
 export const AGENT_STATES = ['ready', 'working', 'waiting', 'idle', 'exited'] as const
 export type AgentState = (typeof AGENT_STATES)[number]
@@ -63,4 +63,34 @@ export const EVENT_STATE: Record<string, AgentState> = {
   Notification: 'waiting',
   Stop: 'idle',
   TerminalExit: 'exited'
+}
+
+/**
+ * The state the board shows for an agent, which can differ from the hook's. An agent that ended its
+ * turn on an In Review task left outside Dispatch reads _Waiting on you_: nothing else will move that
+ * work forward. A dispatched task stays _Idle_ — Dispatch picks the review up, so only a real prompt
+ * (permission, a question) is waiting. Display only: Dispatch slots and the "ask once it stops"
+ * guards read the hook's state, where this agent is idle.
+ */
+export function shownAgentState(
+  state: AgentState,
+  task: Pick<Task, 'status' | 'orchestrate'> & Partial<Pick<Task, 'readiness'>>
+): AgentState {
+  if (state !== 'idle' || task.status !== 'in_review' || task.orchestrate) return state
+  return task.readiness === 'needs_spec' ? state : 'waiting'
+}
+
+/** `agents` with each state replaced by `shownAgentState`; agents of unknown tasks pass through. */
+export function shownAgents(
+  agents: ReadonlyMap<string, AgentStatus>,
+  tasks: readonly Pick<Task, 'id' | 'status' | 'orchestrate' | 'readiness'>[]
+): Map<string, AgentStatus> {
+  const byId = new Map(tasks.map((task) => [task.id, task]))
+  const shown = new Map<string, AgentStatus>()
+  for (const [id, status] of agents) {
+    const task = byId.get(id)
+    const state = task ? shownAgentState(status.state, task) : status.state
+    shown.set(id, state === status.state ? status : { ...status, state })
+  }
+  return shown
 }

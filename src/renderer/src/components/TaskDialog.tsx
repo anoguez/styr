@@ -566,7 +566,7 @@ export function TaskDialog({
         <div
           role="dialog"
           aria-label={task ? task.title : 'New task'}
-          className="flex h-[min(720px,88vh)] w-full max-w-[1000px] flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]"
+          className="flex h-[max(min(720px,88vh),min(78vh,1300px))] w-full max-w-[max(1000px,min(72vw,1700px))] flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]"
         >
           <header className="flex items-start gap-4 border-b border-edge py-4 pl-5 pr-4">
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -648,7 +648,7 @@ export function TaskDialog({
                   <textarea
                     aria-label="Description (markdown)"
                     value={form.description}
-                    placeholder="Paste a wayfinder spec here, or write the brief yourself."
+                    placeholder="Describe the task: what to do, and how you will know it is done."
                     onChange={(event) => patch({ description: event.target.value })}
                     className="min-h-60 w-full flex-1 resize-none rounded-[10px] border border-edge bg-chrome px-3.5 py-3 font-mono text-[12px] leading-[1.65] text-ink outline-none placeholder:text-faint focus:border-accent"
                   />
@@ -1202,12 +1202,13 @@ export function TaskDialog({
                   type="button"
                   aria-label="Delete task"
                   title="Delete task"
-                  className="inline-flex size-7 items-center justify-center rounded-[7px] text-dim transition-colors hover:bg-red-400/10 hover:text-red-300"
+                  className="inline-flex h-7 items-center justify-center gap-1.5 rounded-[7px] px-2 text-[12px] text-danger transition-colors hover:bg-red-500/10"
                   onClick={() => setConfirmingDelete(true)}
                 >
                   <Icon size={14}>
                     <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />
                   </Icon>
+                  Delete
                 </button>
               </div>
             ) : presetName === null ? (

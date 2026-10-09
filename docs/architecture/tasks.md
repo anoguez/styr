@@ -85,7 +85,7 @@ at most one catch-up run and no new task while the previous one from that schedu
 same presets, the chosen one shows as a tag, and `quickTaskDraft` seeds the task from it (title is
 what was typed). ⌘↵ instead starts a **planning run**: a ready, non-worktree task tagged
 `quick-plan` (`planDraft`, `planningPrompt` in `core/planning.ts`) launched on the default provider
-to carry out the typed request with the Styr MCP tools in reach. The brief never assumes the request is about creating tasks; the typed request itself says so. `archivePlanRun` (`ipc.ts`) archives it when its
+to carry out the typed request (plus the chosen preset's prompt and defaults, via `planningPrompt(request, preset)`) with the Styr MCP tools in reach. The brief never assumes the request is about creating tasks; the typed request itself says so. `archivePlanRun` (`ipc.ts`) archives it when its
 terminal exits, so no card is left. Nothing detects a missing MCP setup; the prompt tells the agent
 to say so and print what it would have done as text.
 

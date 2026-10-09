@@ -453,6 +453,7 @@ export function TerminalSurface({
   bindings,
   runtime,
   agentStatus,
+  shownState,
   taskStatus,
   taskPrUrl,
   diffStat,
@@ -472,6 +473,8 @@ export function TerminalSurface({
   runtime?: TerminalRuntimeState
   /** The hook-reported state of this task's agent, when it is a task session. */
   agentStatus?: AgentStatus
+  /** `agentStatus`'s state as the views label it (`shownAgentState`). */
+  shownState?: AgentStatus['state']
   /** The board status of this session's task, when it has one. */
   taskStatus?: TaskStatus
   /** The task's pull request, once there is one. */
@@ -885,7 +888,7 @@ export function TerminalSurface({
           runtime={runtime}
           fallbackCwd={session.cwd}
           isAgent={agent}
-          agentState={agentStatus?.state}
+          agentState={shownState ?? agentStatus?.state}
           blocksOn={blocksOn}
           branch={git.branch}
           repoRoot={git.root}

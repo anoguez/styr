@@ -26,6 +26,31 @@ describe('planningPrompt', () => {
   })
 })
 
+describe('planningPrompt with a preset', () => {
+  const preset = {
+    id: 'bug',
+    name: 'Bug',
+    title: '',
+    description: '## Steps to reproduce\n',
+    tags: ['bug'],
+    priority: 'high' as const,
+    readiness: 'ready' as const,
+    useWorktree: true,
+    orchestrate: true
+  }
+
+  it("carries the preset's prompt and defaults", () => {
+    const prompt = planningPrompt('login breaks', preset)
+    expect(prompt).toContain('"Bug" preset')
+    expect(prompt).toContain('## Steps to reproduce')
+    expect(prompt).toContain('priority high; readiness ready; tags bug')
+  })
+
+  it('is unchanged without a preset', () => {
+    expect(planningPrompt('x')).not.toContain('preset')
+  })
+})
+
 describe('plan runs', () => {
   const settings = {
     defaultRepoPath: ' /repo ',

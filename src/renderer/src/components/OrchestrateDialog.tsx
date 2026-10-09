@@ -5,22 +5,27 @@ import {
   type AutoDispatchState,
   type OrchestrationSummary
 } from '@core/types.js'
-import { Button, Card, Modal, SwitchRow } from './ui.js'
+import { Button, Card, CardRow, Modal, SwitchRow } from './ui.js'
 
 export function OrchestrateDialog({
   summary,
   auto,
+  onAutoStop,
   onConfirm,
   onClose
 }: {
   summary: OrchestrationSummary
   auto: AutoDispatchState
+  /** Stops a running Auto-run once the user confirms; switching it on waits for `onConfirm`. */
+  onAutoStop: () => void
   /** Starts the listed tasks (if any) and applies the Auto-run choice made in the dialog. */
   onConfirm: (autoOn: boolean) => void
   onClose: () => void
 }): ReactNode {
-  // The switch is a draft: Auto-run changes only when the dialog is confirmed, never on toggle.
+  // Switching Auto-run on is a draft, applied only when the dialog is confirmed. Stopping a running
+  // Auto-run is its own explicit action behind an inline confirmation.
   const [autoOn, setAutoOn] = useState(auto.on)
+  const [confirmingStop, setConfirmingStop] = useState(false)
   const count = summary.dispatch.length
   const autoChanged = autoOn !== auto.on
   const canConfirm = count > 0 || autoChanged
@@ -60,11 +65,31 @@ export function OrchestrateDialog({
       <div className="flex flex-col gap-4">
         <Card>
           <SwitchRow
-            checked={autoOn}
-            onChange={setAutoOn}
-            label="Auto-run"
+            checked={autoOn && !confirmingStop}
+            onChange={(on) => {
+              if (!on && auto.on) return setConfirmingStop(true)
+              setConfirmingStop(false)
+              setAutoOn(on)
+            }}
+            label={auto.on ? `Auto-run · ${running} running` : 'Auto-run'}
             hint="Start eligible tasks automatically as agents finish and new tasks become ready, while Styr is open. Turning it off starts nothing new; agents already running finish."
           />
+          {confirmingStop && auto.on ? (
+            <CardRow className="flex items-center justify-end gap-2 px-3.5 py-2.5">
+              <span className="mr-auto text-[12px] text-dim">Stop Auto-run?</span>
+              <Button onClick={() => setConfirmingStop(false)}>Keep running</Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setConfirmingStop(false)
+                  setAutoOn(false)
+                  onAutoStop()
+                }}
+              >
+                Stop Auto-run
+              </Button>
+            </CardRow>
+          ) : null}
         </Card>
         {auto.paused ? (
           <p className="text-[11.5px] text-danger">
@@ -127,6 +152,35 @@ export function OrchestrateDialog({
           </ul>
         ) : null}
       </div>
+    </Modal>
+  )
+}
+
+/** Stopping Auto-run is confirmed: it ends the workspace's only automatic run. */
+export function StopAutoRunDialog({
+  onConfirm,
+  onClose
+}: {
+  onConfirm: () => void
+  onClose: () => void
+}): ReactNode {
+  return (
+    <Modal
+      title="Stop Auto-run?"
+      subtitle="No new tasks start in this workspace."
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Keep running</Button>
+          <Button variant="danger" onClick={onConfirm}>
+            Stop Auto-run
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[12.5px] text-dim">
+        Agents already running finish their work. You can turn Auto-run back on from Dispatch.
+      </p>
     </Modal>
   )
 }

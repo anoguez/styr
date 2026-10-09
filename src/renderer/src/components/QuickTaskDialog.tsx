@@ -19,7 +19,7 @@ export function QuickTaskDialog({
   onClose
 }: {
   settings: Settings
-  onPlan: (request: string) => Promise<void>
+  onPlan: (request: string, preset?: TaskPreset) => Promise<void>
   onClose: () => void
 }): ReactNode {
   const [title, setTitle] = useState('')
@@ -83,7 +83,7 @@ export function QuickTaskDialog({
   async function plan(): Promise<void> {
     const request = title.trim()
     if (!request || saving) return
-    await run(() => onPlan(request), 'Could not start the planning run')
+    await run(() => onPlan(request, preset), 'Could not start the planning run')
   }
 
   const canSubmit = !saving && Boolean(title.trim() || preset?.title.trim())
