@@ -3,7 +3,7 @@ import { DEFAULT_WORKSPACE_ID } from '@core/types.js'
 import type { Workspaces } from '../hooks/useWorkspaces.js'
 import { Button, Card, CardRow, Chip, Hint, inputBase, inputClass } from './ui.js'
 import { workspaceColor } from '../lib/workspaceColor.js'
-import { ipcMessage } from './WorkspaceSwitcher.js'
+import { ipcMessage } from '../lib/ipcMessage.js'
 
 /**
  * Settings → Workspaces. Acts on the live workspaces rather than the settings draft: creating or

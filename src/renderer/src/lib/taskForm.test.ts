@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_TASK_PRESETS, MAX_TASK_PRESETS, type Settings, type Task } from '@core/types.js'
 import {
   blockerState,
+  changesTitle,
   choosePreset,
   initialForm,
   savePresetPlan,
   taskPayload,
   templateNames,
-  toForm
+  toForm,
+  worktreeHint
 } from './taskForm.js'
 
 const bug = DEFAULT_TASK_PRESETS[0]!
@@ -192,5 +194,29 @@ describe('blockerState', () => {
     const state = blockerState(undefined, ['A'], tasks)
     expect(state.cycle).toBeNull()
     expect(state.choices.every((choice) => !choice.cycle)).toBe(true)
+  })
+})
+
+describe('worktreeHint', () => {
+  const on = { useWorktree: true, repoPath: '/code/styr' }
+
+  it('explains each state of the worktree switch', () => {
+    expect(worktreeHint({ ...on, useWorktree: false }, 'TASK-0001', false)).toMatch(/directly/)
+    expect(worktreeHint({ ...on, repoPath: '' }, 'TASK-0001', false)).toMatch(/^Set a working/)
+    expect(worktreeHint(on, 'TASK-0001', true)).toMatch(/not look like a git repository/)
+    expect(worktreeHint(on, 'TASK-0001', false)).toBe(
+      'Runs on branch styr/TASK-0001 so parallel agents never share a checkout.'
+    )
+  })
+})
+
+describe('changesTitle', () => {
+  it('says whether changes are loading, absent or ready', () => {
+    expect(changesTitle(null)).toBe('Reading changes…')
+    expect(changesTitle({ files: [], branch: 'styr/TASK-0001' })).toBe(
+      'No changes on styr/TASK-0001 yet'
+    )
+    expect(changesTitle({ files: [], branch: '' })).toBe('No changes to show')
+    expect(changesTitle({ files: [{}], branch: 'b' } as never)).toBe('View changes')
   })
 })

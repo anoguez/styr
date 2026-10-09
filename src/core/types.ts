@@ -11,6 +11,12 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   done: 'Done'
 }
 
+/** How the UI names each agent CLI. */
+export const AGENT_PROVIDER_LABELS: Record<'claude' | 'codex', string> = {
+  claude: 'Claude Code',
+  codex: 'Codex'
+}
+
 export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
 export type TaskPriority = (typeof TASK_PRIORITIES)[number]
 

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { AGENT_PROVIDER_LABELS } from '@core/types.js'
 import { AgentCliStatus } from '../AgentCliStatus.js'
 import { Button, Card, Chip, Hint, Segmented, Switch, inputBase } from '../ui.js'
 import { withProvider } from './draft.js'
@@ -23,8 +24,8 @@ export function AgentsSection({ draft, patch }: SectionProps): ReactNode {
     <>
       {(
         [
-          { id: 'claude', label: 'Claude Code', command: draft.claudeCommand },
-          { id: 'codex', label: 'Codex', command: draft.codexCommand }
+          { id: 'claude', label: AGENT_PROVIDER_LABELS.claude, command: draft.claudeCommand },
+          { id: 'codex', label: AGENT_PROVIDER_LABELS.codex, command: draft.codexCommand }
         ] as const
       ).map((provider) => {
         const on = draft.enabledProviders.includes(provider.id)

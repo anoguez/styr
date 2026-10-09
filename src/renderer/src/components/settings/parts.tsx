@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import {
+  AGENT_PROVIDER_LABELS,
   ORCHESTRATION_LANE_LABELS,
   type OrchestrationLane,
   type PromptTemplate
@@ -12,6 +13,8 @@ export const LANE_HINTS: Record<OrchestrationLane, string> = {
   implement: 'ready tasks in Backlog',
   review: 'tasks sitting in In Review'
 }
+
+const PROVIDERS = ['claude', 'codex'] as const
 
 /** The agent a Dispatch lane runs, from the enabled providers; shared by Routing and Dispatch. */
 export function LaneAgentSelect({
@@ -33,10 +36,11 @@ export function LaneAgentSelect({
         })
       }
     >
-      {draft.enabledProviders.includes('claude') ? (
-        <option value="claude">Claude Code</option>
-      ) : null}
-      {draft.enabledProviders.includes('codex') ? <option value="codex">Codex</option> : null}
+      {PROVIDERS.filter((provider) => draft.enabledProviders.includes(provider)).map((provider) => (
+        <option key={provider} value={provider}>
+          {AGENT_PROVIDER_LABELS[provider]}
+        </option>
+      ))}
     </Select>
   )
 }

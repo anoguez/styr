@@ -1,3 +1,4 @@
+import type { TaskDiff } from '@core/diff.js'
 import { danglingBlockers, findCycle, indexTasks } from '@core/blocking.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import {
@@ -208,4 +209,26 @@ export function blockerState(
         cycle: taskId ? findCycle(taskId, [other.id], lookup) !== null : false
       }))
   }
+}
+
+/** The hint under "Own git worktree": what running in a worktree means for this form. */
+export function worktreeHint(
+  form: Pick<TaskForm, 'useWorktree' | 'repoPath'>,
+  taskId: string,
+  /** The folder's branches have loaded and there are none: it is not a git repository. */
+  notARepo: boolean
+): string {
+  if (!form.useWorktree) return 'Runs directly in the working directory.'
+  if (!form.repoPath)
+    return 'Set a working directory first — the worktree is created from that repository.'
+  if (notARepo)
+    return 'This folder does not look like a git repository, so the agent will run in it directly. Turn this off for non-code work.'
+  return `Runs on branch styr/${taskId} so parallel agents never share a checkout.`
+}
+
+/** The Changes button's tooltip: still loading, nothing to show yet, or ready. */
+export function changesTitle(changes: Pick<TaskDiff, 'files' | 'branch'> | null): string {
+  if (!changes) return 'Reading changes…'
+  if (changes.files.length > 0) return 'View changes'
+  return changes.branch ? `No changes on ${changes.branch} yet` : 'No changes to show'
 }

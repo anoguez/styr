@@ -70,11 +70,8 @@ import { useTasks } from './hooks/useTasks.js'
 import { describeBlockers, taskLookup, TaskLookupContext } from './lib/blockerContext.js'
 import { useAgents } from './hooks/useAgents.js'
 import { useWorkspaces } from './hooks/useWorkspaces.js'
-import {
-  NewWorkspaceDialog,
-  WorkspaceSwitcher,
-  ipcMessage
-} from './components/WorkspaceSwitcher.js'
+import { NewWorkspaceDialog, WorkspaceSwitcher } from './components/WorkspaceSwitcher.js'
+import { ipcMessage } from './lib/ipcMessage.js'
 import { fileName } from './lib/terminalPath.js'
 
 const VIEW_KEY = 'styr:view'
@@ -239,8 +236,7 @@ export default function App(): ReactNode {
         adoptSession(await window.api.terminal.launchAgent(taskId, templateId, provider))
       } catch (error) {
         // A refused launch (an unsupported Codex install, a disabled provider) says what to fix.
-        const message = error instanceof Error ? error.message : String(error)
-        window.alert(message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+        window.alert(ipcMessage(error))
       }
     },
     [adoptSession, lookup]
