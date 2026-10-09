@@ -380,6 +380,8 @@ export default function App(): ReactNode {
     () => dispatchButton(orchestration, autoDispatch.state, isDispatching),
     [orchestration, autoDispatch.state, isDispatching]
   )
+  // A manual run and Auto-run both light the button and the header's sweep.
+  const dispatchLive = dispatchState.mode === 'dispatching' || dispatchState.mode === 'auto'
   // Starting Auto-run is harmless; stopping it is confirmed, since it ends the workspace's only run.
   const [confirmingAutoStop, setConfirmingAutoStop] = useState(false)
   const { setOn: setAutoOn } = autoDispatch
@@ -848,13 +850,9 @@ export default function App(): ReactNode {
                 onClick={() => setConfirmingOrchestrate(true)}
                 disabled={orchestration === null}
                 title={dispatchState.title}
-                className={
-                  dispatchState.mode === 'dispatching' || dispatchState.mode === 'auto'
-                    ? 'dispatch-running disabled:opacity-100'
-                    : ''
-                }
+                className={dispatchLive ? 'dispatch-running disabled:opacity-100' : ''}
               >
-                {dispatchState.mode === 'dispatching' || dispatchState.mode === 'auto' ? (
+                {dispatchLive ? (
                   <span
                     aria-hidden
                     className="size-[7px] shrink-0 animate-pulse rounded-full bg-[var(--color-accent-text)]"
@@ -890,7 +888,7 @@ export default function App(): ReactNode {
                 New task
               </Button>
             </div>
-            {isDispatching ? (
+            {dispatchLive ? (
               <span
                 aria-hidden
                 className="dispatch-sweep pointer-events-none absolute inset-x-0 -bottom-px h-0.5"
