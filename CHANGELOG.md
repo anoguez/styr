@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.25.0](https://github.com/anoguez/styr/compare/v0.24.0...v0.25.0) (2026-10-09)
+
+
+### Features
+
+* Linux builds (deb and AppImage), runnable under WSL2 ([#104](https://github.com/anoguez/styr/issues/104)) ([b524caa](https://github.com/anoguez/styr/commit/b524caa0fa81079022be81069c503bdb1b467063))
+* show an agent's subagents on its sidebar card, terminal tab and context bar ([#123](https://github.com/anoguez/styr/issues/123)) ([f236065](https://github.com/anoguez/styr/commit/f236065c16629966f5a791fec7b4fe729375a2e7))
+* Windows support, NSIS installer and agent CLI check ([#103](https://github.com/anoguez/styr/issues/103)) ([26be425](https://github.com/anoguez/styr/commit/26be42596fe0f296ba8ee74a4caf4747919f97c2))
+
 ## [0.24.0](https://github.com/anoguez/styr/compare/v0.23.0...v0.24.0) (2026-10-09)
 
 
