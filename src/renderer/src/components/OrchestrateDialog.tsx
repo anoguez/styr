@@ -11,18 +11,26 @@ import { formatAccelerator } from '@core/shortcuts.js'
 export function OrchestrateDialog({
   summary,
   auto,
-  onAutoChange,
+  onAutoStop,
   onConfirm,
   onClose
 }: {
   summary: OrchestrationSummary
   auto: AutoDispatchState
-  onAutoChange: (on: boolean) => void
-  onConfirm: () => void
+  /** Stops a running Auto-run once the user confirms; switching it on waits for `onConfirm`. */
+  onAutoStop: () => void
+  /** Starts the listed tasks (if any) and applies the Auto-run choice made in the dialog. */
+  onConfirm: (autoOn: boolean) => void
   onClose: () => void
 }): ReactNode {
+  // Switching Auto-run on is a draft, applied only when the dialog is confirmed. Stopping a running
+  // Auto-run is its own explicit action behind an inline confirmation.
+  const [autoOn, setAutoOn] = useState(auto.on)
   const [confirmingStop, setConfirmingStop] = useState(false)
   const count = summary.dispatch.length
+  const autoChanged = autoOn !== auto.on
+  const canConfirm = count > 0 || autoChanged
+  const confirm = (): void => onConfirm(autoOn)
   const running = ORCHESTRATION_LANES.reduce((sum, lane) => sum + summary.occupied[lane], 0)
   const notes = [
     summary.idleSessions > 0
@@ -44,12 +52,12 @@ export function OrchestrateDialog({
           : 'Nothing is ready to start right now.'
       }
       onClose={onClose}
-      onSubmit={count > 0 ? onConfirm : onClose}
+      onSubmit={canConfirm ? confirm : onClose}
       footer={
         <>
-          <Button onClick={onClose}>{count > 0 ? 'Cancel' : 'Close'}</Button>
-          <Button variant="primary" onClick={onConfirm} disabled={count === 0}>
-            Start {count}{' '}
+          <Button onClick={onClose}>{canConfirm ? 'Cancel' : 'Close'}</Button>
+          <Button variant="primary" onClick={confirm} disabled={!canConfirm}>
+            {count > 0 ? `Start ${count}` : 'Apply'}{' '}
             <kbd className="ml-0.5 font-mono text-[10px] opacity-70">
               {formatAccelerator('mod+enter')}
             </kbd>
@@ -60,11 +68,11 @@ export function OrchestrateDialog({
       <div className="flex flex-col gap-4">
         <Card>
           <SwitchRow
-            checked={auto.on && !confirmingStop}
+            checked={autoOn && !confirmingStop}
             onChange={(on) => {
-              if (!on) return setConfirmingStop(true)
+              if (!on && auto.on) return setConfirmingStop(true)
               setConfirmingStop(false)
-              if (!auto.on) onAutoChange(true)
+              setAutoOn(on)
             }}
             label={auto.on ? `Auto-run · ${running} running` : 'Auto-run'}
             hint="Start eligible tasks automatically as agents finish and new tasks become ready, while Styr is open. Turning it off starts nothing new; agents already running finish."
@@ -77,7 +85,8 @@ export function OrchestrateDialog({
                 variant="danger"
                 onClick={() => {
                   setConfirmingStop(false)
-                  onAutoChange(false)
+                  setAutoOn(false)
+                  onAutoStop()
                 }}
               >
                 Stop Auto-run
@@ -92,7 +101,7 @@ export function OrchestrateDialog({
               : 'Paused: three launches in a row failed.'}
           </p>
         ) : null}
-        {!auto.on && running > 0 ? (
+        {!autoOn && running > 0 ? (
           <p className="text-[11.5px] text-faint">
             {running} dispatched task{running === 1 ? '' : 's'} still running — they will finish; no
             new ones start.
