@@ -7,7 +7,7 @@ export interface SessionLabel {
 
 /**
  * How a terminal tab names itself. A task session shows the task's current title, falling back to
- * the title recorded at launch when the task is not on the board (a search can filter it out), with
+ * the title recorded at launch when the task is no longer on the board, with
  * the task id as the secondary detail. Shared by the tab strip and the command palette so the two
  * always agree.
  */

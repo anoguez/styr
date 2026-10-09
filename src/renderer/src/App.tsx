@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { buildInbox } from '@core/inbox.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import {
@@ -20,7 +20,6 @@ import { CommandPalette } from './components/CommandPalette.js'
 import { DoneFooter, hasDoneFooter } from './components/DoneFooter.js'
 import { AppHeader, BrandMark } from './components/header/AppHeader.js'
 import { DispatchButton } from './components/header/DispatchButton.js'
-import { SearchBox } from './components/header/SearchBox.js'
 import { ViewTabs } from './components/header/ViewTabs.js'
 import { Inbox } from './components/Inbox.js'
 import { OrchestrateDialog, StopAutoRunDialog } from './components/OrchestrateDialog.js'
@@ -63,10 +62,9 @@ import { ipcMessage } from './lib/ipcMessage.js'
 const NO_PRESETS: TaskPreset[] = []
 
 export default function App(): ReactNode {
-  const [query, setQuery] = useState('')
   const [showAllDone, setShowAllDone] = useState(false)
   const { settings, save } = useSettings()
-  const tasksState = useTasks(query, settings?.doneCap ?? DEFAULT_DONE_CAP, showAllDone)
+  const tasksState = useTasks(settings?.doneCap ?? DEFAULT_DONE_CAP, showAllDone)
   const { hiddenDone, allTasks, archived, problems, loading } = tasksState
   const agents = useAgents()
   const { board, tasks, shown, lookup, taskTitles, taskStates } = useBoardView(
@@ -91,15 +89,10 @@ export default function App(): ReactNode {
   const [shell, dispatch] = useAppShell(activeWorkspaceId)
   const { view, agentsOpen, taskDialog, changes: changesTask, removingAgent } = shell
   const taskOpen = taskDialog.mode !== 'closed'
-  // Nothing carries over from one workspace to the next: not an open task (useAppShell), not a search.
-  useEffect(() => setQuery(''), [activeWorkspaceId])
-
   const terminals = useTerminalSessions()
   const { sessions, activeSession, terminalOpen, adopt: adoptSession } = terminals
   const [terminalExpanded, setTerminalExpanded] = useState(false)
   const { height: terminalHeight, startResize } = useTerminalHeight(terminalOpen)
-  const searchRef = useRef<HTMLInputElement>(null)
-
   const agentRows = useMemo(
     () => agentRowsFor(tasks, shown, sessions, activeWorkspaceId),
     [tasks, shown, sessions, activeWorkspaceId]
@@ -150,7 +143,6 @@ export default function App(): ReactNode {
   const launch = useCallback((taskId: string) => void launchAgent(taskId), [launchAgent])
   const { runCommand, entries: commandEntries } = useCommands({
     dispatch,
-    searchRef,
     changesOpen: changesTask !== null,
     terminals,
     newShell,
@@ -207,14 +199,7 @@ export default function App(): ReactNode {
                 />
               </>
             }
-            center={
-              <SearchBox
-                query={query}
-                inputRef={searchRef}
-                bindings={bindings}
-                onChange={setQuery}
-              />
-            }
+            center={null}
             end={
               <>
                 <ViewTabs

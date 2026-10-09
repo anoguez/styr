@@ -163,9 +163,15 @@ export const themeSchema = z.object({
 })
 
 export const shortcutsSchema = z
-  .partialRecord(z.enum(SHORTCUT_COMMANDS), z.array(z.string()))
+  .partialRecord(z.enum([...SHORTCUT_COMMANDS, 'focusSearch'] as const), z.array(z.string()))
   .default({})
-  .transform((value) => ({ ...DEFAULT_SHORTCUTS, ...value }))
+  .transform(({ focusSearch, ...value }) => ({
+    ...DEFAULT_SHORTCUTS,
+    ...value,
+    quickOpen: [
+      ...new Set([...(value.quickOpen ?? DEFAULT_SHORTCUTS.quickOpen), ...(focusSearch ?? [])])
+    ]
+  }))
 
 export const taskPresetSchema = z.object({
   id: z.string().min(1),

@@ -123,7 +123,6 @@ export function appShellReducer(state: AppShellState, action: AppShellAction): A
 /** What a shortcut command reaches outside the shell state. */
 export interface CommandPort {
   dispatch: (action: AppShellAction) => void
-  focusSearch: () => void
   toggleTerminal: () => void
   autoRunOn: boolean
   startAutoRun: () => void
@@ -150,8 +149,6 @@ export function runShortcutCommand(command: ShortcutCommand, port: CommandPort):
       return dispatch({ type: 'togglePalette', mode: 'go' })
     case 'commandPalette':
       return dispatch({ type: 'togglePalette', mode: 'command' })
-    case 'focusSearch':
-      return port.focusSearch()
     case 'viewBoard':
       return dispatch({ type: 'setView', view: 'board' })
     case 'viewInbox':

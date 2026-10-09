@@ -16,7 +16,6 @@ function port(overrides: Partial<CommandPort> = {}): CommandPort & { actions: Ap
   return {
     actions,
     dispatch: (action) => actions.push(action),
-    focusSearch: vi.fn(),
     toggleTerminal: vi.fn(),
     autoRunOn: false,
     startAutoRun: vi.fn(),
@@ -111,7 +110,6 @@ describe('runShortcutCommand', () => {
       const touched =
         fake.actions.length > 0 ||
         [
-          fake.focusSearch,
           fake.toggleTerminal,
           fake.startAutoRun,
           fake.newShell,
