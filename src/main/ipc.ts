@@ -800,7 +800,8 @@ export function registerIpcHandlers(): void {
     // VS Code is optional, so fall back to the folder rather than failing.
     return (await shell.openPath(path)) ? 'failed' : 'folder'
   })
-  ipcMain.handle('terminal:revealDirectory', (_event, path: string) => openPathWith(path))
+  // Always Finder: "Open files with" is for task files, and an editor there would swallow folders.
+  ipcMain.handle('terminal:revealDirectory', (_event, path: string) => shell.openPath(path))
   ipcMain.handle('terminal:openLink', (_event, url: string) => {
     // Only web links: a terminal can print any string, and openExternal would run other schemes.
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
