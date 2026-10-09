@@ -13,7 +13,10 @@ export interface TaskProblem {
   reason: string
 }
 
-export function useTasks(doneCap: DoneCap, showAllDone: boolean): {
+export function useTasks(
+  doneCap: DoneCap,
+  showAllDone: boolean
+): {
   tasks: Task[]
   /** Every task in the workspace — blockers are looked up here. */
   allTasks: Task[]
