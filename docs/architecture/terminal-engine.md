@@ -90,6 +90,28 @@ surface's `TerminalBlocks` overlay, fed the same `BlockLayout`. Only where the l
 - A finished block's span is fixed when it ends, so a resize that reflows its output can move its
   end by the rows the reflow added or removed; its start stays exact.
 
+## Block list (Warp-style)
+
+With zsh and Styr's shell integration, a native session is drawn as the terminal design's block
+list instead of a grid. The shell integration's `PROMPT_READY` becomes a `prompt` mark beside the
+command `start`/`end` marks, and the host starts a `BlockSession` (`main/terminal/blockSession.ts`)
+at a session's first prompt mark; a shell that sends none stays a grid.
+
+- Each segment — the prompt, then each command — is written into its own fresh engine. A finished
+  command is frozen into styled rows (`styledLines`, package 0.3.0) that the renderer rejoins into
+  logical lines, so the page wraps and scrolls them natively. The running command streams rows that
+  scrolled off its screen (`history`, tracked with a mark so trimming cannot resend or skip rows) and
+  its live screen (`frame`). A full-screen program takes over the panel as a grid.
+- The shell's prompt is parsed (modes, cursor queries) but never shown: blocks start with the
+  design's `❯ command` row, and the input is Styr's own (`commandInput.ts`): Enter runs, Shift+Enter
+  adds a line (several lines go as one bracketed paste), Up/Down step through the list's commands,
+  Ctrl+C discards, Ctrl+L and `clear` empty the list. zsh's completion and autosuggestions do not
+  see the line until it is submitted.
+- Finished blocks are capped (`MAX_FINISHED_BLOCKS`, `MAX_FINISHED_ROWS` in the main process,
+  `VIEW_FINISHED_BLOCKS` in the view) and a command's own engine keeps `BLOCK_SCROLLBACK` lines.
+- The PTY gets the columns left after the list's indent (`LIST_INSET`), so output wraps where it is
+  shown. Output a program laid out in columns keeps the width it ran at.
+
 ## Capabilities and known limitations (experimental level)
 
 | Capability                                                                | xterm.js                   | Styr Terminal                                                                  |

@@ -160,9 +160,3 @@ export function commandHistory(state: BlockListState): string[] {
   }
   return history
 }
-
-/** Rows without the blank ones a prompt may start with (a theme's spacer line, say). */
-export function withoutLeadingBlanks(rows: EngineFrameLine[]): EngineFrameLine[] {
-  const first = rows.findIndex((row) => row.runs.some((run) => run.text.trim() !== ''))
-  return first < 0 ? [] : rows.slice(first)
-}

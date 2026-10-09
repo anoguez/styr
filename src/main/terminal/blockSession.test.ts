@@ -79,8 +79,9 @@ describe('BlockSession', () => {
       cols: 40,
       truncated: false
     })
-    expect(text(finished.block.prompt)).toEqual(['➜ repo ls'])
+    // The shell's prompt and its echo of the command stay out of the block.
     expect(text(finished.block.output)).toEqual(['a', 'b'])
+    expect(finished.block).not.toHaveProperty('prompt')
   })
 
   it('reports the running command, then the prompt that follows it', () => {
@@ -92,9 +93,6 @@ describe('BlockSession', () => {
       kind: 'segment',
       segment: { kind: 'running', id: 'c1', command: 'make', startedAt: 10 }
     })
-    if (running?.kind === 'segment' && running.segment.kind === 'running') {
-      expect(text(running.segment.prompt)).toEqual(['➜ repo make'])
-    }
     list.write('building\r\n')
     expect(kinds(list.takeEvents())).toEqual(['frame'])
     list.mark(end('c1'))

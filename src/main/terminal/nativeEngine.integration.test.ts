@@ -117,7 +117,7 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
     host.detach('s')
   })
 
-  it('splits a zsh-like session into a block list with styled, wrapped rows', () => {
+  it('splits a zsh-like session into a block list with styled, wrapped rows and no prompt', () => {
     const { factory, status } = load()
     const lists: NativeBlockEvent[] = []
     const deferred: (() => void)[] = []
@@ -133,7 +133,7 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
     })
     host.attach('s', 10, 4)
     const prompt = '\x1b[32m➜\x1b[0m repo ls\r\n'
-    const output = 'abcdefghijKLM\r\n'
+    const output = '\x1b[32mabcdefghij\x1b[0mKLM\r\n'
     const at = Date.now()
     host.write('s', {
       data: prompt + output,
@@ -149,7 +149,7 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
       .flatMap((event) => event.events)
       .find((event) => event.kind === 'finished')
     if (finished?.kind !== 'finished') throw new Error('no finished block')
-    expect(finished.block.prompt[0]!.runs[0]).toMatchObject({ text: '➜', fg: 2 })
+    expect(finished.block.output[0]!.runs[0]).toMatchObject({ text: 'abcdefghij', fg: 2 })
     expect(finished.block.output.map((row) => row.wrapped)).toEqual([true, false])
     expect(finished.block.output.map((row) => row.runs.map((run) => run.text).join(''))).toEqual([
       'abcdefghij',

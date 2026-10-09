@@ -231,15 +231,13 @@ export interface NativeEngineFailure {
  */
 export interface FinishedCommandBlock {
   id: string
-  /** Empty for the output before the first prompt (a login banner, say). */
+  /** As the shell reported it; empty if it did not say. */
   command: string
   cwd?: string
   startedAt: number
   endedAt: number
   exitCode?: number
   cols: number
-  /** The shell's own prompt, with the command as the shell echoed it. */
-  prompt: EngineFrameLine[]
   output: EngineFrameLine[]
   /** The output passed the block's line limit and lost its oldest rows. */
   truncated: boolean
@@ -254,7 +252,6 @@ export type ActiveSegment =
       command: string
       cwd?: string
       startedAt: number
-      prompt: EngineFrameLine[]
     }
 
 /**

@@ -11,8 +11,7 @@ import {
   commandHistory,
   liveRows,
   logicalLines,
-  rowsText,
-  withoutLeadingBlanks
+  rowsText
 } from './blockList.js'
 import { ScreenModel } from './screen.js'
 import { inputAction, stepHistory, submission } from './commandInput.js'
@@ -53,7 +52,6 @@ const block = (id: string, command = 'ls'): FinishedCommandBlock => ({
   endedAt: 5,
   exitCode: 0,
   cols: 10,
-  prompt: [row(0, '$ ' + command)],
   output: [row(0, 'out')],
   truncated: false
 })
@@ -78,7 +76,7 @@ describe('BlockListStore', () => {
     const store = new BlockListStore()
     store.attached(1, {
       finished: [block('c1')],
-      active: { kind: 'running', id: 'c2', command: 'seq', startedAt: 1, prompt: [] },
+      active: { kind: 'running', id: 'c2', command: 'seq', startedAt: 1 },
       history: [row(0, '1')],
       frame: frame(1, [row(0, '2')], 0)
     })
@@ -142,17 +140,11 @@ describe('block list rows', () => {
     expect(liveRows(new ScreenModel())).toEqual([])
   })
 
-  it('drops the blank rows a prompt starts with', () => {
-    const rows = [row(0, ''), row(1, '   '), row(2, '➜ repo'), row(3, '')]
-    expect(withoutLeadingBlanks(rows).map((item) => item.row)).toEqual([2, 3])
-    expect(withoutLeadingBlanks([row(0, '')])).toEqual([])
-  })
-
   it('steps through commands without blanks or repeats, the running one last', () => {
     const store = new BlockListStore()
     store.attached(1, {
       finished: [block('a', 'ls'), block('b', 'ls'), block('c', ''), block('d', 'git status')],
-      active: { kind: 'running', id: 'e', command: 'make', startedAt: 0, prompt: [] },
+      active: { kind: 'running', id: 'e', command: 'make', startedAt: 0 },
       history: [],
       frame: frame(1, [])
     })

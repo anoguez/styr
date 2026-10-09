@@ -16,6 +16,9 @@ import type { NativeTerminalEngine } from './nativeEngine.js'
  * renderer re-wraps at any width. The PTY, its backlog and the session's main engine are untouched;
  * this only reads the same output. The host starts one at a session's first prompt mark, which only
  * a shell with Styr's integration sends — any other shell stays a plain grid.
+ *
+ * The shell's own prompt is parsed in its segment — it can switch modes (bracketed paste) or ask
+ * where the cursor is — but never shown: the block list draws Styr's prompt instead.
  */
 
 /** Lines a command's own engine keeps; a longer output loses its oldest lines (`truncated`). */
@@ -62,7 +65,6 @@ interface Segment {
   awaitingPrompt?: boolean
   command?: string
   startedAt: number
-  prompt?: EngineFrameLine[]
 }
 
 export class BlockSession {
@@ -171,7 +173,6 @@ export class BlockSession {
 
   private start(mark: TerminalMark): void {
     const current = this.segment
-    const prompt = current.kind === 'prompt' ? rowsOf(current.engine) : []
     if (current.kind === 'running') this.finish(current, mark.at, undefined)
     this.open({
       kind: 'running',
@@ -179,7 +180,6 @@ export class BlockSession {
       command: mark.command ?? '',
       cwd: current.cwd,
       startedAt: mark.at,
-      prompt,
       engine: this.engine(BLOCK_SCROLLBACK)
     })
   }
@@ -211,7 +211,6 @@ export class BlockSession {
       endedAt,
       ...(exitCode !== undefined ? { exitCode } : {}),
       cols: this.size.cols,
-      prompt: segment.prompt ?? [],
       output: rowsOf(segment.engine),
       // The engine keeps BLOCK_SCROLLBACK lines of history; a full history has lost older ones.
       truncated: total - this.size.rows >= BLOCK_SCROLLBACK
@@ -231,14 +230,13 @@ export class BlockSession {
   }
 
   private activeSegment(): ActiveSegment {
-    const { kind, id, cwd, command, startedAt, prompt } = this.segment
+    const { kind, id, cwd, command, startedAt } = this.segment
     if (kind === 'running') {
       return {
         kind,
         id,
         command: command ?? '',
         startedAt,
-        prompt: prompt ?? [],
         ...(cwd ? { cwd } : {})
       }
     }

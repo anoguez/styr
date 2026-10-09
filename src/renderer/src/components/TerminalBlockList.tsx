@@ -15,7 +15,6 @@ import {
   liveRows,
   logicalLines,
   rowsText,
-  withoutLeadingBlanks,
   type BlockListState
 } from '../lib/nativeTerminal/blockList.js'
 import {
@@ -43,7 +42,8 @@ interface Look {
 /**
  * The Warp-style view of a native session, as the terminal design draws it: each command a block
  * (`❯ command`, its result at the end of the row, its output below), the running command live
- * under them, and Styr's own input at the bottom with the shell's prompt above it for context. Finished blocks are logical lines the page wraps and scrolls natively;
+ * under them, and Styr's own `❯` input at the bottom — the shell's prompt is never shown. Finished
+ * blocks are logical lines the page wraps and scrolls natively;
  * every character is React text, never markup. A full-screen program is drawn by the grid instead
  * (`NativeTerminalView`), so this view never sees the alternate screen.
  */
@@ -114,8 +114,6 @@ export function TerminalBlockList({
         ) : (
           <PromptInput
             key={active.id}
-            prompt={withoutLeadingBlanks(liveRows(state.screen))}
-            cols={cols}
             look={look}
             inputRef={inputRef}
             history={commandHistory(state)}
@@ -386,8 +384,6 @@ function RunningBlock({
 }
 
 function PromptInput({
-  prompt,
-  cols,
   look,
   inputRef,
   history,
@@ -396,8 +392,6 @@ function PromptInput({
   onSubmit,
   onClearBlocks
 }: {
-  prompt: EngineFrameLine[]
-  cols: number
   look: Look
   inputRef: RefObject<HTMLTextAreaElement | null>
   history: string[]
@@ -443,10 +437,6 @@ function PromptInput({
 
   return (
     <section aria-label="Prompt" className="-mx-0.5 shrink-0 px-2 py-[3px]">
-      {/* The shell's own prompt, for its context (directory, branch, status); it takes no input. */}
-      <div aria-hidden className="opacity-70">
-        <Lines rows={prompt} cols={cols} look={look} />
-      </div>
       <div className="flex min-h-[22px] items-start gap-2">
         <span aria-hidden className="text-accent" style={{ lineHeight: `${look.lineHeight}px` }}>
           ❯
