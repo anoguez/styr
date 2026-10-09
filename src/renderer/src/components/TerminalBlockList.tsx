@@ -79,6 +79,9 @@ export function TerminalBlockList({
 
   const active = state.active
   const screen = state.screen.current
+  // Fresh until the session's first command; a cleared list is not a new shell.
+  const fresh = useRef(true)
+  if (state.finished.length > 0 || active.kind === 'running') fresh.current = false
   const cols = screen?.cols ?? 80
   const running = active.kind === 'running'
 
@@ -118,7 +121,8 @@ export function TerminalBlockList({
             inputRef={inputRef}
             history={commandHistory(state)}
             bracketed={screen?.modes.bracketedPaste ?? false}
-            hints={hints}
+            // As the design has it: only a new shell shows the hint, until its first keystroke.
+            hints={fresh.current ? hints : []}
             onSubmit={onSubmit}
             onClearBlocks={onClearBlocks}
           />
@@ -401,6 +405,7 @@ function PromptInput({
   onClearBlocks: () => void
 }): ReactNode {
   const [text, setText] = useState('')
+  const [typed, setTyped] = useState(false)
   const cursor = useRef<HistoryCursor>({ index: null, draft: '' })
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -455,14 +460,15 @@ function PromptInput({
             style={{ font: 'inherit', lineHeight: `${look.lineHeight}px`, outline: 'none' }}
             onChange={(event) => {
               setText(event.target.value)
+              setTyped(true)
               if (cursor.current.index !== null) cursor.current = { ...cursor.current, index: null }
             }}
             onKeyDown={onKeyDown}
           />
-          {text === '' && hints.length > 0 ? (
+          {!typed && text === '' && hints.length > 0 ? (
             <span
               aria-hidden
-              className="text-faint pointer-events-none absolute top-0 left-3 flex items-center gap-2.5 font-sans text-[11.5px]"
+              className="text-faint pointer-events-none absolute top-0 left-4 flex items-center gap-2.5 font-sans text-[11.5px]"
               style={{ height: look.lineHeight }}
             >
               {hints.map((hint) => (
