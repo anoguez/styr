@@ -72,6 +72,7 @@ export const taskFrontmatterSchema = z.object({
   contextFiles: z.array(z.string()).default([]),
   promptTemplateId: z.string().optional(),
   provider: z.enum(['claude', 'codex']).optional(),
+  model: z.string().optional(),
   agentSession: z.object({ provider: z.enum(['claude', 'codex']), id: z.string() }).optional(),
   sessions: z.array(taskSessionRefSchema).default([]),
   externalRef: externalRefSchema.optional(),
@@ -105,6 +106,7 @@ export const taskDraftSchema = z.object({
   contextFiles: z.array(z.string()).optional(),
   promptTemplateId: z.string().optional(),
   provider: z.enum(['claude', 'codex']).optional(),
+  model: z.string().optional(),
   sessions: z.array(taskSessionRefSchema).optional(),
   externalRef: externalRefSchema.optional(),
   prUrl: z.string().optional(),
@@ -124,7 +126,8 @@ export const taskFilterSchema = z.object({
 export const promptTemplateSchema = z.object({
   id: z.string(),
   name: z.string(),
-  template: z.string()
+  template: z.string(),
+  model: z.object({ provider: z.enum(['claude', 'codex']), name: z.string().min(1) }).optional()
 })
 
 export const promptRoutingSchema = z.object({
@@ -204,6 +207,12 @@ export const settingsSchema = z.object({
     .min(1)
     .default(['claude']),
   defaultProvider: z.enum(['claude', 'codex']).default('claude'),
+  agentModels: z
+    .object({
+      claude: z.array(z.string()).default([]),
+      codex: z.array(z.string()).default([])
+    })
+    .default({ claude: [], codex: [] }),
   providerRouting: providerRoutingSchema.default({
     spec: 'claude',
     implement: 'claude',

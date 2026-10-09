@@ -1,9 +1,86 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { AGENT_PROVIDER_LABELS } from '@core/types.js'
+import { withModel } from '@core/agentModel.js'
+import { AGENT_MODEL_EXAMPLES, AGENT_PROVIDER_LABELS } from '@core/types.js'
 import { AgentCliStatus } from '../AgentCliStatus.js'
+import { CloseIcon } from '../icons.js'
 import { Button, Card, Chip, Hint, Segmented, Switch, inputBase } from '../ui.js'
 import { withProvider } from './draft.js'
 import type { SectionProps } from './sections.js'
+
+/**
+ * The models registered for one CLI: removable chips and a field to add another. Tasks and
+ * templates pick from this list, so a name only has to be typed once.
+ */
+function ModelsEditor({
+  provider,
+  models,
+  onChange
+}: {
+  provider: 'claude' | 'codex'
+  models: string[]
+  onChange: (models: string[]) => void
+}): ReactNode {
+  const [name, setName] = useState('')
+  const label = AGENT_PROVIDER_LABELS[provider]
+
+  function add(): void {
+    onChange(withModel(models, name))
+    setName('')
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      {models.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {models.map((model) => (
+            <span
+              key={model}
+              className="inline-flex h-6 items-center gap-1 rounded-md bg-raised pl-2 pr-1 font-mono text-[11px] text-ink"
+            >
+              {model}
+              <button
+                type="button"
+                aria-label={`Remove ${model}`}
+                title={`Remove ${model}`}
+                onClick={() => onChange(models.filter((current) => current !== model))}
+                className="grid size-4 place-items-center rounded-[4px] text-faint transition-colors hover:bg-edge-strong hover:text-ink"
+              >
+                <CloseIcon size={9} />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <div className="flex items-center gap-1.5">
+        <input
+          aria-label={`Add a ${label} model`}
+          className={`${inputBase} h-7 w-full max-w-[200px] px-2.5 font-mono text-[11.5px]`}
+          placeholder={`e.g. ${AGENT_MODEL_EXAMPLES[provider]}`}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return
+            // Enter would otherwise reach the dialog's Save shortcut.
+            event.preventDefault()
+            event.stopPropagation()
+            add()
+          }}
+        />
+        <Button className="h-7 px-2.5" disabled={!name.trim()} onClick={add}>
+          Add
+        </Button>
+      </div>
+      <Hint>
+        {models.length > 0
+          ? `Tasks and templates pick from these. Left on Default, ${label} uses its own.`
+          : `None yet, so ${label} runs its default model. Add a name the CLI accepts to choose one per task or template.`}
+      </Hint>
+    </div>
+  )
+}
 
 export function AgentsSection({ draft, patch }: SectionProps): ReactNode {
   const [mcpCommand, setMcpCommand] = useState('')
@@ -86,6 +163,17 @@ export function AgentsSection({ draft, patch }: SectionProps): ReactNode {
                     provider={provider.id}
                     command={provider.command}
                     shell={draft.shell}
+                  />
+                </div>
+
+                <div className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-2.5">
+                  <span className="pt-[5px] text-[12px] text-dim">Models</span>
+                  <ModelsEditor
+                    provider={provider.id}
+                    models={draft.agentModels[provider.id]}
+                    onChange={(models) =>
+                      patch({ agentModels: { ...draft.agentModels, [provider.id]: models } })
+                    }
                   />
                 </div>
 

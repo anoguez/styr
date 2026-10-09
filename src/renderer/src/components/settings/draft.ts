@@ -84,6 +84,47 @@ export function removeTemplate(
 }
 
 /** `text` with `token` in place of the selection `[start, end)`, and where the caret goes after. */
+type TemplateModel = PromptTemplate['model']
+
+/** A template model as one `<select>` value: `provider:name`, or empty for the CLI default. */
+export function modelValue(model: TemplateModel): string {
+  return model ? `${model.provider}:${model.name}` : ''
+}
+
+/** Back from `modelValue`. Splits on the first colon only: Bedrock-style names contain colons. */
+export function parseModelValue(value: string): TemplateModel {
+  const at = value.indexOf(':')
+  if (at === -1) return undefined
+  const provider = value.slice(0, at)
+  const name = value.slice(at + 1)
+  return (provider === 'claude' || provider === 'codex') && name ? { provider, name } : undefined
+}
+
+/**
+ * What a template's Model dropdown offers: the registered models of each enabled provider, plus
+ * the template's current one if it has since been unregistered or its provider switched off, so
+ * the control never shows a choice the file does not hold.
+ */
+export function modelChoices(
+  settings: Pick<Settings, 'enabledProviders' | 'agentModels'>,
+  current: TemplateModel
+): { provider: 'claude' | 'codex'; models: string[] }[] {
+  const providers =
+    current && !settings.enabledProviders.includes(current.provider)
+      ? [...settings.enabledProviders, current.provider]
+      : settings.enabledProviders
+  return providers
+    .map((provider) => {
+      const models = settings.agentModels[provider]
+      const kept =
+        current?.provider === provider && !models.includes(current.name)
+          ? [...models, current.name]
+          : models
+      return { provider, models: kept }
+    })
+    .filter((group) => group.models.length > 0)
+}
+
 export function insertToken(
   text: string,
   start: number,

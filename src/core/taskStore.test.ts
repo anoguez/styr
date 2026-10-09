@@ -77,6 +77,16 @@ describe('task store', () => {
     expect(store.getTask(created.id)).toMatchObject({ provider: 'codex' })
   })
 
+  it('retains a chosen model when creating a task, and clears it on update', async () => {
+    const store = await taskStoreInTemporaryWorkspace()
+
+    const created = store.createTask({ title: 'Plan it', provider: 'claude', model: ' opus ' })
+
+    expect(store.getTask(created.id)).toMatchObject({ model: 'opus' })
+    expect(store.updateTask(created.id, { model: undefined }).model).toBeUndefined()
+    expect(store.getTask(created.id)?.model).toBeUndefined()
+  })
+
   it('preserves a task file when its replacement write is interrupted', async () => {
     const store = await taskStoreInTemporaryWorkspace()
     const created = store.createTask({ title: 'Keep this task safe' })

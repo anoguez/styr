@@ -49,6 +49,11 @@ export interface Task {
   contextFiles: string[]
   promptTemplateId?: string
   provider?: 'claude' | 'codex'
+  /**
+   * The model the task's own provider runs with, as that CLI names it (`opus`, `gpt-5-codex`).
+   * Unset leaves the choice to the prompt template, then to the CLI's own default.
+   */
+  model?: string
   agentSession?: { provider: 'claude' | 'codex'; id: string }
   sessions: TaskSessionRef[]
   externalRef?: ExternalRef

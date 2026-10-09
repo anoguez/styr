@@ -4,6 +4,8 @@ import {
   blockerState,
   changesTitle,
   choosePreset,
+  inheritedModel,
+  modelOptions,
   initialForm,
   savePresetPlan,
   taskPayload,
@@ -22,7 +24,12 @@ const settings = {
   taskPresets: [bug],
   defaultPromptTemplateId: 'implement',
   promptTemplates: [
-    { id: 'spec', name: 'Spec the task', template: '' },
+    {
+      id: 'spec',
+      name: 'Spec the task',
+      template: '',
+      model: { provider: 'claude', name: ' opus ' }
+    },
     { id: 'implement', name: 'Implement the task', template: '' }
   ],
   promptRouting: {
@@ -136,9 +143,11 @@ describe('taskPayload', () => {
       repoPath: ' /code/styr ',
       prUrl: ' ',
       baseBranch: '',
-      promptTemplateId: ''
+      promptTemplateId: '',
+      model: ' '
     })
     expect(payload).toMatchObject({
+      model: undefined,
       title: 'Fix it',
       repoPath: '/code/styr',
       project: 'styr',
@@ -146,6 +155,7 @@ describe('taskPayload', () => {
       baseBranch: undefined,
       promptTemplateId: undefined
     })
+    expect(taskPayload({ ...blank, model: ' sonnet ' }).model).toBe('sonnet')
     expect(taskPayload({ ...blank, project: ' web ' }).project).toBe('web')
     expect(taskPayload({ ...blank, repoPath: '' }).project).toBeUndefined()
   })
@@ -164,6 +174,44 @@ describe('templateNames', () => {
     expect(templateNames(settings, { ...blank, promptTemplateId: 'gone' }).effective).toBe(
       routed.routed
     )
+  })
+})
+
+describe('inheritedModel', () => {
+  it('names the model the effective template sets for the task provider', () => {
+    expect(inheritedModel(settings, blank)).toBeUndefined()
+    expect(inheritedModel(settings, { ...blank, readiness: 'needs_spec' })).toBe('opus')
+    expect(inheritedModel(settings, { ...blank, promptTemplateId: 'spec' })).toBe('opus')
+    expect(
+      inheritedModel(settings, { ...blank, promptTemplateId: 'spec', provider: 'codex' })
+    ).toBeUndefined()
+  })
+})
+
+describe('modelOptions', () => {
+  const models = { agentModels: { claude: ['opus', 'sonnet'], codex: ['gpt-6.1-sol'] } }
+
+  it('lists the models registered for the task provider', () => {
+    expect(modelOptions(models, { provider: 'claude', model: '' })).toEqual(['opus', 'sonnet'])
+    expect(modelOptions(models, { provider: 'codex', model: '' })).toEqual(['gpt-6.1-sol'])
+  })
+
+  it('keeps a model the task holds but the registry no longer does', () => {
+    expect(modelOptions(models, { provider: 'claude', model: 'haiku' })).toEqual([
+      'opus',
+      'sonnet',
+      'haiku'
+    ])
+  })
+})
+
+describe('withPreset and the model', () => {
+  it('keeps a typed model unless the preset switches provider', () => {
+    const typed = { ...blank, model: 'opus' }
+    expect(choosePreset(typed, '', bug.id, settings).form?.model).toBe('opus')
+    const codex = { ...bug, id: 'codex', provider: 'codex' as const }
+    const other = { ...settings, taskPresets: [codex] } as Settings
+    expect(choosePreset(typed, '', codex.id, other).form?.model).toBe('')
   })
 })
 

@@ -1,12 +1,28 @@
 import type { ReactNode } from 'react'
 import { AGENT_PROVIDER_LABELS, type Settings, type Task } from '@core/types.js'
 import { useBranches } from '../../hooks/useBranches.js'
-import { worktreeHint, type TaskForm } from '../../lib/taskForm.js'
+import {
+  inheritedModel,
+  modelOptions,
+  templateNames,
+  worktreeHint,
+  type TaskForm
+} from '../../lib/taskForm.js'
 import { FolderIcon } from '../icons.js'
 import { Select } from '../ui.js'
 import { BOXED_CONTROL, SECTION_LABEL, Toggle } from './fields.js'
 
 const BOXED_SELECT = `${BOXED_CONTROL} !h-[30px] !py-0 !text-[12.5px]`
+
+/** What the Model field's hint says: where the model comes from when it is left on Default. */
+function modelHint(form: TaskForm, settings: Settings, inherited: string | undefined): string {
+  const label = AGENT_PROVIDER_LABELS[form.provider]
+  if (form.model) return `Used whenever ${label} runs this task.`
+  if (inherited) return `From ${templateNames(settings, form).effective}.`
+  return settings.agentModels[form.provider].length > 0
+    ? `${label} runs its default model.`
+    : `${label} runs its default model. Register models in Settings → Agents to pick one.`
+}
 
 /** How an agent runs the task: provider, prompt, folder, worktree and its base, and Dispatch. */
 export function AgentRunFields({
@@ -30,6 +46,7 @@ export function AgentRunFields({
   onClose: () => void
 }): ReactNode {
   const { info: branchInfo, loaded } = useBranches(form.repoPath, form.useWorktree)
+  const inherited = inheritedModel(settings, form)
   return (
     <div className="flex flex-col gap-3">
       <span className={SECTION_LABEL}>Agent run</span>
@@ -39,7 +56,11 @@ export function AgentRunFields({
           aria-label="Provider"
           className={BOXED_SELECT}
           value={form.provider}
-          onChange={(event) => patch({ provider: event.target.value as 'claude' | 'codex' })}
+          onChange={(event) => {
+            const provider = event.target.value as 'claude' | 'codex'
+            // A model is named for one CLI; carried over it would fail to start the other.
+            patch(provider === form.provider ? { provider } : { provider, model: '' })
+          }}
         >
           {settings.enabledProviders.map((item) => (
             <option key={item} value={item}>
@@ -47,6 +68,25 @@ export function AgentRunFields({
             </option>
           ))}
         </Select>
+      </div>
+      <div className="flex flex-col gap-[5px]">
+        <span className="text-[12px] text-dim">Model</span>
+        <Select
+          aria-label="Model"
+          className={BOXED_SELECT}
+          value={form.model}
+          onChange={(event) => patch({ model: event.target.value })}
+        >
+          <option value="">{inherited ? `Default — ${inherited}` : 'Default'}</option>
+          {modelOptions(settings, form).map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </Select>
+        <span className="text-[11px] leading-[1.4] text-faint">
+          {modelHint(form, settings, inherited)}
+        </span>
       </div>
       <div className="flex flex-col gap-[5px]">
         <span className="text-[12px] text-dim">Agent prompt</span>

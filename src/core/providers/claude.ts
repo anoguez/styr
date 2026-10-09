@@ -103,7 +103,7 @@ export const claudeProvider: AgentProvider = {
   id: 'claude',
   label: 'Claude Code',
 
-  buildCommand({ settings, taskId, sessionId, resume, forkFrom, prompt, syntax }) {
+  buildCommand({ settings, taskId, sessionId, resume, forkFrom, model, prompt, syntax }) {
     const hookArg = `--settings ${syntax.quote(writeHookSettings(settings, taskId))}`
     // `--session-id` is only accepted beside `--resume` together with `--fork-session`, which is what
     // lets a fork's id be known before the CLI starts.
@@ -115,7 +115,9 @@ export const claudeProvider: AgentProvider = {
     const promptArg = prompt ? ` ${prompt}` : ''
     // Auto mode hands permission prompts to Claude Code's classifier; it is not bypassPermissions.
     const modeArg = settings.claudeApprovalMode === 'auto' ? ' --permission-mode auto' : ''
-    return `${syntax.invoke(settings.claudeCommand)} ${hookArg}${modeArg} ${sessionArg}${promptArg}`
+    // Passed on resume too: `--model` sets the session's model, so a changed choice takes effect.
+    const modelArg = model ? ` --model ${syntax.quote(model)}` : ''
+    return `${syntax.invoke(settings.claudeCommand)} ${hookArg}${modeArg}${modelArg} ${sessionArg}${promptArg}`
   },
 
   newSessionId: () => randomUUID(),

@@ -1,7 +1,15 @@
 import { useRef, type ReactNode } from 'react'
-import type { PromptTemplate } from '@core/types.js'
-import { Hint, inputBase } from '../ui.js'
-import { addTemplate, insertToken, removeTemplate, routedTo } from './draft.js'
+import { AGENT_PROVIDER_LABELS, type PromptTemplate } from '@core/types.js'
+import { Hint, Select, inputBase } from '../ui.js'
+import {
+  addTemplate,
+  insertToken,
+  modelChoices,
+  modelValue,
+  parseModelValue,
+  removeTemplate,
+  routedTo
+} from './draft.js'
 import type { SectionProps } from './sections.js'
 
 const PLACEHOLDERS = [
@@ -143,6 +151,37 @@ export function TemplatesSection({
                 <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />
               </svg>
             </button>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2.5">
+              <span className="text-[12px] text-dim">Model</span>
+              <div className="w-full max-w-[260px]">
+                <Select
+                  compact
+                  aria-label="Template model"
+                  value={modelValue(selected.model)}
+                  onChange={(event) =>
+                    updateTemplate({ model: parseModelValue(event.target.value) })
+                  }
+                >
+                  <option value="">Default</option>
+                  {modelChoices(draft, selected.model).map((group) => (
+                    <optgroup key={group.provider} label={AGENT_PROVIDER_LABELS[group.provider]}>
+                      {group.models.map((name) => (
+                        <option key={name} value={modelValue({ provider: group.provider, name })}>
+                          {name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </Select>
+              </div>
+            </div>
+            <Hint>
+              {selected.model
+                ? `Used when ${AGENT_PROVIDER_LABELS[selected.model.provider]} runs this template; a model set on the task wins.`
+                : 'Each CLI runs its own default. Register models under Agents to pick one here.'}
+            </Hint>
           </div>
           <textarea
             ref={bodyRef}

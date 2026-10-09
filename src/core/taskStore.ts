@@ -212,6 +212,7 @@ export function createTask(draft: TaskDraft): Task {
     contextFiles: draft.contextFiles ?? [],
     promptTemplateId: draft.promptTemplateId,
     provider: draft.provider,
+    model: draft.model?.trim() || undefined,
     sessions: draft.sessions ?? [],
     externalRef: draft.externalRef,
     prUrl: draft.prUrl,

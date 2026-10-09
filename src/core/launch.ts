@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { clearAgentStatus, supportDir } from './agentStore.js'
 import { checkoutPath, ensureWorktree, isGitRepo } from './worktree.js'
 import { checkoutOf, type Checkout as GitCheckout } from './taskCheckout.js'
+import { launchModel } from './agentModel.js'
 import { buildPrompt, resolveTemplateFor } from './prompt.js'
 import { providerById, providerFor } from './providers/index.js'
 import { shellQuote } from './shell.js'
@@ -135,6 +136,13 @@ export function planLaunch(
         ? provider.newSessionId()
         : (existing ?? provider.newSessionId())
   const prompt = !resumable || withPrompt ? writePrompt() : undefined
+  // A bare resume sends no template, so only the task's own model applies to it.
+  const model = launchModel(
+    task,
+    settings.defaultProvider,
+    provider.id,
+    prompt ? resolveTemplateFor(settings, task, templateId) : undefined
+  )
 
   return {
     provider: provider.id,
@@ -145,6 +153,7 @@ export function planLaunch(
       resume: resumable,
       forkFrom,
       cwd: checkout.cwd,
+      model,
       prompt,
       syntax
     }),

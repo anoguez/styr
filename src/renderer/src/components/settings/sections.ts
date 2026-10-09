@@ -31,12 +31,13 @@ export const SECTIONS = [
     keys: [
       'enabledProviders',
       'defaultProvider',
+      'agentModels',
       'claudeCommand',
       'claudeApprovalMode',
       'codexCommand',
       'codexApprovalReviewer'
     ],
-    words: 'claude codex provider mcp command approvals agents'
+    words: 'claude codex provider mcp command approvals agents model models opus sonnet'
   },
   {
     id: 'source-github',

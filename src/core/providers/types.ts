@@ -14,6 +14,8 @@ export interface ProviderCommandInput {
   cwd: string
   /** Start `sessionId` as a copy of this conversation instead of a blank one (an Ask fork). */
   forkFrom?: string
+  /** The model to run, as the CLI names it; undefined leaves the CLI's own default. */
+  model?: string
   /** A shell expression that expands to the prompt, or undefined to submit nothing. */
   prompt?: string
   /** The syntax of the shell the command is typed into; build every quoted part with it. */
