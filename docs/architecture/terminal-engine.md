@@ -190,7 +190,8 @@ only once their artifacts load in Styr's Electron.
 - CI (`ci.yml`) and pull requests never reference the token; they install with
   `--ignore-scripts` and test against the fixture. A fork or a public clone builds and runs the same.
 - `build-macos` in `release.yml` runs in the `release` environment, which holds
-  `STYR_TERMINAL_PACKAGES_TOKEN` (a fine-grained or classic token with `read:packages` only).
+  `STYR_TERMINAL_PACKAGES_TOKEN`: a classic personal access token with the `read:packages` scope
+  alone (GitHub Packages' npm registry does not take fine-grained tokens).
   Protect the environment: deployment branches `main` and `v*` tags, a required reviewer. The token
   is passed to one step, `scripts/fetch-native-terminal.mjs`, which uses it only as an
   Authorization header to the pinned registry — no `.npmrc`, no logging.
@@ -200,8 +201,10 @@ only once their artifacts load in Styr's Electron.
   skips it; a mismatch fails the release. electron-builder copies the directory to
   `Contents/Resources/native` (outside the asar) and signs the `.node` with the app; the verify step
   checks that signature.
-- To ship a new engine version: publish it from the private repo, then update the lock file with the
-  version, its `dist.integrity` and the `SHA256SUMS` entry for each target.
+- To ship a new engine version: merge styr-terminal's release PR (release-please publishes it), then
+  update the lock file with the version, the tarball's integrity (`sha512-` of the release's `.tgz`,
+  which is what npm records) and the `SHA256SUMS` entry for each target. Run
+  `nativeEngine.integration.test.ts` against the unpacked tarball, in Node and in Electron, first.
 
 ## Diagnostics
 
