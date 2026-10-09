@@ -11,7 +11,8 @@ import {
   commandHistory,
   liveRows,
   logicalLines,
-  rowsText
+  rowsText,
+  withoutLeadingBlanks
 } from './blockList.js'
 import { ScreenModel } from './screen.js'
 import { inputAction, stepHistory, submission } from './commandInput.js'
@@ -139,6 +140,12 @@ describe('block list rows', () => {
     screen.reset(frame(2, [row(0, 'a'), row(1, ''), row(2, 'c'), row(3, '')], 1))
     expect(liveRows(screen)).toHaveLength(3)
     expect(liveRows(new ScreenModel())).toEqual([])
+  })
+
+  it('drops the blank rows a prompt starts with', () => {
+    const rows = [row(0, ''), row(1, '   '), row(2, '➜ repo'), row(3, '')]
+    expect(withoutLeadingBlanks(rows).map((item) => item.row)).toEqual([2, 3])
+    expect(withoutLeadingBlanks([row(0, '')])).toEqual([])
   })
 
   it('steps through commands without blanks or repeats, the running one last', () => {

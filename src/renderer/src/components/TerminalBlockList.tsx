@@ -15,6 +15,7 @@ import {
   liveRows,
   logicalLines,
   rowsText,
+  withoutLeadingBlanks,
   type BlockListState
 } from '../lib/nativeTerminal/blockList.js'
 import {
@@ -27,6 +28,12 @@ import { runStyle, type RunPalette } from '../lib/nativeTerminal/style.js'
 import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
 import { BlockStatus, quiet, type ActionBlock, type BlockActions } from './TerminalBlocks.js'
 
+export interface InputHint {
+  /** The key, as `shortcutHint` writes it. */
+  keys: string
+  label: string
+}
+
 interface Look {
   palette: RunPalette
   /** One terminal row, in pixels. */
@@ -34,9 +41,9 @@ interface Look {
 }
 
 /**
- * The Warp-style view of a native session: each command a block (the shell's own prompt with the
- * command as typed, then its output), the running command live below them, and Styr's own input
- * under the current prompt. Finished blocks are logical lines the page wraps and scrolls natively;
+ * The Warp-style view of a native session, as the terminal design draws it: each command a block
+ * (`❯ command`, its result at the end of the row, its output below), the running command live
+ * under them, and Styr's own input at the bottom with the shell's prompt above it for context. Finished blocks are logical lines the page wraps and scrolls natively;
  * every character is React text, never markup. A full-screen program is drawn by the grid instead
  * (`NativeTerminalView`), so this view never sees the alternate screen.
  */
@@ -45,7 +52,7 @@ export function TerminalBlockList({
   look,
   font,
   inputRef,
-  hint,
+  hints,
   canRetry,
   actions,
   onSubmit,
@@ -55,8 +62,8 @@ export function TerminalBlockList({
   look: Look
   font: CSSProperties
   inputRef: RefObject<HTMLTextAreaElement | null>
-  /** Shown in the empty input, e.g. the Ask agent and change directory keys. */
-  hint: string
+  /** Shown beside the empty input: the surface's keys, e.g. ⌘L ask agent. */
+  hints: InputHint[]
   canRetry: boolean
   actions?: BlockActions
   onSubmit: (data: string) => void
@@ -78,14 +85,14 @@ export function TerminalBlockList({
   return (
     <div
       ref={scroller}
-      className="h-full w-full overflow-y-auto overscroll-contain px-2 py-2"
+      className="h-full w-full overflow-y-auto overscroll-contain p-2"
       style={font}
       onScroll={(event) => {
         const element = event.currentTarget
         pinned.current = element.scrollTop + element.clientHeight >= element.scrollHeight - 4
       }}
     >
-      <div className="flex min-h-full flex-col justify-end gap-1.5">
+      <div className="flex min-h-full flex-col justify-end gap-1.5 whitespace-normal">
         {state.finished.map((block) => (
           <FinishedBlock
             key={block.id}
@@ -99,7 +106,6 @@ export function TerminalBlockList({
           <RunningBlock
             command={active.command}
             startedAt={active.startedAt}
-            prompt={active.prompt}
             rows={[...state.history, ...liveRows(state.screen)]}
             cols={cols}
             look={look}
@@ -108,13 +114,13 @@ export function TerminalBlockList({
         ) : (
           <PromptInput
             key={active.id}
-            prompt={liveRows(state.screen)}
+            prompt={withoutLeadingBlanks(liveRows(state.screen))}
             cols={cols}
             look={look}
             inputRef={inputRef}
             history={commandHistory(state)}
             bracketed={screen?.modes.bracketedPaste ?? false}
-            hint={hint}
+            hints={hints}
             onSubmit={onSubmit}
             onClearBlocks={onClearBlocks}
           />
@@ -166,6 +172,39 @@ function asAction(block: FinishedCommandBlock): ActionBlock {
   }
 }
 
+/** A block's command row: the design's `❯`, the command, its controls and how it went. */
+function CommandRow({
+  command,
+  tone,
+  children
+}: {
+  command: string
+  tone: 'muted' | 'failed' | 'running'
+  children: ReactNode
+}): ReactNode {
+  const prompt =
+    tone === 'failed' ? 'text-danger' : tone === 'running' ? 'text-col-progress' : 'text-faint'
+  return (
+    <div className="flex min-h-[22px] items-center gap-2">
+      <span aria-hidden className={prompt}>
+        ❯
+      </span>
+      <span className="text-ink min-w-0 flex-1 truncate">{command}</span>
+      {children}
+    </div>
+  )
+}
+
+/** The last line of output with text, which says what a failure was about. */
+function failNote(block: FinishedCommandBlock): string {
+  const lines = rowsText(block.output, block.cols).split('\n')
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index]!.trim()
+    if (line) return line
+  }
+  return ''
+}
+
 /** Finished blocks never change, so one only re-renders when its own controls do. */
 const FinishedBlock = memo(function FinishedBlock({
   block,
@@ -196,102 +235,106 @@ const FinishedBlock = memo(function FinishedBlock({
         ]
       ]
     : []
+  const note = failed ? failNote(block) : ''
 
   return (
     <section
-      tabIndex={-1}
+      tabIndex={0}
       aria-label={`${block.command}${failed ? `, failed, exit ${block.exitCode}` : ', completed'}`}
-      className={`group relative rounded-md border-l-2 py-[3px] pr-2 pl-2 hover:bg-raised/30 focus-within:bg-raised/30 ${
-        failed ? 'border-danger' : 'border-transparent hover:border-edge-strong'
+      className={`group relative -mx-0.5 shrink-0 rounded-md px-2 py-[3px] outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent)] ${
+        menuOpen ? 'bg-raised/30' : 'hover:bg-raised/30 focus-within:bg-raised/30'
       }`}
       style={{ contentVisibility: 'auto' }}
     >
-      <div className="relative">
-        <Lines rows={block.prompt} cols={block.cols} look={look} />
-        <div
-          className="absolute top-0 right-0 flex items-center gap-1.5 rounded bg-chrome/90 pl-1"
-          style={{ height: look.lineHeight }}
-        >
-          {actions ? (
-            <div
-              className={`flex items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100 ${
-                menuOpen ? 'opacity-100' : 'opacity-0'
-              }`}
+      <CommandRow command={block.command} tone={failed ? 'failed' : 'muted'}>
+        {actions ? (
+          <span
+            className={`flex items-center gap-0.5 font-sans group-hover:flex group-focus-within:flex ${
+              menuOpen ? 'flex' : 'hidden'
+            }`}
+          >
+            <button
+              type="button"
+              title="Copy output"
+              className={`${quiet} h-5`}
+              onClick={() => actions.copyOutput(action)}
             >
+              <CopyIcon />
+              Copy
+            </button>
+            <button
+              type="button"
+              title="Run again"
+              disabled={!canRetry || !block.command}
+              className={`${quiet} h-5`}
+              onClick={() => actions.retry(action)}
+            >
+              <RetryIcon />
+              Retry
+            </button>
+            <span className="relative">
               <button
                 type="button"
-                title="Copy output"
-                className={`${quiet} h-5`}
-                onClick={() => actions.copyOutput(action)}
+                aria-label="More actions"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                className={`${quiet} size-5 justify-center px-0`}
+                onClick={() => setMenuOpen(!menuOpen)}
               >
-                Copy
+                <svg aria-hidden viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+                  <circle cx="3.75" cy="8" r="1.15" />
+                  <circle cx="8" cy="8" r="1.15" />
+                  <circle cx="12.25" cy="8" r="1.15" />
+                </svg>
               </button>
-              <button
-                type="button"
-                title="Run again"
-                disabled={!canRetry || !block.command}
-                className={`${quiet} h-5`}
-                onClick={() => actions.retry(action)}
-              >
-                Retry
-              </button>
-              <div className="relative">
-                <button
-                  type="button"
-                  aria-label="More actions"
-                  aria-haspopup="menu"
-                  aria-expanded={menuOpen}
-                  className={`${quiet} size-5 justify-center px-0`}
-                  onClick={() => setMenuOpen(!menuOpen)}
-                >
-                  <svg aria-hidden viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
-                    <circle cx="3.75" cy="8" r="1.15" />
-                    <circle cx="8" cy="8" r="1.15" />
-                    <circle cx="12.25" cy="8" r="1.15" />
-                  </svg>
-                </button>
-                {menuOpen ? (
-                  <ActionsMenu
-                    groups={groups}
-                    className="top-full right-0 mt-1"
-                    onClose={() => setMenuOpen(false)}
-                  />
-                ) : null}
-              </div>
-            </div>
-          ) : null}
+              {menuOpen ? (
+                <ActionsMenu
+                  groups={groups}
+                  className="top-full right-0 mt-1"
+                  onClose={() => setMenuOpen(false)}
+                />
+              ) : null}
+            </span>
+          </span>
+        ) : null}
+        <span className="shrink-0">
           <BlockStatus block={action} />
-        </div>
+        </span>
+      </CommandRow>
+      <div className="pl-[18px]">
+        <Lines rows={block.output} cols={block.cols} look={look} />
+        {block.truncated ? (
+          <div className="text-faint font-sans text-[11px]">Earlier output was trimmed.</div>
+        ) : null}
+        {failed && actions ? (
+          <div className="mt-1.5 mb-[3px] flex flex-wrap items-center gap-1 font-sans">
+            <button
+              type="button"
+              className="border-accent/40 bg-accent/15 text-accent-ink hover:bg-accent/30 focus-visible:outline-accent inline-flex h-[22px] items-center rounded-md border px-2 text-[11.5px] font-medium"
+              onClick={() => actions.fix(action)}
+            >
+              ✦ Fix with agent
+            </button>
+            <button
+              type="button"
+              className="border-edge-strong text-dim hover:bg-raised/70 hover:text-ink inline-flex h-[22px] items-center rounded-md border px-2 text-[11.5px] font-medium"
+              onClick={() => actions.explain(action)}
+            >
+              Explain
+            </button>
+            <button
+              type="button"
+              className="text-dim hover:bg-raised/70 hover:text-ink inline-flex h-[22px] items-center rounded-md px-2 text-[11.5px] font-medium"
+              onClick={() => actions.createTask(action)}
+            >
+              Create task
+            </button>
+            {note ? (
+              <span className="text-faint ml-1.5 min-w-0 truncate text-[11px]">{note}</span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-      <Lines rows={block.output} cols={block.cols} look={look} />
-      {block.truncated ? (
-        <div className="text-faint font-sans text-[11px]">Earlier output was trimmed.</div>
-      ) : null}
-      {failed && actions ? (
-        <div className="mt-1.5 mb-[3px] flex flex-wrap items-center gap-1 font-sans">
-          <button
-            type="button"
-            className="border-accent/40 bg-accent/15 text-accent-ink hover:bg-accent/30 inline-flex h-[22px] items-center rounded-md border px-2 text-[11.5px] font-medium"
-            onClick={() => actions.fix(action)}
-          >
-            ✦ Fix with agent
-          </button>
-          <button
-            type="button"
-            className="border-edge-strong text-dim hover:bg-raised/70 hover:text-ink inline-flex h-[22px] items-center rounded-md border px-2 text-[11.5px] font-medium"
-            onClick={() => actions.explain(action)}
-          >
-            Explain
-          </button>
-          <button
-            type="button"
-            className="text-dim hover:bg-raised/70 hover:text-ink inline-flex h-[22px] items-center rounded-md px-2 text-[11.5px] font-medium"
-            onClick={() => actions.createTask(action)}
-          >
-            Create task
-          </button>
-        </div>
-      ) : null}
     </section>
   )
 })
@@ -299,7 +342,6 @@ const FinishedBlock = memo(function FinishedBlock({
 function RunningBlock({
   command,
   startedAt,
-  prompt,
   rows,
   cols,
   look,
@@ -307,51 +349,38 @@ function RunningBlock({
 }: {
   command: string
   startedAt: number
-  prompt: EngineFrameLine[]
   rows: EngineFrameLine[]
   cols: number
   look: Look
   actions?: BlockActions
 }): ReactNode {
-  const block = {
-    id: 'running',
-    command,
-    startedAt,
-    startLine: 0,
-    endLine: 0,
-    open: true
-  }
+  const block = { id: 'running', command, startedAt, startLine: 0, endLine: 0, open: true }
   return (
     <section
       aria-label={`${command}, running`}
-      aria-live="off"
-      className="border-col-progress relative rounded-md border-l-2 py-[3px] pr-2 pl-2"
+      className="relative -mx-0.5 shrink-0 rounded-md px-2 py-[3px]"
     >
-      <div className="relative">
-        <Lines rows={prompt} cols={cols} look={look} />
-        <div
-          className="bg-chrome/90 absolute top-0 right-0 flex items-center gap-1.5 rounded pl-1"
-          style={{ height: look.lineHeight }}
-        >
-          {actions ? (
-            <button
-              type="button"
-              className={`${quiet} border-edge-strong h-5 border`}
-              onClick={actions.interrupt}
-            >
-              <svg aria-hidden viewBox="0 0 16 16" width="10" height="10">
-                <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" />
-              </svg>
-              Interrupt
-              <span className="text-faint font-mono text-[10px]">
-                {formatAccelerator('ctrl+c')}
-              </span>
-            </button>
-          ) : null}
+      <CommandRow command={command} tone="running">
+        {actions ? (
+          <button
+            type="button"
+            className={`${quiet} border-edge-strong h-5 border font-sans`}
+            onClick={actions.interrupt}
+          >
+            <svg aria-hidden viewBox="0 0 16 16" width="10" height="10">
+              <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" />
+            </svg>
+            Interrupt
+            <span className="text-faint font-mono text-[10px]">{formatAccelerator('ctrl+c')}</span>
+          </button>
+        ) : null}
+        <span className="shrink-0">
           <BlockStatus block={block} />
-        </div>
+        </span>
+      </CommandRow>
+      <div className="pl-[18px]">
+        <Lines rows={rows} cols={cols} look={look} />
       </div>
-      <Lines rows={rows} cols={cols} look={look} />
     </section>
   )
 }
@@ -363,7 +392,7 @@ function PromptInput({
   inputRef,
   history,
   bracketed,
-  hint,
+  hints,
   onSubmit,
   onClearBlocks
 }: {
@@ -373,7 +402,7 @@ function PromptInput({
   inputRef: RefObject<HTMLTextAreaElement | null>
   history: string[]
   bracketed: boolean
-  hint: string
+  hints: InputHint[]
   onSubmit: (data: string) => void
   onClearBlocks: () => void
 }): ReactNode {
@@ -413,28 +442,85 @@ function PromptInput({
   }
 
   return (
-    <section
-      aria-label="Prompt"
-      className="rounded-md border-l-2 border-transparent py-[3px] pr-2 pl-2"
-    >
-      <Lines rows={prompt} cols={cols} look={look} />
-      <textarea
-        ref={inputRef}
-        value={text}
-        rows={Math.max(1, text.split('\n').length)}
-        spellCheck={false}
-        autoCapitalize="off"
-        autoCorrect="off"
-        aria-label="Command"
-        placeholder={hint}
-        className="text-ink placeholder:text-faint block w-full resize-none border-0 bg-transparent p-0 outline-none"
-        style={{ font: 'inherit', lineHeight: `${look.lineHeight}px` }}
-        onChange={(event) => {
-          setText(event.target.value)
-          if (cursor.current.index !== null) cursor.current = { ...cursor.current, index: null }
-        }}
-        onKeyDown={onKeyDown}
-      />
+    <section aria-label="Prompt" className="-mx-0.5 shrink-0 px-2 py-[3px]">
+      {/* The shell's own prompt, for its context (directory, branch, status); it takes no input. */}
+      <div aria-hidden className="opacity-70">
+        <Lines rows={prompt} cols={cols} look={look} />
+      </div>
+      <div className="flex min-h-[22px] items-start gap-2">
+        <span aria-hidden className="text-accent" style={{ lineHeight: `${look.lineHeight}px` }}>
+          ❯
+        </span>
+        <div className="relative min-w-0 flex-1">
+          <textarea
+            ref={inputRef}
+            value={text}
+            rows={Math.max(1, text.split('\n').length)}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+            aria-label="Command"
+            className="text-ink caret-accent block w-full resize-none border-0 bg-transparent p-0 outline-none focus-visible:outline-none"
+            // Inline, because the app's focus ring is an unlayered rule that utilities cannot beat.
+            style={{ font: 'inherit', lineHeight: `${look.lineHeight}px`, outline: 'none' }}
+            onChange={(event) => {
+              setText(event.target.value)
+              if (cursor.current.index !== null) cursor.current = { ...cursor.current, index: null }
+            }}
+            onKeyDown={onKeyDown}
+          />
+          {text === '' && hints.length > 0 ? (
+            <span
+              aria-hidden
+              className="text-faint pointer-events-none absolute top-0 left-3 flex items-center gap-2.5 font-sans text-[11.5px]"
+              style={{ height: look.lineHeight }}
+            >
+              {hints.map((hint) => (
+                <span key={hint.label}>
+                  <span className="font-mono text-[10.5px]">{hint.keys}</span> {hint.label}
+                </span>
+              ))}
+            </span>
+          ) : null}
+        </div>
+      </div>
     </section>
+  )
+}
+
+function CopyIcon(): ReactNode {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    >
+      <rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.5" />
+      <path d="M10.5 3.5V3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v5.5a1 1 0 0 0 1 1h.5" />
+    </svg>
+  )
+}
+
+function RetryIcon(): ReactNode {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12.8 8A4.8 4.8 0 1 1 11.4 4.6" />
+      <path d="M12.5 2.5v2.6H9.9" />
+    </svg>
   )
 }

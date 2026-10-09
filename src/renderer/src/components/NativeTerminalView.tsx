@@ -25,13 +25,19 @@ import { usesControlAsPrimary } from '@core/shortcuts.js'
 import { ScreenModel } from '../lib/nativeTerminal/screen.js'
 import { BlockFeed, lineAtOffset, nativeBlockLayout } from '../lib/nativeTerminal/blocks.js'
 import { BlockListStore } from '../lib/nativeTerminal/blockList.js'
-import { TerminalBlockList } from './TerminalBlockList.js'
+import { TerminalBlockList, type InputHint } from './TerminalBlockList.js'
 import type { BlockActions } from './TerminalBlocks.js'
 import { encodeKey, pasteSequence } from '../lib/nativeTerminal/keys.js'
 import { paletteFromTheme, runStyle, type RunPalette } from '../lib/nativeTerminal/style.js'
 import type { BlockLayout, TerminalHandle, TerminalSelection } from './TerminalView.js'
 
 const LINE_HEIGHT = 1.25
+/**
+ * Pixels the block list takes from the width before output starts: its padding, a block's padding
+ * and the output's indent under the command, and the scrollbar. Programs are told the columns that
+ * fit after it, so their lines wrap where they will be shown.
+ */
+const LIST_INSET = 56
 
 interface Cell {
   width: number
@@ -57,7 +63,7 @@ export function NativeTerminalView({
   onHoverLine,
   blockActions,
   canRetry = false,
-  commandHint = '',
+  commandHints = [],
   onBlockListChange,
   onFallback
 }: {
@@ -76,8 +82,8 @@ export function NativeTerminalView({
   /** What the block list's buttons do. */
   blockActions?: BlockActions
   canRetry?: boolean
-  /** Placeholder for the block list's command input. */
-  commandHint?: string
+  /** Keys shown beside the block list's empty command input. */
+  commandHints?: InputHint[]
   /** The session started (true) or stopped showing as a block list. */
   onBlockListChange?: (on: boolean) => void
   onFallback: (reason: NativeUnavailableReason, detail: string) => void
@@ -149,6 +155,7 @@ export function NativeTerminalView({
         if ((listed !== null) !== listShown) {
           listShown = listed !== null
           onBlockListRef.current?.(listShown)
+          pushSize()
         }
         // A block list is full-screen only while its running command is on the alternate screen.
         const state = listed ? listed.screen.current : screen.current
@@ -184,8 +191,9 @@ export function NativeTerminalView({
     const measure = (): { cols: number; rows: number } => {
       const { width, height } = measureCell()
       const box = element.getBoundingClientRect()
+      const inset = listShown ? LIST_INSET : 0
       return {
-        cols: Math.max(2, Math.floor(box.width / width)),
+        cols: Math.max(2, Math.floor((box.width - inset) / width)),
         rows: Math.max(1, Math.floor(box.height / height))
       }
     }
@@ -434,7 +442,13 @@ export function NativeTerminalView({
       aria-label="Terminal"
       data-terminal-engine="native"
       className="styr-native-terminal relative h-full w-full overflow-hidden whitespace-pre outline-none select-text"
-      style={{ ...font, color: palette.foreground, backgroundColor: palette.background }}
+      // The app's focus ring is an unlayered rule; a terminal shows focus by its cursor instead.
+      style={{
+        ...font,
+        color: palette.foreground,
+        backgroundColor: palette.background,
+        outline: 'none'
+      }}
       onKeyDown={onKeyDown}
       onPaste={onPaste}
       onWheel={onWheel}
@@ -455,7 +469,7 @@ export function NativeTerminalView({
           look={{ palette, lineHeight: cell.height }}
           font={font}
           inputRef={inputRef}
-          hint={commandHint}
+          hints={commandHints}
           canRetry={canRetry}
           actions={blockActions}
           onSubmit={write}

@@ -199,6 +199,7 @@ function ContextBar({
   agentState,
   subagents = 0,
   blocksOn,
+  inputHints,
   branch,
   repoRoot,
   usage,
@@ -230,6 +231,8 @@ function ContextBar({
   subagents?: number
   /** Commands report themselves in blocks over the terminal, so the bar leaves them out. */
   blocksOn?: boolean
+  /** The block list shows the keys beside its own input, so a new shell's bar does not repeat them. */
+  inputHints?: boolean
   branch: string | null
   repoRoot: string | null
   /** The usage control, for a Claude session; sits beside Ask agent. */
@@ -325,7 +328,7 @@ function ContextBar({
 
       <span className="flex-1" />
 
-      {fresh ? (
+      {fresh && !inputHints ? (
         <span className="hidden items-center gap-2.5 text-[11.5px] text-faint @md:flex">
           {askHint ? (
             <span>
@@ -873,7 +876,10 @@ export function TerminalSurface({
           onHoverLine={setHoverLine}
           blockActions={blockActions}
           canRetry={canChange}
-          commandHint={`${askHint} ask agent · ${shortcutHint(bindings, 'terminalDirectory')} change directory`}
+          commandHints={[
+            { keys: askHint, label: 'ask agent' },
+            { keys: shortcutHint(bindings, 'terminalDirectory'), label: 'change directory' }
+          ]}
           onBlockListChange={setBlockList}
         />
         {blocksOn && layout ? (
@@ -932,7 +938,8 @@ export function TerminalSurface({
           isAgent={agent}
           agentState={shownState ?? agentStatus?.state}
           subagents={runningSubagents(agentStatus)}
-          blocksOn={blocksOn}
+          blocksOn={blocksOn || blockList}
+          inputHints={blockList}
           branch={git.branch}
           repoRoot={git.root}
           diff={

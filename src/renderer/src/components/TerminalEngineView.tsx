@@ -5,6 +5,7 @@ import { engineChoice } from '../lib/nativeTerminal/engineChoice.js'
 import { NativeTerminalView } from './NativeTerminalView.js'
 import { TerminalView } from './TerminalView.js'
 import type { BlockActions } from './TerminalBlocks.js'
+import type { InputHint } from './TerminalBlockList.js'
 
 const FALLBACK_LABEL: Record<NativeUnavailableReason, string> = {
   disabled: 'turned off',
@@ -27,7 +28,7 @@ export function TerminalEngineView({
   nativeTerminal,
   blockActions,
   canRetry,
-  commandHint,
+  commandHints,
   onBlockListChange,
   ...props
 }: ComponentProps<typeof TerminalView> & {
@@ -36,8 +37,8 @@ export function TerminalEngineView({
   /** For the native engine's block list: what a block's buttons do. */
   blockActions?: BlockActions
   canRetry?: boolean
-  /** Placeholder for the block list's command input. */
-  commandHint?: string
+  /** Keys shown beside the block list's empty command input. */
+  commandHints?: InputHint[]
   /** The native engine started (true) or stopped showing its block list. */
   onBlockListChange?: (on: boolean) => void
 }): ReactNode {
@@ -46,6 +47,7 @@ export function TerminalEngineView({
     engineChoice().wantsNative(nativeTerminal) ? 'pending' : 'xterm'
   )
   const [notice, setNotice] = useState<string | null>(null)
+  const [listed, setListed] = useState(false)
   const initial = useRef({ engine, nativeTerminal })
 
   useEffect(() => {
@@ -97,8 +99,11 @@ export function TerminalEngineView({
           onHoverLine={props.onHoverLine}
           blockActions={blockActions}
           canRetry={canRetry ?? false}
-          commandHint={commandHint ?? ''}
-          onBlockListChange={onBlockListChange}
+          commandHints={commandHints ?? []}
+          onBlockListChange={(on) => {
+            setListed(on)
+            onBlockListChange?.(on)
+          }}
           onFallback={fallBack}
         />
       ) : engine === 'xterm' ? (
@@ -106,7 +111,7 @@ export function TerminalEngineView({
       ) : (
         <div className="h-full w-full" hidden={!props.active} />
       )}
-      {engine === 'native' && props.active ? (
+      {engine === 'native' && props.active && !listed ? (
         // While the engine is experimental, say which one is drawing, so a report can name it.
         <div
           aria-hidden
