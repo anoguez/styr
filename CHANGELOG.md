@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.24.0](https://github.com/anoguez/styr/compare/v0.23.0...v0.24.0) (2026-10-09)
+
+
+### Features
+
+* fold Auto-run into the Dispatch button and confirm before stopping it ([#116](https://github.com/anoguez/styr/issues/116)) ([492e6fd](https://github.com/anoguez/styr/commit/492e6fda51c3d30d9ab687d3c9c9c291823e4fd3))
+
+
+### Bug Fixes
+
+* apply Dispatch's Auto-run switch on confirm, not on toggle ([#109](https://github.com/anoguez/styr/issues/109)) ([25e1c42](https://github.com/anoguez/styr/commit/25e1c4258d76a6f156039e9f22b968441ef42a53))
+* carry the chosen preset into the Quick add planning run ([#113](https://github.com/anoguez/styr/issues/113)) ([a4134fb](https://github.com/anoguez/styr/commit/a4134fbab2053c3ff9ba449d09c0003e1f84ecc8))
+* make the built-in spec template and brief placeholder tool-agnostic ([#112](https://github.com/anoguez/styr/issues/112)) ([6973f0f](https://github.com/anoguez/styr/commit/6973f0f1650afa5a4601fe02ca456485a26c8795))
+* reveal the terminal's folder in Finder instead of the 'Open files with' app ([#114](https://github.com/anoguez/styr/issues/114)) ([8b96be2](https://github.com/anoguez/styr/commit/8b96be297d483b392e5fe01bfae0b98abe077cca))
+* scale the task dialog with the screen and label the red Delete button ([#110](https://github.com/anoguez/styr/issues/110)) ([cd86af7](https://github.com/anoguez/styr/commit/cd86af7906c8cce66c93f40d52a144a0618f898e))
+* show a consistent agent status once a task reaches In Review ([#115](https://github.com/anoguez/styr/issues/115)) ([a3109e8](https://github.com/anoguez/styr/commit/a3109e874f22ff1f5a5d3ef19b203bb73f13fa12))
+
 ## [0.23.0](https://github.com/anoguez/styr/compare/v0.22.2...v0.23.0) (2026-10-09)
 
 
