@@ -33,7 +33,7 @@ export interface InputHint {
   label: string
 }
 
-interface Look {
+export interface Look {
   palette: RunPalette
   /** One terminal row, in pixels. */
   lineHeight: number
@@ -115,7 +115,7 @@ export function TerminalBlockList({
             actions={actions}
           />
         ) : (
-          <PromptInput
+          <CommandInput
             key={active.id}
             look={look}
             inputRef={inputRef}
@@ -387,22 +387,34 @@ function RunningBlock({
   )
 }
 
-function PromptInput({
+/**
+ * Styr's `❯` input, for a shell's commands and an agent's prompts alike: the program sees a line
+ * only once it is submitted.
+ */
+export function CommandInput({
   look,
   inputRef,
   history,
   bracketed,
   hints,
+  label = 'Command',
+  trailing,
   onSubmit,
-  onClearBlocks
+  onClearBlocks,
+  onEscape
 }: {
   look: Look
   inputRef: RefObject<HTMLTextAreaElement | null>
   history: string[]
   bracketed: boolean
   hints: InputHint[]
+  label?: string
+  /** Shown at the end of the row whatever is typed. */
+  trailing?: ReactNode
   onSubmit: (data: string) => void
-  onClearBlocks: () => void
+  onClearBlocks?: () => void
+  /** Escape, when it means something here (interrupting an agent). */
+  onEscape?: () => void
 }): ReactNode {
   const [text, setText] = useState('')
   const [typed, setTyped] = useState(false)
@@ -410,6 +422,12 @@ function PromptInput({
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     const element = event.currentTarget
+    if (event.key === 'Escape' && onEscape && !event.nativeEvent.isComposing) {
+      event.preventDefault()
+      event.stopPropagation()
+      onEscape()
+      return
+    }
     const action = inputAction(
       { ...event, key: event.key, isComposing: event.nativeEvent.isComposing },
       { text, start: element.selectionStart, end: element.selectionEnd }
@@ -427,7 +445,7 @@ function PromptInput({
       setText('')
       cursor.current = { index: null, draft: '' }
     } else if (action.kind === 'clearBlocks') {
-      onClearBlocks()
+      onClearBlocks?.()
     } else if (action.kind === 'history') {
       const next = stepHistory(history, cursor.current, text, action.step)
       if (!next) return
@@ -454,7 +472,7 @@ function PromptInput({
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
-            aria-label="Command"
+            aria-label={label}
             className="text-ink caret-accent block w-full resize-none border-0 bg-transparent p-0 outline-none focus-visible:outline-none"
             // Inline, because the app's focus ring is an unlayered rule that utilities cannot beat.
             style={{ font: 'inherit', lineHeight: `${look.lineHeight}px`, outline: 'none' }}
@@ -479,6 +497,7 @@ function PromptInput({
             </span>
           ) : null}
         </div>
+        {trailing}
       </div>
     </section>
   )

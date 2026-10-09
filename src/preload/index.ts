@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import type { AgentStatus } from '../core/agentState.js'
 import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
 import type { ContextUsage, ProviderUsage } from '../core/usage.js'
+import type { AgentConversation } from '../core/agentConversation.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
   AgentCliReport,
@@ -108,7 +109,13 @@ const api = {
     ): Promise<{ usage: ProviderUsage | null; context: ContextUsage | null } | null> =>
       ipcRenderer.invoke('usage:codex', terminalId),
     onClaude: (handler: (usage: ProviderUsage | null) => void): (() => void) =>
-      subscribe('usage:claude', handler as (...args: never[]) => void)
+      subscribe('usage:claude', handler as (...args: never[]) => void),
+    /** The conversation of the agent CLI in a terminal, in Styr's neutral shape. */
+    conversation: (terminalId: string): Promise<AgentConversation | null> =>
+      ipcRenderer.invoke('agent:conversation', terminalId),
+    onConversation: (
+      handler: (update: { terminalId: string; conversation: AgentConversation }) => void
+    ): (() => void) => subscribe('agent:conversation', handler as (...args: never[]) => void)
   },
   orchestrate: {
     plan: (): Promise<OrchestrationSummary> => ipcRenderer.invoke('orchestrate:plan'),

@@ -6,6 +6,12 @@ export const AGENT_PROVIDER_LABELS: Record<'claude' | 'codex', string> = {
   codex: 'Codex'
 }
 
+/** The program name each agent CLI is started by, to recognise one typed into a shell. */
+export const AGENT_PROVIDER_PROGRAMS: Record<'claude' | 'codex', string> = {
+  claude: 'claude',
+  codex: 'codex'
+}
+
 export const ORCHESTRATION_LANES = ['spec', 'implement', 'review'] as const
 export type OrchestrationLane = (typeof ORCHESTRATION_LANES)[number]
 

@@ -112,6 +112,29 @@ at a session's first prompt mark; a shell that sends none stays a grid.
 - The PTY gets the columns left after the list's indent (`LIST_INSET`), so output wraps where it is
   shown. Output a program laid out in columns keeps the width it ran at.
 
+## Agent blocks
+
+An agent CLI running in the block list (a task session, or `claude`/`codex` typed into a shell) is
+drawn by Styr from its conversation instead of its TUI, as the task's block model has it: the
+person's prompts, the agent's messages, each tool call with how it went, an edit's diff, an approval
+while the agent waits, and Styr's `❯` input. It is provider-agnostic end to end:
+
+- `core/agentConversation.ts` is the neutral shape — `{ at, working, messages }`, each message's
+  tool calls with their results — and the mapping to `StyrBlock`s. It names no provider.
+- Each terminal gets `STYR_CONVERSATION_FILE` (`main/usage.ts`), watched like the context files and
+  sent as `agent:conversation`. Whatever a provider's source is, it lands there in that shape. Claude
+  Code's mod (`resources/claude/usage-mod`) writes it from `$.session.messages()` on session start,
+  prompt submit, each tool call and turn end. Codex has no source yet, so it keeps its TUI.
+- What differs per CLI when drawing — its tool names, the notes it wraps a prompt in — is a
+  `ConversationAdapter` in `core/providers/conversation.ts` (Claude's in `claudeConversation.ts`),
+  keyed by provider id like `AGENT_PROVIDER_LABELS`. Which CLI a command starts comes from
+  `agentProgramProvider` (`AGENT_PROVIDER_PROGRAMS`), or the task session's provider.
+- Everything the view sends goes to the CLI's PTY as if typed: a prompt (a bracketed paste for
+  several lines) and Enter, Escape to interrupt or deny, Enter to allow. The CLI still decides
+  everything; "<agent> view" shows its own TUI for menus and dialogs, and "Styr view" returns.
+- Styr's mod is put first in `CLAUDE_CODE_PLUGIN_DIRS`: of two plugins with one name the earlier
+  loads, and an inherited list may hold another Styr install's copy.
+
 ## Capabilities and known limitations (experimental level)
 
 | Capability                                                                | xterm.js                   | Styr Terminal                                                                  |

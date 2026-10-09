@@ -881,6 +881,10 @@ export function TerminalSurface({
             { keys: shortcutHint(bindings, 'terminalDirectory'), label: 'change directory' }
           ]}
           onBlockListChange={setBlockList}
+          agentProvider={session.provider}
+          agentWaiting={
+            agentStatus?.state === 'waiting' ? agentStatus.lastMessage || 'Waiting on you' : null
+          }
         />
         {blocksOn && layout ? (
           <TerminalBlocks

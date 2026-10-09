@@ -6,6 +6,7 @@ import { NativeTerminalView } from './NativeTerminalView.js'
 import { TerminalView } from './TerminalView.js'
 import type { BlockActions } from './TerminalBlocks.js'
 import type { InputHint } from './TerminalBlockList.js'
+import type { AgentProviderId } from '@core/providers/types.js'
 
 const FALLBACK_LABEL: Record<NativeUnavailableReason, string> = {
   disabled: 'turned off',
@@ -30,6 +31,8 @@ export function TerminalEngineView({
   canRetry,
   commandHints,
   onBlockListChange,
+  agentProvider,
+  agentWaiting,
   ...props
 }: ComponentProps<typeof TerminalView> & {
   /** `experimental.nativeTerminal` from Settings. */
@@ -41,6 +44,10 @@ export function TerminalEngineView({
   commandHints?: InputHint[]
   /** The native engine started (true) or stopped showing its block list. */
   onBlockListChange?: (on: boolean) => void
+  /** The agent CLI a task session runs. */
+  agentProvider?: AgentProviderId
+  /** What the agent said while it waits on the person; null otherwise. */
+  agentWaiting?: string | null
 }): ReactNode {
   const { sessionId } = props
   const [engine, setEngine] = useState<Choice>(() =>
@@ -104,6 +111,8 @@ export function TerminalEngineView({
             setListed(on)
             onBlockListChange?.(on)
           }}
+          agentProvider={agentProvider}
+          agentWaiting={agentWaiting}
           onFallback={fallBack}
         />
       ) : engine === 'xterm' ? (

@@ -1,3 +1,5 @@
+import type { AgentProviderId } from '../providers/types.js'
+
 /**
  * Styr's agent-native block model: the unit a terminal panel can show, whether it came from a shell
  * or from an agent. Every kind shares one lifecycle and one envelope, so a renderer lays them out
@@ -39,7 +41,7 @@ export type OutputBlock = BlockEnvelope<'output', { text: string; truncated: boo
 
 export type AgentMessageBlock = BlockEnvelope<
   'agent-message',
-  { role: 'user' | 'assistant'; text: string; provider?: 'claude' | 'codex' }
+  { role: 'user' | 'assistant'; text: string; provider?: AgentProviderId }
 >
 
 export type AgentToolCallBlock = BlockEnvelope<

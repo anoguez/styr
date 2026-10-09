@@ -18,6 +18,7 @@ import type {
   ShortcutBindings,
   ThemeSettings
 } from '@core/types.js'
+import { AGENT_PROVIDER_LABELS } from '@core/types.js'
 import { syntaxFor, type ShellDialect } from '@core/shell.js'
 import { terminalTheme } from '../lib/palette.js'
 import { clipboardKey, isAppShortcut, multilineSequence } from '../lib/terminalKeys.js'
@@ -26,6 +27,11 @@ import { ScreenModel } from '../lib/nativeTerminal/screen.js'
 import { BlockFeed, lineAtOffset, nativeBlockLayout } from '../lib/nativeTerminal/blocks.js'
 import { BlockListStore } from '../lib/nativeTerminal/blockList.js'
 import { TerminalBlockList, type InputHint } from './TerminalBlockList.js'
+import { AgentBlockList } from './AgentBlockList.js'
+import { agentProgramProvider } from '@core/handoff.js'
+import { agentBlocks, promptHistory, type AgentConversation } from '@core/agentConversation.js'
+import { conversationAdapter } from '@core/providers/conversation.js'
+import type { AgentProviderId } from '@core/providers/types.js'
 import type { BlockActions } from './TerminalBlocks.js'
 import { encodeKey, pasteSequence } from '../lib/nativeTerminal/keys.js'
 import { paletteFromTheme, runStyle, type RunPalette } from '../lib/nativeTerminal/style.js'
@@ -65,6 +71,8 @@ export function NativeTerminalView({
   canRetry = false,
   commandHints = [],
   onBlockListChange,
+  agentProvider,
+  agentWaiting,
   onFallback
 }: {
   sessionId: string
@@ -86,6 +94,10 @@ export function NativeTerminalView({
   commandHints?: InputHint[]
   /** The session started (true) or stopped showing as a block list. */
   onBlockListChange?: (on: boolean) => void
+  /** The agent CLI a task session runs, for a command line that does not name it. */
+  agentProvider?: AgentProviderId
+  /** What the agent said while it waits on the person (a permission, a question); null otherwise. */
+  agentWaiting?: string | null
   onFallback: (reason: NativeUnavailableReason, detail: string) => void
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
@@ -280,15 +292,31 @@ export function NativeTerminalView({
   const prompting = list !== null && list.active.kind === 'prompt'
   /** The screen the program is drawing, whose modes decide how keys are sent. */
   const state = list ? list.screen.current : (model.current?.current ?? null)
-  const grid = list ? (takeover ? state : null) : state
+
+  // An agent CLI running in the list is drawn by Styr from its conversation when its provider has
+  // an adapter and the conversation is being written; otherwise, or on request, its own TUI shows.
+  const running = list?.active.kind === 'running' ? list.active : null
+  const provider = running ? (agentProgramProvider(running.command) ?? agentProvider) : undefined
+  const adapter = provider ? conversationAdapter(provider) : undefined
+  const conversation = useAgentConversation(sessionId)
+  const [tuiFor, setTuiFor] = useState<string | null>(null)
+  const agentReady = Boolean(running && adapter && conversation)
+  const agentMode = agentReady && tuiFor !== running?.id
+  const agentBlockList = useMemo(
+    () => (conversation && adapter ? agentBlocks(conversation, sessionId, adapter, provider) : []),
+    [conversation, adapter, sessionId, provider]
+  )
+  /** Keys go to Styr's input rather than straight to the PTY. */
+  const typing = prompting || agentMode
+  const grid = list ? (takeover && !agentMode ? state : null) : state
 
   // Typing goes to Styr's input at a prompt and straight to the PTY while a command runs; the
   // input comes and goes with the prompt, so focus follows it.
-  const segmentKey = list ? `${list.active.kind}:${list.active.id}` : 'grid'
+  const segmentKey = list ? `${list.active.kind}:${list.active.id}:${agentMode}` : 'grid'
   const focusRef = useRef<() => void>(() => {})
   focusRef.current = () => {
     if (!host.current) return
-    if (prompting && inputRef.current) inputRef.current.focus()
+    if (typing && inputRef.current) inputRef.current.focus()
     else if (
       !host.current.contains(document.activeElement) ||
       document.activeElement === document.body
@@ -329,7 +357,7 @@ export function NativeTerminalView({
       return
     }
     if (isAppShortcut(native, bindingsRef.current)) return
-    if (prompting) {
+    if (typing) {
       // Focus moves before the key's default action, so the character lands in the input.
       inputRef.current?.focus()
       return
@@ -354,14 +382,14 @@ export function NativeTerminalView({
     const text = event.clipboardData.getData('text/plain')
     if (!text) return
     event.preventDefault()
-    if (prompting) return insertIntoInput(text)
+    if (typing) return insertIntoInput(text)
     write(pasteSequence(text, state?.modes.bracketedPaste ?? false))
   }
 
   const wheelRemainder = useRef(0)
   const onWheel = (event: WheelEvent<HTMLDivElement>): void => {
-    // The block list scrolls as a page.
-    if (list && !takeover) return
+    // The block list and the agent view scroll as a page.
+    if (list && (!takeover || agentMode)) return
     const lines = (event.deltaY + wheelRemainder.current) / cell.height
     const whole = Math.trunc(lines)
     wheelRemainder.current = (lines - whole) * cell.height
@@ -397,7 +425,7 @@ export function NativeTerminalView({
       onSelectionRef.current?.(null)
       // A click in the list (not on one of its controls) goes back to typing.
       const target = event.target as HTMLElement
-      if (prompting && !target.closest('button, [role="menu"], textarea')) inputRef.current?.focus()
+      if (typing && !target.closest('button, [role="menu"], textarea')) inputRef.current?.focus()
       return
     }
     const box = host.current.getBoundingClientRect()
@@ -421,7 +449,7 @@ export function NativeTerminalView({
     const paths = window.api.terminal.pathsForFiles(files)
     if (paths.length > 0) {
       const text = paths.map((path) => syntaxRef.current.quote(path)).join(' ') + ' '
-      if (prompting) return insertIntoInput(text)
+      if (typing) return insertIntoInput(text)
       write(pasteSequence(text, state?.modes.bracketedPaste ?? false))
     }
     host.current?.focus()
@@ -463,7 +491,33 @@ export function NativeTerminalView({
       <span ref={probe} aria-hidden className="invisible absolute" style={font}>
         WWWWWWWWWW
       </span>
-      {list && !takeover ? (
+      {agentMode && provider ? (
+        <AgentBlockList
+          blocks={agentBlockList}
+          working={conversation?.working ?? false}
+          label={AGENT_PROVIDER_LABELS[provider]}
+          waiting={agentWaiting ?? null}
+          look={{ palette, lineHeight: cell.height }}
+          font={font}
+          inputRef={inputRef}
+          history={conversation && adapter ? promptHistory(conversation, adapter) : []}
+          onSubmit={write}
+          onInterrupt={() => window.api.terminal.write(sessionId, '\x1b')}
+          onAllow={() => window.api.terminal.write(sessionId, '\r')}
+          onDeny={() => window.api.terminal.write(sessionId, '\x1b')}
+          onShowTui={() => setTuiFor(running?.id ?? null)}
+        />
+      ) : null}
+      {agentReady && !agentMode && provider ? (
+        <button
+          type="button"
+          className="bg-raised text-dim border-edge-strong hover:text-ink absolute top-2 right-3 z-10 rounded-md border px-2 py-0.5 font-sans text-[11.5px]"
+          onClick={() => setTuiFor(null)}
+        >
+          Styr view
+        </button>
+      ) : null}
+      {list && !takeover && !agentMode ? (
         <TerminalBlockList
           state={list}
           look={{ palette, lineHeight: cell.height }}
@@ -544,4 +598,24 @@ function cursorStyle(
     background: palette.cursor,
     opacity: 0.5
   }
+}
+
+/** The conversation of the agent CLI in a terminal, as its provider's source writes it. */
+function useAgentConversation(sessionId: string): AgentConversation | null {
+  const [conversation, setConversation] = useState<AgentConversation | null>(null)
+  useEffect(() => {
+    let live = true
+    setConversation(null)
+    void window.api.usage.conversation(sessionId).then((value) => {
+      if (live && value) setConversation(value)
+    })
+    const off = window.api.usage.onConversation(({ terminalId, conversation: value }) => {
+      if (terminalId === sessionId) setConversation(value)
+    })
+    return () => {
+      live = false
+      off()
+    }
+  }, [sessionId])
+  return conversation
 }
