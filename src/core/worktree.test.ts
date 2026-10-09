@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   branchNameFor,
   checkoutPath,
@@ -12,6 +12,7 @@ import {
   type Checkout
 } from './worktree.js'
 import {
+  GIT_TEST_TIMEOUT_MS,
   removeTemporaryDirectories,
   runGit,
   temporaryDirectory,
@@ -24,6 +25,7 @@ function co(repoPath: string, key: string, baseBranch?: string): Checkout {
   return { repoPath, key, baseBranch }
 }
 
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS })
 afterEach(removeTemporaryDirectories)
 
 describe('worktree management', () => {

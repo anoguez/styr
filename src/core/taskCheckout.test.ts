@@ -1,7 +1,12 @@
 import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import { removeTemporaryDirectories, runGit, temporaryRepository } from './gitFixture.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  GIT_TEST_TIMEOUT_MS,
+  removeTemporaryDirectories,
+  runGit,
+  temporaryRepository
+} from './gitFixture.js'
 import { refsFingerprint } from './landing.js'
 import { checkoutGit, taskCheckout, type TaskCheckout } from './taskCheckout.js'
 import { DEFAULT_WORKSPACE_ID } from './types.js'
@@ -16,6 +21,7 @@ function open(
   return taskCheckout(workspaceId, { id, repoPath, baseBranch })
 }
 
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS })
 afterEach(removeTemporaryDirectories)
 
 describe('landing and cleanup', () => {

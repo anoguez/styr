@@ -16,6 +16,13 @@ const GIT_REPOSITORY_CONTEXT = [
   'GIT_WORK_TREE'
 ]
 
+/**
+ * Per-test timeout for tests that drive real git. Spawning git is slow on the Windows runner, and
+ * the git-backed test files run in parallel there, so a clone or squash merge can pass vitest's
+ * 5s default. Pass it to `vi.setConfig` at the top of the test file.
+ */
+export const GIT_TEST_TIMEOUT_MS = 30_000
+
 const temporaryDirectories: string[] = []
 
 /** A directory removed by `removeTemporaryDirectories`; call that from the test file's `afterEach`. */
