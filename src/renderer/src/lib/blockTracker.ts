@@ -1,20 +1,7 @@
 import type { IDisposable, IMarker, Terminal } from '@xterm/xterm'
-import type { TerminalMark } from '@core/types.js'
+import type { TerminalMark, TrackedBlock } from '@core/types.js'
 
-/** A command as the surface sees it: where it sits in the buffer and how it went. */
-export interface TrackedBlock {
-  id: string
-  command: string
-  startedAt: number
-  endedAt?: number
-  exitCode?: number
-  /** Buffer line of the command's own row (the prompt it was typed on). */
-  startLine: number
-  /** Buffer line after the last output row, so output is `startLine + 1 … endLine - 1`. */
-  endLine: number
-  /** Still running: `endLine` follows the cursor. */
-  open: boolean
-}
+export type { TrackedBlock }
 
 export interface BlockLayout {
   blocks: TrackedBlock[]
@@ -66,7 +53,7 @@ export class BlockTracker {
 
   /** Call once everything before `mark` has been parsed, so the cursor is where the shell was. */
   mark(mark: TerminalMark): void {
-    if (this.terminal.buffer.active.type === 'alternate') return
+    if (this.terminal.buffer.active.type === 'alternate' || mark.kind === 'prompt') return
     if (mark.kind === 'start') {
       // The shell announces a command after Enter has moved the cursor down, so its own row is the
       // one above.

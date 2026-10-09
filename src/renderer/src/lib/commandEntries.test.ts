@@ -21,7 +21,7 @@ function source(overrides: Partial<PaletteSource> = {}): PaletteSource {
     withChanges: new Set<string>(),
     archivedCount: 0,
     presets: [],
-    experimental: { externalSources: false },
+    experimental: { externalSources: false, nativeTerminal: false },
     bindings: DEFAULT_SHORTCUTS,
     workspaces: [],
     activeWorkspaceId: 'default',
@@ -132,7 +132,10 @@ describe('buildCommandEntries', () => {
     const off = buildCommandEntries(source(), actions())
     expect(byId(off, 'settings:source-github')).toBeUndefined()
     expect(byId(off, 'settings:theme')).toBeDefined()
-    const on = buildCommandEntries(source({ experimental: { externalSources: true } }), actions())
+    const on = buildCommandEntries(
+      source({ experimental: { externalSources: true, nativeTerminal: false } }),
+      actions()
+    )
     expect(byId(on, 'settings:source-github')).toBeDefined()
     expect(
       byId(

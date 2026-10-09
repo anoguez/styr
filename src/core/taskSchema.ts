@@ -219,8 +219,11 @@ export const settingsSchema = z.object({
     .object({ checkAutomatically: z.boolean().default(true) })
     .default({ checkAutomatically: true }),
   experimental: z
-    .object({ externalSources: z.boolean().default(false) })
-    .default({ externalSources: false }),
+    .object({
+      externalSources: z.boolean().default(false),
+      nativeTerminal: z.boolean().default(false)
+    })
+    .default({ externalSources: false, nativeTerminal: false }),
   taskDefaults: z
     .object({ orchestrate: z.boolean().default(true), useWorktree: z.boolean().default(false) })
     .default({ orchestrate: true, useWorktree: false }),

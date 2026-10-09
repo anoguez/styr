@@ -1,0 +1,12 @@
+{
+  "package": "@anoguez/styr-terminal",
+  "registry": "https://npm.pkg.github.com",
+  "version": "0.3.0",
+  "integrity": "sha512-B1L5mG6I09bXs0ZacHDddJU8uyLtDImbqNInecwPhW9IN7rc1Bs3bl+dON5aUwN+xTNUThdCqQYoG/OJ/aZNhw==",
+  "binaries": {
+    "darwin-arm64": {
+      "file": "styr-terminal.darwin-arm64.node",
+      "sha256": "1c4e7b3c0fc3eb266aff8a8aa33a9a85cf30b302b39ce58a2fcb349291ef0069"
+    }
+  }
+}

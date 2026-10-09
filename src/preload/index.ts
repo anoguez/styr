@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import type { AgentStatus } from '../core/agentState.js'
 import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
 import type { ContextUsage, ProviderUsage } from '../core/usage.js'
+import type { AgentConversation } from '../core/agentConversation.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type {
   AgentCliReport,
@@ -19,6 +20,13 @@ import type {
   TaskFilter,
   TaskPatch,
   TaskStatus,
+  NativeAttachResult,
+  NativeEngineFailure,
+  NativeBlockEvent,
+  NativeFrameEvent,
+  TerminalEngineAvailability,
+  TerminalEngineDiagnostic,
+  TerminalEngineEnvironment,
   TerminalSessionInfo,
   TerminalOutput,
   TerminalRuntimeState,
@@ -101,7 +109,13 @@ const api = {
     ): Promise<{ usage: ProviderUsage | null; context: ContextUsage | null } | null> =>
       ipcRenderer.invoke('usage:codex', terminalId),
     onClaude: (handler: (usage: ProviderUsage | null) => void): (() => void) =>
-      subscribe('usage:claude', handler as (...args: never[]) => void)
+      subscribe('usage:claude', handler as (...args: never[]) => void),
+    /** The conversation of the agent CLI in a terminal, in Styr's neutral shape. */
+    conversation: (terminalId: string): Promise<AgentConversation | null> =>
+      ipcRenderer.invoke('agent:conversation', terminalId),
+    onConversation: (
+      handler: (update: { terminalId: string; conversation: AgentConversation }) => void
+    ): (() => void) => subscribe('agent:conversation', handler as (...args: never[]) => void)
   },
   orchestrate: {
     plan: (): Promise<OrchestrationSummary> => ipcRenderer.invoke('orchestrate:plan'),
@@ -232,7 +246,38 @@ const api = {
     onExit: (handler: (payload: { id: string; exitCode: number }) => void): (() => void) =>
       subscribe('terminal:exit', handler as (...args: never[]) => void),
     onRuntimeState: (handler: (state: TerminalRuntimeState) => void): (() => void) =>
-      subscribe('terminal:runtimeState', handler as (...args: never[]) => void)
+      subscribe('terminal:runtimeState', handler as (...args: never[]) => void),
+    /** Whether Styr Terminal is bundled here; does not load it. */
+    engineAvailability: (): Promise<TerminalEngineAvailability> =>
+      ipcRenderer.invoke('terminal:engineAvailability'),
+    /** Loads Styr Terminal (once per run) and reports whether it is usable. */
+    engineEnvironment: (): Promise<TerminalEngineEnvironment> =>
+      ipcRenderer.invoke('terminal:engineEnvironment'),
+    reportEngine: (
+      entry: Pick<
+        TerminalEngineDiagnostic,
+        'sessionId' | 'requested' | 'selected' | 'fallbackReason' | 'detail'
+      >
+    ): void => ipcRenderer.send('terminal:engineSelected', entry),
+    native: {
+      attach: (id: string, cols: number, rows: number): Promise<NativeAttachResult> =>
+        ipcRenderer.invoke('terminal:nativeAttach', id, cols, rows),
+      resize: (id: string, cols: number, rows: number): void =>
+        ipcRenderer.send('terminal:nativeResize', id, cols, rows),
+      scroll: (id: string, lines: number | 'bottom'): void =>
+        ipcRenderer.send('terminal:nativeScroll', id, lines),
+      text: (id: string): Promise<string> => ipcRenderer.invoke('terminal:nativeText', id),
+      lines: (id: string, from: number, to: number): Promise<string> =>
+        ipcRenderer.invoke('terminal:nativeLines', id, from, to),
+      detach: (id: string): void => ipcRenderer.send('terminal:nativeDetach', id),
+      clearBlocks: (id: string): void => ipcRenderer.send('terminal:nativeClearBlocks', id),
+      onBlocks: (handler: (event: NativeBlockEvent) => void): (() => void) =>
+        subscribe('terminal:nativeBlocks', handler as (...args: never[]) => void),
+      onFrame: (handler: (event: NativeFrameEvent) => void): (() => void) =>
+        subscribe('terminal:nativeFrame', handler as (...args: never[]) => void),
+      onFailed: (handler: (failure: NativeEngineFailure) => void): (() => void) =>
+        subscribe('terminal:nativeFailed', handler as (...args: never[]) => void)
+    }
   }
 }
 

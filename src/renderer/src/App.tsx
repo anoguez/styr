@@ -54,6 +54,7 @@ import type { Toggle } from './lib/appShell.js'
 import { TaskLookupContext } from './lib/blockerContext.js'
 import { DispatchingContext } from './lib/dispatchRun.js'
 import { ipcMessage } from './lib/ipcMessage.js'
+import { engineChoice } from './lib/nativeTerminal/engineChoice.js'
 
 /**
  * The window: header, board or inbox, terminal panel, agents sidebar, status bar and dialogs. State
@@ -83,6 +84,8 @@ export default function App(): ReactNode {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   useEffect(() => {
     void window.api.app.info().then(setAppInfo)
+    // Whether Styr Terminal is bundled (no loading), so a new terminal can decide without waiting.
+    void engineChoice().availability()
   }, [])
   const update = useUpdates()
 
@@ -293,6 +296,7 @@ export default function App(): ReactNode {
                       expanded={terminalExpanded}
                       theme={activeTheme}
                       bindings={bindings}
+                      nativeTerminal={settings?.experimental.nativeTerminal ?? false}
                       taskTitles={taskTitles}
                       taskStates={taskStates}
                       diffStats={diffStats}

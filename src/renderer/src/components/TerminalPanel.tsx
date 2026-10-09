@@ -143,6 +143,7 @@ export function TerminalPanel({
   expanded,
   theme,
   bindings,
+  nativeTerminal,
   taskTitles,
   taskStates,
   diffStats,
@@ -165,6 +166,8 @@ export function TerminalPanel({
   expanded: boolean
   theme: ThemeSettings
   bindings: ShortcutBindings
+  /** `experimental.nativeTerminal`: new terminals try Styr Terminal. */
+  nativeTerminal: boolean
   taskTitles: ReadonlyMap<string, string>
   taskStates: ReadonlyMap<string, { status: TaskStatus; prUrl?: string }>
   /** Per-task change totals; a task with no changes has no entry. */
@@ -323,6 +326,7 @@ export function TerminalPanel({
                 active={session.id === activeId}
                 theme={theme}
                 bindings={bindings}
+                nativeTerminal={nativeTerminal}
                 runtime={runtimes.get(session.id)}
                 agentStatus={
                   session.taskId && session.workspaceId === workspaces.activeId

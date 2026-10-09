@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { Settings } from '@core/types.js'
 import { SECTIONS, scopeNoteFor, sectionShown, settingsNav, unsavedChanges } from './sections.js'
 
-const off = { externalSources: false }
-const on = { externalSources: true }
+const off = { externalSources: false, nativeTerminal: false }
+const on = { externalSources: true, nativeTerminal: false }
 const github = SECTIONS.find((section) => section.id === 'source-github')!
 
 const settings = (overrides: Partial<Settings> = {}): Settings =>

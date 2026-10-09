@@ -198,6 +198,11 @@ export interface BrokenSettingsFile {
 export interface ExperimentalSettings {
   /** External sources (GitHub issues) under Settings → Integrations. */
   externalSources: boolean
+  /**
+   * Styr Terminal, the native terminal engine, in place of xterm.js. Only takes effect where the
+   * engine is bundled and loads; anywhere else terminals stay on xterm.js.
+   */
+  nativeTerminal: boolean
 }
 
 export interface UpdateSettings {

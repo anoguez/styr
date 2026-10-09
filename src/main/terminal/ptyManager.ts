@@ -66,6 +66,10 @@ function commandMark(
     const { id, endedAt, exitCode } = after.lastCommand
     return { offset, kind: 'end', id, exitCode, at: endedAt ?? Date.now() }
   }
+  if (type === 'PROMPT_READY') {
+    const at = Date.now()
+    return { offset, kind: 'prompt', id: `prompt-${offset}`, cwd: after.cwd, at }
+  }
   return undefined
 }
 

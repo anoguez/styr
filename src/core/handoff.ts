@@ -1,4 +1,5 @@
-import type { ActivityEntry, TaskStatus } from './types.js'
+import { AGENT_PROVIDER_PROGRAMS, type ActivityEntry, type TaskStatus } from './types.js'
+import { AGENT_PROVIDER_IDS, type AgentProviderId } from './providers/types.js'
 
 export interface HandoffSource {
   id: string
@@ -26,11 +27,16 @@ export interface HandoffInput {
 
 /** Agent CLIs a shell may be running; typing a request into anything else would run it as a command. */
 export function isAgentProgram(command: string | undefined): boolean {
-  if (!command) return false
+  return agentProgramProvider(command) !== undefined
+}
+
+/** The agent CLI a command line starts, by its program's name; undefined for anything else. */
+export function agentProgramProvider(command: string | undefined): AgentProviderId | undefined {
+  if (!command) return undefined
   const program = command.trim().split(/\s+/)[0] ?? ''
   // `/` on macOS; `\` or `.exe` when a Windows shell names the program by path.
   const name = (program.split(/[\\/]/).pop() ?? '').replace(/\.exe$/i, '')
-  return ['claude', 'codex'].includes(name)
+  return AGENT_PROVIDER_IDS.find((id) => AGENT_PROVIDER_PROGRAMS[id] === name)
 }
 
 export const AGENT_SUMMARY_HEADING = '## Agent summary'

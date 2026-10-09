@@ -14,6 +14,14 @@ extraResources:
   # Loaded by Claude Code, a separate process, so it ships as plain files rather than in the asar.
   - from: resources/claude
     to: claude
+  # Styr Terminal (experimental), when the release job vendored it. Kept out of the asar so the
+  # .node loads, and signed with the rest of the bundle. Absent in a public build: the app then runs
+  # on xterm.js only. See docs/architecture/terminal-engine.md.
+  - from: resources/native
+    to: native
+    filter:
+      - '**/*'
+      - '!README.md'
 asarUnpack:
   - '**/node_modules/node-pty/**'
   - '**/node_modules/better-sqlite3/**'

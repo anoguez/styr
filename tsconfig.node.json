@@ -4,7 +4,8 @@
     "src/main/**/*",
     "src/preload/**/*",
     "src/core/**/*",
-    "src/mcp/**/*"
+    "src/mcp/**/*",
+    "src/renderer/src/lib/terminalOutput.ts"
   ],
   "compilerOptions": {
     "composite": true,

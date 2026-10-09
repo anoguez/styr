@@ -27,9 +27,10 @@ import {
 import { AskPrompt } from './AskPrompt.js'
 import { DirectoryPicker } from './DirectoryPicker.js'
 import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
-import { TerminalBlocks, type BlockActions } from './TerminalBlocks.js'
-import type { BlockLayout, TrackedBlock } from '../lib/blockTracker.js'
-import { TerminalView, type TerminalHandle, type TerminalSelection } from './TerminalView.js'
+import { TerminalBlocks, type ActionBlock, type BlockActions } from './TerminalBlocks.js'
+import type { BlockLayout } from '../lib/blockTracker.js'
+import { type TerminalHandle, type TerminalSelection } from './TerminalView.js'
+import { TerminalEngineView } from './TerminalEngineView.js'
 import { UsageButton } from './UsageButton.js'
 import { DiffStatButton } from './ui.js'
 import type { DiffStat } from '@core/diff.js'
@@ -198,6 +199,7 @@ function ContextBar({
   agentState,
   subagents = 0,
   blocksOn,
+  inputHints,
   branch,
   repoRoot,
   usage,
@@ -229,6 +231,8 @@ function ContextBar({
   subagents?: number
   /** Commands report themselves in blocks over the terminal, so the bar leaves them out. */
   blocksOn?: boolean
+  /** The block list shows the keys beside its own input, so a new shell's bar does not repeat them. */
+  inputHints?: boolean
   branch: string | null
   repoRoot: string | null
   /** The usage control, for a Claude session; sits beside Ask agent. */
@@ -324,7 +328,7 @@ function ContextBar({
 
       <span className="flex-1" />
 
-      {fresh ? (
+      {fresh && !inputHints ? (
         <span className="hidden items-center gap-2.5 text-[11.5px] text-faint @md:flex">
           {askHint ? (
             <span>
@@ -466,6 +470,7 @@ export function TerminalSurface({
   active,
   theme,
   bindings,
+  nativeTerminal = false,
   runtime,
   agentStatus,
   shownState,
@@ -484,6 +489,8 @@ export function TerminalSurface({
   active: boolean
   theme: ThemeSettings
   bindings: ShortcutBindings
+  /** `experimental.nativeTerminal`: try Styr Terminal for this view (xterm.js otherwise). */
+  nativeTerminal?: boolean
   /** The main process's semantic state for this session, once it has reported any. */
   runtime?: TerminalRuntimeState
   /** The hook-reported state of this task's agent, when it is a task session. */
@@ -522,6 +529,8 @@ export function TerminalSurface({
   })
   const [notice, setNotice] = useState<string>()
   const [layout, setLayout] = useState<BlockLayout | null>(null)
+  // The native engine is showing its own block list, which draws commands itself.
+  const [blockList, setBlockList] = useState(false)
   const [hoverLine, setHoverLine] = useState<number | null>(null)
   const [stickyBlock, setStickyBlock] = useState<string | null>(null)
   const [blockMenu, setBlockMenu] = useState<string | null>(null)
@@ -566,12 +575,12 @@ export function TerminalSurface({
   }, [])
 
   const contextFor = useCallback(
-    (preferSelection: boolean): TerminalContext => {
+    async (preferSelection: boolean): Promise<TerminalContext> => {
       const last = runtime?.lastCommand
       const text =
         (preferSelection ? selection?.text : undefined) ??
         last?.output ??
-        handle.current?.text() ??
+        (await handle.current?.text()) ??
         ''
       return {
         cwd,
@@ -592,7 +601,7 @@ export function TerminalSurface({
       if (!onCreateTask) return
       const request: TerminalTaskRequest = taskFromTerminal(
         kind,
-        context ?? contextFor(preferSelection)
+        context ?? (await contextFor(preferSelection))
       )
       if (kind === 'ask') Object.assign(request, { launch: true, repoPath: git.root ?? undefined })
       setSelection(null)
@@ -613,14 +622,16 @@ export function TerminalSurface({
   const openAsk = useCallback(
     (preferSelection: boolean) => {
       if (!onCreateTask) return
-      const context = contextFor(preferSelection)
-      const attached =
-        preferSelection && selection
-          ? 'Your selection'
-          : context.command
-            ? `Output of ${context.command}`
-            : 'This terminal'
-      setAsking({ context, attached })
+      // The selection is read before the first await, so focusing the prompt cannot lose it.
+      void contextFor(preferSelection).then((context) => {
+        const attached =
+          preferSelection && selection
+            ? 'Your selection'
+            : context.command
+              ? `Output of ${context.command}`
+              : 'This terminal'
+        setAsking({ context, attached })
+      })
     },
     [contextFor, onCreateTask, selection]
   )
@@ -688,7 +699,7 @@ export function TerminalSurface({
 
   const handOffWork = useCallback(async (): Promise<void> => {
     try {
-      const text = handle.current?.text() ?? runtime?.lastCommand?.output ?? ''
+      const text = (await handle.current?.text()) ?? runtime?.lastCommand?.output ?? ''
       const result = await window.api.terminal.handOff(session.id, text)
       setNotice(
         result.agentAsked
@@ -705,7 +716,11 @@ export function TerminalSurface({
     if (command && canChange) write(`${command}\r`)
   }, [runtime, canChange, write])
 
-  const copyAll = useCallback(() => copy(handle.current?.text() ?? '', 'all output'), [copy])
+  const copyAll = useCallback(
+    () =>
+      void Promise.resolve(handle.current?.text() ?? '').then((text) => copy(text, 'all output')),
+    [copy]
+  )
 
   const failed =
     runtime !== undefined &&
@@ -724,7 +739,7 @@ export function TerminalSurface({
   const agent = Boolean(session.taskId) || isAgentProgram(runtime?.runningCommand?.command)
   const fullscreen = altScreen && !agent
   // A shell's commands become blocks; an agent session is one long command, which is not a block.
-  const blocksOn = !agent && layout !== null && !layout.alternate
+  const blocksOn = !agent && !blockList && layout !== null && !layout.alternate
   const shellBlocks = layout?.blocks.filter((block) => !isAgentProgram(block.command)) ?? []
   const hoveredBlock =
     blockMenu ??
@@ -733,23 +748,27 @@ export function TerminalSurface({
       ? null
       : (shellBlocks.find((block) => hoverLine >= block.startLine && hoverLine < block.endLine)
           ?.id ?? null))
-  const outputOf = (block: TrackedBlock): string =>
-    handle.current?.lines(block.startLine + 1, block.endLine) ?? ''
-  const contextOfBlock = (block: TrackedBlock): TerminalContext => ({
+  const outputOf = async (block: ActionBlock): Promise<string> =>
+    block.readOutput
+      ? block.readOutput()
+      : ((await handle.current?.lines(block.startLine + 1, block.endLine)) ?? '')
+  const contextOfBlock = async (block: ActionBlock): Promise<TerminalContext> => ({
     cwd,
     command: block.command,
     exitCode: block.exitCode,
-    text: outputOf(block)
+    text: await outputOf(block)
   })
+  const askAboutBlock = (kind: TerminalTaskKind, block: ActionBlock): void =>
+    void contextOfBlock(block).then((context) => sendToAgent(kind, false, context))
   const blockActions: BlockActions = {
-    copyOutput: (block) => copy(outputOf(block), 'output'),
+    copyOutput: (block) => void outputOf(block).then((text) => copy(text, 'output')),
     copyCommand: (block) => copy(block.command, 'command'),
     retry: (block) => {
       if (canChange) write(`${block.command}\r`)
     },
-    fix: (block) => void sendToAgent('fix', false, contextOfBlock(block)),
-    explain: (block) => void sendToAgent('explain', false, contextOfBlock(block)),
-    createTask: (block) => void sendToAgent('output', false, contextOfBlock(block)),
+    fix: (block) => askAboutBlock('fix', block),
+    explain: (block) => askAboutBlock('explain', block),
+    createTask: (block) => askAboutBlock('output', block),
     interrupt: () => write(INTERRUPT)
   }
   // Handing off only makes sense while an agent is running; a task's exited session is a bare shell.
@@ -843,7 +862,8 @@ export function TerminalSurface({
   return (
     <div className="@container flex h-full w-full flex-col">
       <div className="relative min-h-0 flex-1">
-        <TerminalView
+        <TerminalEngineView
+          nativeTerminal={nativeTerminal}
           sessionId={session.id}
           dialect={session.dialect}
           active={active}
@@ -854,6 +874,17 @@ export function TerminalSurface({
           onFullscreenChange={setAltScreen}
           onBlocks={setLayout}
           onHoverLine={setHoverLine}
+          blockActions={blockActions}
+          canRetry={canChange}
+          commandHints={[
+            { keys: askHint, label: 'ask agent' },
+            { keys: shortcutHint(bindings, 'terminalDirectory'), label: 'change directory' }
+          ]}
+          onBlockListChange={setBlockList}
+          agentProvider={session.provider}
+          agentWaiting={
+            agentStatus?.state === 'waiting' ? agentStatus.lastMessage || 'Waiting on you' : null
+          }
         />
         {blocksOn && layout ? (
           <TerminalBlocks
@@ -896,7 +927,7 @@ export function TerminalSurface({
           </div>
         ) : null}
       </div>
-      {showBar && failed && runtime ? (
+      {showBar && failed && runtime && !blockList ? (
         <FailureActions
           runtime={runtime}
           onFix={() => void sendToAgent('fix')}
@@ -911,7 +942,8 @@ export function TerminalSurface({
           isAgent={agent}
           agentState={shownState ?? agentStatus?.state}
           subagents={runningSubagents(agentStatus)}
-          blocksOn={blocksOn}
+          blocksOn={blocksOn || blockList}
+          inputHints={blockList}
           branch={git.branch}
           repoRoot={git.root}
           diff={

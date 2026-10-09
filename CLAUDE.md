@@ -23,15 +23,16 @@ Electron + React kanban board. See README.md for what it does and how to run it.
 This file holds only the rules that apply everywhere plus the traps most likely to bite. Per-area
 notes are in `docs/architecture/` — read the one for the area you are changing before editing it.
 
-| Area                                                                                                     | File                              |
-| -------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| Workspaces, per-workspace settings, `pinWorkspace`, settings store                                       | `docs/architecture/workspaces.md` |
-| Git worktrees, base branch, landing                                                                      | `docs/architecture/worktrees.md`  |
-| Agent providers, Codex, launch, agent state, Orchestrate, Auto-run, prompt routing, "Done means landed"  | `docs/architecture/agents.md`     |
-| Menu bar, board, Settings dialog, terminal tabs/blocks/keys, theme, shortcuts, palette, inbox, title bar | `docs/architecture/ui.md`         |
-| Task dependencies, hand-edited files, Ask agent, presets, done cap/archive, diagnostics                  | `docs/architecture/tasks.md`      |
-| External sources (GitHub Issues, experimental)                                                           | `docs/architecture/sources.md`    |
-| Updater and release pipeline                                                                             | `docs/architecture/releases.md`   |
+| Area                                                                                                     | File                                   |
+| -------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Workspaces, per-workspace settings, `pinWorkspace`, settings store                                       | `docs/architecture/workspaces.md`      |
+| Git worktrees, base branch, landing                                                                      | `docs/architecture/worktrees.md`       |
+| Agent providers, Codex, launch, agent state, Orchestrate, Auto-run, prompt routing, "Done means landed"  | `docs/architecture/agents.md`          |
+| Menu bar, board, Settings dialog, terminal tabs/blocks/keys, theme, shortcuts, palette, inbox, title bar | `docs/architecture/ui.md`              |
+| Task dependencies, hand-edited files, Ask agent, presets, done cap/archive, diagnostics                  | `docs/architecture/tasks.md`           |
+| External sources (GitHub Issues, experimental)                                                           | `docs/architecture/sources.md`         |
+| Updater and release pipeline                                                                             | `docs/architecture/releases.md`        |
+| Terminal engines: xterm.js and experimental Styr Terminal, fallback, native package, release access      | `docs/architecture/terminal-engine.md` |
 
 Keep this file under 300 lines. A new subsystem note goes in the matching file above, not here;
 add a line here only for a rule that must hold in every change.
@@ -77,6 +78,9 @@ add a line here only for a rule that must hold in every change.
 - **Shortcuts.** `core/shortcuts.ts` is the only key list. Labels come from `shortcutHint`; add a
   command to `SHORTCUT_COMMANDS` and handle it in `runShortcutCommand` (`lib/appShell.ts`). No
   second list, no literal `⌘…`.
+- **Terminal engines.** The PTY belongs to `ptyManager` whatever renders it. xterm.js is the default
+  and the fallback; never import `@anoguez/styr-terminal` statically or add it to package.json, and
+  never branch on the engine outside `core/terminalEngine.ts` (`TERMINAL_ENGINE_CAPABILITIES`).
 - **Terminal.** Never remount `TerminalView` (it destroys scrollback): key by session id, push theme
   and bindings in via effects/refs. Command blocks are overlays on xterm, positioned from marks
   stamped with output offsets — not from runtime-state events.

@@ -3,6 +3,7 @@ import {
   AGENT_SUMMARY_PENDING,
   agentHandoffPrompt,
   handoffFileName,
+  agentProgramProvider,
   isAgentProgram,
   renderHandoff,
   type HandoffInput
@@ -77,6 +78,13 @@ describe('agent summary', () => {
     expect(isAgentProgram('C:\\Users\\a\\.local\\bin\\claude.exe --resume x')).toBe(true)
     expect(isAgentProgram('pnpm test')).toBe(false)
     expect(isAgentProgram(undefined)).toBe(false)
+  })
+
+  it('says which provider a command line starts', () => {
+    expect(agentProgramProvider('claude --resume x')).toBe('claude')
+    expect(agentProgramProvider('/usr/local/bin/codex --remote unix://')).toBe('codex')
+    expect(agentProgramProvider('claudette')).toBeUndefined()
+    expect(agentProgramProvider(undefined)).toBeUndefined()
   })
 })
 
