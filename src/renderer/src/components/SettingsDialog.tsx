@@ -52,6 +52,7 @@ export function SettingsDialog({
 }): ReactNode {
   const [draft, setDraft] = useState<Settings>(settings)
   const [saveError, setSaveError] = useState('')
+  const [saving, setSaving] = useState(false)
   const [section, setSection] = useState<SectionId>(initialSection ?? 'preferences')
   const [selectedId, setSelectedId] = useState<string>(
     settings.promptTemplates[0]?.id ?? settings.defaultPromptTemplateId
@@ -93,16 +94,23 @@ export function SettingsDialog({
   const patch = (changes: Partial<Settings>): void =>
     setDraft((current) => ({ ...current, ...changes }))
 
+  // Saving keeps the dialog open: what was written becomes the baseline, so the footer reads
+  // "All changes saved" and further edits count from there. Esc or the close button leaves.
   function save(): void {
-    if (dirtyCount === 0) return
+    if (dirtyCount === 0 || saving) return
+    const workspace = workspaceSettingsFor(draft)
     setSaveError('')
+    setSaving(true)
     onSave({
       workspaceId: target.editedWorkspaceId,
-      workspace: workspaceSettingsFor(draft),
+      workspace,
       global: globalSettingsFor(draft)
-    }).then(onClose, (error: unknown) =>
-      setSaveError(error instanceof Error ? error.message : String(error))
-    )
+    })
+      .then(
+        () => target.markSaved(workspace),
+        (error: unknown) => setSaveError(error instanceof Error ? error.message : String(error))
+      )
+      .finally(() => setSaving(false))
   }
 
   function discard(): void {
@@ -360,7 +368,7 @@ export function SettingsDialog({
                 Discard
               </Button>
             ) : null}
-            <Button variant="primary" disabled={dirtyCount === 0} onClick={save}>
+            <Button variant="primary" disabled={dirtyCount === 0 || saving} onClick={save}>
               Save
               <kbd className="font-mono text-[10px] font-normal opacity-70">
                 {formatAccelerator('mod+enter')}

@@ -48,7 +48,9 @@ supplies the nav (a "Workspace" group headed by the workspace picker, an "All wo
 below it, filtered by each section's `words` from the search box), a header with the section blurb
 and a scope chip, and a footer carrying the dirty status, Discard and Save (⌘↵). Dirty state is
 derived by comparing `draft` to the saved settings over each section's `keys`, so a new section must
-list the `Settings` keys it edits. The dialog height is fixed so switching sections does not resize
+list the `Settings` keys it edits. Save keeps the dialog open: `useWorkspaceTarget.markSaved` makes what was
+written the new baseline (and clears a broken-file notice), so the footer reads "All changes saved"
+and later edits count from there. The dialog height is fixed so switching sections does not resize
 it. This layout follows the Claude Design file; change the design first, then the dialog.
 
 Reusable form pieces live in `ui.tsx`: `Card`/`CardRow`, `Eyebrow`, `Hint`, `Switch`/`SwitchRow`,
