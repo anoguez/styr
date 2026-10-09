@@ -62,7 +62,9 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
 
     emit('café ✓ 😀\r\n')
     emit('\x1b[6n')
-    expect(replies.join('')).toMatch(/^\x1b\[\d+;\d+R$/)
+    const reply = replies.join('')
+    expect(reply.startsWith('\x1b[')).toBe(true)
+    expect(reply.slice(2)).toMatch(/^\d+;\d+R$/)
     expect(host.text('s')).toContain('café ✓ 😀')
 
     emit('\x1b[?1049h\x1b[2J\x1b[Hfull screen')
