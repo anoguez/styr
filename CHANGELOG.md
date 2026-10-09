@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/anoguez/styr/compare/v0.25.0...v0.26.0) (2026-10-09)
+
+
+### Features
+
+* experimental Styr Terminal engine with Warp-style blocks and agent views ([#124](https://github.com/anoguez/styr/issues/124)) ([3237582](https://github.com/anoguez/styr/commit/3237582b97c71cdd128d0a957e6ef19ac8393914))
+
 ## [0.25.0](https://github.com/anoguez/styr/compare/v0.24.0...v0.25.0) (2026-10-09)
 
 
