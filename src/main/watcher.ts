@@ -28,12 +28,13 @@ function start(
   entry: Watched,
   dir: string | string[],
   debounceMs: number,
-  onChange: () => void
+  onChange: () => void,
+  depth = 0
 ): void {
   void close(entry)
   const watcher = chokidar.watch(dir, {
     ignoreInitial: true,
-    depth: 0,
+    depth,
     awaitWriteFinish: { stabilityThreshold: Math.max(debounceMs / 3, 40), pollInterval: 15 }
   })
   entry.watcher = watcher
@@ -58,7 +59,8 @@ export function startWatching(onChange: () => void): void {
 export function startWatchingAgents(onChange: () => void): void {
   const settings = loadSettings()
   const dirs = listWorkspaces(settings).map(({ id }) => agentsDir(pathsInWorkspace(settings, id)))
-  start(agents, dirs, 60, onChange)
+  // Depth 1 reaches each task's `<id>.subagents/` folder of subagent events.
+  start(agents, dirs, 60, onChange, 1)
 }
 
 export async function stopWatching(): Promise<void> {

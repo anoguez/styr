@@ -14,7 +14,12 @@ import {
   useSortable
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { AGENT_STATE_LABELS, type AgentStatus } from '@core/agentState.js'
+import {
+  AGENT_STATE_LABELS,
+  runningSubagents,
+  subagentCountLabel,
+  type AgentStatus
+} from '@core/agentState.js'
 import type { DiffStat } from '@core/diff.js'
 import type {
   ShortcutBindings,
@@ -58,6 +63,7 @@ function TerminalTab({
   // and the folder it is in. A task session keeps the label the task gave it.
   const running = session.taskId ? undefined : runtime?.runningCommand
   const name = running ? running.command : label.name
+  const subagents = runningSubagents(agent)
   const detail = label.detail || (session.taskId || !runtime ? '' : basename(runtime.cwd))
 
   useEffect(() => {
@@ -81,7 +87,11 @@ function TerminalTab({
     >
       <span
         aria-hidden
-        title={agent ? AGENT_STATE_LABELS[agent.state] : undefined}
+        title={
+          agent
+            ? `${AGENT_STATE_LABELS[agent.state]}${subagents ? ` · ${subagentCountLabel(subagents)} running` : ''}`
+            : undefined
+        }
         className={`size-[6px] shrink-0 rounded-full bg-current ${
           agent ? AGENT_TONE[agent.state] : running ? 'text-col-done' : 'text-edge-strong'
         } ${agent?.state === 'working' ? 'wd-pulse' : ''}`}
@@ -98,6 +108,14 @@ function TerminalTab({
             className={`shrink-0 font-mono text-[10.5px] font-normal ${active ? 'text-dim' : 'text-faint'}`}
           >
             {detail}
+          </span>
+        ) : null}
+        {subagents ? (
+          <span
+            title={`${subagentCountLabel(subagents)} running`}
+            className={`shrink-0 self-center rounded bg-raised px-1 font-mono text-[10px] font-normal ${AGENT_TONE.working}`}
+          >
+            +{subagents}
           </span>
         ) : null}
       </button>

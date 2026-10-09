@@ -81,6 +81,8 @@ function harness(): Harness {
     notifyTasks: () => calls.push('notifyTasks'),
     notifyAgents: () => calls.push('notifyAgents'),
     recordAgentEvent: (ws, id, event) => calls.push(`event ${ws}:${id} ${event}`),
+    recordSubagentEvent: (ws, id, event, subagent) =>
+      calls.push(`subagent ${ws}:${id} ${event}${subagent ? ` ${subagent.id}` : ''}`),
     pinWorkspace: (ws, work) => {
       calls.push(`pin ${ws}`)
       try {
@@ -252,6 +254,28 @@ describe('startForTask', () => {
       'event default:TASK-1 SessionStart',
       'update TASK-1 agentSession,sessions',
       'notifyTasks',
+      'notifyAgents'
+    ])
+  })
+
+  it('sends a Codex helper thread to the subagent folder and marks a new turn there', () => {
+    const h = harness()
+    const lifecycle = createSessionLifecycle(h.ports)
+    lifecycle.recordCodexUpdate({
+      taskId: 'default:TASK-1',
+      event: 'SubagentStart',
+      subagent: { id: 'h1', label: 'Juniper' }
+    })
+    lifecycle.recordCodexUpdate({
+      taskId: 'default:TASK-1',
+      event: 'UserPromptSubmit',
+      turnStarted: true
+    })
+    expect(h.calls).toEqual([
+      'subagent default:TASK-1 SubagentStart h1',
+      'notifyAgents',
+      'event default:TASK-1 UserPromptSubmit',
+      'subagent default:TASK-1 UserPromptSubmit',
       'notifyAgents'
     ])
   })

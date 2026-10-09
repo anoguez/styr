@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { shownAgentState, shownAgents, type AgentStatus } from './agentState.js'
+import {
+  runningSubagents,
+  shownAgentState,
+  shownAgents,
+  subagentCountLabel,
+  visibleSubagents,
+  type AgentStatus,
+  type SubagentStatus
+} from './agentState.js'
 
 const inReview = { status: 'in_review', orchestrate: false, readiness: 'ready' } as const
 
@@ -32,5 +40,36 @@ describe('shownAgents', () => {
     expect(shown.get('TASK-0001')?.state).toBe('waiting')
     expect(shown.get('TASK-0009')).toBe(orphan)
     expect(idle.state).toBe('idle')
+  })
+})
+
+describe('subagent display', () => {
+  const sub = (id: string, state: SubagentStatus['state'] = 'running'): SubagentStatus => ({
+    id,
+    label: id,
+    state,
+    startedAt: '2026-01-01T00:00:00Z'
+  })
+
+  it('shows up to four rows in full', () => {
+    const four = [sub('a', 'done'), sub('b'), sub('c'), sub('d')]
+    expect(visibleSubagents(four, false)).toEqual({ rows: four })
+  })
+
+  it('folds five or more to the three oldest and says how many hidden ones run', () => {
+    const ten = [sub('a', 'done'), ...'bcdefghij'.split('').map((id) => sub(id))]
+    const folded = visibleSubagents(ten, false)
+    expect(folded.rows.map((row) => row.id)).toEqual(['a', 'b', 'c'])
+    expect(folded.toggle).toBe('+7 more · 7 running')
+    expect(visibleSubagents(ten, true)).toEqual({ rows: ten, toggle: 'Show fewer' })
+    const allDone = ten.map((row) => ({ ...row, state: 'done' as const }))
+    expect(visibleSubagents(allDone, false).toggle).toBe('+7 more')
+  })
+
+  it('counts only running subagents, with a plural label', () => {
+    expect(runningSubagents(undefined)).toBe(0)
+    expect(runningSubagents({ subagents: [sub('a'), sub('b', 'done'), sub('c')] })).toBe(2)
+    expect(subagentCountLabel(1)).toBe('1 subagent')
+    expect(subagentCountLabel(3)).toBe('3 subagents')
   })
 })

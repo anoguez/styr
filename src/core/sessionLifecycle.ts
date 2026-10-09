@@ -78,6 +78,13 @@ export interface SessionPorts {
   notifyTasks(): void
   notifyAgents(): void
   recordAgentEvent(workspaceId: string, taskId: string, event: string): void
+  /** Into the task's subagent folder (`agentStore.recordSubagentEvent`), not its status file. */
+  recordSubagentEvent(
+    workspaceId: string,
+    taskId: string,
+    event: string,
+    subagent?: { id: string; label: string }
+  ): void
   /** Wraps a synchronous write with every task path resolved in `workspaceId`. */
   pinWorkspace<T>(workspaceId: string, work: () => T): T
 
@@ -182,10 +189,20 @@ export function createSessionLifecycle(ports: SessionPorts) {
     })
   }
 
-  /** A Codex update from the daemon: record the event, and save the thread id once it is known. */
+  /**
+   * A Codex update from the daemon: record the event, and save the thread id once it is known. A
+   * helper thread's events go to the subagent folder and leave the task's own state alone; a new
+   * turn of the task's thread is marked there too, as Claude's hook does.
+   */
   function recordCodexUpdate(update: ThreadUpdate): void {
     const { workspaceId, taskId } = splitMonitorKey(update.taskId)
+    if (update.subagent) {
+      ports.recordSubagentEvent(workspaceId, taskId, update.event, update.subagent)
+      ports.notifyAgents()
+      return
+    }
     ports.recordAgentEvent(workspaceId, taskId, update.event)
+    if (update.turnStarted) ports.recordSubagentEvent(workspaceId, taskId, 'UserPromptSubmit')
     if (update.boundSessionId) {
       const key = monitorKey(workspaceId, taskId)
       saveLaunchMetadata(

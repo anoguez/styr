@@ -1,8 +1,9 @@
 import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { agentsDir, supportDir } from '../agentStore.js'
+import { SUBAGENT_EVENTS } from '../agentState.js'
+import { agentsDir, subagentsDir, supportDir } from '../agentStore.js'
 import type { Settings } from '../types.js'
 import type { AgentProvider } from './types.js'
 
@@ -36,26 +37,58 @@ function hookCommand(dir: string, taskId: string, event: string): string {
 }
 
 /**
+ * The same record into the task's subagent folder, each event under its own name (seconds plus the
+ * hook shell's pid) so parallel subagents stopping at once never collide. The app, not the hook,
+ * reads `agent_id` out of the payload.
+ */
+function subagentHookCommand(dir: string, taskId: string, event: string): string {
+  // `$$` must sit outside the single quotes to expand, so the path is quoted in pieces.
+  const temp = `'${join(dir, `.${event}.`)}'"$$"'.tmp'`
+  const target = `'${dir}${sep}'"$(date +%s)-$$-${event}.json"`
+  return (
+    `p=$(cat); mkdir -p '${dir}' && printf '{"taskId":"%s","event":"%s","at":"%s","payload":%s}\\n' ` +
+    `'${taskId}' '${event}' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "\${p:-null}" > ${temp} ` +
+    `&& mv ${temp} ${target}`
+  )
+}
+
+/**
  * Only the notifications that need you. `idle_prompt` (still at the prompt a minute after `Stop`)
  * is left out: it would overwrite the `Stop` record, and with it the turn's last message, to say
  * nothing new.
  */
 const NOTIFICATION_MATCHER = 'permission_prompt|elicitation_dialog'
 
+/**
+ * Parent events go to the task's status file. Subagent starts and stops go only to the subagent
+ * folder, and so does `UserPromptSubmit` a second time: it marks the turn that clears done rows.
+ */
 export function buildHookSettings(settings: Settings, taskId: string): string {
   const dir = agentsDir(settings)
+  const subagents = subagentsDir(settings, taskId)
   const events = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'Notification', 'Stop']
-  const hooks = Object.fromEntries(
+  const command = (text: string): { type: string; command: string } => ({
+    type: 'command',
+    command: text
+  })
+  const hooks: Record<string, unknown[]> = Object.fromEntries(
     events.map((event) => [
       event,
       [
         {
           ...(event === 'Notification' ? { matcher: NOTIFICATION_MATCHER } : {}),
-          hooks: [{ type: 'command', command: hookCommand(dir, taskId, event) }]
+          hooks: [
+            command(hookCommand(dir, taskId, event)),
+            ...(event === 'UserPromptSubmit'
+              ? [command(subagentHookCommand(subagents, taskId, event))]
+              : [])
+          ]
         }
       ]
     ])
   )
+  for (const event of SUBAGENT_EVENTS)
+    hooks[event] = [{ hooks: [command(subagentHookCommand(subagents, taskId, event))] }]
   return JSON.stringify({ hooks }, null, 2)
 }
 

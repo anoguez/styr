@@ -66,7 +66,8 @@ describe('ThreadBindings', () => {
     })
     expect(bindings.onStatus(status('thread-2', { type: 'active', activeFlags: [] }))).toEqual({
       taskId: 'TASK-2',
-      event: 'UserPromptSubmit'
+      event: 'UserPromptSubmit',
+      turnStarted: true
     })
     expect(
       bindings.onStatus(status('thread-2', { type: 'active', activeFlags: ['waitingOnApproval'] }))
@@ -98,6 +99,76 @@ describe('ThreadBindings', () => {
     bindings.release('TASK-1')
     expect(bindings.onStatus(status('known', { type: 'idle' }))).toBeUndefined()
     expect(bindings.size).toBe(0)
+  })
+
+  const child = (id: string, parent: string, extra: object = {}) =>
+    started(id, '/w', {
+      parentThreadId: parent,
+      agentNickname: null,
+      agentRole: null,
+      source: { subAgent: { thread_spawn: { parent_thread_id: parent, depth: 1 } } },
+      ...extra
+    })
+
+  it('never claims a subagent thread for a fresh launch, nor a Codex housekeeping thread', () => {
+    const bindings = new ThreadBindings()
+    bindings.expect('TASK-1', '/w')
+    expect(bindings.onStarted(child('helper', 'elsewhere'))).toBeUndefined()
+    expect(bindings.onStarted(started('review', '/w', { source: { subAgent: 'review' } }))).toBe(
+      undefined
+    )
+    expect(bindings.onStarted(started('mine', '/w'))).toMatchObject({ boundSessionId: 'mine' })
+  })
+
+  it('reports a helper of the task thread, at any depth, as its subagent', () => {
+    const bindings = new ThreadBindings()
+    bindings.bind('TASK-1', 'main')
+    expect(bindings.onStarted(child('h1', 'main', { agentNickname: 'Juniper' }))).toEqual({
+      taskId: 'TASK-1',
+      event: 'SubagentStart',
+      subagent: { id: 'h1', label: 'Juniper' }
+    })
+    expect(
+      bindings.onStarted(
+        started('h2', '/w', {
+          source: {
+            subAgent: { thread_spawn: { parent_thread_id: 'h1', depth: 2, agent_role: 'explorer' } }
+          }
+        })
+      )
+    ).toMatchObject({ taskId: 'TASK-1', subagent: { id: 'h2', label: 'explorer' } })
+    expect(bindings.onStarted(child('h3', 'main'))).toMatchObject({
+      subagent: { label: 'Subagent' }
+    })
+    expect(bindings.onStarted(child('stranger', 'not-ours'))).toBeUndefined()
+  })
+
+  it('turns a helper going idle into a stop, once, and active again into a start', () => {
+    const bindings = new ThreadBindings()
+    bindings.bind('TASK-1', 'main')
+    bindings.onStarted(child('h1', 'main'))
+    const active = status('h1', { type: 'active', activeFlags: [] })
+    expect(bindings.onStatus(active)).toBeUndefined()
+    expect(bindings.onStatus(status('h1', { type: 'idle' }))).toMatchObject({
+      event: 'SubagentStop',
+      subagent: { id: 'h1' }
+    })
+    expect(bindings.onStatus(status('h1', { type: 'idle' }))).toBeUndefined()
+    expect(bindings.onStatus(active)).toMatchObject({ event: 'SubagentStart' })
+    bindings.release('TASK-1')
+    expect(bindings.onStatus(status('h1', { type: 'idle' }))).toBeUndefined()
+  })
+
+  it('flags a new turn only when the task thread goes from idle to active', () => {
+    const bindings = new ThreadBindings()
+    bindings.bind('TASK-1', 'main')
+    const active = status('main', { type: 'active', activeFlags: [] })
+    const waiting = status('main', { type: 'active', activeFlags: ['waitingOnApproval'] })
+    expect(bindings.onStatus(active)).toMatchObject({ turnStarted: true })
+    expect(bindings.onStatus(waiting)?.turnStarted).toBeUndefined()
+    expect(bindings.onStatus(active)?.turnStarted).toBeUndefined()
+    bindings.onStatus(status('main', { type: 'idle' }))
+    expect(bindings.onStatus(active)).toMatchObject({ turnStarted: true })
   })
 })
 

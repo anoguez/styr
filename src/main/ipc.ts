@@ -21,7 +21,12 @@ import {
   saveWorkspaceSettings,
   settingsFilePath
 } from '@core/settingsStore.js'
-import { clearAgentStatus, readAllAgentStatuses, recordAgentEvent } from '@core/agentStore.js'
+import {
+  clearAgentStatus,
+  readAllAgentStatuses,
+  recordAgentEvent,
+  recordSubagentEvent
+} from '@core/agentStore.js'
 import type { AgentStatus } from '@core/agentState.js'
 import { planLaunch, renderPrompt, workingDirFor } from '@core/launch.js'
 import { isPlanRun } from '@core/planning.js'
@@ -310,6 +315,13 @@ const lifecycle = createSessionLifecycle({
   notifyAgents: notifyAgentsChanged,
   recordAgentEvent: (workspaceId, taskId, event) =>
     recordAgentEvent(pathsInWorkspace(loadSettings(), workspaceId), taskId, event),
+  recordSubagentEvent: (workspaceId, taskId, event, subagent) =>
+    recordSubagentEvent(
+      pathsInWorkspace(loadSettings(), workspaceId),
+      taskId,
+      event,
+      subagent ? { agent_id: subagent.id, label: subagent.label } : null
+    ),
   pinWorkspace: inOtherWorkspace,
   createSession,
   findSessionByTask,
