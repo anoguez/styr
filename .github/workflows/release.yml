@@ -69,6 +69,10 @@ jobs:
     if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
     # macos-latest is Apple silicon, matching the arm64-only target.
     runs-on: macos-latest
+    # The `release` environment holds STYR_TERMINAL_PACKAGES_TOKEN. Protect it (Settings →
+    # Environments): deployment branches limited to main and v* tags, and a required reviewer, so
+    # only a reviewed, trusted ref ever sees the token. CI and pull requests never reference it.
+    environment: release
     permissions:
       contents: write
     env:
@@ -86,6 +90,15 @@ jobs:
 
       # postinstall rebuilds node-pty and better-sqlite3 against Electron's ABI.
       - run: yarn install --frozen-lockfile
+
+      # Styr Terminal (experimental) is a private package, vendored only here with a read-only
+      # (read:packages) token. Version, tarball integrity and binary SHA-256 are pinned in
+      # native-terminal.lock.json; a mismatch fails the release. With no token or nothing pinned it
+      # is skipped and the app ships with xterm.js only.
+      - name: Fetch Styr Terminal (optional)
+        run: node scripts/fetch-native-terminal.mjs
+        env:
+          STYR_TERMINAL_TOKEN: ${{ secrets.STYR_TERMINAL_PACKAGES_TOKEN }}
 
       - run: yarn build
 
@@ -152,6 +165,12 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           spctl --assess --type execute --verbose "$app"
           xcrun stapler validate "$app"
+          # A vendored Styr Terminal binary must be inside the bundle and signed with it.
+          if [ -d resources/native/styr-terminal ]; then
+            native="$app/Contents/Resources/native/styr-terminal"
+            ls "$native"/*.node
+            for module in "$native"/*.node; do codesign --verify --strict --verbose=2 "$module"; done
+          fi
           for dmg in dist/*.dmg; do
             spctl --assess --type open --context context:primary-signature --verbose "$dmg"
             xcrun stapler validate "$dmg"

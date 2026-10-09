@@ -19,6 +19,12 @@ import type {
   TaskFilter,
   TaskPatch,
   TaskStatus,
+  NativeAttachResult,
+  NativeEngineFailure,
+  NativeFrameEvent,
+  TerminalEngineAvailability,
+  TerminalEngineDiagnostic,
+  TerminalEngineEnvironment,
   TerminalSessionInfo,
   TerminalOutput,
   TerminalRuntimeState,
@@ -232,7 +238,35 @@ const api = {
     onExit: (handler: (payload: { id: string; exitCode: number }) => void): (() => void) =>
       subscribe('terminal:exit', handler as (...args: never[]) => void),
     onRuntimeState: (handler: (state: TerminalRuntimeState) => void): (() => void) =>
-      subscribe('terminal:runtimeState', handler as (...args: never[]) => void)
+      subscribe('terminal:runtimeState', handler as (...args: never[]) => void),
+    /** Whether Styr Terminal is bundled here; does not load it. */
+    engineAvailability: (): Promise<TerminalEngineAvailability> =>
+      ipcRenderer.invoke('terminal:engineAvailability'),
+    /** Loads Styr Terminal (once per run) and reports whether it is usable. */
+    engineEnvironment: (): Promise<TerminalEngineEnvironment> =>
+      ipcRenderer.invoke('terminal:engineEnvironment'),
+    reportEngine: (
+      entry: Pick<
+        TerminalEngineDiagnostic,
+        'sessionId' | 'requested' | 'selected' | 'fallbackReason' | 'detail'
+      >
+    ): void => ipcRenderer.send('terminal:engineSelected', entry),
+    native: {
+      attach: (id: string, cols: number, rows: number): Promise<NativeAttachResult> =>
+        ipcRenderer.invoke('terminal:nativeAttach', id, cols, rows),
+      resize: (id: string, cols: number, rows: number): void =>
+        ipcRenderer.send('terminal:nativeResize', id, cols, rows),
+      scroll: (id: string, lines: number | 'bottom'): void =>
+        ipcRenderer.send('terminal:nativeScroll', id, lines),
+      text: (id: string): Promise<string> => ipcRenderer.invoke('terminal:nativeText', id),
+      lines: (id: string, from: number, to: number): Promise<string> =>
+        ipcRenderer.invoke('terminal:nativeLines', id, from, to),
+      detach: (id: string): void => ipcRenderer.send('terminal:nativeDetach', id),
+      onFrame: (handler: (event: NativeFrameEvent) => void): (() => void) =>
+        subscribe('terminal:nativeFrame', handler as (...args: never[]) => void),
+      onFailed: (handler: (failure: NativeEngineFailure) => void): (() => void) =>
+        subscribe('terminal:nativeFailed', handler as (...args: never[]) => void)
+    }
   }
 }
 

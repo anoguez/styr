@@ -33,6 +33,7 @@ import { isPlanRun } from '@core/planning.js'
 import { providerFor } from '@core/providers/index.js'
 import { z } from 'zod'
 import { recordNotifyDuration, stopSampling, takeSnapshot } from './diagnostics.js'
+import { terminalEngineDiagnostics } from './terminal/terminalEngines.js'
 import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
 import {
   findGitRoot,
@@ -561,7 +562,11 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('diagnostics:snapshot', () =>
-    takeSnapshot({ terminals: listSessions().length, taskCount: queryTasks().length })
+    takeSnapshot({
+      terminals: listSessions().length,
+      taskCount: queryTasks().length,
+      terminalEngine: terminalEngineDiagnostics()
+    })
   )
   ipcMain.handle('diagnostics:stop', () => stopSampling())
   ipcMain.handle('app:info', () => ({ isPackaged: app.isPackaged, version: app.getVersion() }))

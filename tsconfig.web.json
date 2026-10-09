@@ -23,7 +23,9 @@
     "src/core/derivedTask.ts",
     "src/core/planning.ts",
     "src/core/taskPreset.ts",
-    "src/core/diagnostics.ts"
+    "src/core/diagnostics.ts",
+    "src/core/terminalEngine.ts",
+    "src/core/blocks.ts"
   ],
   "compilerOptions": {
     "composite": true,

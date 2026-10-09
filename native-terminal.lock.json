@@ -1,0 +1,9 @@
+{
+  "package": "@anoguez/styr-terminal",
+  "registry": "https://npm.pkg.github.com",
+  "version": null,
+  "integrity": null,
+  "binaries": {
+    "darwin-arm64": { "file": "styr-terminal.darwin-arm64.node", "sha256": null }
+  }
+}

@@ -14,3 +14,6 @@ coverage/
 *.p12
 *.cer
 temp-cert-export/
+
+# Optional private native packages, vendored by the release job
+resources/native/*/

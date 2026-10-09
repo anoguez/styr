@@ -132,7 +132,7 @@ export function shippedSettings(): Settings {
     orchestration: { spec: 1, implement: 2, review: 1 },
     autoDispatch: false,
     updates: { checkAutomatically: true },
-    experimental: { externalSources: false },
+    experimental: { externalSources: false, nativeTerminal: false },
     taskDefaults: { orchestrate: true, useWorktree: false },
     taskPresets: DEFAULT_TASK_PRESETS,
     doneCap: DEFAULT_DONE_CAP,

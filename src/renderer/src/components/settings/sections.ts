@@ -120,7 +120,7 @@ export const SECTIONS = [
     scope: 'app',
     blurb: 'Features still being tried out. Each one stays hidden until you switch it on.',
     keys: ['experimental'],
-    words: 'beta preview labs flags features github sources'
+    words: 'beta preview labs flags features github sources terminal engine native styr'
   }
 ] as const satisfies readonly {
   id: string

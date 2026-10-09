@@ -19,6 +19,7 @@ export function recordNotifyDuration(ms: number): void {
 export function takeSnapshot(counts: {
   terminals: number
   taskCount: number
+  terminalEngine?: DiagnosticsSnapshot['terminalEngine']
 }): DiagnosticsSnapshot {
   // The histogram samples a timer every RESOLUTION_MS, so an idle loop reads about that; the excess is real delay.
   const nanos = (value: number): number => Math.max(0, value / 1e6 - RESOLUTION_MS)

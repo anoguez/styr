@@ -1,3 +1,5 @@
+import type { TerminalEngineDiagnostic } from './types.js'
+
 /** What the Performance panel shows. Memory-only: never written to a task file, config or the index. */
 
 export interface ProcessMetric {
@@ -21,6 +23,8 @@ export interface DiagnosticsSnapshot {
   taskCount: number
   /** Recent durations of `notifyTasksChanged` (re-index plus landing check), newest last. */
   notifyMs: number[]
+  /** The experimental terminal engine: whether it loaded, and recent sessions' engine choices. */
+  terminalEngine?: { summary: string; sessions: TerminalEngineDiagnostic[] }
 }
 
 /** The last `size` numbers, oldest dropped first. */
@@ -86,6 +90,19 @@ export function formatDiagnostics(
     } ms`,
     `Tasks ${snapshot.taskCount} · open terminals ${snapshot.terminals}`
   ]
+  if (snapshot.terminalEngine) {
+    const { summary, sessions } = snapshot.terminalEngine
+    lines.push('', `Terminal engine: ${summary}`)
+    for (const entry of sessions.slice(-5)) {
+      const fallback = entry.fallbackReason
+        ? ` (fallback: ${entry.fallbackReason}${entry.detail ? ` — ${entry.detail}` : ''})`
+        : ''
+      const version = entry.engineVersion ? ` ${entry.engineVersion}` : ''
+      lines.push(
+        `  ${entry.sessionId}: ${entry.requested} → ${entry.selected}${version} · ${entry.platform}-${entry.arch}${fallback}`
+      )
+    }
+  }
   if (renderer) {
     lines.push(
       `Renderer: heap ${num(renderer.heapMb, ' MB')} · DOM nodes ${renderer.domNodes} · long tasks (>50 ms) since opened ${renderer.longTasks}`

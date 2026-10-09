@@ -12,6 +12,7 @@ import {
   switchWorkspace
 } from './ipc.js'
 import { closeIndex, syncIndex } from './taskIndex.js'
+import { registerTerminalEngines } from './terminal/terminalEngines.js'
 import {
   killAllSessions,
   onTerminalData,
@@ -158,6 +159,8 @@ app.whenReady().then(() => {
   installAppMenu()
 
   onTerminalData((id, output) => broadcast('terminal:data', { id, ...output }))
+  const nativeTerminals = registerTerminalEngines(broadcast)
+  app.on('before-quit', () => nativeTerminals.detachAll())
   onTerminalRuntimeState((state) => broadcast('terminal:runtimeState', state))
   onTerminalExit((id, exitCode) => {
     forgetContext(id)

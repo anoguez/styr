@@ -29,7 +29,8 @@ import { DirectoryPicker } from './DirectoryPicker.js'
 import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
 import { TerminalBlocks, type BlockActions } from './TerminalBlocks.js'
 import type { BlockLayout, TrackedBlock } from '../lib/blockTracker.js'
-import { TerminalView, type TerminalHandle, type TerminalSelection } from './TerminalView.js'
+import { type TerminalHandle, type TerminalSelection } from './TerminalView.js'
+import { TerminalEngineView } from './TerminalEngineView.js'
 import { UsageButton } from './UsageButton.js'
 import { DiffStatButton } from './ui.js'
 import type { DiffStat } from '@core/diff.js'
@@ -466,6 +467,7 @@ export function TerminalSurface({
   active,
   theme,
   bindings,
+  nativeTerminal = false,
   runtime,
   agentStatus,
   shownState,
@@ -484,6 +486,8 @@ export function TerminalSurface({
   active: boolean
   theme: ThemeSettings
   bindings: ShortcutBindings
+  /** `experimental.nativeTerminal`: try Styr Terminal for this view (xterm.js otherwise). */
+  nativeTerminal?: boolean
   /** The main process's semantic state for this session, once it has reported any. */
   runtime?: TerminalRuntimeState
   /** The hook-reported state of this task's agent, when it is a task session. */
@@ -843,7 +847,8 @@ export function TerminalSurface({
   return (
     <div className="@container flex h-full w-full flex-col">
       <div className="relative min-h-0 flex-1">
-        <TerminalView
+        <TerminalEngineView
+          nativeTerminal={nativeTerminal}
           sessionId={session.id}
           dialect={session.dialect}
           active={active}
