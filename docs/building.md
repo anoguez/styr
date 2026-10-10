@@ -144,9 +144,10 @@ it out, and CI then signs with the wrong identity.
 | `APPLE_APP_SPECIFIC_PASSWORD` | An app-specific password for that Apple ID              |
 | `APPLE_TEAM_ID`               | The developer team id                                   |
 
-Optionally add `RELEASE_PLEASE_TOKEN`, a fine-grained token with contents and pull-request write
-access. A release PR opened with the default token does not trigger other workflows, so CI would not
-run on it.
+Also add `RELEASE_PLEASE_TOKEN`, a fine-grained token with **Contents: Read and write** and
+**Pull requests: Read and write** repository permissions. It is required: a release PR opened with
+the default `GITHUB_TOKEN` does not trigger CI. The release workflow fails before creating or
+updating a PR when this token is missing, rather than silently creating a release PR without checks.
 
 **Re-register the MCP server after packaging.** Use the command Settings shows verbatim, quotes
 included. The packaged app runs the MCP server from inside the

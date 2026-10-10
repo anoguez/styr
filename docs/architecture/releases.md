@@ -31,6 +31,11 @@ changelog. `scripts/setup-signing-secrets.sh <p12>` sets the five signing secret
 `.p12` exported in Keychain Access — never from `security export`, which cannot reach the
 data-protection keychain where the Developer ID key lives and silently exports other identities.
 
+`RELEASE_PLEASE_TOKEN` is a required fine-grained personal access token with Contents and Pull
+requests read/write permissions. It must not fall back to `GITHUB_TOKEN`: GitHub suppresses CI
+events created by the default workflow token. The workflow validates the secret before invoking
+release-please so a missing token is a visible release-workflow failure, not an unchecked release PR.
+
 The release job imports the certificate into its own keychain together with Apple's Developer ID
 intermediates (fingerprint-pinned), passes the Developer ID identity by name as `CSC_NAME`, and fails
 at import if there is none. Each of those fixed a real failure: electron-builder's own temporary

@@ -24,12 +24,22 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # Events created with GITHUB_TOKEN do not trigger CI. Fail explicitly instead of silently
+      # falling back to it, which would leave the release PR without its required checks.
+      - name: Require the release-please token
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_PLEASE_TOKEN" ]; then
+            echo "::error::RELEASE_PLEASE_TOKEN is required so release PRs trigger CI."
+            exit 1
+          fi
+
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         with:
-          # A PR opened with GITHUB_TOKEN does not trigger other workflows, so CI would never run on
-          # the release PR. A fine-grained PAT in RELEASE_PLEASE_TOKEN avoids that.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # A fine-grained PAT creates a normal pull_request event, allowing CI to run.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
