@@ -131,6 +131,14 @@ export class ThreadBindings {
     return this.threads.size + this.expected.length
   }
 
+  threadFor(taskId: string): string | undefined {
+    return [...this.threads].find(([, owner]) => owner === taskId)?.[0]
+  }
+
+  taskForThread(threadId: string): string | undefined {
+    return this.ownerOf(threadId)
+  }
+
   expect(taskId: string, cwd: string): void {
     this.release(taskId)
     this.expected.push({ taskId, cwd })
@@ -244,6 +252,8 @@ export interface Frame {
   payload: Buffer
 }
 
+const MAX_FRAME_BYTES = 8 * 1024 * 1024
+
 /** Reassembles frames from arbitrary socket chunks. Handles fragmentation and server (unmasked) frames. */
 export class FrameDecoder {
   private buffer: Buffer = Buffer.alloc(0)
@@ -267,6 +277,8 @@ export class FrameDecoder {
         length = Number(this.buffer.readBigUInt64BE(2))
         offset = 10
       }
+      if (!Number.isSafeInteger(length) || length > MAX_FRAME_BYTES)
+        throw new Error('Codex app-server sent an oversized WebSocket frame.')
       const masked = (second & 0x80) !== 0
       const maskLength = masked ? 4 : 0
       if (this.buffer.length < offset + maskLength + length) break
@@ -282,12 +294,16 @@ export class FrameDecoder {
       const opcode = first & 0x0f
       const final = (first & 0x80) !== 0
       if (opcode === 0 || opcode === 1 || opcode === 2) {
+        if (this.fragmentBytes + payload.length > MAX_FRAME_BYTES)
+          throw new Error('Codex app-server sent an oversized WebSocket message.')
         this.fragments.push(payload)
+        this.fragmentBytes += payload.length
         if (final) {
           const message = Buffer.concat(this.fragments)
           // A continuation (0) belongs to the data frame that started it; report that frame's kind.
           frames.push({ opcode: this.startOpcode ?? opcode, payload: message })
           this.fragments = []
+          this.fragmentBytes = 0
           this.startOpcode = undefined
         } else if (opcode !== 0) {
           this.startOpcode = opcode
@@ -300,4 +316,5 @@ export class FrameDecoder {
   }
 
   private startOpcode: number | undefined
+  private fragmentBytes = 0
 }

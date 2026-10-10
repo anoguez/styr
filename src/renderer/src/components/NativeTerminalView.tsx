@@ -533,7 +533,7 @@ export function NativeTerminalView({
           blocks={agentBlockList}
           working={conversation?.working ?? false}
           label={AGENT_PROVIDER_LABELS[provider]}
-          waiting={agentWaiting ?? null}
+          waiting={conversation?.approval?.prompt ?? agentWaiting ?? null}
           look={{ palette, lineHeight: cell.height }}
           font={font}
           inputRef={inputRef}
@@ -549,8 +549,16 @@ export function NativeTerminalView({
             }
           }}
           onInterrupt={() => window.api.terminal.write(sessionId, '\x1b')}
-          onAllow={() => window.api.terminal.write(sessionId, '\r')}
-          onDeny={() => window.api.terminal.write(sessionId, '\x1b')}
+          onAllow={() => {
+            if (conversation?.approval)
+              void window.api.usage.approval(sessionId, conversation.approval.id, true)
+            else window.api.terminal.write(sessionId, '\r')
+          }}
+          onDeny={() => {
+            if (conversation?.approval)
+              void window.api.usage.approval(sessionId, conversation.approval.id, false)
+            else window.api.terminal.write(sessionId, '\x1b')
+          }}
           onShowTui={() => setTuiFor(running?.id ?? null)}
         />
       ) : null}

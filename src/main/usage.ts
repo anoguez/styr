@@ -116,6 +116,9 @@ export function forgetContext(terminalId: string): void {
   rmSync(contextFile(terminalId), { force: true })
   rmSync(conversationFile(terminalId), { force: true })
   rmSync(promptInbox(terminalId), { force: true })
+  liveConversations.delete(terminalId)
+  conversationPrompts.delete(terminalId)
+  conversationApprovals.delete(terminalId)
 }
 
 function readClaudeUsage(): ProviderUsage | null {
@@ -131,6 +134,28 @@ const ROLLOUT_TAIL_BYTES = 256 * 1024
 
 /** Thread id to rollout path. Finding it walks the whole sessions tree, so it is done once. */
 const rolloutPaths = new Map<string, string>()
+const liveConversations = new Map<string, AgentConversation>()
+const conversationPrompts = new Map<string, (text: string) => Promise<void>>()
+const conversationApprovals = new Map<
+  string,
+  (approvalId: string, allow: boolean) => Promise<void>
+>()
+
+/** All live conversation sources publish through the same renderer channel and prompt route. */
+export function publishAgentConversation(
+  terminalId: string,
+  conversation: AgentConversation,
+  submitPrompt?: (text: string) => Promise<void>,
+  answerApproval?: (approvalId: string, allow: boolean) => Promise<void>
+): void {
+  liveConversations.set(terminalId, conversation)
+  if (submitPrompt) conversationPrompts.set(terminalId, submitPrompt)
+  else conversationPrompts.delete(terminalId)
+  if (answerApproval) conversationApprovals.set(terminalId, answerApproval)
+  else conversationApprovals.delete(terminalId)
+  for (const window of BrowserWindow.getAllWindows())
+    window.webContents.send('agent:conversation', { terminalId, conversation })
+}
 
 /**
  * The Codex usage for a terminal's thread, read from its rollout file. Task sessions only: a bare
@@ -171,13 +196,29 @@ export function initUsage(): void {
   ipcMain.handle('usage:claude', () => readClaudeUsage())
   ipcMain.handle('usage:codex', (_event, terminalId: string) => readCodexUsage(terminalId))
   ipcMain.handle('usage:context', (_event, terminalId: string) => readContext(terminalId))
-  ipcMain.handle('agent:conversation', (_event, terminalId: string) =>
-    readConversation(String(terminalId))
+  ipcMain.handle(
+    'agent:conversation',
+    (_event, terminalId: string) =>
+      liveConversations.get(String(terminalId)) ?? readConversation(String(terminalId))
+  )
+  ipcMain.handle('agent:prompt', async (_event, terminalId: string, text: unknown) => {
+    const submit = conversationPrompts.get(String(terminalId))
+    if (submit) {
+      if (typeof text !== 'string' || !text.trim() || text.length > MAX_PROMPT_CHARS) return false
+      await submit(text)
+      return true
+    }
+    return sendPrompt(String(terminalId), text)
+  })
+  ipcMain.handle(
+    'agent:approval',
+    async (_event, terminalId: string, approvalId: string, allow: boolean) => {
+      const answer = conversationApprovals.get(String(terminalId))
+      if (!answer) throw new Error('This agent conversation cannot answer approvals through Styr.')
+      await answer(String(approvalId).slice(0, 200), allow === true)
+    }
   )
   // Ids are not reused, so files from a previous run are only litter.
-  ipcMain.handle('agent:prompt', (_event, terminalId: string, text: unknown) =>
-    sendPrompt(String(terminalId), text)
-  )
   for (const dir of [contextDir(), conversationDir(), inboxDir()]) {
     rmSync(dir, { recursive: true, force: true })
     mkdirSync(dir, { recursive: true })
@@ -211,8 +252,7 @@ export function initUsage(): void {
     const terminalId = basename(path, '.json')
     const conversation = readConversation(terminalId)
     if (!conversation) return
-    for (const window of BrowserWindow.getAllWindows())
-      window.webContents.send('agent:conversation', { terminalId, conversation })
+    publishAgentConversation(terminalId, conversation)
   }
 
   function pushContext(path: string): void {

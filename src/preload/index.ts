@@ -116,6 +116,8 @@ const api = {
     /** Hands a prompt to the agent's side, which submits it as the person's own words. */
     sendPrompt: (terminalId: string, text: string): Promise<boolean> =>
       ipcRenderer.invoke('agent:prompt', terminalId, text),
+    approval: (terminalId: string, approvalId: string, allow: boolean): Promise<void> =>
+      ipcRenderer.invoke('agent:approval', terminalId, approvalId, allow),
     onConversation: (
       handler: (update: { terminalId: string; conversation: AgentConversation }) => void
     ): (() => void) => subscribe('agent:conversation', handler as (...args: never[]) => void)

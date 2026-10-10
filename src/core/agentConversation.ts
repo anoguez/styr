@@ -12,6 +12,7 @@
 import type {
   AgentMessageBlock,
   AgentToolCallBlock,
+  ApprovalBlock,
   BlockState,
   DiffBlock,
   StyrBlock
@@ -53,6 +54,8 @@ export interface AgentConversation {
    * as the person's own words; otherwise a prompt is typed into the CLI's TUI.
    */
   promptInbox?: boolean
+  /** The app-server is waiting for a decision about a command or file change. */
+  approval?: { id: string; prompt: string; options: string[] }
 }
 
 /** How one CLI's tool call reads in a block: what it works on, how it went, what it changed. */
@@ -145,7 +148,21 @@ export function parseAgentConversation(source: string): AgentConversation | null
     working: raw.working === true,
     messages,
     ...(commands ? { commands } : {}),
-    ...(raw.promptInbox === true ? { promptInbox: true } : {})
+    ...(raw.promptInbox === true ? { promptInbox: true } : {}),
+    ...(isRecord(raw.approval) && typeof raw.approval.id === 'string'
+      ? {
+          approval: {
+            id: raw.approval.id.slice(0, 200),
+            prompt: text(raw.approval.prompt, 2_000),
+            options: Array.isArray(raw.approval.options)
+              ? raw.approval.options
+                  .slice(0, 8)
+                  .map((option) => text(option, 80))
+                  .filter(Boolean)
+              : []
+          }
+        }
+      : {}),
   }
 }
 
@@ -234,6 +251,14 @@ export function agentBlocks(
       }
     }
   })
+  if (conversation.approval) {
+    const approval: ApprovalBlock = {
+      ...envelope(conversation.approval.id, 'awaiting-input'),
+      kind: 'approval',
+      payload: { prompt: conversation.approval.prompt, options: conversation.approval.options }
+    }
+    blocks.push(approval)
+  }
   return blocks
 }
 
