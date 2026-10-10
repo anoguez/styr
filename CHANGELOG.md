@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.1](https://github.com/anoguez/styr/compare/v0.26.0...v0.26.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* send Styr Terminal agent prompts as the person's own words ([#126](https://github.com/anoguez/styr/issues/126)) ([36164a4](https://github.com/anoguez/styr/commit/36164a4fe376cc3409d45706c210947b521a7c4d))
+
 ## [0.26.0](https://github.com/anoguez/styr/compare/v0.25.0...v0.26.0) (2026-10-09)
 
 
