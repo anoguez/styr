@@ -1,5 +1,6 @@
 import { basename, delimiter, join } from 'node:path'
 import {
+  appendFileSync,
   closeSync,
   existsSync,
   fstatSync,
@@ -48,7 +49,8 @@ export function usageEnv(existing: string | undefined, terminalId: string): Reco
     CLAUDE_CODE_PLUGIN_DIRS: existing ? `${mod}${delimiter}${existing}` : mod,
     STYR_USAGE_FILE: claudeUsageFile(),
     STYR_CONTEXT_FILE: contextFile(terminalId),
-    STYR_CONVERSATION_FILE: conversationFile(terminalId)
+    STYR_CONVERSATION_FILE: conversationFile(terminalId),
+    STYR_PROMPT_INBOX: promptInbox(terminalId)
   }
 }
 
@@ -63,6 +65,25 @@ const contextFile = (terminalId: string): string => join(contextDir(), `${termin
 const conversationDir = (): string => join(configDir(), 'usage', 'conversation')
 const conversationFile = (terminalId: string): string =>
   join(conversationDir(), `${terminalId}.json`)
+
+/**
+ * One file per terminal the other way: prompts typed in Styr's input, one JSON line each, which
+ * the agent's side reads and submits as the person's own words (`promptInbox` in the conversation
+ * says it is listening). Appended only; removed with the terminal.
+ */
+const inboxDir = (): string => join(configDir(), 'usage', 'inbox')
+const promptInbox = (terminalId: string): string => join(inboxDir(), `${terminalId}.jsonl`)
+
+/** Longest prompt sent through the inbox. */
+export const MAX_PROMPT_CHARS = 100_000
+
+/** Appends a prompt for the agent in `terminalId`; false when it is not one to send. */
+export function sendPrompt(terminalId: string, text: unknown): boolean {
+  if (!/^[\w-]{1,64}$/.test(terminalId)) return false
+  if (typeof text !== 'string' || !text.trim() || text.length > MAX_PROMPT_CHARS) return false
+  appendFileSync(promptInbox(terminalId), `${JSON.stringify({ text })}\n`, { mode: 0o600 })
+  return true
+}
 
 /** The file is rewritten whole on every change; past this it is not read. */
 const MAX_CONVERSATION_BYTES = 8 * 1024 * 1024
@@ -94,6 +115,7 @@ function readContext(terminalId: string): ContextUsage | null {
 export function forgetContext(terminalId: string): void {
   rmSync(contextFile(terminalId), { force: true })
   rmSync(conversationFile(terminalId), { force: true })
+  rmSync(promptInbox(terminalId), { force: true })
 }
 
 function readClaudeUsage(): ProviderUsage | null {
@@ -153,7 +175,10 @@ export function initUsage(): void {
     readConversation(String(terminalId))
   )
   // Ids are not reused, so files from a previous run are only litter.
-  for (const dir of [contextDir(), conversationDir()]) {
+  ipcMain.handle('agent:prompt', (_event, terminalId: string, text: unknown) =>
+    sendPrompt(String(terminalId), text)
+  )
+  for (const dir of [contextDir(), conversationDir(), inboxDir()]) {
     rmSync(dir, { recursive: true, force: true })
     mkdirSync(dir, { recursive: true })
   }

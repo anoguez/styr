@@ -23,6 +23,9 @@ describe('Claude Code conversation adapter', () => {
     ).toBe('/compact keep tests')
     expect(promptText('<local-command-stdout>done</local-command-stdout>')).toBe('')
     expect(promptText('[Request interrupted by user for tool use]')).toBe('')
+    expect(
+      promptText('<pasted_content id="b573">\njust\ntesting\n</pasted_content id="b573">')
+    ).toBe('just\ntesting')
   })
 
   it('names what a tool works on', () => {

@@ -129,8 +129,16 @@ while the agent waits, and Styr's `❯` input. It is provider-agnostic end to en
   `ConversationAdapter` in `core/providers/conversation.ts` (Claude's in `claudeConversation.ts`),
   keyed by provider id like `AGENT_PROVIDER_LABELS`. Which CLI a command starts comes from
   `agentProgramProvider` (`AGENT_PROVIDER_PROGRAMS`), or the task session's provider.
-- Everything the view sends goes to the CLI's PTY as if typed: a prompt (a bracketed paste for
-  several lines) and Enter, Escape to interrupt or deny, Enter to allow. The CLI still decides
+- Prompts go through the agent's own channel when it has one: each terminal gets
+  `STYR_PROMPT_INBOX`, Styr appends `{"text"}` lines to it (`agent:prompt`), and Claude Code's mod
+  reads it (`tail -F`) and submits each with `$.prompt.submit({ asUser: true })`, so it is the
+  person's own words — typed into the TUI, a prompt of several lines is filed as pasted content.
+  The conversation's `promptInbox` says the inbox is read. `promptRoute` keeps keystrokes for no
+  inbox, a `/command` (it may open the CLI's picker) and a one-line `@path` mention (only the TUI
+  expands those). Typed prompts go as one bracketed paste and Enter as its own keystroke after
+  `AGENT_ENTER_DELAY_MS`: written together, an agent's input takes the Enter as part of a paste.
+- Everything else the view sends goes to the CLI's PTY as if typed: Escape to interrupt or deny,
+  Enter to allow. The CLI still decides
   everything; "<agent> view" shows its own TUI for menus and dialogs, and "Styr view" returns.
 - The file may carry the CLI's slash commands (`commands`; Claude's from `$.command.list()`), which
   the input offers in a menu while `/name` is typed (`commandMenu.ts`). A command may answer in the

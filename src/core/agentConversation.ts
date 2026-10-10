@@ -48,6 +48,11 @@ export interface AgentConversation {
   messages: ConversationMessage[]
   /** The slash commands the CLI offers now, in its own order; absent when its source has none. */
   commands?: AgentCommand[]
+  /**
+   * The agent's side reads prompts from the terminal's inbox (STYR_PROMPT_INBOX) and submits them
+   * as the person's own words; otherwise a prompt is typed into the CLI's TUI.
+   */
+  promptInbox?: boolean
 }
 
 /** How one CLI's tool call reads in a block: what it works on, how it went, what it changed. */
@@ -139,7 +144,8 @@ export function parseAgentConversation(source: string): AgentConversation | null
     at: text(raw.at, 64),
     working: raw.working === true,
     messages,
-    ...(commands ? { commands } : {})
+    ...(commands ? { commands } : {}),
+    ...(raw.promptInbox === true ? { promptInbox: true } : {})
   }
 }
 

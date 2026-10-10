@@ -55,7 +55,8 @@ export function AgentBlockList({
   history: string[]
   /** The CLI's slash commands, for the input's menu. */
   commands?: AgentCommand[]
-  onSubmit: (data: string) => void
+  /** A prompt (or `/command`) as typed. */
+  onSubmit: (text: string) => void
   onInterrupt: () => void
   onAllow: () => void
   onDeny: () => void
@@ -106,7 +107,6 @@ export function AgentBlockList({
           inputRef={inputRef}
           history={history}
           commands={commands}
-          bracketed
           hints={[]}
           label={`Message ${label}`}
           onSubmit={onSubmit}

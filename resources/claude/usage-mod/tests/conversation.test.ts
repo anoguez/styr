@@ -7,7 +7,7 @@ test('writes the conversation in Styr’s neutral shape when a turn completes', 
   const written: Record<string, string> = {}
   on('fs.write', async (_$, e) => {
     written[e.path] = e.text
-    return {}
+    return { value: undefined }
   })
   on('session.messages', async () => ({
     value: [

@@ -28,6 +28,12 @@ import { BlockFeed, lineAtOffset, nativeBlockLayout } from '../lib/nativeTermina
 import { BlockListStore } from '../lib/nativeTerminal/blockList.js'
 import { TerminalBlockList, type InputHint } from './TerminalBlockList.js'
 import { AgentBlockList } from './AgentBlockList.js'
+import {
+  AGENT_ENTER_DELAY_MS,
+  agentPrompt,
+  promptRoute
+} from '../lib/nativeTerminal/commandInput.js'
+import { isSlashCommand } from '../lib/nativeTerminal/commandMenu.js'
 import { agentProgramProvider } from '@core/handoff.js'
 import { agentBlocks, promptHistory, type AgentConversation } from '@core/agentConversation.js'
 import { conversationAdapter } from '@core/providers/conversation.js'
@@ -300,6 +306,28 @@ export function NativeTerminalView({
   const adapter = provider ? conversationAdapter(provider) : undefined
   const conversation = useAgentConversation(sessionId)
   const [tuiFor, setTuiFor] = useState<string | null>(null)
+  // An agent prompt's Enter goes after its paste (`agentPrompt`); dropped if the view goes first.
+  const pendingEnter = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (pendingEnter.current) clearTimeout(pendingEnter.current)
+    },
+    []
+  )
+  const sendAgentPrompt = (text: string): void => {
+    // Through the agent's own channel when it has one, so the prompt is the person's own words.
+    if (promptRoute(text, conversation?.promptInbox === true) === 'inbox') {
+      void window.api.usage.sendPrompt(sessionId, text)
+      return
+    }
+    const { paste, enter } = agentPrompt(text)
+    if (pendingEnter.current) clearTimeout(pendingEnter.current)
+    write(paste)
+    pendingEnter.current = setTimeout(() => {
+      pendingEnter.current = null
+      window.api.terminal.write(sessionId, enter)
+    }, AGENT_ENTER_DELAY_MS)
+  }
   const commandSent = useRef<{ at: string; messages: number } | null>(null)
   useEffect(() => {
     const sent = commandSent.current
@@ -511,11 +539,11 @@ export function NativeTerminalView({
           inputRef={inputRef}
           history={conversation && adapter ? promptHistory(conversation, adapter) : []}
           commands={conversation?.commands}
-          onSubmit={(data) => {
-            write(data)
+          onSubmit={(text) => {
+            sendAgentPrompt(text)
             // A command may answer in the CLI's own interface (a picker, a dialog), which only its
             // view draws: show it, and come back once the conversation moves on.
-            if (data.startsWith('/') && running && conversation) {
+            if (isSlashCommand(text) && running && conversation) {
               commandSent.current = { at: conversation.at, messages: conversation.messages.length }
               setTuiFor(running.id)
             }
