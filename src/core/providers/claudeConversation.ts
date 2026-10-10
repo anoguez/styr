@@ -21,6 +21,8 @@ function promptText(raw: string): string {
   if (command) return args ? `${command} ${args}` : command
   return (
     raw
+      // Text pasted into Claude Code's own input is filed as pasted content: show what was pasted.
+      .replace(/<pasted_content\b[^>]*>\n?([\s\S]*?)\n?<\/pasted_content\b[^>]*>/g, '$1')
       .replace(/<([a-z-]+)>[\s\S]*?<\/\1>/g, '')
       .replace(/^Caveat:.*$/gm, '')
       // Notes Claude Code adds itself when a turn is cut short.

@@ -311,6 +311,12 @@ export function NativeTerminalView({
     []
   )
   const sendAgentPrompt = (text: string): void => {
+    // Through the agent's own channel when it has one, so the prompt is the person's own words;
+    // a command stays a keystroke, as it may open the CLI's own picker.
+    if (conversation?.promptInbox && !isSlashCommand(text)) {
+      void window.api.usage.sendPrompt(sessionId, text)
+      return
+    }
     const { paste, enter } = agentPrompt(text)
     if (pendingEnter.current) clearTimeout(pendingEnter.current)
     write(paste)

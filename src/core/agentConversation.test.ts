@@ -75,6 +75,11 @@ describe('parseAgentConversation', () => {
       { name: 'review', description: 'Review a PR' }
     ])
     expect(parseAgentConversation(file(false, []))?.commands).toBeUndefined()
+    expect(parseAgentConversation(file(false, []))?.promptInbox).toBeUndefined()
+    expect(
+      parseAgentConversation(JSON.stringify({ at: '', messages: [], promptInbox: true }))
+        ?.promptInbox
+    ).toBe(true)
   })
 
   it('refuses what is not a conversation file', () => {

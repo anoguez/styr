@@ -113,6 +113,9 @@ const api = {
     /** The conversation of the agent CLI in a terminal, in Styr's neutral shape. */
     conversation: (terminalId: string): Promise<AgentConversation | null> =>
       ipcRenderer.invoke('agent:conversation', terminalId),
+    /** Hands a prompt to the agent's side, which submits it as the person's own words. */
+    sendPrompt: (terminalId: string, text: string): Promise<boolean> =>
+      ipcRenderer.invoke('agent:prompt', terminalId, text),
     onConversation: (
       handler: (update: { terminalId: string; conversation: AgentConversation }) => void
     ): (() => void) => subscribe('agent:conversation', handler as (...args: never[]) => void)
