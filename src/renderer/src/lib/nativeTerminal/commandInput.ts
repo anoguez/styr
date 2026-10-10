@@ -70,6 +70,18 @@ export function agentPrompt(text: string): { paste: string; enter: string } {
 }
 
 /**
+ * How a prompt reaches the agent: through its inbox (`promptInbox`), as the person's own words, or
+ * typed into its TUI. Typed when there is no inbox; for a command, which may open the CLI's own
+ * picker; and for one line that mentions a file (`@path`), which only the TUI expands — a prompt
+ * submitted on the person's behalf is taken literally.
+ */
+export function promptRoute(text: string, inbox: boolean): 'inbox' | 'keys' {
+  if (!inbox || /^\/[\w:.-]+(\s|$)/.test(text.trim())) return 'keys'
+  if (!text.includes('\n') && /(^|\s)@\S/.test(text)) return 'keys'
+  return 'inbox'
+}
+
+/**
  * Steps through `history` (oldest first). `index` is null while editing a new command, whose text
  * is kept in `draft` and comes back after the newest entry.
  */

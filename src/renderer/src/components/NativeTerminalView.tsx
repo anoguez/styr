@@ -28,7 +28,11 @@ import { BlockFeed, lineAtOffset, nativeBlockLayout } from '../lib/nativeTermina
 import { BlockListStore } from '../lib/nativeTerminal/blockList.js'
 import { TerminalBlockList, type InputHint } from './TerminalBlockList.js'
 import { AgentBlockList } from './AgentBlockList.js'
-import { AGENT_ENTER_DELAY_MS, agentPrompt } from '../lib/nativeTerminal/commandInput.js'
+import {
+  AGENT_ENTER_DELAY_MS,
+  agentPrompt,
+  promptRoute
+} from '../lib/nativeTerminal/commandInput.js'
 import { isSlashCommand } from '../lib/nativeTerminal/commandMenu.js'
 import { agentProgramProvider } from '@core/handoff.js'
 import { agentBlocks, promptHistory, type AgentConversation } from '@core/agentConversation.js'
@@ -311,9 +315,8 @@ export function NativeTerminalView({
     []
   )
   const sendAgentPrompt = (text: string): void => {
-    // Through the agent's own channel when it has one, so the prompt is the person's own words;
-    // a command stays a keystroke, as it may open the CLI's own picker.
-    if (conversation?.promptInbox && !isSlashCommand(text)) {
+    // Through the agent's own channel when it has one, so the prompt is the person's own words.
+    if (promptRoute(text, conversation?.promptInbox === true) === 'inbox') {
       void window.api.usage.sendPrompt(sessionId, text)
       return
     }

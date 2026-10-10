@@ -14,7 +14,7 @@ import {
   rowsText
 } from './blockList.js'
 import { ScreenModel } from './screen.js'
-import { agentPrompt, inputAction, stepHistory, submission } from './commandInput.js'
+import { agentPrompt, inputAction, promptRoute, stepHistory, submission } from './commandInput.js'
 
 const row = (index: number, text: string, wrapped = false): EngineFrameLine => ({
   row: index,
@@ -206,6 +206,17 @@ describe('command input', () => {
     })
     expect(agentPrompt('one\ntwo').paste).toBe('\x1b[200~one\rtwo\x1b[201~')
     expect(agentPrompt('/compact').paste).not.toContain('\r')
+  })
+
+  it('routes prompts through the inbox, except what only the TUI handles', () => {
+    expect(promptRoute('fix the watcher', true)).toBe('inbox')
+    expect(promptRoute('just\ntesting', true)).toBe('inbox')
+    expect(promptRoute('fix the watcher', false)).toBe('keys')
+    expect(promptRoute('/model', true)).toBe('keys')
+    expect(promptRoute('/compact keep tests', true)).toBe('keys')
+    expect(promptRoute('look at @src/app.ts', true)).toBe('keys')
+    expect(promptRoute('mail me at a@b.com', true)).toBe('inbox')
+    expect(promptRoute('look at\n@src/app.ts', true)).toBe('inbox')
   })
 
   it('steps through history and returns to the draft', () => {
