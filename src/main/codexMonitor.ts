@@ -12,6 +12,8 @@ import {
   parseCodexVersion,
   type ThreadUpdate
 } from '@core/providers/codexProtocol.js'
+import { codexConversationFromThread } from '@core/providers/codexConversation.js'
+import type { AgentConversation } from '@core/agentConversation.js'
 import { resolveShell, type TerminalShell } from '@core/platformShell.js'
 
 const run = promisify(execFile)
@@ -79,21 +81,34 @@ export async function prepareCodex(command: string, configuredShell: string): Pr
 interface Connection {
   socket: net.Socket
   send(message: unknown): void
+  request(method: string, params: unknown): Promise<unknown>
+}
+
+interface PendingApproval {
+  requestId: number | string
+  prompt: string
 }
 
 /**
- * A read-only listener on the Codex daemon. The embedded terminal runs the interactive Codex UI
- * against the same daemon (`--remote`), and the daemon broadcasts `thread/started` and
- * `thread/status/changed` for every thread to every connected client — so this connection watches
- * the agent without ever owning or steering it.
+ * A Codex app-server client. It watches the embedded Codex UI's thread and also owns Styr-originated
+ * turns and approval replies, all over the daemon's JSON-RPC WebSocket connection.
  */
 export class CodexMonitor {
   private readonly bindings = new ThreadBindings()
   private connection: Promise<Connection> | undefined
   private socketPath = ''
   private retry: NodeJS.Timeout | undefined
+  private nextRequestId = 2
+  private readonly pending = new Map<
+    number,
+    { resolve(value: unknown): void; reject(error: Error): void }
+  >()
+  private readonly approvals = new Map<string, PendingApproval>()
 
-  constructor(private readonly onUpdate: (update: ThreadUpdate) => void) {}
+  constructor(
+    private readonly onUpdate: (update: ThreadUpdate) => void,
+    private readonly onConversation: (taskId: string, value: AgentConversation) => void = () => {}
+  ) {}
 
   /** Watches the thread a fresh launch will create in `cwd`. */
   async expect(socketPath: string, taskId: string, cwd: string): Promise<void> {
@@ -105,10 +120,67 @@ export class CodexMonitor {
   async watch(socketPath: string, taskId: string, threadId: string): Promise<void> {
     await this.connect(socketPath)
     this.bindings.bind(taskId, threadId)
+    this.refreshConversation(threadId)
   }
 
   release(taskId: string): void {
+    const threadId = this.bindings.threadFor(taskId)
     this.bindings.release(taskId)
+    if (threadId) this.approvals.delete(threadId)
+  }
+
+  async submitPrompt(taskId: string, text: string): Promise<void> {
+    const threadId = this.bindings.threadFor(taskId)
+    if (!threadId) throw new Error('Codex thread is not connected to this terminal.')
+    const connection = await this.connect(this.socketPath)
+    await connection.request('turn/start', {
+      threadId,
+      input: [{ type: 'text', text: text.slice(0, 8_000) }]
+    })
+  }
+
+  async readConversation(taskId: string): Promise<AgentConversation | null> {
+    const threadId = this.bindings.threadFor(taskId)
+    if (!threadId) return null
+    const connection = await this.connect(this.socketPath)
+    const result = await connection.request('thread/read', { threadId, includeTurns: true })
+    const conversation = codexConversationFromThread(result)
+    const approval = this.approvals.get(threadId)
+    return conversation && approval
+      ? {
+          ...conversation,
+          approval: {
+            id: String(approval.requestId),
+            prompt: approval.prompt,
+            options: ['Allow', 'Deny']
+          }
+        }
+      : conversation
+  }
+
+  async answerApproval(taskId: string, approvalId: string, allow: boolean): Promise<void> {
+    const threadId = this.bindings.threadFor(taskId)
+    const approval = threadId ? this.approvals.get(threadId) : undefined
+    if (!threadId || !approval || String(approval.requestId) !== approvalId)
+      throw new Error('This Codex approval is no longer waiting for a decision.')
+    const connection = await this.connect(this.socketPath)
+    connection.send({
+      jsonrpc: '2.0',
+      id: approval.requestId,
+      result: { decision: allow ? 'accept' : 'decline' }
+    })
+    this.approvals.delete(threadId)
+    this.refreshConversation(threadId)
+  }
+
+  private refreshConversation(threadId: string): void {
+    const taskId = this.bindings.taskForThread(threadId)
+    if (!taskId) return
+    void this.readConversation(taskId)
+      .then((conversation) => {
+        if (conversation) this.onConversation(taskId, conversation)
+      })
+      .catch(() => {})
   }
 
   private connect(socketPath: string): Promise<Connection> {
@@ -140,11 +212,73 @@ export class CodexMonitor {
       const send = (message: unknown): void => {
         socket.write(encodeTextFrame(JSON.stringify(message), randomBytes(4)))
       }
+      const request = (method: string, params: unknown): Promise<unknown> => {
+        const id = this.nextRequestId++
+        return new Promise((resolveRequest, rejectRequest) => {
+          const timer = setTimeout(() => {
+            this.pending.delete(id)
+            rejectRequest(new Error(`Codex app-server request timed out: ${method}`))
+          }, 15_000)
+          this.pending.set(id, {
+            resolve: (value) => {
+              clearTimeout(timer)
+              resolveRequest(value)
+            },
+            reject: (error) => {
+              clearTimeout(timer)
+              rejectRequest(error)
+            }
+          })
+          send({ jsonrpc: '2.0', id, method, params })
+        })
+      }
       const onMessage = (text: string): void => {
-        let message: { id?: number; method?: string; params?: unknown; error?: unknown }
+        let message: {
+          id?: number | string
+          method?: string
+          params?: unknown
+          error?: unknown
+          result?: unknown
+        }
         try {
           message = JSON.parse(text)
         } catch {
+          return
+        }
+        if (message.id !== 1 && typeof message.id === 'number' && !message.method) {
+          const pending = this.pending.get(message.id)
+          if (!pending) return
+          this.pending.delete(message.id)
+          if (message.error) pending.reject(new Error('Codex app-server rejected the request.'))
+          else pending.resolve(message.result)
+          return
+        }
+        if (
+          (message.method === 'item/commandExecution/requestApproval' ||
+            message.method === 'item/fileChange/requestApproval') &&
+          (typeof message.id === 'number' || typeof message.id === 'string')
+        ) {
+          const params = message.params as
+            | { threadId?: unknown; command?: unknown; reason?: unknown; itemId?: unknown }
+            | undefined
+          if (
+            typeof params?.threadId === 'string' &&
+            this.bindings.taskForThread(params.threadId)
+          ) {
+            const detail =
+              typeof params.command === 'string'
+                ? params.command
+                : typeof params.reason === 'string'
+                  ? params.reason
+                  : 'Codex requests approval.'
+            this.approvals.set(params.threadId, {
+              requestId: message.id,
+              prompt: detail.slice(0, 2_000)
+            })
+            this.refreshConversation(params.threadId)
+          } else {
+            send({ jsonrpc: '2.0', id: message.id, result: { decision: 'decline' } })
+          }
           return
         }
         if (message.id === 1 && !message.method) {
@@ -152,7 +286,7 @@ export class CodexMonitor {
           clearTimeout(timer)
           send({ jsonrpc: '2.0', method: 'initialized', params: {} })
           settled = true
-          resolve({ socket, send })
+          resolve({ socket, send, request })
           return
         }
         const update =
@@ -162,6 +296,15 @@ export class CodexMonitor {
               ? this.bindings.onStatus(message.params)
               : undefined
         if (update) this.onUpdate(update)
+        const params = message.params as { threadId?: unknown } | undefined
+        if (
+          typeof params?.threadId === 'string' &&
+          (message.method?.startsWith('item/') ||
+            message.method?.startsWith('turn/') ||
+            message.method === 'thread/status/changed' ||
+            message.method === 'thread/started')
+        )
+          this.refreshConversation(params.threadId)
       }
 
       socket.on('error', (error) =>
@@ -169,6 +312,9 @@ export class CodexMonitor {
       )
       socket.on('close', () => {
         clearTimeout(timer)
+        for (const pending of this.pending.values())
+          pending.reject(new Error('Codex app-server connection closed.'))
+        this.pending.clear()
         fail(new Error('The Codex app-server closed the connection.'))
         this.connection = undefined
         this.scheduleReconnect()
@@ -182,6 +328,8 @@ export class CodexMonitor {
         let body: Buffer = chunk
         if (!upgraded) {
           head = Buffer.concat([head, chunk])
+          if (head.length > 16 * 1024)
+            return fail(new Error('The Codex daemon sent oversized WebSocket handshake headers.'))
           const end = head.indexOf('\r\n\r\n')
           if (end === -1) return
           if (!/^HTTP\/1\.1 101/.test(head.subarray(0, 12).toString())) {
@@ -199,7 +347,13 @@ export class CodexMonitor {
             }
           })
         }
-        for (const frame of decoder.push(body)) {
+        let frames: ReturnType<FrameDecoder['push']>
+        try {
+          frames = decoder.push(body)
+        } catch (error) {
+          return fail(error instanceof Error ? error : new Error('Invalid Codex WebSocket frame.'))
+        }
+        for (const frame of frames) {
           if (frame.opcode === 1) onMessage(frame.payload.toString('utf8'))
           else if (frame.opcode === 8) socket.end()
           else if (frame.opcode === 9) {
