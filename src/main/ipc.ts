@@ -43,7 +43,7 @@ import {
   workingTreeSummary
 } from '@core/worktree.js'
 import { taskCheckout } from '@core/taskCheckout.js'
-import { createSessionLifecycle, monitorKey } from '@core/sessionLifecycle.js'
+import { createSessionLifecycle, monitorKey, splitMonitorKey } from '@core/sessionLifecycle.js'
 import {
   buildTrayModel,
   createWorkspaceSession,
@@ -114,6 +114,7 @@ import {
   type SpawnOptions
 } from './terminal/ptyManager.js'
 import { CodexMonitor, prepareCodex } from './codexMonitor.js'
+import { publishAgentConversation } from './usage.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
 import { resolveShell } from '@core/platformShell.js'
@@ -159,7 +160,20 @@ function inOtherWorkspace<T>(workspaceId: string, work: () => T): T {
  * so the sidebar, tray and terminal dots need no Codex-specific code. The lifecycle is created
  * below; updates only arrive after the module has loaded.
  */
-const codexMonitor = new CodexMonitor((update) => lifecycle.recordCodexUpdate(update))
+const codexMonitor = new CodexMonitor(
+  (update) => lifecycle.recordCodexUpdate(update),
+  (key, conversation) => {
+    const { workspaceId, taskId } = splitMonitorKey(key)
+    const session = findSessionByTask(taskId, workspaceId)
+    if (session)
+      publishAgentConversation(
+        session.id,
+        conversation,
+        (text) => codexMonitor.submitPrompt(key, text),
+        (approvalId, allow) => codexMonitor.answerApproval(key, approvalId, allow)
+      )
+  }
+)
 
 /** Agents the user removed while live: their terminal's exit must not write a status back. */
 const removedWhileLive = new Set<string>()
