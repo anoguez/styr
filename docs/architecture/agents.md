@@ -314,7 +314,7 @@ Styr does not rely on the agent. The rules are `settleTasks` in `core/landing.ts
 `branchLanding` checks the local base and `origin/<base>` — the task's `baseBranch` when set and still present, else the automatic base; "landed" is either zero commits ahead, or
 (squash/rebase) every file changed since the merge-base identical on the base. A branch with no
 commits of its own is not landed — the reflog tells a never-moved tip from a fast-forward merge.
-Cleanup never forces the worktree removal, uses `branch -D` only after that check, deletes the remote
-branch only when its tip equals the local one, and reports refusals once (deduped against the task's own latest styr note, so a restart does not repeat it —
+Cleanup never forces the worktree removal, uses `branch -D` only after that check, never touches a remote
+(no push, no remote branch deletion — it could close an open PR), and reports refusals once (deduped against the task's own latest styr note, so a restart does not repeat it —
 the note write retriggers the watcher). `worktreePath` is cleared via `taskStore` once the worktree
 is gone. Tasks with `useWorktree: false` are skipped entirely.

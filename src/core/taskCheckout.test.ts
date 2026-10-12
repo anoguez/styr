@@ -5,6 +5,7 @@ import {
   GIT_TEST_TIMEOUT_MS,
   removeTemporaryDirectories,
   runGit,
+  temporaryDirectory,
   temporaryRepository
 } from './gitFixture.js'
 import { refsFingerprint } from './landing.js'
@@ -79,6 +80,21 @@ describe('landing and cleanup', () => {
     expect(result.worktreeRemoved).toBe(true)
     expect(existsSync(checkoutPath(open(repository, 'TASK-0052').checkout))).toBe(false)
     expect(branches(repository)).not.toContain(branch)
+  })
+
+  it('never deletes the remote branch, even when it matches the landed local one', () => {
+    const repository = temporaryRepository()
+    const remote = temporaryDirectory('styr-remote-')
+    runGit(['init', '--bare', '--quiet', remote], remote)
+    runGit(['remote', 'add', 'origin', remote], repository)
+    const branch = commitOnTask(repository, 'TASK-0057')
+    runGit(['push', '--quiet', 'origin', branch], repository)
+    runGit(['merge', '--ff-only', branch], repository)
+
+    const result = checkoutGit.cleanupLandedTask(open(repository, 'TASK-0057').checkout)
+    expect(branches(repository)).not.toContain(branch)
+    expect(runGit(['branch', '--list', branch], remote)).toContain(branch)
+    expect(result.notes.join(' ')).not.toMatch(/remote/i)
   })
 
   it('force-deletes a squash-merged branch only after the content check', () => {
