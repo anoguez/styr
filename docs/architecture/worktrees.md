@@ -24,8 +24,18 @@ the cluster, reach the last two only through `taskCheckout.ts`. The landing rule
 
 A `Checkout` is `{repoPath, key, baseBranch?}`; the worktree path and branch derive from it
 (`checkoutPath`, `branchNameFor`), so pass it instead of the loose triple. `ensureWorktree` is
-idempotent so a resume lands in the same checkout. Worktrees are created beside the repo
-(`<repo>.worktrees/<taskId>`) — inside it they would show as untracked files in the user's project.
+idempotent so a resume lands in the same checkout. `Checkout.location` (`WorktreeLocation`) says
+where: `beside` (the default, and every worktree made before the setting) is
+`<repo>.worktrees/<key>`; `inside` is `<repo>/.styr/worktrees/<key>`, so the main checkout's
+`node_modules` resolve from it. `ensureWorktree` hides `inside` worktrees with a `.gitignore` of `*`
+in that folder — without it they would show as untracked files in the user's project.
+
+The location comes from the workspace setting `worktreeLocation`, but only for a worktree yet to be
+made: `checkoutOf` first matches the task's recorded `worktreePath` against both derivable paths
+and keeps the one it was made at, so changing the setting never strands an existing worktree. A
+`worktreePath` matching neither is ignored, never used as a path — cleanup must not be pointed at an
+arbitrary directory by a hand-edited file. Callers pass the setting (`launch.ts`, `ipc.ts`'s
+`activeTaskCheckout`, `LandingPorts.worktreeLocation`).
 
 A new worktree branch starts, after a best-effort `git fetch`, from the remote tip of the branch the
 main checkout is on (its upstream, else `origin/<current>`, else `origin/<base>`) — so `main` and

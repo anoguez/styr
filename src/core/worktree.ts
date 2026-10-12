@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import {
   branchExists,
@@ -9,6 +9,7 @@ import {
   isGitRepo,
   refExists,
   baseBranchFor,
+  worktreesDir,
   type Checkout
 } from './gitExec.js'
 import { WORKTREE_BRANCH_PREFIX } from './types.js'
@@ -39,6 +40,7 @@ export function ensureWorktree(checkout: Checkout): WorktreeResult {
 
   git(['worktree', 'prune'], repoPath)
   if (existsSync(path)) return { path, branch, created: false }
+  if (checkout.location === 'inside') hideInsideWorktrees(repoPath)
 
   if (branchExists(repoPath, branch)) {
     git(['worktree', 'add', path, branch], repoPath)
@@ -47,6 +49,19 @@ export function ensureWorktree(checkout: Checkout): WorktreeResult {
   const start = startPointFor(checkout)
   git(['worktree', 'add', '-b', branch, path, start.ref], repoPath)
   return { path, branch, created: true, baseBranch: start.branch }
+}
+
+/**
+ * Worktrees inside the repository would show as untracked files in the user's checkout. A
+ * `.gitignore` of `*` in their folder ignores everything there, itself included, so the user's
+ * project needs no edit and git never sees the folder.
+ */
+function hideInsideWorktrees(repoPath: string): void {
+  const dir = worktreesDir(repoPath, 'inside')
+  const ignore = join(dir, '.gitignore')
+  if (existsSync(ignore)) return
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(ignore, '# Created by Styr: task worktrees, kept out of this repository.\n*\n')
 }
 
 /**

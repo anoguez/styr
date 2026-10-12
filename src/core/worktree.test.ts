@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   branchNameFor,
@@ -177,6 +177,31 @@ describe('worktree management', () => {
     expect(resumed).toEqual({ path: expectedPath, branch: created.branch, created: false })
     expect(isGitRepo(created.path)).toBe(true)
     expect(readGitBranch(created.path)).toBe(created.branch)
+  })
+
+  it('creates a task worktree inside the repository, hidden from its status', () => {
+    const repository = temporaryRepository()
+    const checkout: Checkout = { repoPath: repository, key: 'TASK-0044', location: 'inside' }
+
+    const created = ensureWorktree(checkout)
+
+    expect(created.path).toBe(join(repository, '.styr', 'worktrees', 'TASK-0044'))
+    expect(created.created).toBe(true)
+    expect(readGitBranch(created.path)).toBe(branchNameFor('TASK-0044'))
+    expect(runGit(['status', '--porcelain', '--untracked-files=all'], repository)).toBe('')
+    expect(ensureWorktree(checkout)).toEqual({
+      path: created.path,
+      branch: created.branch,
+      created: false
+    })
+  })
+
+  it('puts worktrees beside the repository unless told otherwise', () => {
+    const repository = temporaryRepository()
+
+    expect(checkoutPath(co(repository, 'TASK-0045'))).toBe(
+      join(dirname(repository), `${basename(repository)}.worktrees`, 'TASK-0045')
+    )
   })
 
   it('rejects a directory that is not a Git repository', () => {

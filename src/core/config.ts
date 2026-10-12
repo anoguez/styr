@@ -115,6 +115,7 @@ export function shippedSettings(): Settings {
     defaultRepoPath: '',
     shell: defaultShell(),
     openFilesWith: '',
+    worktreeLocation: 'beside',
     claudeCommand: 'claude',
     claudeApprovalMode: 'user',
     codexCommand: 'codex',

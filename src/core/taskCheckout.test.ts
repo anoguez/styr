@@ -9,7 +9,7 @@ import {
   temporaryRepository
 } from './gitFixture.js'
 import { refsFingerprint } from './landing.js'
-import { checkoutGit, taskCheckout, type TaskCheckout } from './taskCheckout.js'
+import { checkoutGit, checkoutOf, taskCheckout, type TaskCheckout } from './taskCheckout.js'
 import { DEFAULT_WORKSPACE_ID } from './types.js'
 import { checkoutPath, ensureWorktree } from './worktree.js'
 
@@ -230,6 +230,54 @@ describe('taskCheckout', () => {
     const checkout = open(repository, 'TASK-0006')
     const { path } = ensureWorktree(checkout.checkout)
     checkout.removeWorktree()
+    expect(existsSync(path)).toBe(false)
+  })
+})
+
+describe('worktree location', () => {
+  const repoPath = '/projects/app'
+  const beside = checkoutPath({ repoPath, key: 'TASK-0070', location: 'beside' })
+  const inside = checkoutPath({ repoPath, key: 'TASK-0070', location: 'inside' })
+
+  it('places a worktree yet to be made by the workspace setting', () => {
+    expect(checkoutOf(DEFAULT_WORKSPACE_ID, { id: 'TASK-0070' }, repoPath).location).toBe('beside')
+    expect(checkoutOf(DEFAULT_WORKSPACE_ID, { id: 'TASK-0070' }, repoPath, 'inside').location).toBe(
+      'inside'
+    )
+  })
+
+  it('keeps an existing worktree where it was made, whatever the setting says now', () => {
+    const task = (worktreePath: string): { id: string; worktreePath: string } => ({
+      id: 'TASK-0070',
+      worktreePath
+    })
+    expect(checkoutPath(checkoutOf(DEFAULT_WORKSPACE_ID, task(beside), repoPath, 'inside'))).toBe(
+      beside
+    )
+    expect(checkoutPath(checkoutOf(DEFAULT_WORKSPACE_ID, task(inside), repoPath, 'beside'))).toBe(
+      inside
+    )
+  })
+
+  it('never takes a recorded path it could not have made', () => {
+    const task = { id: 'TASK-0070', worktreePath: '/somewhere/else' }
+    expect(checkoutPath(checkoutOf(DEFAULT_WORKSPACE_ID, task, repoPath, 'inside'))).toBe(inside)
+  })
+
+  it('removes a worktree made inside the repository', () => {
+    const repository = temporaryRepository()
+    const made = taskCheckout(
+      DEFAULT_WORKSPACE_ID,
+      { id: 'TASK-0071', repoPath: repository },
+      'inside'
+    )
+    const { path } = ensureWorktree(made.checkout)
+    // The setting has since gone back to beside; the recorded path still finds the worktree.
+    taskCheckout(DEFAULT_WORKSPACE_ID, {
+      id: 'TASK-0071',
+      repoPath: repository,
+      worktreePath: path
+    }).removeWorktree()
     expect(existsSync(path)).toBe(false)
   })
 })

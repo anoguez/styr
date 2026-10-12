@@ -12,9 +12,16 @@ export const SECTIONS = [
     label: 'General',
     scope: 'workspace',
     blurb: 'Defaults for new tasks in this workspace. Existing tasks keep their own settings.',
-    keys: ['taskDefaults', 'doneCap', 'defaultRepoPath', 'shell', 'openFilesWith'],
+    keys: [
+      'taskDefaults',
+      'doneCap',
+      'defaultRepoPath',
+      'shell',
+      'openFilesWith',
+      'worktreeLocation'
+    ],
     words:
-      'done cap archive hide limit worktree directory shell terminal orchestrate default preferences open editor app markdown'
+      'done cap archive hide limit worktree location node_modules directory shell terminal orchestrate default preferences open editor app markdown'
   },
   {
     id: 'agents',
