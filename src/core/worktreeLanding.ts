@@ -124,7 +124,8 @@ export interface CleanupResult {
 }
 
 /**
- * Removes what a landed task left behind: its worktree, its local branch and its remote branch.
+ * Removes what a landed task left behind on this machine: its worktree and its local branch. Nothing
+ * on a remote is ever touched — a remote branch may carry an open PR, and deleting it closes the PR.
  * Nothing is forced past a check — a dirty worktree stays, and a branch whose work cannot be shown
  * to be on the base stays — and each refusal is reported rather than thrown.
  */
@@ -154,33 +155,11 @@ export function cleanupLandedTask(checkout: Checkout): CleanupResult {
   }
   if (!landing) return { worktreeRemoved: true, notes }
 
-  const remoteTip = remoteBranchTip(repoPath, branch)
-  const localTip = git(['rev-parse', branch], repoPath)
   try {
     git(['branch', '-D', branch], repoPath)
     notes.push(`Deleted local branch ${branch}.`)
   } catch (error) {
     notes.push(`Could not delete local branch ${branch}: ${firstLine(error)}`)
   }
-
-  if (remoteTip === localTip) {
-    try {
-      git(['push', 'origin', '--delete', branch], repoPath, 30_000)
-      notes.push(`Deleted remote branch origin/${branch}.`)
-    } catch (error) {
-      notes.push(`Could not delete remote branch origin/${branch}: ${firstLine(error)}`)
-    }
-  } else if (remoteTip) {
-    notes.push(`Kept remote branch origin/${branch}: it has commits that are not the local tip.`)
-  }
   return { worktreeRemoved: true, notes }
-}
-
-function remoteBranchTip(repoPath: string, branch: string): string | undefined {
-  try {
-    const line = git(['ls-remote', '--heads', 'origin', branch], repoPath, 15_000)
-    return line.split(/\s/)[0] || undefined
-  } catch {
-    return undefined
-  }
 }

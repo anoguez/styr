@@ -86,7 +86,7 @@ const REVIEW_TEMPLATE = [
   '    `gh` is installed, otherwise tell me to merge or push the branch by hand. Never assume a',
   '    host, and do not merge or push without my say-so.',
   '- Styr moves the task to done by itself once it sees the work on the base branch, then removes',
-  '  the task worktree and branches. Do not delete them yourself.'
+  '  the task worktree and local branch. Do not delete them yourself, and never delete a remote branch.'
 ].join('\n')
 
 const FOLLOWUP_TEMPLATE = [

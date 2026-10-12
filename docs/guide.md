@@ -598,8 +598,8 @@ reachable from the base, "landed" means every file the branch changed since its 
 identical on the base.
 
 Once a task is Done because its work landed, Styr removes what it left behind: the worktree
-(`git worktree remove`, never forced), the local branch `styr/<id>` and the remote branch if it still
-exists with the same tip. A worktree with uncommitted or untracked changes is left alone, and so is
+(`git worktree remove`, never forced) and the local branch `styr/<id>`. Styr never deletes anything
+on a remote: the pushed branch stays (your host may delete it when the PR merges). A worktree with uncommitted or untracked changes is left alone, and so is
 its branch; a branch whose work cannot be shown to be on the base is kept. Each outcome is noted in
 Activity, and `worktreePath` is cleared once the worktree is gone so the next launch makes a fresh
 one. Tasks without a worktree are untouched by all of this: there is no branch to compare, so the
