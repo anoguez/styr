@@ -87,6 +87,13 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   terminalTab9: ['mod+9']
 }
 
+/**
+ * Where new task worktrees are created. `beside` puts them next to the repository
+ * (`<repo>.worktrees/<key>`); `inside` puts them in `<repo>/.styr/worktrees/<key>`, so tools that
+ * walk up the tree (Node's `node_modules` lookup) find the main checkout's installed dependencies.
+ */
+export type WorktreeLocation = 'beside' | 'inside'
+
 export interface Settings {
   /** Where the app keeps its own data. Workspaces live inside it; the default one is its root. */
   storageDir: string
@@ -96,6 +103,8 @@ export interface Settings {
   shell: string
   /** App that opens files from Styr (task files, folders). Empty uses the system default. */
   openFilesWith: string
+  /** Applies to worktrees created from now on; an existing one stays where it was made. */
+  worktreeLocation: WorktreeLocation
   claudeCommand: string
   claudeApprovalMode: 'user' | 'auto'
   codexCommand: string
@@ -138,6 +147,7 @@ export const WORKSPACE_SETTING_KEYS = [
   'defaultRepoPath',
   'shell',
   'openFilesWith',
+  'worktreeLocation',
   'claudeCommand',
   'claudeApprovalMode',
   'codexCommand',

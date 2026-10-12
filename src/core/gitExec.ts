@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { MAX_PATCH_BYTES } from './diff.js'
-import { WORKTREE_BRANCH_PREFIX } from './types.js'
+import { WORKTREE_BRANCH_PREFIX, type WorktreeLocation } from './types.js'
 
 // Private to the checkout cluster: imported by worktree.ts, worktreeLanding.ts and worktreeDiff.ts only.
 
@@ -19,21 +19,30 @@ const REPOSITORY_CONTEXT_ENV = [
 
 /**
  * A task's checkout: the repository, the worktree key (`worktreeKey(workspaceId, taskId)`, not a
- * bare task id) and the base branch the task chose, if any. The worktree path and branch name
- * derive from it, so no caller can pair a key with the wrong repository or base.
+ * bare task id), the base branch the task chose, if any, and where its worktree lives. The worktree
+ * path and branch name derive from it, so no caller can pair a key with the wrong repository or base.
  */
 export interface Checkout {
   repoPath: string
   key: string
   baseBranch?: string
+  /** Unset is `beside`, where every worktree lived before the setting existed. */
+  location?: WorktreeLocation
 }
 
 /**
- * Worktrees live beside the repository rather than inside it, so they never show up as untracked
- * files and need no .gitignore entry in the user's project.
+ * The folder holding a repository's worktrees. `beside` keeps them out of the repository, so they
+ * never show up as untracked files; `inside` puts them under `.styr/worktrees`, which
+ * `ensureWorktree` hides from git with its own `.gitignore`.
  */
-export function checkoutPath({ repoPath, key }: Checkout): string {
-  return join(dirname(repoPath), `${basename(repoPath)}.worktrees`, key)
+export function worktreesDir(repoPath: string, location: WorktreeLocation = 'beside'): string {
+  return location === 'inside'
+    ? join(repoPath, '.styr', 'worktrees')
+    : join(dirname(repoPath), `${basename(repoPath)}.worktrees`)
+}
+
+export function checkoutPath({ repoPath, key, location }: Checkout): string {
+  return join(worktreesDir(repoPath, location), key)
 }
 
 export function branchNameFor(key: string): string {

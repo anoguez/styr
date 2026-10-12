@@ -177,8 +177,13 @@ checkout instead of sharing the repository:
 ~/Workspace/acme.worktrees/TASK-0004 ← this task, on branch styr/TASK-0004
 ```
 
-Worktrees sit beside the repo rather than inside it, so they never appear as untracked files and
-need no `.gitignore` entry. Resuming a task returns to the same checkout, so work in progress is
+By default worktrees sit beside the repo rather than inside it, so they never appear as untracked
+files and need no `.gitignore` entry. Set **Settings → General → Worktree location** to **Inside
+.styr/worktrees** to put them in `~/Workspace/acme/.styr/worktrees/TASK-0004` instead: anything that
+looks up the folder tree, such as Node's `node_modules` resolution, then finds the dependencies
+already installed in the main checkout, so a new worktree needs no install of its own. Styr writes a
+`.gitignore` of `*` into that folder, so git in your repo never sees it. The setting is per
+workspace and places only new worktrees; an existing one stays where it was made. Resuming a task returns to the same checkout, so work in progress is
 preserved, and the prompt tells Claude it is on a branch in a dedicated worktree and must not touch
 the main checkout.
 

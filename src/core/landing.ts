@@ -1,6 +1,6 @@
 import { branchNameFor } from './worktree.js'
 import { checkoutOf, type Checkout, type CheckoutGit } from './taskCheckout.js'
-import type { Task, TaskStatus } from './types.js'
+import type { Task, TaskStatus, WorktreeLocation } from './types.js'
 
 /** git is slow enough (~0.2s a task) that re-checking every kept worktree on each write froze the app. */
 export const LANDING_TTL_MS = 5 * 60_000
@@ -76,6 +76,8 @@ export interface LandingPorts {
   /** Lives as long as the process: it is what keeps a write from re-running git for every task. */
   cache: LandingCache
   workspaceId: string
+  /** The workspace's `worktreeLocation`, for a task whose worktree path is not recorded. */
+  worktreeLocation?: WorktreeLocation
 }
 
 export type LandingTask = Pick<
@@ -112,7 +114,7 @@ export interface LandingOutcome {
  * delete, and the work lives in the user's own checkout.
  */
 export function settleTasks(tasks: readonly LandingTask[], ports: LandingPorts): LandingOutcome {
-  const { git, cache, workspaceId } = ports
+  const { git, cache, workspaceId, worktreeLocation } = ports
   const writes: LandingWrite[] = []
   const errors: LandingError[] = []
   // One ref listing per repository per pass, not one per task.
@@ -126,7 +128,7 @@ export function settleTasks(tasks: readonly LandingTask[], ports: LandingPorts):
     const { repoPath } = task
     if (!task.useWorktree || !repoPath) continue
     if (task.status !== 'in_review' && !(task.status === 'done' && task.worktreePath)) continue
-    const checkout = checkoutOf(workspaceId, task, repoPath)
+    const checkout = checkoutOf(workspaceId, task, repoPath, worktreeLocation)
     const cacheKey = `${workspaceId}:${task.id}`
     const taskWrites: LandingWrite[] = []
     try {

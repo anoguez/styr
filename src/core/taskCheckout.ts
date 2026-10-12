@@ -1,5 +1,6 @@
+import { resolve } from 'node:path'
 import type { DiffResult, PatchResult } from './diff.js'
-import { removeWorktree, type Checkout } from './worktree.js'
+import { checkoutPath, removeWorktree, type Checkout } from './worktree.js'
 import { taskDiff, taskFilePatch } from './worktreeDiff.js'
 import {
   branchLanding,
@@ -8,25 +9,41 @@ import {
   type CleanupResult,
   type Landing
 } from './worktreeLanding.js'
-import { worktreeKey, type Task } from './types.js'
+import { worktreeKey, type Task, type WorktreeLocation } from './types.js'
 
 export type { Checkout, CleanupResult, Landing }
 
+const WORKTREE_LOCATIONS: readonly WorktreeLocation[] = ['beside', 'inside']
+
 /**
  * The one place a task becomes a `Checkout`: the key is `worktreeKey(workspaceId, task.id)`, since
- * `TASK-0001` exists in every workspace, and the task's own base branch rides along.
+ * `TASK-0001` exists in every workspace, and the task's own base branch rides along. A task whose
+ * worktree already exists keeps it where it was made, whatever the workspace setting says now;
+ * `location` (the workspace's `worktreeLocation`) places only a worktree yet to be created.
+ * `worktreePath` is matched against the derivable paths, never trusted as a path of its own.
  */
 export function checkoutOf(
   workspaceId: string,
-  task: Pick<Task, 'id' | 'baseBranch'>,
-  repoPath: string
+  task: Pick<Task, 'id' | 'baseBranch'> & Partial<Pick<Task, 'worktreePath'>>,
+  repoPath: string,
+  location: WorktreeLocation = 'beside'
 ): Checkout {
-  return { repoPath, key: worktreeKey(workspaceId, task.id), baseBranch: task.baseBranch }
+  const key = worktreeKey(workspaceId, task.id)
+  const made = WORKTREE_LOCATIONS.find(
+    (candidate) =>
+      task.worktreePath !== undefined &&
+      samePath(task.worktreePath, checkoutPath({ repoPath, key, location: candidate }))
+  )
+  return { repoPath, key, baseBranch: task.baseBranch, location: made ?? location }
+}
+
+function samePath(a: string, b: string): boolean {
+  return resolve(a) === resolve(b)
 }
 
 /** The task fields a checkout is derived from; only tasks with a repository have one. */
 export type CheckoutTask = Pick<Task, 'id' | 'baseBranch'> &
-  Partial<Pick<Task, 'useWorktree'>> & { repoPath: string }
+  Partial<Pick<Task, 'useWorktree' | 'worktreePath'>> & { repoPath: string }
 
 /**
  * A task's checkout, keyed by the task: what it changed, one file's patch, whether its branch has
@@ -45,8 +62,12 @@ export interface TaskCheckout {
   removeWorktree(): void
 }
 
-export function taskCheckout(workspaceId: string, task: CheckoutTask): TaskCheckout {
-  const checkout = checkoutOf(workspaceId, task, task.repoPath)
+export function taskCheckout(
+  workspaceId: string,
+  task: CheckoutTask,
+  location?: WorktreeLocation
+): TaskCheckout {
+  const checkout = checkoutOf(workspaceId, task, task.repoPath, location)
   const worktree = task.useWorktree !== false
   return {
     checkout,

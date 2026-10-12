@@ -13,10 +13,12 @@ const cache = new LandingCache()
  * breaks a refresh.
  */
 export function settleLandedTasks(): boolean {
+  const settings = loadSettings()
   const { writes, errors } = settleTasks(queryTasks(), {
     git: checkoutGit,
     cache,
-    workspaceId: loadSettings().activeWorkspaceId
+    workspaceId: settings.activeWorkspaceId,
+    worktreeLocation: settings.worktreeLocation
   })
   for (const { taskId, error } of errors) {
     console.warn(`landing: could not settle ${taskId}:`, error)

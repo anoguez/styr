@@ -6,6 +6,7 @@ import {
   DirectoryInput,
   Field,
   Hint,
+  Segmented,
   Select,
   Stepper,
   SwitchRow,
@@ -124,6 +125,24 @@ export function PreferencesSection({ draft, patch }: SectionProps): ReactNode {
           value={draft.defaultRepoPath}
           onChange={(defaultRepoPath) => patch({ defaultRepoPath })}
           placeholder="Storage folder"
+        />
+      </Field>
+      <Field
+        label="Worktree location"
+        hint={
+          draft.worktreeLocation === 'inside'
+            ? 'New worktrees go in <repo>/.styr/worktrees, so they reuse the repository’s installed dependencies such as node_modules. Styr adds a .gitignore there, so your project stays clean. Existing worktrees stay where they are.'
+            : 'New worktrees go in a <repo>.worktrees folder next to the repository, outside your project. Existing worktrees stay where they are.'
+        }
+      >
+        <Segmented
+          label="Worktree location"
+          value={draft.worktreeLocation}
+          onChange={(worktreeLocation) => patch({ worktreeLocation })}
+          options={[
+            { value: 'beside', label: 'Beside the repository' },
+            { value: 'inside', label: 'Inside .styr/worktrees' }
+          ]}
         />
       </Field>
       <Field
