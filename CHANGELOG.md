@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.27.0](https://github.com/anoguez/styr/compare/v0.26.0...v0.27.0) (2026-10-12)
+
+
+### Features
+
+* option to create task worktrees inside the repository ([#131](https://github.com/anoguez/styr/issues/131)) ([d3f2e2f](https://github.com/anoguez/styr/commit/d3f2e2f239d33826f53e5e91bc67e9a34cdf8797))
+
+
+### Bug Fixes
+
+* never delete remote branches when cleaning up a landed task ([#130](https://github.com/anoguez/styr/issues/130)) ([f0f0415](https://github.com/anoguez/styr/commit/f0f04153502d88f69c550c7008e465ceffbca9bb))
+* require release token for release PR CI ([#128](https://github.com/anoguez/styr/issues/128)) ([46dc2a9](https://github.com/anoguez/styr/commit/46dc2a90fdd775a670b1ccdd52493686db4da7bd))
+* send Styr Terminal agent prompts as the person's own words ([#126](https://github.com/anoguez/styr/issues/126)) ([36164a4](https://github.com/anoguez/styr/commit/36164a4fe376cc3409d45706c210947b521a7c4d))
+
+
+### Reverts
+
+* require release token for release PR CI ([#128](https://github.com/anoguez/styr/issues/128)) ([#132](https://github.com/anoguez/styr/issues/132)) ([ffc6825](https://github.com/anoguez/styr/commit/ffc6825982e10f576b0513b3d70cb38cce00ce02))
+
 ## [0.26.0](https://github.com/anoguez/styr/compare/v0.25.0...v0.26.0) (2026-10-09)
 
 
