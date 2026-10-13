@@ -26,6 +26,7 @@ const task: Task = {
   contextFiles: ['README.md'],
   promptTemplateId: 'code-review',
   provider: 'codex',
+  model: 'gpt-6.1-sol',
   agentSession: { provider: 'codex', id: 'session-42' },
   sessions: [
     { id: 'session-42', provider: 'codex', startedAt: '2026-10-01T08:00:00.000Z', label: 'Review' }
@@ -98,6 +99,28 @@ describe('task Markdown', () => {
     ])
     expect(read('task-0009')).toEqual(['TASK-0009'])
     expect(read('')).toEqual([])
+  })
+
+  it('reads a hand-written model, trimmed, with a blank one as unset', () => {
+    const read = (model: string): string | undefined =>
+      parseTaskMarkdown(
+        [
+          '---',
+          'id: TASK-0045',
+          'title: Model',
+          `model: ${model}`,
+          'createdAt: 2026-10-01T07:00:00.000Z',
+          'updatedAt: 2026-10-01T07:00:00.000Z',
+          '---',
+          ''
+        ].join('\n'),
+        '/t/TASK-0045.md'
+      ).model
+
+    expect(read('"  opus "')).toBe('opus')
+    expect(read('4')).toBe('4')
+    expect(read('""')).toBeUndefined()
+    expect(serialiseTask({ ...task, model: undefined })).not.toContain('model:')
   })
 
   it('writes no blockedBy key when there are none', () => {

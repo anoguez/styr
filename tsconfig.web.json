@@ -9,6 +9,7 @@
     "src/core/prompt.ts",
     "src/core/shell.ts",
     "src/core/agentState.ts",
+    "src/core/agentModel.ts",
     "src/core/shortcuts.ts",
     "src/core/doneCap.ts",
     "src/core/boardOrder.ts",

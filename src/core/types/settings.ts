@@ -111,6 +111,11 @@ export interface Settings {
   codexApprovalReviewer: 'user' | 'auto_review'
   enabledProviders: ('claude' | 'codex')[]
   defaultProvider: 'claude' | 'codex'
+  /**
+   * The models registered for each CLI in Settings → Agents, as that CLI names them. Templates and
+   * tasks pick from these; with none picked the CLI runs its own default.
+   */
+  agentModels: Record<'claude' | 'codex', string[]>
   providerRouting: Record<OrchestrationLane, 'claude' | 'codex'>
   defaultPromptTemplateId: string
   promptTemplates: PromptTemplate[]
@@ -154,6 +159,7 @@ export const WORKSPACE_SETTING_KEYS = [
   'codexApprovalReviewer',
   'enabledProviders',
   'defaultProvider',
+  'agentModels',
   'providerRouting',
   'defaultPromptTemplateId',
   'promptTemplates',

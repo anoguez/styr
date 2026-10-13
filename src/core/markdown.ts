@@ -47,6 +47,12 @@ export function hasFrontmatter(raw: string): boolean {
   return /^\uFEFF?---\r?\n/.test(raw)
 }
 
+/** A hand-written model: YAML reads `model: 4` as a number, and a blank one means the default. */
+function normaliseModel(value: unknown): unknown {
+  const text = typeof value === 'number' ? String(value) : value
+  return typeof text === 'string' ? text.trim() || undefined : text
+}
+
 function normaliseToken(value: unknown): unknown {
   return typeof value === 'string'
     ? value
@@ -72,6 +78,7 @@ function tolerate(data: Record<string, unknown>): Record<string, unknown> {
     if (field in out) out[field] = normaliseToken(out[field])
   }
   if ('blockedBy' in out) out.blockedBy = normaliseBlockers(out.blockedBy)
+  if ('model' in out) out.model = normaliseModel(out.model)
   for (const field of TIMESTAMP_FIELDS) {
     if (out[field] instanceof Date) out[field] = out[field].toISOString()
   }
@@ -99,6 +106,7 @@ export function serialiseTask(task: Task): string {
     ...(task.contextFiles.length > 0 ? { contextFiles: task.contextFiles } : {}),
     ...(task.promptTemplateId ? { promptTemplateId: task.promptTemplateId } : {}),
     ...(task.provider ? { provider: task.provider } : {}),
+    ...(task.model ? { model: task.model } : {}),
     ...(task.agentSession ? { agentSession: task.agentSession } : {}),
     ...(task.sessions.length > 0 ? { sessions: task.sessions } : {}),
     ...(task.externalRef ? { externalRef: task.externalRef } : {}),

@@ -12,6 +12,12 @@ export const AGENT_PROVIDER_PROGRAMS: Record<'claude' | 'codex', string> = {
   codex: 'codex'
 }
 
+/** A model name each CLI accepts, shown as an example where models are registered. */
+export const AGENT_MODEL_EXAMPLES: Record<'claude' | 'codex', string> = {
+  claude: 'opus',
+  codex: 'gpt-6.1-sol'
+}
+
 export const ORCHESTRATION_LANES = ['spec', 'implement', 'review'] as const
 export type OrchestrationLane = (typeof ORCHESTRATION_LANES)[number]
 
@@ -52,6 +58,11 @@ export interface PromptTemplate {
   id: string
   name: string
   template: string
+  /**
+   * The model this template runs with. Names are per CLI, so it applies only when the launch uses
+   * `provider`; unset leaves the CLI's default.
+   */
+  model?: { provider: 'claude' | 'codex'; name: string }
 }
 
 export interface PromptRouting {

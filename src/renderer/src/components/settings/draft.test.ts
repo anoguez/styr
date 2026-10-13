@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { PromptTemplate, Settings } from '@core/types.js'
 import {
+  modelChoices,
+  modelValue,
+  parseModelValue,
   addTemplate,
   describeUpdate,
   insertToken,
@@ -87,6 +90,39 @@ describe('templates', () => {
       text: 'Fix {{id}} now',
       caret: 10
     })
+  })
+})
+
+describe('template model choices', () => {
+  const settings = {
+    enabledProviders: ['claude' as const],
+    agentModels: { claude: ['opus', 'sonnet'], codex: ['gpt-6.1-sol'] }
+  }
+
+  it('round-trips a model through the select value, colons in the name included', () => {
+    const model = { provider: 'claude' as const, name: 'anthropic.claude:0' }
+    expect(parseModelValue(modelValue(model))).toEqual(model)
+    expect(modelValue(undefined)).toBe('')
+    expect(parseModelValue('')).toBeUndefined()
+    expect(parseModelValue('other:x')).toBeUndefined()
+  })
+
+  it('offers the registered models of enabled providers', () => {
+    expect(modelChoices(settings, undefined)).toEqual([
+      { provider: 'claude', models: ['opus', 'sonnet'] }
+    ])
+  })
+
+  it('keeps the current model listed after it is unregistered or its provider is off', () => {
+    expect(modelChoices(settings, { provider: 'claude', name: 'haiku' })[0]?.models).toEqual([
+      'opus',
+      'sonnet',
+      'haiku'
+    ])
+    expect(modelChoices(settings, { provider: 'codex', name: 'gpt-6.1-sol' })).toEqual([
+      { provider: 'claude', models: ['opus', 'sonnet'] },
+      { provider: 'codex', models: ['gpt-6.1-sol'] }
+    ])
   })
 })
 

@@ -35,6 +35,8 @@ export interface TaskForm {
   contextFiles: string[]
   promptTemplateId: string
   provider: 'claude' | 'codex'
+  /** Empty leaves the model to the prompt template, then to the CLI. */
+  model: string
   description: string
 }
 
@@ -56,6 +58,7 @@ export function toForm(task: Task | null, settings: Settings): TaskForm {
     contextFiles: task?.contextFiles ?? [],
     promptTemplateId: task?.promptTemplateId ?? '',
     provider: task?.provider ?? settings.defaultProvider,
+    model: task?.model ?? '',
     description: task?.description ?? ''
   }
 }
@@ -63,7 +66,9 @@ export function toForm(task: Task | null, settings: Settings): TaskForm {
 /** The form with a preset's values laid over it; an empty preset title keeps what was typed. */
 export function withPreset(form: TaskForm, preset: TaskPreset, settings: Settings): TaskForm {
   const fields = presetFields(preset, settings)
-  return { ...form, ...fields, title: fields.title || form.title }
+  // A model is named for one provider, so it does not survive a preset that switches provider.
+  const model = fields.provider === form.provider ? form.model : ''
+  return { ...form, ...fields, model, title: fields.title || form.title }
 }
 
 function formPresetFields(form: TaskForm): ReturnType<typeof presetFields> {
@@ -158,6 +163,7 @@ export function taskPayload(form: TaskForm) {
     contextFiles: form.contextFiles,
     promptTemplateId: form.promptTemplateId || undefined,
     provider: form.provider,
+    model: form.model.trim() || undefined,
     description: form.description
   }
 }
@@ -175,6 +181,30 @@ export function templateNames(
     ? settings.promptTemplates.find((template) => template.id === form.promptTemplateId)
     : undefined
   return { routed, effective: pinned?.name ?? routed }
+}
+
+/**
+ * The model the task would run with when its own Model is left empty: the one the prompt template
+ * Start runs names for the task's provider, or undefined for the CLI's default.
+ */
+export function inheritedModel(
+  settings: Settings,
+  form: Pick<TaskForm, 'status' | 'readiness' | 'promptTemplateId' | 'provider'>
+): string | undefined {
+  const { model } = resolveTemplateFor(settings, form)
+  return model?.provider === form.provider ? model.name.trim() || undefined : undefined
+}
+
+/**
+ * The Model dropdown's choices: the models registered for the task's provider, plus the task's own
+ * if it is no longer registered (or was written by hand), so the control shows what the file holds.
+ */
+export function modelOptions(
+  settings: Pick<Settings, 'agentModels'>,
+  form: Pick<TaskForm, 'provider' | 'model'>
+): string[] {
+  const registered = settings.agentModels[form.provider]
+  return form.model && !registered.includes(form.model) ? [...registered, form.model] : registered
 }
 
 /**

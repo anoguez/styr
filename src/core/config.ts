@@ -122,6 +122,7 @@ export function shippedSettings(): Settings {
     codexApprovalReviewer: 'user',
     enabledProviders: ['claude'],
     defaultProvider: 'claude',
+    agentModels: { claude: [], codex: [] },
     providerRouting: { spec: 'claude', implement: 'claude', review: 'claude' },
     defaultPromptTemplateId: 'implement',
     promptTemplates: [

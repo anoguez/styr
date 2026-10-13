@@ -38,6 +38,33 @@ describe('claude approval mode', () => {
   })
 })
 
+describe('claude model', () => {
+  const withModel = (model: string | undefined, resume: boolean) =>
+    claudeProvider.buildCommand({
+      settings: {
+        storageDir: workspace,
+        activeWorkspaceId: 'default',
+        claudeCommand: 'claude',
+        claudeApprovalMode: 'user'
+      } as never,
+      taskId: 'T',
+      sessionId: 'sid',
+      resume,
+      cwd: '/w',
+      model,
+      syntax: syntaxFor('posix')
+    })
+
+  it('passes no model flag when none is chosen, leaving the CLI default', () => {
+    expect(withModel(undefined, false)).not.toContain('--model')
+  })
+
+  it('passes a quoted model on fresh and resumed launches', () => {
+    expect(withModel('opus', false)).toMatch(/ --model 'opus' --session-id sid$/)
+    expect(withModel('sonnet[1m]', true)).toMatch(/ --model 'sonnet\[1m\]' --resume sid$/)
+  })
+})
+
 describe('claude fork', () => {
   it('resumes the source as a copy under the new session id', () => {
     const command = claudeProvider.buildCommand({

@@ -49,6 +49,22 @@ they started with. Whether the daemon honours the override is unverified against
 
 The MCP install command for Codex sets `STYR_MCP_AUTHOR=codex` so board notes are attributed.
 
+## Models
+
+Optional everywhere: with nothing picked, no `--model` flag is passed and the CLI runs its own
+default. Models are registered per provider in Settings → Agents (`Settings.agentModels`); a prompt
+template (`PromptTemplate.model`, `{provider, name}`) and a task (`Task.model`) pick from that list.
+`launchModel` in `core/agentModel.ts` (pure, the renderer shows the inherited one) decides:
+
+- the task's model, only while the launch uses the task's own provider — a Dispatch lane that routes
+  the task to the other CLI must not pass it a name that CLI does not know;
+- else the template's model, only when the launch sends the template and the template names the
+  launching provider. A bare resume sends no template, so only the task's model applies to it.
+
+Both CLIs take `--model` on fresh, resumed and forked launches; the name is quoted with the shell's
+syntax. Unregistering a model leaves tasks and templates that use it alone; their dropdowns keep
+listing it so the control shows what the file holds.
+
 ## CLI check before launch
 
 Every launch (`sessionLifecycle.startForTask`, and the resume path in `ipc.ts`) first runs

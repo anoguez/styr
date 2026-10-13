@@ -29,6 +29,8 @@ export interface CodexCommandInput {
   forkFrom?: string
   /** The directory the thread works in. A remote TUI does not inherit the shell's. */
   cwd: string
+  /** The model to run; undefined leaves Codex's configured default. */
+  model?: string
   prompt?: string
   /** The syntax of the shell the command is typed into. */
   syntax: ShellSyntax
@@ -41,10 +43,11 @@ export interface CodexCommandInput {
  */
 export function codexCommand(
   settings: Pick<Settings, 'codexCommand' | 'codexApprovalReviewer'>,
-  { sessionId, resume, forkFrom, cwd, prompt, syntax }: CodexCommandInput
+  { sessionId, resume, forkFrom, cwd, model, prompt, syntax }: CodexCommandInput
 ): string {
   const codex = syntax.invoke(settings.codexCommand)
-  const daemonArgs = `--remote unix:// --cd ${syntax.quote(cwd)}`
+  const modelArg = model ? ` --model ${syntax.quote(model)}` : ''
+  const daemonArgs = `--remote unix:// --cd ${syntax.quote(cwd)}${modelArg}`
   if (resume) return `${codex} resume ${daemonArgs} ${sessionId}${prompt ? ` ${prompt}` : ''}`
 
   // `--approve-for-me` brings its own workspace-write sandbox and codex rejects it alongside `--sandbox`.
@@ -64,8 +67,8 @@ export const codexProvider: AgentProvider = {
   id: 'codex',
   label: 'Codex',
   newSessionId: () => randomUUID(),
-  buildCommand({ settings, sessionId, resume, forkFrom, cwd, prompt, syntax }) {
-    return codexCommand(settings, { sessionId, resume, forkFrom, cwd, prompt, syntax })
+  buildCommand({ settings, sessionId, resume, forkFrom, cwd, model, prompt, syntax }) {
+    return codexCommand(settings, { sessionId, resume, forkFrom, cwd, model, prompt, syntax })
   },
   sessionExists: (id, root) => codexTranscript(id, root) !== undefined,
   sessionTime: (id, root) => {

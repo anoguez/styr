@@ -30,6 +30,30 @@ describe('codexCommand', () => {
     expect(command).not.toContain('--ask-for-approval')
   })
 
+  it('passes a quoted model to fresh, resumed and forked threads', () => {
+    const base = { sessionId: 'id', cwd: '/w', model: 'gpt-5-codex', syntax: syntaxFor('posix') }
+    expect(codexCommand(settings, { ...base, resume: false })).toContain(
+      `--cd '/w' --model 'gpt-5-codex' --sandbox`
+    )
+    expect(codexCommand(settings, { ...base, resume: true })).toBe(
+      `codex resume --remote unix:// --cd '/w' --model 'gpt-5-codex' id`
+    )
+    expect(codexCommand(settings, { ...base, resume: false, forkFrom: 'src' })).toContain(
+      `--model 'gpt-5-codex' --sandbox`
+    )
+  })
+
+  it('passes no model flag when none is chosen', () => {
+    expect(
+      codexCommand(settings, {
+        sessionId: 'id',
+        resume: false,
+        cwd: '/w',
+        syntax: syntaxFor('posix')
+      })
+    ).not.toContain('--model')
+  })
+
   it('quotes a working directory containing spaces and quotes', () => {
     const command = codexCommand(settings, {
       sessionId: 'id',
