@@ -34,6 +34,13 @@ The card meta row keeps the id and counters `shrink-0 whitespace-nowrap`, and le
 label truncate. The agent state dot is also `shrink-0` — colour carries the state, so it has to
 survive when the label does not.
 
+A task's `orchestrate` flag ("Dispatch can start it") is switchable from the card without opening
+the dialog: the paper-plane hover action, the context menu, and the plane in the meta row, which a
+task Dispatch may start shows (not when Done, nor while the Dispatching badge carries the same
+glyph). All three write `{ orchestrate }` through `tasks.update`; the card re-renders from the file
+like any other write. The Agents sidebar row shows the same plane, display only — the row is
+itself a button. The glyph lives in `components/dispatchMark.tsx`.
+
 ## Settings
 
 `SettingsDialog` is a nav plus one pane per section, driven by the `SECTIONS` array in

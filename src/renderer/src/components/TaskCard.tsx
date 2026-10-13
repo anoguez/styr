@@ -15,6 +15,7 @@ import type { DiffStat } from '@core/diff.js'
 import { DispatchingContext } from '../lib/dispatchRun.js'
 import { describeBlockers, useOpenBlockers } from '../lib/blockerContext.js'
 import { Chip, DiffCount, DiffStatButton } from './ui.js'
+import { DispatchGlyph, dispatchToggleTitle } from './dispatchMark.js'
 
 const PRIORITY_BAR: Record<TaskPriority, string> = {
   low: 'bg-[var(--color-pri-low)]',
@@ -97,13 +98,16 @@ export function TaskCardBody({
   agent,
   queued,
   diffStat,
-  onShowChanges
+  onShowChanges,
+  onToggleDispatch
 }: {
   task: Task
   agent?: AgentStatus
   queued?: QueuedForOrchestration
   diffStat?: DiffStat
   onShowChanges?: () => void
+  /** Flips `orchestrate`; without it the Dispatch marker is display only (the drag overlay). */
+  onToggleDispatch?: () => void
 }): ReactNode {
   const blockers = useOpenBlockers(task)
   const dispatching = useContext(DispatchingContext).has(task.id)
@@ -141,6 +145,36 @@ export function TaskCardBody({
       {task.externalRef.id}
     </a>
   ) : null
+  // Tasks Dispatch may start carry its plane; clicking it hands the task back to you. Hidden while
+  // the Dispatching badge already shows the same glyph.
+  const dispatchClass =
+    'inline-flex size-[18px] shrink-0 items-center justify-center rounded-md text-[var(--color-accent-text)]'
+  const dispatchMark =
+    !task.orchestrate || task.status === 'done' || dispatching ? null : onToggleDispatch ? (
+      <button
+        type="button"
+        title={dispatchToggleTitle(task)}
+        aria-label={dispatchToggleTitle(task)}
+        className={`${dispatchClass} -mx-1 transition-colors hover:bg-raised`}
+        {...stop}
+        onClick={(event) => {
+          event.stopPropagation()
+          onToggleDispatch()
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <DispatchGlyph />
+      </button>
+    ) : (
+      <span
+        role="img"
+        aria-label="Dispatch can start this task"
+        title="Dispatch can start this task"
+        className={`${dispatchClass} -mx-1`}
+      >
+        <DispatchGlyph />
+      </span>
+    )
   // "Needs spec" and "Chat to resume" are states too, so they share the strip with the agent.
   const state = agent ? (
     <AgentBadge agent={agent} />
@@ -204,23 +238,11 @@ export function TaskCardBody({
             title="Picked up by Dispatch"
             className="inline-flex h-[18px] shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-accent/20 px-1.5 font-medium text-[var(--color-accent-text)]"
           >
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M13.5 2.5 2.5 7l4.5 2 2 4.5z" />
-              <path d="M13.5 2.5 7 9" />
-            </svg>
+            <DispatchGlyph />
             Dispatching
           </span>
         ) : null}
+        {dispatchMark}
         {blockers.length > 0 ? (
           <span
             className="shrink-0 whitespace-nowrap font-medium text-[var(--color-col-review-text)]"
@@ -265,18 +287,22 @@ function CardAction({
   label,
   title,
   onTrigger,
-  accent = false
+  accent = false,
+  pressed
 }: {
-  label: string
+  label: ReactNode
   title: string
   onTrigger: () => void
   accent?: boolean
+  /** Set for a switch, so assistive tech reads its on/off state. */
+  pressed?: boolean
 }): ReactNode {
   return (
     <button
       type="button"
       title={title}
       aria-label={title}
+      aria-pressed={pressed}
       className={`rounded-md border px-1.5 py-[3px] text-[10.5px] font-medium backdrop-blur-sm transition-colors ${
         accent
           ? 'border-accent/40 bg-accent/15 text-[var(--color-accent-text)] hover:bg-accent/25'
@@ -320,6 +346,8 @@ export function TaskCard({
     id: task.id
   })
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const toggleDispatch = (): void =>
+    void window.api.tasks.update(task.id, { orchestrate: !task.orchestrate })
 
   return (
     <article
@@ -350,6 +378,7 @@ export function TaskCard({
         queued={queued}
         diffStat={diffStat}
         onShowChanges={() => onShowChanges(task)}
+        onToggleDispatch={toggleDispatch}
       />
       <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <CardAction label="Edit" title={`Edit ${task.id}`} onTrigger={() => onOpen(task)} />
@@ -358,6 +387,20 @@ export function TaskCard({
             label="Archive"
             title={`Archive ${task.id} — off the board, file kept`}
             onTrigger={() => onArchive(task)}
+          />
+        ) : null}
+        {task.status !== 'done' ? (
+          <CardAction
+            pressed={task.orchestrate}
+            label={
+              <span
+                className={`flex h-[13px] items-center ${task.orchestrate ? 'text-[var(--color-accent-text)]' : ''}`}
+              >
+                <DispatchGlyph off={!task.orchestrate} size={11} />
+              </span>
+            }
+            title={dispatchToggleTitle(task)}
+            onTrigger={toggleDispatch}
           />
         ) : null}
         {task.status !== 'done' ? (
@@ -384,6 +427,10 @@ export function TaskCard({
                   {
                     label: task.agentSession ? 'Resume agent' : 'Start agent',
                     run: () => onLaunch(task)
+                  },
+                  {
+                    label: task.orchestrate ? 'Only I can start it' : 'Let Dispatch start it',
+                    run: toggleDispatch
                   }
                 ]
               : []),
