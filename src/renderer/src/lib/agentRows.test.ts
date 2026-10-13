@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentStatus } from '@core/agentState.js'
 import type { Task, TaskStatus, TerminalSessionInfo } from '@core/types.js'
-import { agentRowsFor, boardSummary } from './agentRows.js'
+import { agentRowsFor, boardSummary, selectedAgentTaskId } from './agentRows.js'
 
 const task = (id: string, overrides: Partial<Task> = {}): Task =>
   ({ id, title: id, status: 'in_progress', readiness: 'ready', ...overrides }) as Task
@@ -70,5 +70,31 @@ describe('boardSummary', () => {
     expect(boardSummary(board([task('A', { status: 'backlog' })]), [])).toBe('1 task')
     const specs = [task('A', { readiness: 'needs_spec' }), task('B', { readiness: 'needs_spec' })]
     expect(boardSummary(board(specs), [])).toBe('2 tasks · 2 need a spec')
+  })
+})
+
+describe('selectedAgentTaskId', () => {
+  const session = (id: string, taskId?: string): TerminalSessionInfo =>
+    ({ id, taskId, workspaceId: 'default' }) as TerminalSessionInfo
+  const sessions = [session('s1', 'A'), session('s2', 'B'), session('s3')]
+  const rows = agentRowsFor(
+    [task('A'), task('B')],
+    new Map([
+      ['A', status('working')],
+      ['B', status('waiting')]
+    ]),
+    sessions,
+    'default'
+  )
+
+  it('selects the row owning the active tab', () => {
+    expect(selectedAgentTaskId(rows, 's1', true)).toBe('A')
+    expect(selectedAgentTaskId(rows, 's2', true)).toBe('B')
+  })
+
+  it('selects nothing for a plain shell tab, no tab, or a hidden terminal', () => {
+    expect(selectedAgentTaskId(rows, 's3', true)).toBeUndefined()
+    expect(selectedAgentTaskId(rows, null, true)).toBeUndefined()
+    expect(selectedAgentTaskId(rows, 's1', false)).toBeUndefined()
   })
 })

@@ -79,6 +79,11 @@ focused from the sidebar or the palette would otherwise be activated off-screen.
 Tab dots use `AGENT_TONE` from `renderer/src/lib/agentTone.ts`, shared with the cards and the agents
 sidebar. Active is shown by the underline, never by dot colour, so the two meanings never collide.
 
+While the terminal is showing, the agents sidebar highlights the row owning the active tab
+(`selectedAgentTaskId` in `lib/agentRows.ts`) with an accent border and tint, distinct from the
+hover style, and scrolls it into view when the selection changes — so many tabs stay matchable to
+their cards.
+
 ## Theme
 
 `Field` renders a `div`, never a `label`. A label activates the first control inside it, so a Field

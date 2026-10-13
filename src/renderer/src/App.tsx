@@ -49,7 +49,7 @@ import { useTerminalSessions } from './hooks/useTerminalSessions.js'
 import { useTheme } from './hooks/useTheme.js'
 import { useUpdates } from './hooks/useUpdates.js'
 import { useWorkspaces } from './hooks/useWorkspaces.js'
-import { agentRowsFor, boardSummary } from './lib/agentRows.js'
+import { agentRowsFor, boardSummary, selectedAgentTaskId } from './lib/agentRows.js'
 import type { Toggle } from './lib/appShell.js'
 import { TaskLookupContext } from './lib/blockerContext.js'
 import { DispatchingContext } from './lib/dispatchRun.js'
@@ -322,6 +322,7 @@ export default function App(): ReactNode {
             {agentsOpen ? (
               <AgentsSidebar
                 rows={agentRows}
+                selectedTaskId={selectedAgentTaskId(agentRows, activeSession, terminalOpen)}
                 diffStats={diffStats}
                 onShowChanges={showChanges}
                 onOpenTask={editTask}
