@@ -8,14 +8,16 @@ import {
 import { isAgentProgram } from '@core/handoff.js'
 import { syntaxFor } from '@core/shell.js'
 import { shortcutHint } from '@core/shortcuts.js'
-import type {
-  ShortcutBindings,
-  TaskStatus,
-  TerminalRuntimeState,
-  TerminalSessionInfo,
-  ThemeSettings
+import {
+  TASK_STATUS_LABELS,
+  type ShortcutBindings,
+  type TaskStatus,
+  type TerminalRuntimeState,
+  type TerminalSessionInfo,
+  type ThemeSettings
 } from '@core/types.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
+import { STATUS_DOT } from '../lib/statusTone.js'
 import { displayPath } from '../lib/terminalPath.js'
 import { onTerminalCommand, type TerminalCommand } from '../lib/terminalCommands.js'
 import {
@@ -198,6 +200,7 @@ function ContextBar({
   isAgent,
   agentState,
   subagents = 0,
+  taskStatus,
   blocksOn,
   inputHints,
   branch,
@@ -229,6 +232,8 @@ function ContextBar({
   agentState?: AgentStatus['state']
   /** Running subagents of that agent, shown after its state. */
   subagents?: number
+  /** The board column of this session's task, so it reads even with the board hidden. */
+  taskStatus?: TaskStatus
   /** Commands report themselves in blocks over the terminal, so the bar leaves them out. */
   blocksOn?: boolean
   /** The block list shows the keys beside its own input, so a new shell's bar does not repeat them. */
@@ -340,6 +345,19 @@ function ContextBar({
               <span className="font-mono text-[10.5px]">{directoryHint}</span> change directory
             </span>
           ) : null}
+        </span>
+      ) : null}
+
+      {taskStatus ? (
+        <span
+          title={`Task column: ${TASK_STATUS_LABELS[taskStatus]}`}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-edge px-1.5 py-px text-[10.5px] text-dim"
+        >
+          <span
+            aria-hidden
+            className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[taskStatus]}`}
+          />
+          {TASK_STATUS_LABELS[taskStatus]}
         </span>
       ) : null}
 
@@ -942,6 +960,7 @@ export function TerminalSurface({
           isAgent={agent}
           agentState={shownState ?? agentStatus?.state}
           subagents={runningSubagents(agentStatus)}
+          taskStatus={session.taskId ? taskStatus : undefined}
           blocksOn={blocksOn || blockList}
           inputHints={blockList}
           branch={git.branch}
