@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentStatus } from '@core/agentState.js'
 import type { OrchestrationSummary, TerminalSessionInfo } from '@core/types.js'
 import { dispatchQueue } from '../lib/boardView.js'
@@ -26,27 +26,52 @@ export function useDispatch({
   adopt: (session: TerminalSessionInfo) => void
 }) {
   const [orchestration, setOrchestration] = useState<OrchestrationSummary | null>(null)
-  /** Task ids the last Dispatch run started. */
+  /** Task ids Dispatch started in this workspace — by hand or by Auto-run. */
   const [runIds, setRunIds] = useState<string[]>([])
+  /** A manual run's launches are in flight. */
+  const [launching, setLaunching] = useState(false)
   const auto = useAutoDispatch(workspaceId)
   const { state: autoState, setOn: setAutoOn } = auto
+
+  /** The run's tasks still going, as of the last render. */
+  const activeRef = useRef<ReadonlySet<string>>(new Set())
+  /** Adds started tasks to the run, dropping the ones that have already finished. */
+  const addToRun = useCallback((ids: readonly string[]) => {
+    setRunIds((previous) => [
+      ...new Set([...previous.filter((id) => activeRef.current.has(id)), ...ids])
+    ])
+  }, [])
 
   const refresh = useCallback(() => {
     void window.api.orchestrate.plan().then(setOrchestration)
   }, [])
   useEffect(refresh, [refresh, board, sessions, agents])
-  useEffect(() => window.api.orchestrate.onAutoStarted(adopt), [adopt])
+  useEffect(
+    () =>
+      window.api.orchestrate.onAutoStarted((session) => {
+        adopt(session)
+        const { taskId } = session
+        if (taskId && (!session.workspaceId || session.workspaceId === workspaceId))
+          addToRun([taskId])
+      }),
+    [adopt, addToRun, workspaceId]
+  )
   // Task ids repeat across workspaces, so a run belongs to the workspace it started in.
   useEffect(() => setRunIds([]), [workspaceId])
 
   const run = useCallback(
     async (taskIds: string[]) => {
-      const started = await window.api.orchestrate.run(taskIds)
-      for (const entry of started) adopt(entry.session)
-      setRunIds(started.map((entry) => entry.taskId))
-      refresh()
+      setLaunching(true)
+      try {
+        const started = await window.api.orchestrate.run(taskIds)
+        for (const entry of started) adopt(entry.session)
+        addToRun(started.map((entry) => entry.taskId))
+      } finally {
+        setLaunching(false)
+        refresh()
+      }
     },
-    [adopt, refresh]
+    [adopt, addToRun, refresh]
   )
 
   /** Start the listed tasks before switching Auto-run on, so its first pass does not race them. */
@@ -62,9 +87,12 @@ export function useDispatch({
     () => dispatchingIds(runIds, agents, sessions, workspaceId),
     [runIds, agents, sessions, workspaceId]
   )
+  useEffect(() => {
+    activeRef.current = dispatching
+  }, [dispatching])
   const button = useMemo(
-    () => dispatchButton(orchestration, autoState, dispatching.size > 0),
-    [orchestration, autoState, dispatching]
+    () => dispatchButton(orchestration, autoState, launching),
+    [orchestration, autoState, launching]
   )
   const queued = useMemo(() => dispatchQueue(orchestration), [orchestration])
   const queuedPositions = useMemo(

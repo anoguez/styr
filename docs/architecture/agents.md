@@ -283,8 +283,13 @@ wired in `ipc.ts`); the rules are pure in `core/autoDispatch.ts`.
   open Settings draft cannot undo a Stop, and a new workspace's seed copy starts with it off.
 - **One button.** A workspace has at most one Auto-run, so it has no button of its own: the header's
   Dispatch button shows its state (`dispatchButton` in `lib/orchestrateHint.ts` — `auto` with the
-  running count, `paused` after the breaker, else plain Dispatch) and opens the dialog that holds the
-  switch. Stopping always asks first — inline in the dialog, `StopAutoRunDialog` from the palette.
+  running count, `dispatching` only while a manual run's launches are in flight, `paused` after the
+  breaker, else plain Dispatch) and opens the dialog that holds the switch. Stopping always asks
+  first — inline in the dialog, `StopAutoRunDialog` from the palette — and the dialog cannot be
+  confirmed while that question is open. The button is live only while Dispatch itself is acting:
+  agents it started keep running after a run or a Stop, but they are not Dispatch "running", so the
+  button never stays lit with nothing left to stop. Their cards carry the "Picked up by Dispatch"
+  chip (`dispatchingIds`, fed by manual runs and `orchestrate:autoStarted`) until the agent idles.
 - Auto-launched sessions reach the renderer through `orchestrate:autoStarted` (it adopts them like a
   manual launch). Not built: the tray item and a Settings pane control.
 
