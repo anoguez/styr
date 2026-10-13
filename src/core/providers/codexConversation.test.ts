@@ -1,40 +1,44 @@
 import { describe, expect, it } from 'vitest'
-import { agentBlocks } from '../agentConversation.js'
+import { agentBlocks, parseAgentConversation } from '../agentConversation.js'
 import { conversationAdapter } from './conversation.js'
-import { codexConversationFromThread } from './codexConversation.js'
+import { codexConversation, codexConversationFromThread } from './codexConversation.js'
+
+const thread = (items: unknown[], extra: Record<string, unknown> = {}) => ({
+  thread: { updatedAt: 1_800_000_000, status: { type: 'idle' }, turns: [{ items }], ...extra }
+})
 
 describe('codexConversationFromThread', () => {
   it('maps Codex thread items to bounded neutral messages and tool calls', () => {
-    const conversation = codexConversationFromThread({
-      thread: {
-        updatedAt: 1_800_000_000_000,
-        status: { type: 'active' },
-        turns: [
+    const conversation = codexConversationFromThread(
+      thread(
+        [
+          { id: 'u1', type: 'userMessage', content: [{ type: 'text', text: 'Fix the bug' }] },
+          { id: 'a1', type: 'agentMessage', text: 'I will inspect it.' },
           {
-            items: [
-              { id: 'u1', type: 'userMessage', content: [{ type: 'text', text: 'Fix the bug' }] },
-              { id: 'a1', type: 'agentMessage', text: 'I will inspect it.' },
-              {
-                id: 'c1',
-                type: 'commandExecution',
-                command: 'rg TODO src',
-                aggregatedOutput: 'src/a.ts: TODO',
-                status: 'completed',
-                exitCode: 0
-              },
-              {
-                id: 'f1',
-                type: 'fileChange',
-                changes: [{ path: 'src/a.ts', diff: '@@ -1 +1 @@\n-old\n+new' }]
-              }
-            ]
+            id: 'c1',
+            type: 'commandExecution',
+            command: 'rg TODO src',
+            aggregatedOutput: 'src/a.ts: TODO',
+            status: 'completed',
+            exitCode: 0
+          },
+          {
+            id: 'f1',
+            type: 'fileChange',
+            status: 'completed',
+            changes: [{ path: 'src/a.ts', diff: '@@ -1 +1 @@\n-old\n+new' }]
           }
-        ]
-      }
-    })
+        ],
+        { status: { type: 'active' } }
+      )
+    )
 
-    expect(conversation).toMatchObject({ working: true, promptInbox: true })
-    expect(conversation?.messages).toHaveLength(2)
+    expect(conversation).toMatchObject({
+      at: new Date(1_800_000_000_000).toISOString(),
+      working: true,
+      promptInbox: true
+    })
+    expect(conversation?.messages.map((message) => message.role)).toEqual(['user', 'assistant'])
     expect(conversation?.messages[1]?.toolUses).toEqual([
       { id: 'c1', tool: 'shell', input: { command: 'rg TODO src' }, text: 'src/a.ts: TODO' },
       {
@@ -44,33 +48,91 @@ describe('codexConversationFromThread', () => {
         text: ''
       }
     ])
-    const adapter = conversationAdapter('codex')!
-    expect(adapter.describeTool(conversation!.messages[1]!.toolUses[0]!)).toMatchObject({
-      summary: 'rg TODO src',
-      result: '1 line'
-    })
-    expect(agentBlocks(conversation!, 'terminal-1', adapter).at(-1)).toMatchObject({
+    expect(agentBlocks(conversation!, 'terminal-1', codexConversation).at(-1)).toMatchObject({
       kind: 'diff',
       payload: { path: 'src/a.ts', additions: 1, deletions: 1 }
     })
-    expect(
-      agentBlocks(
-        {
-          ...conversation!,
-          approval: { id: 'approval-1', prompt: 'Run this command?', options: ['Allow', 'Deny'] }
-        },
-        'terminal-1',
-        adapter
-      ).at(-1)
-    ).toMatchObject({ kind: 'approval', state: 'awaiting-input' })
   })
 
-  it('rejects malformed threads and cleans Codex prompt notes', () => {
+  it('leaves a running command unfinished and not failed, and flags a non-zero exit', () => {
+    const conversation = codexConversationFromThread(
+      thread([
+        {
+          id: 'c1',
+          type: 'commandExecution',
+          command: 'yarn test',
+          status: 'inProgress',
+          exitCode: null
+        },
+        { id: 'c2', type: 'commandExecution', command: 'false', status: 'completed', exitCode: 1 }
+      ])
+    )
+    const [running, failed] = conversation!.messages[0]!.toolUses
+    expect(running).toEqual({ id: 'c1', tool: 'shell', input: { command: 'yarn test' } })
+    expect(failed).toMatchObject({ id: 'c2', isError: true, text: '' })
+  })
+
+  it('keeps the newest messages of a long thread', () => {
+    const turns = Array.from({ length: 250 }, (_, index) => ({
+      items: [
+        { id: `u${index}`, type: 'userMessage', content: [{ type: 'text', text: `ask ${index}` }] },
+        { id: `a${index}`, type: 'agentMessage', text: `answer ${index}` }
+      ]
+    }))
+    const messages = codexConversationFromThread({ thread: { turns } })!.messages
+    expect(messages.at(-1)?.text).toBe('answer 249')
+  })
+
+  it('rejects malformed threads and skips malformed items', () => {
     expect(codexConversationFromThread({ thread: { turns: 'invalid' } })).toBeNull()
+    expect(codexConversationFromThread(null)).toBeNull()
     expect(
-      conversationAdapter('codex')?.promptText(
-        '<environment_context>cwd</environment_context>Do this'
-      )
+      codexConversationFromThread(thread([null, 'x', { type: 'commandExecution' }]))?.messages
+    ).toEqual([])
+  })
+
+  it('reads an approval through the shared parser', () => {
+    expect(
+      parseAgentConversation(
+        JSON.stringify({ at: '', messages: [], approval: { id: 7, prompt: 'Run it?' } })
+      )?.approval
+    ).toBeUndefined()
+    expect(
+      parseAgentConversation(
+        JSON.stringify({ at: '', messages: [], approval: { id: '7', prompt: 'Run it?' } })
+      )?.approval
+    ).toEqual({ id: '7', prompt: 'Run it?' })
+  })
+})
+
+describe('Codex conversation adapter', () => {
+  it('is the adapter for Codex', () => {
+    expect(conversationAdapter('codex')).toBe(codexConversation)
+  })
+
+  it('cleans the notes Codex wraps around a prompt', () => {
+    expect(
+      codexConversation.promptText('<environment_context>cwd</environment_context>Do this')
     ).toBe('Do this')
+  })
+
+  it('describes a command by its first line and its output by line count', () => {
+    expect(
+      codexConversation.describeTool({
+        id: 'c1',
+        tool: 'shell',
+        input: { command: 'rg TODO\nsrc' },
+        text: 'a\nb'
+      })
+    ).toEqual({ summary: 'rg TODO', result: '2 lines' })
+    expect(
+      codexConversation.describeTool({
+        id: 'c2',
+        tool: 'shell',
+        input: { command: 'false' },
+        text: 'boom\nmore',
+        isError: true
+      })
+    ).toEqual({ summary: 'false', result: 'boom' })
   })
 })

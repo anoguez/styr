@@ -103,7 +103,10 @@ export class CodexMonitor {
     number,
     { resolve(value: unknown): void; reject(error: Error): void }
   >()
+  /** The approval each task's thread waits on, by task key. */
   private readonly approvals = new Map<string, PendingApproval>()
+  /** Tasks whose thread is being read, and whether it changed again meanwhile. */
+  private readonly reading = new Map<string, boolean>()
 
   constructor(
     private readonly onUpdate: (update: ThreadUpdate) => void,
@@ -124,9 +127,8 @@ export class CodexMonitor {
   }
 
   release(taskId: string): void {
-    const threadId = this.bindings.threadFor(taskId)
     this.bindings.release(taskId)
-    if (threadId) this.approvals.delete(threadId)
+    this.approvals.delete(taskId)
   }
 
   async submitPrompt(taskId: string, text: string): Promise<void> {
@@ -135,7 +137,7 @@ export class CodexMonitor {
     const connection = await this.connect(this.socketPath)
     await connection.request('turn/start', {
       threadId,
-      input: [{ type: 'text', text: text.slice(0, 8_000) }]
+      input: [{ type: 'text', text }]
     })
   }
 
@@ -145,23 +147,15 @@ export class CodexMonitor {
     const connection = await this.connect(this.socketPath)
     const result = await connection.request('thread/read', { threadId, includeTurns: true })
     const conversation = codexConversationFromThread(result)
-    const approval = this.approvals.get(threadId)
+    const approval = this.approvals.get(taskId)
     return conversation && approval
-      ? {
-          ...conversation,
-          approval: {
-            id: String(approval.requestId),
-            prompt: approval.prompt,
-            options: ['Allow', 'Deny']
-          }
-        }
+      ? { ...conversation, approval: { id: String(approval.requestId), prompt: approval.prompt } }
       : conversation
   }
 
   async answerApproval(taskId: string, approvalId: string, allow: boolean): Promise<void> {
-    const threadId = this.bindings.threadFor(taskId)
-    const approval = threadId ? this.approvals.get(threadId) : undefined
-    if (!threadId || !approval || String(approval.requestId) !== approvalId)
+    const approval = this.approvals.get(taskId)
+    if (!approval || String(approval.requestId) !== approvalId)
       throw new Error('This Codex approval is no longer waiting for a decision.')
     const connection = await this.connect(this.socketPath)
     connection.send({
@@ -169,18 +163,35 @@ export class CodexMonitor {
       id: approval.requestId,
       result: { decision: allow ? 'accept' : 'decline' }
     })
-    this.approvals.delete(threadId)
-    this.refreshConversation(threadId)
+    this.approvals.delete(taskId)
+    this.refreshTask(taskId)
   }
 
   private refreshConversation(threadId: string): void {
     const taskId = this.bindings.taskForThread(threadId)
-    if (!taskId) return
+    if (taskId) this.refreshTask(taskId)
+  }
+
+  /**
+   * Re-reads a task's thread and publishes it. Notifications arrive per streamed token, so reads
+   * are coalesced: one at a time per task, and one more after it if anything changed meanwhile.
+   */
+  private refreshTask(taskId: string): void {
+    if (this.reading.has(taskId)) {
+      this.reading.set(taskId, true)
+      return
+    }
+    this.reading.set(taskId, false)
     void this.readConversation(taskId)
       .then((conversation) => {
         if (conversation) this.onConversation(taskId, conversation)
       })
       .catch(() => {})
+      .finally(() => {
+        const again = this.reading.get(taskId) === true
+        this.reading.delete(taskId)
+        if (again) this.refreshTask(taskId)
+      })
   }
 
   private connect(socketPath: string): Promise<Connection> {
@@ -261,25 +272,37 @@ export class CodexMonitor {
           const params = message.params as
             | { threadId?: unknown; command?: unknown; reason?: unknown; itemId?: unknown }
             | undefined
-          if (
-            typeof params?.threadId === 'string' &&
-            this.bindings.taskForThread(params.threadId)
-          ) {
+          // A thread Styr does not own is another client's to answer: never decline it here.
+          const taskId =
+            typeof params?.threadId === 'string'
+              ? this.bindings.taskForThread(params.threadId)
+              : undefined
+          if (taskId) {
             const detail =
-              typeof params.command === 'string'
+              typeof params?.command === 'string'
                 ? params.command
-                : typeof params.reason === 'string'
+                : typeof params?.reason === 'string'
                   ? params.reason
                   : 'Codex requests approval.'
-            this.approvals.set(params.threadId, {
-              requestId: message.id,
-              prompt: detail.slice(0, 2_000)
-            })
-            this.refreshConversation(params.threadId)
-          } else {
-            send({ jsonrpc: '2.0', id: message.id, result: { decision: 'decline' } })
+            this.approvals.set(taskId, { requestId: message.id, prompt: detail.slice(0, 2_000) })
+            this.refreshTask(taskId)
           }
           return
+        }
+        // Answered elsewhere (the Codex UI) or dropped with its turn: the approval is gone.
+        if (message.method === 'serverRequest/resolved' || message.method === 'turn/completed') {
+          const params = message.params as { threadId?: unknown; requestId?: unknown } | undefined
+          const taskId =
+            typeof params?.threadId === 'string'
+              ? this.bindings.taskForThread(params.threadId)
+              : undefined
+          const approval = taskId ? this.approvals.get(taskId) : undefined
+          if (
+            taskId &&
+            approval &&
+            (message.method === 'turn/completed' || params?.requestId === approval.requestId)
+          )
+            this.approvals.delete(taskId)
         }
         if (message.id === 1 && !message.method) {
           if (message.error) return fail(new Error('The Codex app-server rejected the handshake.'))
@@ -296,13 +319,15 @@ export class CodexMonitor {
               ? this.bindings.onStatus(message.params)
               : undefined
         if (update) this.onUpdate(update)
+        // A fresh launch's thread was just claimed: show its (empty) conversation at once.
+        if (update?.boundSessionId) this.refreshConversation(update.boundSessionId)
         const params = message.params as { threadId?: unknown } | undefined
         if (
           typeof params?.threadId === 'string' &&
           (message.method?.startsWith('item/') ||
             message.method?.startsWith('turn/') ||
             message.method === 'thread/status/changed' ||
-            message.method === 'thread/started')
+            message.method === 'serverRequest/resolved')
         )
           this.refreshConversation(params.threadId)
       }

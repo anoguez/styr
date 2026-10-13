@@ -12,7 +12,6 @@
 import type {
   AgentMessageBlock,
   AgentToolCallBlock,
-  ApprovalBlock,
   BlockState,
   DiffBlock,
   StyrBlock
@@ -54,8 +53,11 @@ export interface AgentConversation {
    * as the person's own words; otherwise a prompt is typed into the CLI's TUI.
    */
   promptInbox?: boolean
-  /** The app-server is waiting for a decision about a command or file change. */
-  approval?: { id: string; prompt: string; options: string[] }
+  /**
+   * A decision the agent waits on that Styr can answer through the agent's own channel; the view
+   * shows it as its approval. Without it a wait is answered by keys in the CLI's TUI.
+   */
+  approval?: { id: string; prompt: string }
 }
 
 /** How one CLI's tool call reads in a block: what it works on, how it went, what it changed. */
@@ -153,16 +155,10 @@ export function parseAgentConversation(source: string): AgentConversation | null
       ? {
           approval: {
             id: raw.approval.id.slice(0, 200),
-            prompt: text(raw.approval.prompt, 2_000),
-            options: Array.isArray(raw.approval.options)
-              ? raw.approval.options
-                  .slice(0, 8)
-                  .map((option) => text(option, 80))
-                  .filter(Boolean)
-              : []
+            prompt: text(raw.approval.prompt, 2_000)
           }
         }
-      : {}),
+      : {})
   }
 }
 
@@ -251,14 +247,6 @@ export function agentBlocks(
       }
     }
   })
-  if (conversation.approval) {
-    const approval: ApprovalBlock = {
-      ...envelope(conversation.approval.id, 'awaiting-input'),
-      kind: 'approval',
-      payload: { prompt: conversation.approval.prompt, options: conversation.approval.options }
-    }
-    blocks.push(approval)
-  }
   return blocks
 }
 

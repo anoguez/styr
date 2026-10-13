@@ -205,8 +205,11 @@ export function initUsage(): void {
     const submit = conversationPrompts.get(String(terminalId))
     if (submit) {
       if (typeof text !== 'string' || !text.trim() || text.length > MAX_PROMPT_CHARS) return false
-      await submit(text)
-      return true
+      // Refused (a turn already running, the daemon gone): false, so the view types it instead.
+      return submit(text).then(
+        () => true,
+        () => false
+      )
     }
     return sendPrompt(String(terminalId), text)
   })

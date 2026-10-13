@@ -35,6 +35,9 @@ function contentText(value: unknown): string {
     .slice(0, MAX_TEXT)
 }
 
+const finished = (item: Record<string, unknown>): boolean =>
+  ['completed', 'failed', 'declined', 'canceled'].includes(bounded(item.status, 40))
+
 function itemTools(item: Record<string, unknown>): ConversationToolUse[] {
   const type = bounded(item.type, 80)
   const id = bounded(item.id, 200)
@@ -42,18 +45,18 @@ function itemTools(item: Record<string, unknown>): ConversationToolUse[] {
   if (type === 'commandExecution') {
     const command = bounded(item.command, 4_000)
     const output = bounded(item.aggregatedOutput)
-    const finished = ['completed', 'failed', 'declined', 'canceled'].includes(
-      bounded(item.status, 40)
-    )
+    // A running command has a null exit code; only a finished non-zero one is a failure.
+    const failed =
+      item.status === 'failed' ||
+      item.status === 'declined' ||
+      (typeof item.exitCode === 'number' && item.exitCode !== 0)
     return [
       {
         id,
         tool: 'shell',
         input: { command },
-        ...(finished ? { text: output } : {}),
-        ...(item.status === 'failed' || (item.exitCode !== undefined && item.exitCode !== 0)
-          ? { isError: true }
-          : {})
+        ...(finished(item) ? { text: output } : {}),
+        ...(failed ? { isError: true } : {})
       }
     ]
   }
@@ -69,7 +72,8 @@ function itemTools(item: Record<string, unknown>): ConversationToolUse[] {
               id: `${id}:${index}`,
               tool: 'apply_patch',
               input: { file_path: path, patch },
-              text: ''
+              ...(finished(item) ? { text: '' } : {}),
+              ...(item.status === 'failed' || item.status === 'declined' ? { isError: true } : {})
             }
           ]
         : []
@@ -78,16 +82,14 @@ function itemTools(item: Record<string, unknown>): ConversationToolUse[] {
   if (type === 'mcpToolCall' || type === 'dynamicToolCall' || type === 'collabAgentToolCall') {
     const tool = bounded(item.tool, 200) || bounded(item.toolName, 200) || type
     const input = record(item.arguments) ?? record(item.input) ?? {}
-    const output = bounded(item.result ?? item.content)
-    const finished = ['completed', 'failed', 'declined', 'canceled'].includes(
-      bounded(item.status, 40)
-    )
+    const output =
+      contentText(item.result) || contentText(record(item.result)?.content ?? item.content)
     return [
       {
         id,
         tool,
         input,
-        ...(finished || output ? { text: output } : {}),
+        ...(finished(item) || output ? { text: output } : {}),
         ...(item.status === 'failed' ? { isError: true } : {})
       }
     ]
@@ -100,13 +102,12 @@ export function codexConversationFromThread(value: unknown): AgentConversation |
   const root = record(value)
   const thread = record(root?.thread) ?? root
   if (!thread || !Array.isArray(thread.turns)) return null
+  // Newest last: the shared parser keeps the tail, so a long thread shows its latest turns.
   const messages: ConversationMessage[] = []
-  let toolCount = 0
   for (const turnValue of thread.turns.slice(-MAX_TURNS)) {
     const turn = record(turnValue)
     if (!Array.isArray(turn?.items)) continue
-    for (const itemValue of turn.items.slice(0, MAX_ITEMS_PER_TURN)) {
-      if (messages.length >= 300 || toolCount >= 500) break
+    for (const itemValue of turn.items.slice(-MAX_ITEMS_PER_TURN)) {
       const item = record(itemValue)
       if (!item) continue
       const type = bounded(item.type, 80)
@@ -116,18 +117,12 @@ export function codexConversationFromThread(value: unknown): AgentConversation |
         if (text) messages.push({ role, text, toolUses: [] })
       }
       const tools = itemTools(item)
-      if (tools.length > 0) {
-        const previous = messages.at(-1)
-        const remaining = Math.min(
-          50 - (previous?.role === 'assistant' ? previous.toolUses.length : 0),
-          500 - toolCount
-        )
-        if (remaining <= 0) continue
-        const kept = tools.slice(0, remaining)
-        toolCount += kept.length
-        if (previous?.role === 'assistant') previous.toolUses.push(...kept)
-        else messages.push({ role: 'assistant', text: '', toolUses: kept })
-      }
+      if (tools.length === 0) continue
+      // The parser keeps 50 calls a message; past that a run of calls starts a new message.
+      const previous = messages.at(-1)
+      if (previous?.role === 'assistant' && previous.toolUses.length + tools.length <= 50)
+        previous.toolUses.push(...tools)
+      else messages.push({ role: 'assistant', text: '', toolUses: tools })
     }
   }
   const status = record(thread.status)

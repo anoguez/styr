@@ -11,9 +11,8 @@ const use = (tool: string, input: Record<string, unknown>, extra = {}) => ({
 })
 
 describe('Claude Code conversation adapter', () => {
-  it('is the adapter for Claude, and Codex has none until it has a source', () => {
+  it('is the adapter for Claude', () => {
     expect(conversationAdapter('claude')).toBe(claudeConversation)
-    expect(conversationAdapter('codex')).toBeDefined()
   })
 
   it('shows what the person typed, not Claude Code’s own notes', () => {
