@@ -34,7 +34,8 @@ import type {
   UpdateState,
   WorkspaceBoardSummary,
   WorkspaceOverview,
-  WorkspacesActivity
+  WorkspacesActivity,
+  WorklogData
 } from '../core/types.js'
 
 export interface TerminalSpawnRequest {
@@ -143,6 +144,10 @@ const api = {
     remove: (taskId: string): Promise<void> => ipcRenderer.invoke('agents:remove', taskId),
     onChanged: (handler: (statuses: AgentStatus[]) => void): (() => void) =>
       subscribe('agents:changed', handler as (...args: never[]) => void)
+  },
+  worklog: {
+    load: (from: number, to: number): Promise<WorklogData> =>
+      ipcRenderer.invoke('worklog:load', from, to)
   },
   git: {
     branches: (repoPath: string): Promise<{ branches: string[]; current?: string }> =>

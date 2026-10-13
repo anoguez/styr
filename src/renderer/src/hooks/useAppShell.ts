@@ -5,7 +5,8 @@ const VIEW_KEY = 'styr:view'
 
 function savedView(): View {
   try {
-    return localStorage.getItem(VIEW_KEY) === 'inbox' ? 'inbox' : 'board'
+    const saved = localStorage.getItem(VIEW_KEY)
+    return saved === 'inbox' || saved === 'worklog' ? saved : 'board'
   } catch {
     return 'board'
   }

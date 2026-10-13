@@ -22,6 +22,7 @@ import { AppHeader, BrandMark } from './components/header/AppHeader.js'
 import { DispatchButton } from './components/header/DispatchButton.js'
 import { ViewTabs } from './components/header/ViewTabs.js'
 import { Inbox } from './components/Inbox.js'
+import { Worklog } from './components/worklog/Worklog.js'
 import { OrchestrateDialog, StopAutoRunDialog } from './components/OrchestrateDialog.js'
 import { PerformanceDialog } from './components/PerformanceDialog.js'
 import { ProblemsBanner } from './components/ProblemsBanner.js'
@@ -90,7 +91,10 @@ export default function App(): ReactNode {
   const update = useUpdates()
 
   const [shell, dispatch] = useAppShell(activeWorkspaceId)
-  const { view, agentsOpen, taskDialog, changes: changesTask, removingAgent } = shell
+  const { agentsOpen, taskDialog, changes: changesTask, removingAgent } = shell
+  // The Worklog is experimental: with it off, a remembered Worklog view shows the board.
+  const worklogOn = settings?.experimental.worklog ?? false
+  const view = shell.view === 'worklog' && !worklogOn ? 'board' : shell.view
   const taskOpen = taskDialog.mode !== 'closed'
   const terminals = useTerminalSessions()
   const { sessions, activeSession, terminalOpen, adopt: adoptSession } = terminals
@@ -208,6 +212,7 @@ export default function App(): ReactNode {
                 <ViewTabs
                   view={view}
                   needsYou={needsYou}
+                  worklog={worklogOn}
                   bindings={bindings}
                   onChange={(next) => dispatch({ type: 'setView', view: next })}
                 />
@@ -234,6 +239,21 @@ export default function App(): ReactNode {
               >
                 {loading ? (
                   <p className="p-6 text-dim">Loading board…</p>
+                ) : view === 'worklog' ? (
+                  <Worklog
+                    timesheet={settings.timesheet}
+                    bindings={bindings}
+                    tasks={allTasks}
+                    onTimesheetChange={(timesheet) =>
+                      void save({
+                        workspaceId: settings.activeWorkspaceId,
+                        workspace: workspaceSettingsFor(settings),
+                        global: { ...globalSettingsFor(settings), timesheet }
+                      })
+                    }
+                    onOpenSettings={() => openSettings('worklog')}
+                    onSuggest={(title, prompt) => void launcher.suggestWorklog(title, prompt)}
+                  />
                 ) : view === 'inbox' ? (
                   <Inbox
                     tasks={tasks}

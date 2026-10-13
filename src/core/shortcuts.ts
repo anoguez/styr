@@ -1,4 +1,4 @@
-import type { ShortcutBindings, ShortcutCommand } from './types.js'
+import type { ExperimentalSettings, ShortcutBindings, ShortcutCommand } from './types.js'
 import { SHORTCUT_COMMANDS } from './types.js'
 
 /**
@@ -11,6 +11,19 @@ export interface ShortcutKeyEvent {
   altKey: boolean
   ctrlKey: boolean
   metaKey: boolean
+}
+
+/** Commands that belong to an experimental feature: they do nothing, and are not listed, while it is off. */
+const SHORTCUT_FLAGS: Partial<Record<ShortcutCommand, keyof ExperimentalSettings>> = {
+  viewWorklog: 'worklog'
+}
+
+export function commandEnabled(
+  command: ShortcutCommand,
+  experimental: ExperimentalSettings | undefined
+): boolean {
+  const flag = SHORTCUT_FLAGS[command]
+  return !flag || experimental?.[flag] === true
 }
 
 const MODIFIER_KEYS = new Set(['Shift', 'Alt', 'Control', 'Meta'])
@@ -29,6 +42,7 @@ export const SHORTCUT_LABELS: Record<ShortcutCommand, string> = {
   commandPalette: 'Command palette',
   viewBoard: 'Show the board',
   viewInbox: 'Show the inbox',
+  viewWorklog: 'Show the worklog',
   settings: 'Open Settings',
   toggleTerminal: 'Toggle the terminal panel',
   toggleAgents: 'Toggle the agents sidebar',
@@ -71,6 +85,7 @@ export const SHORTCUT_SCOPES: Record<ShortcutCommand, ShortcutScope> = {
   commandPalette: 'window',
   viewBoard: 'window',
   viewInbox: 'window',
+  viewWorklog: 'window',
   settings: 'window',
   toggleTerminal: 'window',
   toggleAgents: 'window',

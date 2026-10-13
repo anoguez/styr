@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   ANSI_COLOURS,
   DEFAULT_DONE_CAP,
+  DEFAULT_TIMESHEET,
   DEFAULT_SHORTCUTS,
   DEFAULT_TERMINAL_PALETTE,
   MAX_TASK_PRESETS,
@@ -228,12 +229,27 @@ export const settingsSchema = z.object({
   updates: z
     .object({ checkAutomatically: z.boolean().default(true) })
     .default({ checkAutomatically: true }),
+  timesheet: z
+    .object({
+      hoursPerDay: z.number().min(0.5).max(24).default(DEFAULT_TIMESHEET.hoursPerDay),
+      workingDays: z.array(z.boolean()).length(7).default(DEFAULT_TIMESHEET.workingDays),
+      weekStart: z.enum(['mon', 'sun']).default(DEFAULT_TIMESHEET.weekStart),
+      period: z.enum(['day', 'week', 'month']).default(DEFAULT_TIMESHEET.period),
+      groupBy: z.enum(['task', 'project']).default(DEFAULT_TIMESHEET.groupBy),
+      roundMinutes: z
+        .union([z.literal(0), z.literal(15), z.literal(30)])
+        .default(DEFAULT_TIMESHEET.roundMinutes),
+      copyFormat: z.enum(['tsv', 'csv']).default(DEFAULT_TIMESHEET.copyFormat),
+      suggestPrompt: z.string().default('')
+    })
+    .default(DEFAULT_TIMESHEET),
   experimental: z
     .object({
       externalSources: z.boolean().default(false),
-      nativeTerminal: z.boolean().default(false)
+      nativeTerminal: z.boolean().default(false),
+      worklog: z.boolean().default(false)
     })
-    .default({ externalSources: false, nativeTerminal: false }),
+    .default({ externalSources: false, nativeTerminal: false, worklog: false }),
   taskDefaults: z
     .object({ orchestrate: z.boolean().default(true), useWorktree: z.boolean().default(false) })
     .default({ orchestrate: true, useWorktree: false }),
@@ -262,6 +278,7 @@ const GLOBAL_KEY_MASK = {
   storageDir: true,
   activeWorkspaceId: true,
   updates: true,
+  timesheet: true,
   shortcuts: true,
   experimental: true
 } as const satisfies Record<GlobalSettingKey, true>
@@ -275,4 +292,28 @@ export const settingsChangeSchema = z.object({
   workspaceId: workspaceIdSchema,
   workspace: workspaceSettingsSchema,
   global: globalSettingsSchema
+})
+
+const dayKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-10-13')
+const worklogHoursSchema = z.number().min(0).max(24)
+
+/** One entry of Suggest hours, as the agent submits it. */
+export const worklogSuggestionSchema = z.object({
+  day: dayKeySchema,
+  taskId: z.string().min(1).max(64),
+  hours: worklogHoursSchema,
+  note: z.string().max(500).optional()
+})
+
+/** A `<workspace>/worklog/<day>.json` file. Written by Styr, but checked like any file on disk. */
+export const worklogDaySchema = z.object({
+  day: dayKeySchema,
+  generatedAt: z.string(),
+  entries: z.array(
+    z.object({
+      taskId: z.string().min(1).max(64),
+      hours: worklogHoursSchema,
+      note: z.string().max(500).optional()
+    })
+  )
 })

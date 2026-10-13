@@ -15,6 +15,8 @@
     "src/core/boardOrder.ts",
     "src/core/boardCounts.ts",
     "src/core/inbox.ts",
+    "src/core/worklog.ts",
+    "src/core/worklogPrompt.ts",
     "src/core/blocking.ts",
     "src/core/diff.ts",
     "src/core/usage.ts",

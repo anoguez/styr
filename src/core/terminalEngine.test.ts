@@ -150,6 +150,6 @@ describe('the experimental setting', () => {
   it('is off by default and in an old config file', () => {
     expect(shippedSettings().experimental.nativeTerminal).toBe(false)
     const parsed = settingsSchema.shape.experimental.parse({ externalSources: true })
-    expect(parsed).toEqual({ externalSources: true, nativeTerminal: false })
+    expect(parsed).toEqual({ externalSources: true, nativeTerminal: false, worklog: false })
   })
 })

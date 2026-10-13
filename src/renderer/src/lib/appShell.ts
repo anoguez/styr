@@ -4,7 +4,7 @@ import type { SectionId } from '../components/settings/sections.js'
 import type { PaletteMode } from './paletteMode.js'
 import { isTerminalCommand, type TerminalCommand } from './terminalCommands.js'
 
-export type View = 'board' | 'inbox'
+export type View = 'board' | 'inbox' | 'worklog'
 
 /** The New task / edit dialog: a new task may start from a preset picked in the palette. */
 export type TaskDialogState =
@@ -153,6 +153,8 @@ export function runShortcutCommand(command: ShortcutCommand, port: CommandPort):
       return dispatch({ type: 'setView', view: 'board' })
     case 'viewInbox':
       return dispatch({ type: 'setView', view: 'inbox' })
+    case 'viewWorklog':
+      return dispatch({ type: 'setView', view: 'worklog' })
     case 'settings':
       return dispatch({ type: 'openSettings' })
     case 'toggleTerminal':

@@ -26,6 +26,12 @@ export function ExperimentalSection({ draft, patch }: SectionProps): ReactNode {
             patch({ experimental: { ...draft.experimental, externalSources } })
           }
         />
+        <SwitchRow
+          label="Worklog"
+          hint="Hours per task per day, from agent sessions, notes and commits, ready to copy into a timesheet. Adds a Worklog tab to the header and a Worklog page to Settings."
+          checked={draft.experimental.worklog}
+          onChange={(worklog) => patch({ experimental: { ...draft.experimental, worklog } })}
+        />
         {offerTerminal ? (
           <SwitchRow
             label="Styr Terminal"

@@ -23,16 +23,16 @@ Electron + React kanban board. See README.md for what it does and how to run it.
 This file holds only the rules that apply everywhere plus the traps most likely to bite. Per-area
 notes are in `docs/architecture/` — read the one for the area you are changing before editing it.
 
-| Area                                                                                                     | File                                   |
-| -------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| Workspaces, per-workspace settings, `pinWorkspace`, settings store                                       | `docs/architecture/workspaces.md`      |
-| Git worktrees, base branch, landing                                                                      | `docs/architecture/worktrees.md`       |
-| Agent providers, Codex, launch, agent state, Orchestrate, Auto-run, prompt routing, "Done means landed"  | `docs/architecture/agents.md`          |
-| Menu bar, board, Settings dialog, terminal tabs/blocks/keys, theme, shortcuts, palette, inbox, title bar | `docs/architecture/ui.md`              |
-| Task dependencies, hand-edited files, Ask agent, presets, done cap/archive, diagnostics                  | `docs/architecture/tasks.md`           |
-| External sources (GitHub Issues, experimental)                                                           | `docs/architecture/sources.md`         |
-| Updater and release pipeline                                                                             | `docs/architecture/releases.md`        |
-| Terminal engines: xterm.js and experimental Styr Terminal, fallback, native package, release access      | `docs/architecture/terminal-engine.md` |
+| Area                                                                                                              | File                                   |
+| ----------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Workspaces, per-workspace settings, `pinWorkspace`, settings store                                                | `docs/architecture/workspaces.md`      |
+| Git worktrees, base branch, landing                                                                               | `docs/architecture/worktrees.md`       |
+| Agent providers, Codex, launch, agent state, Orchestrate, Auto-run, prompt routing, "Done means landed"           | `docs/architecture/agents.md`          |
+| Menu bar, board, Settings dialog, terminal tabs/blocks/keys, theme, shortcuts, palette, inbox, worklog, title bar | `docs/architecture/ui.md`              |
+| Task dependencies, hand-edited files, Ask agent, presets, done cap/archive, diagnostics                           | `docs/architecture/tasks.md`           |
+| External sources (GitHub Issues, experimental)                                                                    | `docs/architecture/sources.md`         |
+| Updater and release pipeline                                                                                      | `docs/architecture/releases.md`        |
+| Terminal engines: xterm.js and experimental Styr Terminal, fallback, native package, release access               | `docs/architecture/terminal-engine.md` |
 
 Keep this file under 300 lines. A new subsystem note goes in the matching file above, not here;
 add a line here only for a rule that must hold in every change.
@@ -60,8 +60,8 @@ add a line here only for a rule that must hold in every change.
 - **Agent state.** `core/agentState.ts` is pure (renderer imports it); `agentStore.ts` is node-only.
   `idle` is never "finished"; `SessionStart` is `ready`, never `working`. Archived/Done agents drop
   out of every list and count via `isAgentArchived` — derive counts from the filtered rows.
-- **Derived, not stored.** Blocked (`openBlockers`), the Inbox grouping and the Done cap compute from
-  files and write nothing. Archive goes only through `setArchived`, not `TaskPatch`.
+- **Derived, not stored.** Blocked (`openBlockers`), the Inbox grouping, the Worklog's hours and the
+  Done cap compute from files and write nothing. Archive goes only through `setArchived`, not `TaskPatch`.
 - **Hand-edited task files.** Normalise in `markdown.ts`, never in zod schemas. A file with
   frontmatter that fails validation is skipped and never rewritten. Unparseable activity bullets
   must round-trip.

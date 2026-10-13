@@ -99,6 +99,15 @@ export const SECTIONS = [
     words: 'board'
   },
   {
+    id: 'worklog',
+    label: 'Worklog',
+    scope: 'app',
+    blurb: 'Your working hours. The Worklog uses them to show what is left to log.',
+    keys: ['timesheet'],
+    flag: 'worklog',
+    words: 'hours worklog timesheet week day target logging rounding export prompt suggest agent'
+  },
+  {
     id: 'storage',
     label: 'Storage',
     scope: 'app',
