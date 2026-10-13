@@ -42,7 +42,7 @@ a board you can see, and in plain files you can read.
   agents in one folder share it.
 - **Worklog.** A third view (`⌃3`) turns each task's trail — agent transcripts, activity notes and
   branch commits — into hours per task per day, against the working hours set in Settings →
-  Timesheet, and copies the result straight into a spreadsheet or a CSV.
+  Worklog, and copies the result straight into a spreadsheet or a CSV.
 - **Chats you can resume.** Each task remembers its conversations, whichever agent ran them, and
   resumes each through its own CLI. Close the app, come back tomorrow, and pick up where the agent
   left off.

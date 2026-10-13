@@ -99,8 +99,8 @@ export const SECTIONS = [
     words: 'board'
   },
   {
-    id: 'timesheet',
-    label: 'Timesheet',
+    id: 'worklog',
+    label: 'Worklog',
     scope: 'app',
     blurb: 'Your working hours. The Worklog uses them to show what is left to log.',
     keys: ['timesheet'],

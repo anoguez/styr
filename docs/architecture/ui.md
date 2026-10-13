@@ -331,7 +331,7 @@ palette.
 ## Worklog
 
 The third view (`components/worklog/`) shows how long each task was worked on, per day, against
-`Settings.timesheet` (an app-wide key, edited in Settings → Timesheet and in the view's own
+`Settings.timesheet` (an app-wide key, edited in Settings → Worklog and in the view's own
 popover). Nothing about it is stored — hours are derived on each load, like the Inbox:
 
 - `core/worklogSources.ts` (node) collects each task's signals: the `"timestamp"` of every record in

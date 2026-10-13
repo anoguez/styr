@@ -31,7 +31,7 @@ function SettingRow({
   )
 }
 
-export function TimesheetSection({ draft, patch }: SectionProps): ReactNode {
+export function WorklogSection({ draft, patch }: SectionProps): ReactNode {
   const timesheet = draft.timesheet
   const set = (changes: Partial<TimesheetSettings>): void =>
     patch({ timesheet: { ...timesheet, ...changes } })
@@ -71,7 +71,7 @@ export function TimesheetSection({ draft, patch }: SectionProps): ReactNode {
         </Card>
       </div>
       <div className="flex flex-col gap-2.5">
-        <span className="text-[12px] font-semibold text-dim">Worklog</span>
+        <span className="text-[12px] font-semibold text-dim">View</span>
         <Card>
           <SettingRow label="Week starts on" hint="First column of the weekly timesheet.">
             <Segmented

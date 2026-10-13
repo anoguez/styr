@@ -31,7 +31,7 @@ import { RoutingSection } from './settings/RoutingSection.js'
 import { ShortcutsSection } from './settings/ShortcutsSection.js'
 import { StorageSection } from './settings/StorageSection.js'
 import { TemplatesSection } from './settings/TemplatesSection.js'
-import { TimesheetSection } from './settings/TimesheetSection.js'
+import { WorklogSection } from './settings/WorklogSection.js'
 import { ThemeSection } from './settings/ThemeSection.js'
 import { UpdatesSection } from './settings/UpdatesSection.js'
 
@@ -304,7 +304,7 @@ export function SettingsDialog({
 
               {section === 'storage' ? <StorageSection draft={draft} patch={patch} /> : null}
 
-              {section === 'timesheet' ? <TimesheetSection draft={draft} patch={patch} /> : null}
+              {section === 'worklog' ? <WorklogSection draft={draft} patch={patch} /> : null}
 
               {section === 'routing' ? <RoutingSection draft={draft} patch={patch} /> : null}
 

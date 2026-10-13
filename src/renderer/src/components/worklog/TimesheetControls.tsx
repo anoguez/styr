@@ -12,7 +12,7 @@ export function weeklyTargetLabel(timesheet: TimesheetSettings): string {
   return `${formatHours(timesheet.hoursPerDay * days)}h`
 }
 
-/** Hours per day, in half-hour steps. Shared by Settings → Timesheet and the Worklog popover. */
+/** Hours per day, in half-hour steps. Shared by Settings → Worklog and the Worklog popover. */
 export function HoursPerDayStepper({
   timesheet,
   onChange,

@@ -121,7 +121,7 @@ function summaryCards(worklog: WorklogModel, hoursPerDay: number): SummaryCard[]
   ]
 }
 
-/** The quick timesheet settings behind the header button; the rest live in Settings. */
+/** The quick Worklog settings behind the header button; the rest live in Settings. */
 function TimesheetPopover({
   timesheet,
   bindings,
@@ -136,11 +136,11 @@ function TimesheetPopover({
   return (
     <div
       role="dialog"
-      aria-label="Timesheet settings"
+      aria-label="Worklog settings"
       className="absolute top-full right-0 z-40 mt-1.5 flex w-[280px] flex-col rounded-xl border border-edge-strong bg-chrome shadow-[0_16px_40px_-8px_rgba(0,0,0,0.7)]"
     >
       <div className="flex items-baseline gap-2 px-3 pt-3 pb-2.5">
-        <span className="text-[12.5px] font-semibold text-ink">Timesheet</span>
+        <span className="text-[12.5px] font-semibold text-ink">Working hours</span>
         <span className="ml-auto font-mono text-[11.5px] text-dim">
           {weeklyTargetLabel(timesheet)} / week
         </span>
@@ -168,7 +168,7 @@ function TimesheetPopover({
         onClick={onOpenSettings}
         className="flex items-center justify-between rounded-b-xl border-t border-edge px-3 py-2.5 text-left text-[12px] text-dim hover:bg-raised hover:text-ink"
       >
-        All timesheet settings
+        All worklog settings
         <kbd className="font-mono text-[10px] text-faint">{shortcutHint(bindings, 'settings')}</kbd>
       </button>
     </div>
@@ -312,7 +312,7 @@ export function Worklog({
           <div ref={popover} className="relative">
             <button
               type="button"
-              title="Timesheet settings"
+              title="Worklog settings"
               aria-haspopup="dialog"
               aria-expanded={popoverOpen}
               onClick={() => setPopoverOpen((open) => !open)}

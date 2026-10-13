@@ -247,7 +247,7 @@ export default function App(): ReactNode {
                         global: { ...globalSettingsFor(settings), timesheet }
                       })
                     }
-                    onOpenSettings={() => openSettings('timesheet')}
+                    onOpenSettings={() => openSettings('worklog')}
                   />
                 ) : view === 'inbox' ? (
                   <Inbox
