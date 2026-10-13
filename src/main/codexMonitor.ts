@@ -7,11 +7,14 @@ import {
   FrameDecoder,
   MIN_CODEX_VERSION,
   ThreadBindings,
+  codexApproval,
   encodeTextFrame,
   isSupportedCodexVersion,
   parseCodexVersion,
   type ThreadUpdate
 } from '@core/providers/codexProtocol.js'
+import { codexConversationFromThread } from '@core/providers/codexConversation.js'
+import type { AgentConversation } from '@core/agentConversation.js'
 import { resolveShell, type TerminalShell } from '@core/platformShell.js'
 
 const run = promisify(execFile)
@@ -79,21 +82,38 @@ export async function prepareCodex(command: string, configuredShell: string): Pr
 interface Connection {
   socket: net.Socket
   send(message: unknown): void
+  request(method: string, params: unknown): Promise<unknown>
+}
+
+interface PendingApproval {
+  requestId: number | string
+  prompt: string
+  reply(allow: boolean): unknown
 }
 
 /**
- * A read-only listener on the Codex daemon. The embedded terminal runs the interactive Codex UI
- * against the same daemon (`--remote`), and the daemon broadcasts `thread/started` and
- * `thread/status/changed` for every thread to every connected client — so this connection watches
- * the agent without ever owning or steering it.
+ * A Codex app-server client. It watches the embedded Codex UI's thread and also owns Styr-originated
+ * turns and approval replies, all over the daemon's JSON-RPC WebSocket connection.
  */
 export class CodexMonitor {
   private readonly bindings = new ThreadBindings()
   private connection: Promise<Connection> | undefined
   private socketPath = ''
   private retry: NodeJS.Timeout | undefined
+  private nextRequestId = 2
+  private readonly pending = new Map<
+    number,
+    { resolve(value: unknown): void; reject(error: Error): void }
+  >()
+  /** The approval each task's thread waits on, by task key. */
+  private readonly approvals = new Map<string, PendingApproval>()
+  /** Tasks whose thread is being read, and whether it changed again meanwhile. */
+  private readonly reading = new Map<string, boolean>()
 
-  constructor(private readonly onUpdate: (update: ThreadUpdate) => void) {}
+  constructor(
+    private readonly onUpdate: (update: ThreadUpdate) => void,
+    private readonly onConversation: (taskId: string, value: AgentConversation) => void = () => {}
+  ) {}
 
   /** Watches the thread a fresh launch will create in `cwd`. */
   async expect(socketPath: string, taskId: string, cwd: string): Promise<void> {
@@ -105,10 +125,75 @@ export class CodexMonitor {
   async watch(socketPath: string, taskId: string, threadId: string): Promise<void> {
     await this.connect(socketPath)
     this.bindings.bind(taskId, threadId)
+    this.refreshConversation(threadId)
   }
 
   release(taskId: string): void {
     this.bindings.release(taskId)
+    this.approvals.delete(taskId)
+  }
+
+  async submitPrompt(taskId: string, text: string): Promise<void> {
+    const threadId = this.bindings.threadFor(taskId)
+    if (!threadId) throw new Error('Codex thread is not connected to this terminal.')
+    const connection = await this.connect(this.socketPath)
+    await connection.request('turn/start', {
+      threadId,
+      input: [{ type: 'text', text }]
+    })
+  }
+
+  async readConversation(taskId: string): Promise<AgentConversation | null> {
+    const threadId = this.bindings.threadFor(taskId)
+    if (!threadId) return null
+    const connection = await this.connect(this.socketPath)
+    const result = await connection.request('thread/read', { threadId, includeTurns: true })
+    const conversation = codexConversationFromThread(result)
+    const approval = this.approvals.get(taskId)
+    return conversation && approval
+      ? { ...conversation, approval: { id: String(approval.requestId), prompt: approval.prompt } }
+      : conversation
+  }
+
+  async answerApproval(taskId: string, approvalId: string, allow: boolean): Promise<void> {
+    const approval = this.approvals.get(taskId)
+    if (!approval || String(approval.requestId) !== approvalId)
+      throw new Error('This Codex approval is no longer waiting for a decision.')
+    const connection = await this.connect(this.socketPath)
+    connection.send({
+      jsonrpc: '2.0',
+      id: approval.requestId,
+      result: approval.reply(allow)
+    })
+    this.approvals.delete(taskId)
+    this.refreshTask(taskId)
+  }
+
+  private refreshConversation(threadId: string): void {
+    const taskId = this.bindings.taskForThread(threadId)
+    if (taskId) this.refreshTask(taskId)
+  }
+
+  /**
+   * Re-reads a task's thread and publishes it. Notifications arrive per streamed token, so reads
+   * are coalesced: one at a time per task, and one more after it if anything changed meanwhile.
+   */
+  private refreshTask(taskId: string): void {
+    if (this.reading.has(taskId)) {
+      this.reading.set(taskId, true)
+      return
+    }
+    this.reading.set(taskId, false)
+    void this.readConversation(taskId)
+      .then((conversation) => {
+        if (conversation) this.onConversation(taskId, conversation)
+      })
+      .catch(() => {})
+      .finally(() => {
+        const again = this.reading.get(taskId) === true
+        this.reading.delete(taskId)
+        if (again) this.refreshTask(taskId)
+      })
   }
 
   private connect(socketPath: string): Promise<Connection> {
@@ -140,19 +225,82 @@ export class CodexMonitor {
       const send = (message: unknown): void => {
         socket.write(encodeTextFrame(JSON.stringify(message), randomBytes(4)))
       }
+      const request = (method: string, params: unknown): Promise<unknown> => {
+        const id = this.nextRequestId++
+        return new Promise((resolveRequest, rejectRequest) => {
+          const timer = setTimeout(() => {
+            this.pending.delete(id)
+            rejectRequest(new Error(`Codex app-server request timed out: ${method}`))
+          }, 15_000)
+          this.pending.set(id, {
+            resolve: (value) => {
+              clearTimeout(timer)
+              resolveRequest(value)
+            },
+            reject: (error) => {
+              clearTimeout(timer)
+              rejectRequest(error)
+            }
+          })
+          send({ jsonrpc: '2.0', id, method, params })
+        })
+      }
       const onMessage = (text: string): void => {
-        let message: { id?: number; method?: string; params?: unknown; error?: unknown }
+        let message: {
+          id?: number | string
+          method?: string
+          params?: unknown
+          error?: unknown
+          result?: unknown
+        }
         try {
           message = JSON.parse(text)
         } catch {
           return
+        }
+        if (message.id !== 1 && typeof message.id === 'number' && !message.method) {
+          const pending = this.pending.get(message.id)
+          if (!pending) return
+          this.pending.delete(message.id)
+          if (message.error) pending.reject(new Error('Codex app-server rejected the request.'))
+          else pending.resolve(message.result)
+          return
+        }
+        const approval = codexApproval(message.method, message.params)
+        if (approval && (typeof message.id === 'number' || typeof message.id === 'string')) {
+          // A thread Styr does not own is another client's to answer: never decline it here.
+          const taskId = this.bindings.taskForThread(approval.threadId)
+          if (taskId) {
+            this.approvals.set(taskId, {
+              requestId: message.id,
+              prompt: approval.prompt,
+              reply: approval.reply
+            })
+            this.refreshTask(taskId)
+          }
+          return
+        }
+        // Answered elsewhere (the Codex UI) or dropped with its turn: the approval is gone.
+        if (message.method === 'serverRequest/resolved' || message.method === 'turn/completed') {
+          const params = message.params as { threadId?: unknown; requestId?: unknown } | undefined
+          const taskId =
+            typeof params?.threadId === 'string'
+              ? this.bindings.taskForThread(params.threadId)
+              : undefined
+          const approval = taskId ? this.approvals.get(taskId) : undefined
+          if (
+            taskId &&
+            approval &&
+            (message.method === 'turn/completed' || params?.requestId === approval.requestId)
+          )
+            this.approvals.delete(taskId)
         }
         if (message.id === 1 && !message.method) {
           if (message.error) return fail(new Error('The Codex app-server rejected the handshake.'))
           clearTimeout(timer)
           send({ jsonrpc: '2.0', method: 'initialized', params: {} })
           settled = true
-          resolve({ socket, send })
+          resolve({ socket, send, request })
           return
         }
         const update =
@@ -162,6 +310,17 @@ export class CodexMonitor {
               ? this.bindings.onStatus(message.params)
               : undefined
         if (update) this.onUpdate(update)
+        // A fresh launch's thread was just claimed: show its (empty) conversation at once.
+        if (update?.boundSessionId) this.refreshConversation(update.boundSessionId)
+        const params = message.params as { threadId?: unknown } | undefined
+        if (
+          typeof params?.threadId === 'string' &&
+          (message.method?.startsWith('item/') ||
+            message.method?.startsWith('turn/') ||
+            message.method === 'thread/status/changed' ||
+            message.method === 'serverRequest/resolved')
+        )
+          this.refreshConversation(params.threadId)
       }
 
       socket.on('error', (error) =>
@@ -169,6 +328,9 @@ export class CodexMonitor {
       )
       socket.on('close', () => {
         clearTimeout(timer)
+        for (const pending of this.pending.values())
+          pending.reject(new Error('Codex app-server connection closed.'))
+        this.pending.clear()
         fail(new Error('The Codex app-server closed the connection.'))
         this.connection = undefined
         this.scheduleReconnect()
@@ -182,6 +344,8 @@ export class CodexMonitor {
         let body: Buffer = chunk
         if (!upgraded) {
           head = Buffer.concat([head, chunk])
+          if (head.length > 16 * 1024)
+            return fail(new Error('The Codex daemon sent oversized WebSocket handshake headers.'))
           const end = head.indexOf('\r\n\r\n')
           if (end === -1) return
           if (!/^HTTP\/1\.1 101/.test(head.subarray(0, 12).toString())) {
@@ -199,7 +363,13 @@ export class CodexMonitor {
             }
           })
         }
-        for (const frame of decoder.push(body)) {
+        let frames: ReturnType<FrameDecoder['push']>
+        try {
+          frames = decoder.push(body)
+        } catch (error) {
+          return fail(error instanceof Error ? error : new Error('Invalid Codex WebSocket frame.'))
+        }
+        for (const frame of frames) {
           if (frame.opcode === 1) onMessage(frame.payload.toString('utf8'))
           else if (frame.opcode === 8) socket.end()
           else if (frame.opcode === 9) {

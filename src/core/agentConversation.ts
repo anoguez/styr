@@ -53,6 +53,11 @@ export interface AgentConversation {
    * as the person's own words; otherwise a prompt is typed into the CLI's TUI.
    */
   promptInbox?: boolean
+  /**
+   * A decision the agent waits on that Styr can answer through the agent's own channel; the view
+   * shows it as its approval. Without it a wait is answered by keys in the CLI's TUI.
+   */
+  approval?: { id: string; prompt: string }
 }
 
 /** How one CLI's tool call reads in a block: what it works on, how it went, what it changed. */
@@ -145,7 +150,15 @@ export function parseAgentConversation(source: string): AgentConversation | null
     working: raw.working === true,
     messages,
     ...(commands ? { commands } : {}),
-    ...(raw.promptInbox === true ? { promptInbox: true } : {})
+    ...(raw.promptInbox === true ? { promptInbox: true } : {}),
+    ...(isRecord(raw.approval) && typeof raw.approval.id === 'string'
+      ? {
+          approval: {
+            id: raw.approval.id.slice(0, 200),
+            prompt: text(raw.approval.prompt, 2_000)
+          }
+        }
+      : {})
   }
 }
 

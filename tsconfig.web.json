@@ -29,7 +29,8 @@
     "src/core/agentConversation.ts",
     "src/core/providers/types.ts",
     "src/core/providers/conversation.ts",
-    "src/core/providers/claudeConversation.ts"
+    "src/core/providers/claudeConversation.ts",
+    "src/core/providers/codexConversation.ts"
   ],
   "compilerOptions": {
     "composite": true,

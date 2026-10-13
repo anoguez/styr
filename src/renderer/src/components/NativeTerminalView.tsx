@@ -317,9 +317,15 @@ export function NativeTerminalView({
   const sendAgentPrompt = (text: string): void => {
     // Through the agent's own channel when it has one, so the prompt is the person's own words.
     if (promptRoute(text, conversation?.promptInbox === true) === 'inbox') {
-      void window.api.usage.sendPrompt(sessionId, text)
+      void window.api.usage.sendPrompt(sessionId, text).then((sent) => {
+        if (!sent) typeAgentPrompt(text)
+      })
       return
     }
+    typeAgentPrompt(text)
+  }
+  /** Types a prompt into the CLI's own input, for a CLI without a channel or when it refused. */
+  const typeAgentPrompt = (text: string): void => {
     const { paste, enter } = agentPrompt(text)
     if (pendingEnter.current) clearTimeout(pendingEnter.current)
     write(paste)
@@ -533,7 +539,7 @@ export function NativeTerminalView({
           blocks={agentBlockList}
           working={conversation?.working ?? false}
           label={AGENT_PROVIDER_LABELS[provider]}
-          waiting={agentWaiting ?? null}
+          waiting={conversation?.approval?.prompt ?? agentWaiting ?? null}
           look={{ palette, lineHeight: cell.height }}
           font={font}
           inputRef={inputRef}
@@ -549,8 +555,18 @@ export function NativeTerminalView({
             }
           }}
           onInterrupt={() => window.api.terminal.write(sessionId, '\x1b')}
-          onAllow={() => window.api.terminal.write(sessionId, '\r')}
-          onDeny={() => window.api.terminal.write(sessionId, '\x1b')}
+          onAllow={() => {
+            if (conversation?.approval)
+              // Already answered in the CLI's own view when this fails: nothing left to do.
+              window.api.usage.approval(sessionId, conversation.approval.id, true).catch(() => {})
+            else window.api.terminal.write(sessionId, '\r')
+          }}
+          onDeny={() => {
+            if (conversation?.approval)
+              // Already answered in the CLI's own view when this fails: nothing left to do.
+              window.api.usage.approval(sessionId, conversation.approval.id, false).catch(() => {})
+            else window.api.terminal.write(sessionId, '\x1b')
+          }}
           onShowTui={() => setTuiFor(running?.id ?? null)}
         />
       ) : null}
