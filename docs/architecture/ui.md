@@ -267,6 +267,8 @@ character, so ANSI, TUIs, selection and scrollback are untouched. The pipeline, 
 
 Not blocks: agent sessions (a task session, or a shell running `claude`/`codex` — one long command)
 and the alternate screen. `TerminalSurface` skips both; the bar reports agent state instead.
+A task session's bar also shows the task's board column (`TASK_STATUS_LABELS`, dotted with
+`STATUS_DOT` from `lib/statusTone.ts`) beside the agent state, so it reads with the board hidden.
 
 ### Shell integration
 

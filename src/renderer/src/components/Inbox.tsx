@@ -9,8 +9,9 @@ import {
   type InboxGroup,
   type InboxItem
 } from '@core/inbox.js'
-import type { Task, TaskPriority, TaskStatus } from '@core/types.js'
+import { TASK_STATUS_LABELS, type Task, type TaskPriority, type TaskStatus } from '@core/types.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
+import { STATUS_DOT } from '../lib/statusTone.js'
 import { timeAgo } from '../lib/timeAgo.js'
 import { Button, Chip, DiffStatButton } from './ui.js'
 
@@ -26,20 +27,6 @@ const PRIORITY_BAR: Record<TaskPriority, string> = {
   medium: 'bg-[var(--color-pri-medium)]',
   high: 'bg-[var(--color-pri-high)]',
   urgent: 'bg-[var(--color-pri-urgent)]'
-}
-
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  backlog: 'Backlog',
-  in_progress: 'In Progress',
-  in_review: 'In Review',
-  done: 'Done'
-}
-
-const STATUS_DOT: Record<TaskStatus, string> = {
-  backlog: 'bg-[var(--color-col-backlog)]',
-  in_progress: 'bg-[var(--color-col-progress)]',
-  in_review: 'bg-[var(--color-col-review)]',
-  done: 'bg-[var(--color-col-done)]'
 }
 
 function itemDot(item: InboxItem): string {
@@ -239,7 +226,7 @@ function Row({
           <span>{task.id}</span>
           <span className="inline-flex items-center gap-1 font-sans">
             <span aria-hidden className={`size-[5px] rounded-full ${STATUS_DOT[task.status]}`} />
-            {STATUS_LABELS[task.status]}
+            {TASK_STATUS_LABELS[task.status]}
           </span>
         </span>
       </span>
@@ -259,7 +246,7 @@ function Detail({
   const { task, agent } = item
   const { primary, secondary } = actionsFor(item, diffStat !== undefined, handlers)
   const facts: { key: string; value: string; mono?: boolean }[] = [
-    { key: 'Column', value: STATUS_LABELS[task.status] },
+    { key: 'Column', value: TASK_STATUS_LABELS[task.status] },
     { key: 'Priority', value: task.priority[0]!.toUpperCase() + task.priority.slice(1) },
     ...(agent?.branch ? [{ key: 'Branch', value: agent.branch, mono: true }] : []),
     ...(task.contextFiles.length > 0
@@ -279,7 +266,7 @@ function Detail({
           <span className="font-mono text-[10.5px] text-faint">{task.id}</span>
           <span className="inline-flex items-center gap-[5px]">
             <span aria-hidden className={`size-[6px] rounded-full ${STATUS_DOT[task.status]}`} />
-            {STATUS_LABELS[task.status]}
+            {TASK_STATUS_LABELS[task.status]}
           </span>
           <span className="inline-flex items-center gap-[5px]">
             <span aria-hidden className={`h-3 w-[3px] rounded-sm ${PRIORITY_BAR[task.priority]}`} />
