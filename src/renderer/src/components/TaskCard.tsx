@@ -15,6 +15,7 @@ import type { DiffStat } from '@core/diff.js'
 import { DispatchingContext } from '../lib/dispatchRun.js'
 import { describeBlockers, useOpenBlockers } from '../lib/blockerContext.js'
 import { Chip, DiffCount, DiffStatButton } from './ui.js'
+import { DispatchGlyph, dispatchToggleTitle } from './dispatchMark.js'
 
 const PRIORITY_BAR: Record<TaskPriority, string> = {
   low: 'bg-[var(--color-pri-low)]',
@@ -64,34 +65,6 @@ function RefIcon({ name }: { name: keyof typeof ICON_PATHS }): ReactNode {
   )
 }
 
-/** Dispatch's paper plane; struck through when Dispatch may not start the task. */
-function DispatchGlyph({ off = false, size = 10 }: { off?: boolean; size?: number }): ReactNode {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M13.5 2.5 2.5 7l4.5 2 2 4.5z" />
-      <path d="M13.5 2.5 7 9" />
-      {off ? <path d="M2 2l12 12" /> : null}
-    </svg>
-  )
-}
-
-/** Hover and menu wording for the per-task Dispatch switch. */
-function dispatchToggleTitle(task: Task): string {
-  return task.orchestrate
-    ? `Dispatch can start ${task.id} — click so only you can start it`
-    : `Only you can start ${task.id} — click to let Dispatch start it`
-}
-
 function Dot({ pulse = false }: { pulse?: boolean }): ReactNode {
   return (
     <span
@@ -133,7 +106,7 @@ export function TaskCardBody({
   queued?: QueuedForOrchestration
   diffStat?: DiffStat
   onShowChanges?: () => void
-  /** Flips `orchestrate`; without it the opted-out marker is display only (the drag overlay). */
+  /** Flips `orchestrate`; without it the Dispatch marker is display only (the drag overlay). */
   onToggleDispatch?: () => void
 }): ReactNode {
   const blockers = useOpenBlockers(task)
@@ -172,16 +145,17 @@ export function TaskCardBody({
       {task.externalRef.id}
     </a>
   ) : null
-  // Opted-out tasks say so on the card, since Dispatch silently passes them by otherwise.
-  const optedOutClass =
-    'inline-flex size-[18px] shrink-0 items-center justify-center rounded-md text-faint'
-  const optedOut =
-    task.orchestrate || task.status === 'done' ? null : onToggleDispatch ? (
+  // Tasks Dispatch may start carry its plane; clicking it hands the task back to you. Hidden while
+  // the Dispatching badge already shows the same glyph.
+  const dispatchClass =
+    'inline-flex size-[18px] shrink-0 items-center justify-center rounded-md text-[var(--color-accent-text)]'
+  const dispatchMark =
+    !task.orchestrate || task.status === 'done' || dispatching ? null : onToggleDispatch ? (
       <button
         type="button"
         title={dispatchToggleTitle(task)}
         aria-label={dispatchToggleTitle(task)}
-        className={`${optedOutClass} -mx-1 transition-colors hover:bg-raised hover:text-dim`}
+        className={`${dispatchClass} -mx-1 transition-colors hover:bg-raised`}
         {...stop}
         onClick={(event) => {
           event.stopPropagation()
@@ -189,16 +163,16 @@ export function TaskCardBody({
         }}
         onDoubleClick={(event) => event.stopPropagation()}
       >
-        <DispatchGlyph off />
+        <DispatchGlyph />
       </button>
     ) : (
       <span
         role="img"
-        aria-label="Only you can start this task"
-        title="Only you can start this task"
-        className={`${optedOutClass} -mx-1`}
+        aria-label="Dispatch can start this task"
+        title="Dispatch can start this task"
+        className={`${dispatchClass} -mx-1`}
       >
-        <DispatchGlyph off />
+        <DispatchGlyph />
       </span>
     )
   // "Needs spec" and "Chat to resume" are states too, so they share the strip with the agent.
@@ -268,7 +242,7 @@ export function TaskCardBody({
             Dispatching
           </span>
         ) : null}
-        {optedOut}
+        {dispatchMark}
         {blockers.length > 0 ? (
           <span
             className="shrink-0 whitespace-nowrap font-medium text-[var(--color-col-review-text)]"

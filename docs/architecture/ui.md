@@ -35,9 +35,11 @@ label truncate. The agent state dot is also `shrink-0` — colour carries the st
 survive when the label does not.
 
 A task's `orchestrate` flag ("Dispatch can start it") is switchable from the card without opening
-the dialog: the paper-plane hover action, the context menu, and the struck-through plane in the meta
-row, which only an opted-out task that is not Done shows. All three write `{ orchestrate }` through
-`tasks.update`; the card re-renders from the file like any other write.
+the dialog: the paper-plane hover action, the context menu, and the plane in the meta row, which a
+task Dispatch may start shows (not when Done, nor while the Dispatching badge carries the same
+glyph). All three write `{ orchestrate }` through `tasks.update`; the card re-renders from the file
+like any other write. The Agents sidebar row shows the same plane, display only — the row is
+itself a button. The glyph lives in `components/dispatchMark.tsx`.
 
 ## Settings
 

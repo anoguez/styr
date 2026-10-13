@@ -7,6 +7,7 @@ import type { Task } from '@core/types.js'
 import type { DiffStat } from '@core/diff.js'
 import { Button, DiffStatButton } from './ui.js'
 import { SubagentRows } from './SubagentRows.js'
+import { DispatchGlyph } from './dispatchMark.js'
 
 function BranchGlyph(): ReactNode {
   return (
@@ -96,7 +97,19 @@ function AgentRowItem({
 
         <SubagentRows subagents={agent?.subagents ?? []} />
 
-        <span className="font-mono text-[10px] text-faint">{task.id}</span>
+        <span className="flex items-center gap-1.5 font-mono text-[10px] text-faint">
+          {task.id}
+          {task.orchestrate && task.status !== 'done' ? (
+            <span
+              role="img"
+              aria-label="Dispatch can start this task"
+              title="Dispatch can start this task"
+              className="text-[var(--color-accent-text)]"
+            >
+              <DispatchGlyph />
+            </span>
+          ) : null}
+        </span>
 
         {agent?.branch ? (
           <span
