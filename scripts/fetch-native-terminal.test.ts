@@ -1,17 +1,19 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 // @ts-expect-error: a plain .mjs build script with no declarations.
 import * as fetchScript from './fetch-native-terminal.mjs'
 
-const { checkManifest, checkPackage, integrityOf, pinned, sha256Of } = fetchScript as {
-  checkManifest: (manifest: unknown, lock: Lock) => string
-  checkPackage: (directory: string, lock: Lock, binary: Binary) => void
-  integrityOf: (buffer: Buffer) => string
-  pinned: (lock: Partial<Lock> | null, target: string) => Record<string, unknown>
-  sha256Of: (buffer: Buffer) => string
-}
+const { checkManifest, checkPackage, integrityOf, keepOnlyBinary, pinned, sha256Of } =
+  fetchScript as {
+    checkManifest: (manifest: unknown, lock: Lock) => string
+    checkPackage: (directory: string, lock: Lock, binary: Binary) => void
+    integrityOf: (buffer: Buffer) => string
+    keepOnlyBinary: (directory: string, binary: Binary) => string[]
+    pinned: (lock: Partial<Lock> | null, target: string) => Record<string, unknown>
+    sha256Of: (buffer: Buffer) => string
+  }
 
 interface Binary {
   file: string
@@ -109,5 +111,23 @@ describe('fetch-native-terminal', () => {
     expect(() => checkPackage(directory!, lock, binary)).toThrow(
       'expected @anoguez/styr-terminal@0.1.0'
     )
+  })
+  it('keeps only the pinned binary, and the rest of the package', () => {
+    directory = mkdtempSync(join(tmpdir(), 'styr-fetch-'))
+    const binary = lock.binaries['darwin-arm64']!
+    const kept = ['index.js', 'index.d.ts', 'package.json', 'LICENSE', 'THIRD_PARTY_NOTICES.md']
+    for (const file of [
+      ...kept,
+      binary.file,
+      'styr-terminal.linux-x64-gnu.node',
+      'styr-terminal.win32-x64-msvc.node'
+    ])
+      writeFileSync(join(directory, file), file)
+    expect(keepOnlyBinary(directory, binary).sort()).toEqual([
+      'styr-terminal.linux-x64-gnu.node',
+      'styr-terminal.win32-x64-msvc.node'
+    ])
+    expect(readdirSync(directory).sort()).toEqual([...kept, binary.file].sort())
+    expect(keepOnlyBinary(directory, binary)).toEqual([])
   })
 })

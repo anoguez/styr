@@ -205,10 +205,11 @@ only once their artifacts load in Styr's Electron.
   Authorization header to the pinned registry — no `.npmrc`, no logging.
 - `native-terminal.lock.json` pins the version, the npm tarball integrity and each binary's SHA-256.
   The script checks the registry record, the tarball, the unpacked package's name and version, and
-  the binary before vendoring it into `resources/native/styr-terminal`. Nothing pinned, or no token,
-  skips it; a mismatch fails the release. electron-builder copies the directory to
-  `Contents/Resources/native` (outside the asar) and signs the `.node` with the app; the verify step
-  checks that signature.
+  the binary before vendoring it into `resources/native/styr-terminal`, dropping every other target's
+  `.node` (the package's `index.js` picks the binary by platform, so the rest is dead weight).
+  Nothing pinned, or no token, skips it; a mismatch fails the release. electron-builder copies the
+  directory to `Contents/Resources/native` (outside the asar) and signs the `.node` with the app; the
+  verify step checks that there is exactly one and that it is signed.
 - To ship a new engine version: merge styr-terminal's release PR (release-please publishes it), then
   update the lock file with the version, the tarball's integrity (`sha512-` of the release's `.tgz`,
   which is what npm records) and the `SHA256SUMS` entry for each target. Run
