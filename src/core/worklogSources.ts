@@ -4,7 +4,7 @@
  * by `workIntervals`. Read on demand and never stored. Node-only; the pure part is `worklog.ts`.
  */
 import { readFileSync, statSync } from 'node:fs'
-import { baseBranchFor, branchExists, branchNameFor, git } from './gitExec.js'
+import { baseBranchFor, branchExists, branchNameFor, git, refExists } from './gitExec.js'
 import { providerById } from './providers/index.js'
 import type { AgentProviderId } from './providers/types.js'
 import { checkoutOf } from './taskCheckout.js'
@@ -98,8 +98,12 @@ export function diskWorklogSources(
         if (!branchExists(repoPath, branch)) return []
         if (!bases.has(repoPath)) bases.set(repoPath, baseBranchFor(repoPath))
         const base = checkout.baseBranch ?? bases.get(repoPath)
+        // The task's own commits only: local base can be stale, so the remote's counts as landed too.
+        const landed = base
+          ? [base, `origin/${base}`].filter((ref) => ref !== branch && refExists(repoPath, ref))
+          : []
         const args = ['log', '--format=%at', `--since=@${Math.floor(since / 1000)}`, branch]
-        const out = git(base && base !== branch ? [...args, '--not', base] : args, repoPath)
+        const out = git(landed.length ? [...args, '--not', ...landed] : args, repoPath)
         return out
           .split('\n')
           .filter(Boolean)
