@@ -201,7 +201,7 @@ The title bar is `components/header/`: `AppHeader` lays out three slots and mirr
 filled with `BrandMark`, `WorkspaceSwitcher`, `ViewTabs` and `DispatchButton`.
 
 `TaskDialog` is the same shape: it holds the form and composes `components/task/` (`TaskHeader` with the status pill, the
-tabs in `TaskTabs`/`BriefTab`, `TaskSidebar` with its Properties, Agent and Workspace groups, `TaskFooter` with Archive and Delete under ⋯). It follows the Claude Design file "Styr Task Dialog v3". Its rules are in
+tabs in `TaskTabs`/`BriefTab`, `TaskSidebar` with its Properties, Agent and Workspace groups, `TaskFooter`). It follows the Claude Design file "Styr Task Dialog v3". Its rules are in
 `lib/taskForm.ts`. Context files can be dropped anywhere on the Brief tab as well as picked with
 Add; both go through `withContextFiles`, and dropped `File`s become paths via the preload's
 `pathsForFiles` (`webUtils.getPathForFile`). Shared stroke icons are in `components/icons.tsx`.

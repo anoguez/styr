@@ -9,9 +9,7 @@ import {
 import { useSubmitShortcut } from '../hooks/useSubmitShortcut.js'
 import {
   choosePreset,
-  inheritedModel,
   initialForm,
-  runSummary,
   savePresetPlan,
   taskPayload,
   templateNames,
@@ -91,7 +89,6 @@ export function TaskDialog({
   }
 
   const { routed: routedName, effective: templateName } = templateNames(settings, form)
-  const run = runSummary(saved, form, inheritedModel(settings, form), templateName)
   const waitingOn = openBlockers(
     { id: task?.id ?? '', status: form.status, blockedBy: form.blockedBy },
     indexTasks(allTasks)
@@ -229,7 +226,6 @@ export function TaskDialog({
             task={task}
             saving={saving}
             canStart={form.status !== 'done'}
-            run={run}
             onSave={() => void saveAndClose()}
             onSaveAndStart={() => void saveAndLaunch()}
             onSavePreset={savePreset}

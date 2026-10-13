@@ -8,15 +8,13 @@ import {
   presetFields,
   presetFromFields
 } from '@core/taskPreset.js'
-import {
-  AGENT_PROVIDER_LABELS,
-  AGENT_PROVIDER_SHORT_LABELS,
-  type Settings,
-  type Task,
-  type TaskPreset,
-  type TaskPriority,
-  type TaskReadiness,
-  type TaskStatus
+import type {
+  Settings,
+  Task,
+  TaskPreset,
+  TaskPriority,
+  TaskReadiness,
+  TaskStatus
 } from '@core/types.js'
 import { fileName } from './terminalPath.js'
 
@@ -256,32 +254,6 @@ export function worktreeHint(
   if (notARepo)
     return 'This folder does not look like a git repository, so the agent will run in it directly. Turn this off for non-code work.'
   return `Runs on branch styr/${taskId} so parallel agents never share a checkout.`
-}
-
-/**
- * The footer's one-line summary of what Save & Start will do, and its tooltip. A chat kept for the
- * same provider is resumed (if it still exists on disk); otherwise a fresh run starts.
- */
-export function runSummary(
-  task: Pick<Task, 'agentSession'> | null,
-  form: Pick<TaskForm, 'provider' | 'model'>,
-  inherited: string | undefined,
-  templateName: string
-): { text: string; title: string } {
-  const name = AGENT_PROVIDER_SHORT_LABELS[form.provider]
-  const label = AGENT_PROVIDER_LABELS[form.provider]
-  const chat = task?.agentSession?.provider === form.provider ? task.agentSession.id : undefined
-  if (chat) {
-    return {
-      text: `Resumes ${chat.slice(0, 8)} · ${name}`,
-      title: `Starting resumes ${label} chat ${chat} while it still exists. Start fresh from Agent chats.`
-    }
-  }
-  const model = form.model.trim() || inherited || 'default model'
-  return {
-    text: `${name} · ${model} · ${templateName}`,
-    title: `Starting runs ${label} with ${model}, using ${templateName}.`
-  }
 }
 
 /** The Changes button's tooltip: still loading, nothing to show yet, or ready. */
