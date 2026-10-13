@@ -65,8 +65,8 @@ remounting would cost the running one its scrollback.
 
 Terminal output is untrusted. `NativeTerminalView` puts every character in as React text — never
 markup. Links are the one thing output can offer (`lib/nativeTerminal/links.ts`): plain `http(s)`
-URLs found in the text and OSC 8 hyperlinks the engine reports on runs (`EngineRun.link`, package
-0.4.0). They open only on an explicit click — a press and release on the same cell, never a drag —
+URLs found in the text and OSC 8 hyperlinks the engine reports on runs (`EngineRun.link`: not
+released yet; the pinned 0.3.0 does not report it, so until then OSC 8 text is plain). They open only on an explicit click — a press and release on the same cell, never a drag —
 through `terminal:openLink`, which takes web links alone; an OSC 8 link's address is shown on hover,
 since its text need not say where it goes, and any other scheme (`file:`, `javascript:`) is plain
 text. Bounds live on both sides: the engine caps a write
@@ -184,13 +184,13 @@ while the agent waits, and Styr's `❯` input. It is provider-agnostic end to en
 | Capability                                            | xterm.js                   | Styr Terminal                                                              |
 | ----------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------- |
 | Command blocks                                        | yes                        | yes — with a package that has command marks (0.2.0 and later)              |
-| Clickable links                                       | yes                        | yes — web URLs; OSC 8 with package 0.4.0                                   |
+| Clickable links                                       | yes                        | yes — web URLs; OSC 8 once the engine reports `Run.link`                   |
 | Mouse reporting to programs                           | yes                        | yes — SGR and X10 (to cell 223); not UTF-8 (1005) or urxvt (1015)          |
 | Select/copy beyond screen                             | yes                        | yes — the grid's own selection, read from the engine's scrollback          |
 | Bracketed paste, file drop                            | yes                        | yes                                                                        |
 | Alternate screen (vim, TUIs)                          | yes                        | yes — without mouse reporting the wheel sends arrow keys, as xterm.js does |
 | IME composition                                       | yes                        | yes — grid and Styr's input                                                |
-| Hyperlinks (OSC 8)                                    | yes                        | yes — package 0.4.0; web links only                                        |
+| Hyperlinks (OSC 8)                                    | yes                        | not with the pinned 0.3.0 — Styr is ready (web links only)                 |
 | Images (sixel, kitty, iTerm2), kitty keyboard, OSC 52 | partly                     | no                                                                         |
 | Screen readers                                        | xterm's accessibility tree | `role="log"` over plain text rows                                          |
 
@@ -223,7 +223,7 @@ ELECTRON_RUN_AS_NODE=1 STYR_TERMINAL_PATH=<styr-terminal>/packages/node \
 For a dev run of the app with the engine: `STYR_TERMINAL_PATH=<styr-terminal>/packages/node
 STYR_EXPERIMENTAL_TERMINAL=1 yarn dev`.
 
-### Results (2026-10-13, darwin-arm64, engine 0.4.0 local build)
+### Results (2026-10-13, darwin-arm64, local build of the unreleased engine branch with `Run.link`)
 
 Run in a dev build of the app (Electron, isolated `HOME`/`STYR_HOME`), driven through the window:
 

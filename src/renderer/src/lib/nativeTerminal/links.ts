@@ -3,7 +3,7 @@ import { rowCells, type Cell } from './cells.js'
 
 /**
  * Links in native terminal output: plain `http(s)` URLs found in the text, and OSC 8 hyperlinks the
- * engine reports on runs (`EngineRun.link`, package 0.4.0). Output is untrusted, so nothing here
+ * engine reports on runs (`EngineRun.link`; no released package does yet). Output is untrusted, so nothing here
  * opens anything: a view opens a link only on an explicit click, through `terminal:openLink`, which
  * takes web links alone.
  */
