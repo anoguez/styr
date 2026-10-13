@@ -190,7 +190,9 @@ filled with `BrandMark`, `WorkspaceSwitcher`, `ViewTabs` and `DispatchButton`.
 
 `TaskDialog` is the same shape: it holds the form and composes `components/task/` (`TaskHeader`, the
 tabs in `TaskTabs`/`BriefTab`, `TaskSidebar` with its field groups, `TaskFooter`). Its rules are in
-`lib/taskForm.ts`. Shared stroke icons are in `components/icons.tsx`.
+`lib/taskForm.ts`. Context files can be dropped anywhere on the Brief tab as well as picked with
+Add; both go through `withContextFiles`, and dropped `File`s become paths via the preload's
+`pathsForFiles` (`webUtils.getPathForFile`). Shared stroke icons are in `components/icons.tsx`.
 
 ## Shortcuts
 

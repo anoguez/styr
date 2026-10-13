@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { withContextFiles } from '../../lib/taskForm.js'
 import { fileName } from '../../lib/terminalPath.js'
 import { FileIcon, PlusIcon } from '../icons.js'
 import { GHOST_BTN, RemoveButton } from './fields.js'
@@ -16,8 +17,41 @@ export function BriefTab({
   repoPath: string
   onChange: (changes: { description?: string; contextFiles?: string[] }) => void
 }): ReactNode {
+  // Files dragged in from Finder or an editor anywhere on the tab attach like picked ones.
+  // dragenter/dragleave fire for every child crossed, so count them to know when the drag left.
+  const [dragging, setDragging] = useState(false)
+  const depth = useRef(0)
+  const carriesFiles = (event: DragEvent): boolean => event.dataTransfer.types.includes('Files')
+  const add = (picked: string[]): void =>
+    onChange({ contextFiles: withContextFiles(contextFiles, picked) })
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5 pt-4">
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5 pt-4"
+      onDragEnter={(event) => {
+        if (!carriesFiles(event)) return
+        event.preventDefault()
+        depth.current += 1
+        setDragging(true)
+      }}
+      onDragOver={(event) => {
+        if (!carriesFiles(event)) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+      }}
+      onDragLeave={(event) => {
+        if (!carriesFiles(event)) return
+        depth.current = Math.max(0, depth.current - 1)
+        if (depth.current === 0) setDragging(false)
+      }}
+      onDrop={(event) => {
+        if (!carriesFiles(event)) return
+        event.preventDefault()
+        depth.current = 0
+        setDragging(false)
+        add(window.api.terminal.pathsForFiles(Array.from(event.dataTransfer.files)))
+      }}
+    >
       <textarea
         aria-label="Description (markdown)"
         value={description}
@@ -25,24 +59,23 @@ export function BriefTab({
         onChange={(event) => onChange({ description: event.target.value })}
         className="min-h-60 w-full flex-1 resize-none rounded-[10px] border border-edge bg-chrome px-3.5 py-3 font-mono text-[12px] leading-[1.65] text-ink outline-none placeholder:text-faint focus:border-accent"
       />
-      <div className="flex flex-col gap-2">
+      <div
+        className={`-m-2 flex flex-col gap-2 rounded-[10px] border border-dashed p-2 ${
+          dragging ? 'border-accent bg-accent/10' : 'border-transparent'
+        }`}
+      >
         <div className="flex items-center gap-2">
           <span className="text-[12px] font-semibold text-dim">Context files</span>
           <span className="text-[11.5px] text-faint">
-            Files or folders. Paths go into the prompt; nothing is copied.
+            {dragging
+              ? 'Drop to attach.'
+              : 'Files or folders — click Add or drop them here. Paths go into the prompt; nothing is copied.'}
           </span>
           <button
             type="button"
             className={`${GHOST_BTN} ml-auto h-6`}
             onClick={() => {
-              void window.api.settings.pickFiles(repoPath || undefined).then((picked) =>
-                onChange({
-                  contextFiles: [
-                    ...contextFiles,
-                    ...picked.filter((file) => !contextFiles.includes(file))
-                  ]
-                })
-              )
+              void window.api.settings.pickFiles(repoPath || undefined).then(add)
             }}
           >
             <PlusIcon size={12} />
