@@ -350,6 +350,18 @@ popover). Nothing about it is stored — hours are derived on each load, like th
   copied TSV/CSV.
 - `useWorklog` refetches whenever the board's tasks change, so today's hours grow as agents work.
 
+**Suggest hours.** Measured hours are clock time, so with agents in parallel they fall short of the
+working day. Suggest hours starts an agent (a planning run tagged `worklog-suggest`, archived when it
+ends and left out of the Worklog itself) briefed by `worklogPrompt` (`core/worklogPrompt.ts`, pure):
+the template is `timesheet.suggestPrompt` (empty for `DEFAULT_WORKLOG_PROMPT`, edited in Settings →
+Worklog) with the period, working hours, days, measured table and task notes filled in. The agent
+submits hours per task per day through the MCP tool `suggest_worklog`, which writes
+`<workspace>/worklog/<day>.json` via `core/worklogStore.ts` — a day's file replaced whole. The task
+watcher also watches that folder, so the view refetches when a day lands. `buildWorklog` takes
+`WorklogHours`, from `measuredHours` or `suggestedHours`, so the Measured/Suggested switch rebuilds
+the same view (cards, chart, table, copy) from either; it shows Suggested by default when the period
+has any. Suggested days are the only Worklog data written to disk, and only on purpose.
+
 Terminal activity outside an agent session is not a source: nothing records it to disk. Adding it
 means persisting it somewhere a file can rebuild, not keeping it in memory.
 

@@ -5,6 +5,7 @@
  */
 import { readFileSync, statSync } from 'node:fs'
 import { baseBranchFor, branchExists, branchNameFor, git, refExists } from './gitExec.js'
+import { WORKLOG_RUN_TAG } from './planning.js'
 import { providerById } from './providers/index.js'
 import type { AgentProviderId } from './providers/types.js'
 import { checkoutOf } from './taskCheckout.js'
@@ -32,6 +33,7 @@ export function collectWorklog(
   const lo = from - IDLE_GAP_MS
   const hi = to + IDLE_GAP_MS
   return tasks
+    .filter((task) => !task.tags.includes(WORKLOG_RUN_TAG))
     .filter((task) => task.status !== 'done' || Date.parse(task.updatedAt) >= from)
     .map((task) => {
       const times = [

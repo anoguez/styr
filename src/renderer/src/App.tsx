@@ -243,7 +243,7 @@ export default function App(): ReactNode {
                   <Worklog
                     timesheet={settings.timesheet}
                     bindings={bindings}
-                    refresh={allTasks}
+                    tasks={allTasks}
                     onTimesheetChange={(timesheet) =>
                       void save({
                         workspaceId: settings.activeWorkspaceId,
@@ -252,6 +252,7 @@ export default function App(): ReactNode {
                       })
                     }
                     onOpenSettings={() => openSettings('worklog')}
+                    onSuggest={(title, prompt) => void launcher.suggestWorklog(title, prompt)}
                   />
                 ) : view === 'inbox' ? (
                   <Inbox

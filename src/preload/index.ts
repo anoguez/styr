@@ -35,7 +35,7 @@ import type {
   WorkspaceBoardSummary,
   WorkspaceOverview,
   WorkspacesActivity,
-  WorklogTask
+  WorklogData
 } from '../core/types.js'
 
 export interface TerminalSpawnRequest {
@@ -146,7 +146,7 @@ const api = {
       subscribe('agents:changed', handler as (...args: never[]) => void)
   },
   worklog: {
-    load: (from: number, to: number): Promise<WorklogTask[]> =>
+    load: (from: number, to: number): Promise<WorklogData> =>
       ipcRenderer.invoke('worklog:load', from, to)
   },
   git: {

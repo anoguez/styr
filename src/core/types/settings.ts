@@ -252,6 +252,8 @@ export interface TimesheetSettings {
   roundMinutes: TimesheetRounding
   /** What Copy for timesheet puts on the clipboard. */
   copyFormat: 'tsv' | 'csv'
+  /** The prompt Suggest hours sends an agent; empty uses the shipped one (`DEFAULT_WORKLOG_PROMPT`). */
+  suggestPrompt: string
 }
 
 export const DEFAULT_TIMESHEET: TimesheetSettings = {
@@ -261,7 +263,8 @@ export const DEFAULT_TIMESHEET: TimesheetSettings = {
   period: 'week',
   groupBy: 'task',
   roundMinutes: 15,
-  copyFormat: 'tsv'
+  copyFormat: 'tsv',
+  suggestPrompt: ''
 }
 
 /**

@@ -36,13 +36,16 @@ export function TimesheetTable({
   groupBy,
   collapsed,
   onToggleGroup,
-  colorOf
+  colorOf,
+  noteFor
 }: {
   worklog: Worklog
   groupBy: 'task' | 'project'
   collapsed: ReadonlySet<string>
   onToggleGroup: (project: string) => void
   colorOf: (project: string) => string
+  /** A suggested entry's note, shown on its cell. */
+  noteFor?: (taskId: string, day: string) => string | undefined
 }): ReactNode {
   const count = worklog.buckets.length
   const grid: CSSProperties = {
@@ -180,6 +183,13 @@ export function TimesheetTable({
               {line.cells.map((hours, index) => (
                 <span
                   key={worklog.buckets[index]!.days[0]}
+                  title={
+                    line.id && noteFor
+                      ? worklog.buckets[index]!.days.map((day) => noteFor(line.id, day))
+                          .filter(Boolean)
+                          .join(' · ') || undefined
+                      : undefined
+                  }
                   className={`flex h-full items-center justify-end px-2 font-mono text-[12px] ${
                     line.group ? 'font-semibold' : ''
                   } ${hours ? 'text-ink' : 'text-faint/60'} ${tint(worklog.buckets[index]!)}`}

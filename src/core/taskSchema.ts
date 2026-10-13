@@ -239,7 +239,8 @@ export const settingsSchema = z.object({
       roundMinutes: z
         .union([z.literal(0), z.literal(15), z.literal(30)])
         .default(DEFAULT_TIMESHEET.roundMinutes),
-      copyFormat: z.enum(['tsv', 'csv']).default(DEFAULT_TIMESHEET.copyFormat)
+      copyFormat: z.enum(['tsv', 'csv']).default(DEFAULT_TIMESHEET.copyFormat),
+      suggestPrompt: z.string().default('')
     })
     .default(DEFAULT_TIMESHEET),
   experimental: z
@@ -291,4 +292,28 @@ export const settingsChangeSchema = z.object({
   workspaceId: workspaceIdSchema,
   workspace: workspaceSettingsSchema,
   global: globalSettingsSchema
+})
+
+const dayKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-10-13')
+const worklogHoursSchema = z.number().min(0).max(24)
+
+/** One entry of Suggest hours, as the agent submits it. */
+export const worklogSuggestionSchema = z.object({
+  day: dayKeySchema,
+  taskId: z.string().min(1).max(64),
+  hours: worklogHoursSchema,
+  note: z.string().max(500).optional()
+})
+
+/** A `<workspace>/worklog/<day>.json` file. Written by Styr, but checked like any file on disk. */
+export const worklogDaySchema = z.object({
+  day: dayKeySchema,
+  generatedAt: z.string(),
+  entries: z.array(
+    z.object({
+      taskId: z.string().min(1).max(64),
+      hours: worklogHoursSchema,
+      note: z.string().max(500).optional()
+    })
+  )
 })

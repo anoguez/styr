@@ -1,7 +1,9 @@
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { formatHours } from '@core/worklog.js'
 import type { TimesheetSettings } from '@core/types.js'
-import { Card, CardRow, Hint, Segmented } from '../ui.js'
+import { DEFAULT_WORKLOG_PROMPT, WORKLOG_PROMPT_PLACEHOLDERS } from '@core/worklogPrompt.js'
+import { Button, Card, CardRow, Hint, Segmented, inputBase } from '../ui.js'
+import { insertToken } from './draft.js'
 import {
   HoursPerDayStepper,
   WorkingDaysPicker,
@@ -28,6 +30,79 @@ function SettingRow({
         {children}
       </div>
     </CardRow>
+  )
+}
+
+/** The Suggest hours brief. Empty means the shipped prompt, which the box shows until edited. */
+function SuggestPromptEditor({
+  value,
+  onChange
+}: {
+  value: string
+  onChange: (value: string) => void
+}): ReactNode {
+  const box = useRef<HTMLTextAreaElement>(null)
+  const text = value || DEFAULT_WORKLOG_PROMPT
+  const store = (next: string): void => onChange(next === DEFAULT_WORKLOG_PROMPT ? '' : next)
+
+  function insert(token: string): void {
+    const element = box.current
+    if (!element) return
+    const { text: next, caret } = insertToken(
+      text,
+      element.selectionStart,
+      element.selectionEnd,
+      token
+    )
+    store(next)
+    requestAnimationFrame(() => {
+      element.focus()
+      element.setSelectionRange(caret, caret)
+    })
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center gap-2">
+        <span className="text-[12px] font-semibold text-dim">Suggest hours prompt</span>
+        <Button
+          variant="subtle"
+          className="ml-auto h-6 px-2"
+          disabled={!value}
+          onClick={() => onChange('')}
+        >
+          Reset to default
+        </Button>
+      </div>
+      <textarea
+        ref={box}
+        aria-label="Suggest hours prompt"
+        className={`${inputBase} min-h-56 w-full resize-y px-3.5 py-3 font-mono text-[12px] leading-[1.65]`}
+        value={text}
+        onChange={(event) => store(event.target.value)}
+      />
+      <div className="flex flex-col gap-1.5">
+        <Hint>
+          What the agent started by Suggest hours in the Worklog is told. It submits hours per task
+          per day through the styr MCP server, and the Worklog shows them under Suggested. Click to
+          insert:
+        </Hint>
+        <div className="flex flex-wrap gap-1">
+          {WORKLOG_PROMPT_PLACEHOLDERS.map(({ name, hint }) => (
+            <button
+              key={name}
+              type="button"
+              title={hint}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => insert(`{{${name}}}`)}
+              className="h-5 rounded-[5px] bg-raised px-1.5 font-mono text-[10.5px] text-dim transition-colors hover:bg-edge-strong hover:text-ink"
+            >
+              {`{{${name}}}`}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -141,6 +216,10 @@ export function WorklogSection({ draft, patch }: SectionProps): ReactNode {
           these settings from the Worklog too.
         </Hint>
       </div>
+      <SuggestPromptEditor
+        value={timesheet.suggestPrompt}
+        onChange={(suggestPrompt) => set({ suggestPrompt })}
+      />
     </>
   )
 }

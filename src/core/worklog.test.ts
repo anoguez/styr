@@ -9,7 +9,9 @@ import {
   hoursByTaskDay,
   IDLE_GAP_MS,
   LEAD_MS,
+  measuredHours,
   roundHours,
+  suggestedHours,
   timesheetTable,
   weekStartOf,
   workIntervals,
@@ -148,7 +150,7 @@ describe('buildWorklog', () => {
   const frame = worklogFrame('week', 0, NOW, 'mon')
 
   it('totals rows, buckets and projects against the target', () => {
-    const worklog = buildWorklog(frame, tasks, exact, NOW)
+    const worklog = buildWorklog(frame, measuredHours(tasks), exact, NOW)
     expect(worklog.rows.map((row) => [row.taskId, row.total])).toEqual([
       ['TASK-1', 6],
       ['TASK-2', 2],
@@ -165,13 +167,13 @@ describe('buildWorklog', () => {
   })
 
   it('lists past working days short of a full day', () => {
-    const worklog = buildWorklog(frame, tasks, exact, NOW)
+    const worklog = buildWorklog(frame, measuredHours(tasks), exact, NOW)
     expect(worklog.gaps).toEqual([{ day: '2026-10-12', short: 2 }])
   })
 
   it('rounds each task’s day before totalling', () => {
     const odd = [task('A', [[at(13, 9), at(13, 9, 10)]]), task('B', [[at(13, 10), at(13, 10, 50)]])]
-    const worklog = buildWorklog(frame, odd, { ...exact, roundMinutes: 30 }, NOW)
+    const worklog = buildWorklog(frame, measuredHours(odd), { ...exact, roundMinutes: 30 }, NOW)
     expect(worklog.rows.map((row) => row.total)).toEqual([1])
     expect(worklog.logged).toBe(1)
   })
@@ -179,7 +181,7 @@ describe('buildWorklog', () => {
   it('sets no target on days that are not working days', () => {
     const worklog = buildWorklog(
       frame,
-      [],
+      measuredHours([]),
       { ...exact, workingDays: [true, false, false, false, false, false, false] },
       NOW
     )
@@ -188,13 +190,39 @@ describe('buildWorklog', () => {
   })
 })
 
+describe('suggestedHours', () => {
+  it('builds the view from suggested days, naming tasks it knows and keeping notes', () => {
+    const hours = suggestedHours(
+      [
+        {
+          day: '2026-10-12',
+          generatedAt: '',
+          entries: [
+            { taskId: 'TASK-1', hours: 6, note: 'Index rebuild' },
+            { taskId: 'Meetings', hours: 2 }
+          ]
+        },
+        { day: '2026-10-13', generatedAt: '', entries: [{ taskId: 'TASK-1', hours: 3 }] }
+      ],
+      (id) => (id === 'TASK-1' ? { taskId: id, title: 'Index', project: 'styr' } : undefined)
+    )
+    const worklog = buildWorklog(worklogFrame('week', 0, NOW, 'mon'), hours, exact, NOW)
+    expect(worklog.rows.map((row) => [row.taskId, row.title, row.total])).toEqual([
+      ['TASK-1', 'Index', 9],
+      ['Meetings', 'Meetings', 2]
+    ])
+    expect(worklog.buckets[0]?.total).toBe(8)
+    expect(hours.notes?.get('TASK-1')?.get('2026-10-12')).toBe('Index rebuild')
+  })
+})
+
 describe('timesheetTable and formatTable', () => {
   const worklog = buildWorklog(
     worklogFrame('week', 0, NOW, 'mon'),
-    [
+    measuredHours([
       task('TASK-1', [[at(12, 9), at(12, 11)]], 'styr'),
       task('TASK-2', [[at(13, 9), at(13, 10)]], 'a, b')
-    ],
+    ]),
     exact,
     NOW
   )

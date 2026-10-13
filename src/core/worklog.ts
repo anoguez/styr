@@ -7,7 +7,12 @@
  * Days are local calendar days, keyed `YYYY-MM-DD`. Weekday indexes are Monday-first (0 = Monday),
  * matching `TimesheetSettings.workingDays`.
  */
-import type { TimesheetSettings, WorklogPeriod, WorklogTask } from './types.js'
+import type {
+  TimesheetSettings,
+  WorklogDaySuggestions,
+  WorklogPeriod,
+  WorklogTask
+} from './types.js'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -306,19 +311,64 @@ export interface Worklog extends Omit<WorklogFrame, 'buckets' | 'chart'> {
   gaps: { day: string; short: number }[]
 }
 
-/** Counts the hours of `tasks` into `frame`, rounding each task's day by the timesheet. */
+/** What a timesheet line is about: a task, or a free-standing entry a suggestion added. */
+export type WorklogTaskInfo = Pick<WorklogTask, 'taskId' | 'title' | 'project'>
+
+/** Hours per task per day, and the tasks they belong to: measured or suggested. */
+export interface WorklogHours {
+  tasks: WorklogTaskInfo[]
+  byTaskDay: Map<string, Map<string, number>>
+  /** A suggested entry's note, by task then day. */
+  notes?: Map<string, Map<string, string>>
+}
+
+/** The time measured from the tasks' trails, shared between tasks worked on at once. */
+export function measuredHours(tasks: readonly WorklogTask[]): WorklogHours {
+  return { tasks: [...tasks], byTaskDay: hoursByTaskDay(tasks) }
+}
+
+/**
+ * The hours an agent suggested. `info` names the tasks it mentions; an id it does not know (an
+ * entry such as meetings) keeps the id as its title.
+ */
+export function suggestedHours(
+  days: readonly WorklogDaySuggestions[],
+  info: (taskId: string) => WorklogTaskInfo | undefined
+): WorklogHours {
+  const byTaskDay = new Map<string, Map<string, number>>()
+  const notes = new Map<string, Map<string, string>>()
+  const tasks = new Map<string, WorklogTaskInfo>()
+  for (const { day, entries } of days) {
+    for (const entry of entries) {
+      if (!tasks.has(entry.taskId)) {
+        tasks.set(entry.taskId, info(entry.taskId) ?? { taskId: entry.taskId, title: entry.taskId })
+      }
+      const hours = byTaskDay.get(entry.taskId) ?? new Map<string, number>()
+      hours.set(day, (hours.get(day) ?? 0) + entry.hours)
+      byTaskDay.set(entry.taskId, hours)
+      if (entry.note) {
+        const taskNotes = notes.get(entry.taskId) ?? new Map<string, string>()
+        taskNotes.set(day, entry.note)
+        notes.set(entry.taskId, taskNotes)
+      }
+    }
+  }
+  return { tasks: [...tasks.values()], byTaskDay, notes }
+}
+
+/** Counts `hours` into `frame`, rounding each task's day by the timesheet. */
 export function buildWorklog(
   frame: WorklogFrame,
-  tasks: readonly WorklogTask[],
+  hours: WorklogHours,
   timesheet: TimesheetSettings,
   now: number
 ): Worklog {
   const today = dayKey(now)
   const working = (day: string): boolean => timesheet.workingDays[weekdayOf(day)] === true
-  const byTaskDay = hoursByTaskDay(tasks)
+  const { tasks, byTaskDay } = hours
   const hoursOn = (taskId: string, day: string): number =>
     roundHours(byTaskDay.get(taskId)?.get(day) ?? 0, timesheet.roundMinutes)
-  const projectOf = (task: WorklogTask): string => task.project?.trim() || NO_PROJECT
+  const projectOf = (task: WorklogTaskInfo): string => task.project?.trim() || NO_PROJECT
   const dayTotal = (day: string): number =>
     tasks.reduce((sum, task) => sum + hoursOn(task.taskId, day), 0)
 

@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { shortcutHint } from '@core/shortcuts.js'
-import type { ShortcutBindings, TimesheetSettings, WorklogPeriod } from '@core/types.js'
+import type { ShortcutBindings, Task, TimesheetSettings, WorklogPeriod } from '@core/types.js'
+import { worklogPrompt } from '@core/worklogPrompt.js'
 import {
   buildWorklog,
+  dayKey,
   dayLabel,
   formatHours,
   formatTable,
+  measuredHours,
+  suggestedHours,
   timesheetTable,
   worklogFrame,
   type Worklog as WorklogModel
@@ -30,6 +34,17 @@ const PERIODS: { id: WorklogPeriod; label: string; now: string }[] = [
   { id: 'day', label: 'Day', now: 'Today' },
   { id: 'week', label: 'Week', now: 'This week' },
   { id: 'month', label: 'Month', now: 'This month' }
+]
+
+type HoursSource = 'measured' | 'suggested'
+
+const SOURCES: { id: HoursSource; label: string; hint: string }[] = [
+  {
+    id: 'measured',
+    label: 'Measured',
+    hint: 'Time measured from agent sessions, notes and commits'
+  },
+  { id: 'suggested', label: 'Suggested', hint: 'Hours an agent suggested with Suggest hours' }
 ]
 
 const WARN = 'var(--color-col-review)'
@@ -182,16 +197,19 @@ function TimesheetPopover({
 export function Worklog({
   timesheet,
   bindings,
-  refresh,
+  tasks,
   onTimesheetChange,
-  onOpenSettings
+  onOpenSettings,
+  onSuggest
 }: {
   timesheet: TimesheetSettings
   bindings: ShortcutBindings
-  /** Changes whenever the tasks do, so the hours follow the agents' work. */
-  refresh: unknown
+  /** Every task on the board, archived included. A new array whenever they change, which refetches. */
+  tasks: readonly Task[]
   onTimesheetChange: (timesheet: TimesheetSettings) => void
   onOpenSettings: () => void
+  /** Start an agent with the Suggest hours brief. */
+  onSuggest: (title: string, prompt: string) => void
 }): ReactNode {
   const [period, setPeriod] = useState<WorklogPeriod>(timesheet.period)
   const [offset, setOffset] = useState(0)
@@ -199,17 +217,51 @@ export function Worklog({
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Which hours the view shows; unset follows the period: suggested ones when it has any.
+  const [chosenSource, setSource] = useState<HoursSource | null>(null)
   const popover = useRef<HTMLDivElement>(null)
 
   const now = Date.now()
   const frame = worklogFrame(period, offset, now, timesheet.weekStart)
-  const tasks = useWorklog(frame.from, frame.to, refresh)
+  const data = useWorklog(frame.from, frame.to, tasks)
+  const periodDays = frame.buckets.flatMap((bucket) => bucket.days)
+  const measured = useMemo(() => (data ? measuredHours(data.tasks) : null), [data])
+  const suggestedDays = (data?.suggestions ?? []).filter((day) => periodDays.includes(day.day))
+  const suggested = useMemo(() => {
+    if (!data) return null
+    const byId = new Map(tasks.map((task) => [task.id, task]))
+    return suggestedHours(data.suggestions, (taskId) => {
+      const task = byId.get(taskId)
+      return task ? { taskId, title: task.title, project: task.project } : undefined
+    })
+  }, [data, tasks])
+  const source: HoursSource = chosenSource ?? (suggestedDays.length ? 'suggested' : 'measured')
+  const hours = source === 'suggested' ? suggested : measured
   const worklog = useMemo(
-    () => (tasks ? buildWorklog(frame, tasks, timesheet, now) : null),
+    () => (hours ? buildWorklog(frame, hours, timesheet, now) : null),
     // `frame` and `now` are rebuilt every render; the span and the settings say when it changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tasks, timesheet, period, offset]
+    [hours, timesheet, period, offset]
   )
+  const lastSuggested = suggestedDays
+    .map((day) => day.generatedAt)
+    .sort()
+    .pop()
+
+  const suggest = (): void => {
+    if (!measured) return
+    onSuggest(
+      `Suggest hours — ${frame.title}`,
+      worklogPrompt(timesheet.suggestPrompt, {
+        period: `${frame.title} (${frame.range})`,
+        days: periodDays,
+        today: dayKey(now),
+        timesheet,
+        measured,
+        tasks
+      })
+    )
+  }
 
   // Colours follow the project names, sorted, so a project keeps its colour across periods.
   const projects = useMemo(
@@ -259,7 +311,15 @@ export function Worklog({
           <h1 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-ink">
             {frame.title}
           </h1>
-          <span className="text-[12px] text-dim">{frame.range}</span>
+          <span className="text-[12px] text-dim">
+            {frame.range}
+            {source === 'suggested' && lastSuggested
+              ? ` · Suggested hours, ${new Date(lastSuggested).toLocaleString(undefined, {
+                  dateStyle: 'medium',
+                  timeStyle: 'short'
+                })}`
+              : ''}
+          </span>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <div
@@ -283,6 +343,34 @@ export function Worklog({
               </button>
             ))}
           </div>
+          <div
+            role="tablist"
+            aria-label="Hours"
+            className="flex h-7 items-center gap-0.5 rounded-lg border border-edge-strong bg-chrome p-0.5"
+          >
+            {SOURCES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                title={item.hint}
+                aria-selected={source === item.id}
+                disabled={item.id === 'suggested' && suggestedDays.length === 0}
+                className={`${tabClass(source === item.id)} disabled:opacity-40 disabled:hover:text-dim`}
+                onClick={() => setSource(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <Button
+            className="h-7"
+            disabled={!measured}
+            title="Start an agent that spreads the period's work over your working hours"
+            onClick={suggest}
+          >
+            Suggest hours
+          </Button>
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -444,6 +532,7 @@ export function Worklog({
               groupBy={groupBy}
               collapsed={collapsed}
               colorOf={colorOf}
+              noteFor={(taskId, day) => hours?.notes?.get(taskId)?.get(day)}
               onToggleGroup={(project) =>
                 setCollapsed((current) => {
                   const next = new Set(current)

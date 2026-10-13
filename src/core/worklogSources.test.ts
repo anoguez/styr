@@ -12,6 +12,7 @@ function task(id: string, extra: Partial<Task> = {}): Task {
     id,
     title: id,
     status: 'in_progress',
+    tags: [],
     activity: [],
     sessions: [],
     updatedAt: '2026-10-13T00:00:00Z',
@@ -63,6 +64,17 @@ describe('collectWorklog', () => {
     const done = task('OLD', { status: 'done', updatedAt: '2026-10-01T00:00:00Z' })
     expect(collectWorklog([task('IDLE'), done], FROM, TO, ports)).toEqual([])
     expect(asked).toBe(1)
+  })
+
+  it('leaves out the Suggest hours runs themselves', () => {
+    const note = [{ at: '2026-10-13T09:00:00Z', author: 'a', message: 'm' }]
+    const worked = collectWorklog(
+      [task('RUN', { tags: ['quick-plan', 'worklog-suggest'], activity: note })],
+      FROM,
+      TO,
+      noSources
+    )
+    expect(worked).toEqual([])
   })
 
   it('cuts a stretch that crosses the span’s start', () => {
