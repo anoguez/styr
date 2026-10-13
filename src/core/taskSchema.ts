@@ -5,6 +5,7 @@ import {
   DEFAULT_SHORTCUTS,
   DEFAULT_TERMINAL_PALETTE,
   MAX_TASK_PRESETS,
+  REST_METHODS,
   SHORTCUT_COMMANDS,
   TASK_PRIORITIES,
   TASK_READINESS,
@@ -30,6 +31,35 @@ export const externalRefSchema = z.object({
   syncedBodyHash: z.string().optional()
 })
 
+/** A REST source's request and field mapping; also what the pane's test request sends. */
+export const restSourceSettingsSchema = z.object({
+  request: z.object({
+    method: z.enum(REST_METHODS).default('GET'),
+    url: z.string().default(''),
+    headers: z
+      .array(
+        z.object({
+          name: z.string(),
+          value: z.string(),
+          enabled: z.boolean().default(true)
+        })
+      )
+      .default([]),
+    body: z.string().default('')
+  }),
+  mapping: z.object({
+    items: z.string().default(''),
+    id: z.string().default('id'),
+    title: z.string().default('title'),
+    body: z.string().default(''),
+    url: z.string().default(''),
+    state: z.string().default(''),
+    closedValues: z.array(z.string()).default([]),
+    updatedAt: z.string().default(''),
+    labels: z.string().default('')
+  })
+})
+
 export const sourceConfigSchema = z.object({
   id: z.string().min(1),
   provider: z.string().min(1),
@@ -39,7 +69,8 @@ export const sourceConfigSchema = z.object({
   labels: z.array(z.string()).default([]),
   includeClosed: z.boolean().default(false),
   mirrorStatus: z.boolean().default(false),
-  commentOnReview: z.boolean().default(false)
+  commentOnReview: z.boolean().default(false),
+  rest: restSourceSettingsSchema.optional()
 })
 
 export const taskSessionRefSchema = z.object({

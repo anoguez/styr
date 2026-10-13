@@ -12,6 +12,8 @@ import type {
   BrokenSettingsFile,
   CliStatus,
   OrchestrationSummary,
+  RestSourceSettings,
+  RestTestResult,
   Settings,
   SettingsChange,
   SourceSyncState,
@@ -163,6 +165,8 @@ const api = {
       ipcRenderer.invoke('sources:providers'),
     ghStatus: (): Promise<CliStatus> => ipcRenderer.invoke('sources:ghStatus'),
     state: (): Promise<Record<string, SourceSyncState>> => ipcRenderer.invoke('sources:state'),
+    restTest: (settings: RestSourceSettings): Promise<RestTestResult> =>
+      ipcRenderer.invoke('sources:restTest', settings),
     targets: (sourceId: string): Promise<SourceTarget[]> =>
       ipcRenderer.invoke('sources:targets', sourceId),
     sync: (sourceId: string): Promise<SourceSyncState> =>

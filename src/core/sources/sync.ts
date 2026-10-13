@@ -122,7 +122,8 @@ export function planSync(
           ...(defaults.useWorktree !== undefined ? { useWorktree: defaults.useWorktree } : {}),
           ...(defaults.orchestrate !== undefined ? { orchestrate: defaults.orchestrate } : {}),
           tags: tagsFor(tagPrefix, item),
-          repoPath: where.repoPath,
+          // a REST source with no default repo path has none to give
+          ...(where.repoPath ? { repoPath: where.repoPath } : {}),
           externalRef: refFor(source, target, item)
         }
       })

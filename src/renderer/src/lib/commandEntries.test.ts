@@ -142,12 +142,14 @@ describe('buildCommandEntries', () => {
   it('hides settings sections behind an experimental flag that is off', () => {
     const off = buildCommandEntries(source(), actions())
     expect(byId(off, 'settings:source-github')).toBeUndefined()
+    expect(byId(off, 'settings:source-rest')).toBeUndefined()
     expect(byId(off, 'settings:theme')).toBeDefined()
     const on = buildCommandEntries(
       source({ experimental: { externalSources: true, nativeTerminal: false, worklog: false } }),
       actions()
     )
     expect(byId(on, 'settings:source-github')).toBeDefined()
+    expect(byId(on, 'settings:source-rest')).toBeDefined()
     expect(
       byId(
         buildCommandEntries(source({ experimental: undefined }), actions()),

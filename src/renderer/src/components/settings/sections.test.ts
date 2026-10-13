@@ -13,6 +13,7 @@ const settings = (overrides: Partial<Settings> = {}): Settings =>
     theme: { base: '#000000' },
     shortcuts: {},
     storageDir: '/data',
+    sources: [],
     ...overrides
   }) as unknown as Settings
 
@@ -37,11 +38,25 @@ describe('settings sections', () => {
     expect(unsavedChanges(saved, settings()).count).toBe(0)
   })
 
+  it('marks only the Integrations page whose provider changed', () => {
+    const rest = { id: 'rest', provider: 'rest', enabled: false } as Settings['sources'][number]
+    const saved = settings({ sources: [rest] })
+    const changes = unsavedChanges(settings({ sources: [{ ...rest, enabled: true }] }), saved)
+    expect([...changes.sections]).toEqual(['source-rest'])
+    expect(changes.count).toBe(1)
+  })
+
   it('groups the nav, hiding flagged sections and empty groups', () => {
     const groups = settingsNav('', off)
     expect(groups.map((group) => group.label)).toEqual(['Workspace', 'All workspaces'])
     expect(groups[0]!.picker).toBe(true)
     expect(settingsNav('', on).map((group) => group.label)).toContain('Integrations')
+    const integrations = (flags: typeof on): string[] =>
+      settingsNav('', flags)
+        .filter((group) => group.label === 'Integrations')
+        .flatMap((group) => group.items.map((item) => item.id))
+    expect(integrations(on)).toEqual(['source-github', 'source-rest'])
+    expect(integrations(off)).toEqual([])
   })
 
   it('filters the nav by label and search words, case-insensitively', () => {

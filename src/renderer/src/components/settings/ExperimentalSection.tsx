@@ -20,7 +20,7 @@ export function ExperimentalSection({ draft, patch }: SectionProps): ReactNode {
       <Card>
         <SwitchRow
           label="External sources"
-          hint="Link GitHub issues to tasks. Adds a GitHub page under Integrations. Off, nothing is read from or written to GitHub."
+          hint="Link GitHub issues, or the items of a REST API, to tasks. Adds GitHub and REST API pages under Integrations. Off, nothing is read from or written to either."
           checked={draft.experimental.externalSources}
           onChange={(externalSources) =>
             patch({ experimental: { ...draft.experimental, externalSources } })

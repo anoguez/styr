@@ -264,7 +264,7 @@ export const githubAdapter: SourceAdapter = {
     return items
   },
 
-  async get(run, target, id) {
+  async get(_config, run, target, id) {
     const result = await run('gh', [
       'issue',
       'view',

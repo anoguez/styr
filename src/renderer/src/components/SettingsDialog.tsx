@@ -10,6 +10,7 @@ import {
 import { formatAccelerator } from '@core/shortcuts.js'
 import { Button, Chip, Eyebrow, Modal, Select } from './ui.js'
 import { WorkspacesPane } from './WorkspacesPane.js'
+import { RestSourcePane } from './RestSourcePane.js'
 import { SourcesPane } from './SourcesPane.js'
 import { PresetsPane } from './PresetsPane.js'
 import type { Workspaces } from '../hooks/useWorkspaces.js'
@@ -329,6 +330,15 @@ export function SettingsDialog({
 
               {section === 'source-github' ? (
                 <SourcesPane
+                  sources={draft.sources}
+                  saved={target.savedWorkspaceSettings.sources}
+                  canAct={target.editingActiveWorkspace}
+                  onChange={(sources) => patch({ sources })}
+                />
+              ) : null}
+
+              {section === 'source-rest' ? (
+                <RestSourcePane
                   sources={draft.sources}
                   saved={target.savedWorkspaceSettings.sources}
                   canAct={target.editingActiveWorkspace}

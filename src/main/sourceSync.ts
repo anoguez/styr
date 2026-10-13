@@ -65,6 +65,8 @@ export const NO_REPOSITORIES =
 
 /** The repositories of the active workspace's tasks, as this provider sees them. */
 export function targetsOf(adapter: SourceAdapter): SourceTarget[] {
+  if (adapter.fixedTarget)
+    return [{ target: adapter.fixedTarget, repoPath: loadSettings().defaultRepoPath }]
   return sourceTargets(adapter, [
     ...listTasks().map((task) => task.repoPath ?? ''),
     loadSettings().defaultRepoPath
@@ -127,7 +129,7 @@ async function addUnlistedLinked(
     if (task.archivedAt) continue
     const key = `${task.id}:${ref.id}`
     try {
-      items.push(await adapter.get(runCommand, target, ref.id))
+      items.push(await adapter.get(source, runCommand, target, ref.id))
       staleReported.delete(key)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -230,7 +232,7 @@ export async function linkTask(taskId: string, text: string, sourceId = 'github'
   if (!source.enabled) throw new Error('Turn the integration on in Settings first.')
   const task = getTask(taskId)
   if (!task) throw new Error(`Task ${taskId} not found`)
-  const own = task.repoPath ? adapter.detectTarget(task.repoPath) : null
+  const own = adapter.fixedTarget ?? (task.repoPath ? adapter.detectTarget(task.repoPath) : null)
   const ref = adapter.parseRef(text, own)
   if (!ref) {
     throw new Error(
@@ -247,7 +249,7 @@ export async function linkTask(taskId: string, text: string, sourceId = 'github'
       other.externalRef.id === ref.id
   )
   if (duplicate) throw new Error(`${ref.target}#${ref.id} is already linked to ${duplicate.id}.`)
-  const item = await adapter.get(runCommand, ref.target, ref.id)
+  const item = await adapter.get(source, runCommand, ref.target, ref.id)
   const updated = updateTask(taskId, {
     externalRef: {
       provider: source.provider,
@@ -276,7 +278,7 @@ export async function refreshTask(taskId: string): Promise<Task> {
   if (!task || !ref?.sourceId || !ref.target)
     throw new Error('This task is not linked to a source.')
   const { source, adapter } = find(ref.sourceId)
-  const item = await adapter.get(runCommand, ref.target, ref.id)
+  const item = await adapter.get(source, runCommand, ref.target, ref.id)
   const repoPath = task.repoPath ?? ''
   applyPlan(
     planSync([task], [item], source, adapter.tagPrefix, { target: ref.target, repoPath }).actions

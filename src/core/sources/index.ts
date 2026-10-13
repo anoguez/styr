@@ -1,6 +1,7 @@
 import { loadSettings } from '../settingsStore.js'
 import type { Settings, SourceConfig, SourceTarget } from '../types.js'
 import { githubAdapter, githubWriter, runCommand } from './github.js'
+import { restAdapter } from './rest.js'
 import type { CommandRunner, SourceAdapter, SourceWriter } from './types.js'
 
 export * from './types.js'
@@ -14,9 +15,9 @@ export class SourceReadOnlyError extends Error {
   }
 }
 
-const ADAPTERS: readonly SourceAdapter[] = [githubAdapter]
+const ADAPTERS: readonly SourceAdapter[] = [githubAdapter, restAdapter]
 
-/** Not exported: a writer can only be had through `writableSource`'s guard. */
+/** Not exported: a writer can only be had through `writableSource`'s guard. REST has none. */
 const WRITERS: Record<string, (target: string, run: CommandRunner) => SourceWriter> = {
   github: githubWriter
 }
