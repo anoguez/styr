@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.30.0](https://github.com/anoguez/styr/compare/v0.29.0...v0.30.0) (2026-10-13)
+
+
+### Features
+
+* show the task's board column in the terminal context bar ([#145](https://github.com/anoguez/styr/issues/145)) ([7e761ce](https://github.com/anoguez/styr/commit/7e761cee5e915743051aac10b77772a0b0ab6233))
+* stream Claude's reply and answer its permission requests in Styr Terminal ([#143](https://github.com/anoguez/styr/issues/143)) ([b703a0e](https://github.com/anoguez/styr/commit/b703a0edefd933b5050297d6452d243d714d13c8))
+
 ## [0.29.0](https://github.com/anoguez/styr/compare/v0.28.0...v0.29.0) (2026-10-13)
 
 
