@@ -5,15 +5,9 @@ import { nanoid } from 'nanoid'
 import { usageEnv } from '../usage.js'
 import { resolveShell } from '@core/platformShell.js'
 import { withoutSessionMarkers } from '@core/providers/index.js'
-import type {
-  TerminalMark,
-  TerminalOutput,
-  TerminalRuntimeState,
-  TerminalSessionInfo
-} from '@core/types.js'
+import type { TerminalOutput, TerminalRuntimeState, TerminalSessionInfo } from '@core/types.js'
 import { shellIntegrationLaunch } from './shellIntegration.js'
-import { TerminalProtocolParser } from './terminalProtocol.js'
-import { TerminalRuntime } from './terminalRuntime.js'
+import { TerminalTranscript } from './terminalTranscript.js'
 
 export interface SpawnOptions {
   cwd?: string
@@ -30,48 +24,19 @@ export interface SpawnOptions {
 interface Session {
   info: TerminalSessionInfo
   pty: IPty
-  backlog: string
-  sequence: number
-  /** Characters of output ever produced; `marks` offsets count from the start of this. */
-  streamLength: number
-  marks: TerminalMark[]
-  parser: TerminalProtocolParser
-  runtime: TerminalRuntime
+  transcript: TerminalTranscript
 }
 
 type DataListener = (id: string, output: TerminalOutput) => void
 type ExitListener = (id: string, exitCode: number) => void
 type RuntimeListener = (state: TerminalRuntimeState) => void
 
-const BACKLOG_LIMIT = 200_000
 const sessions = new Map<string, Session>()
 const exitedTaskIds = new Map<string, { taskId: string; workspaceId?: string }>()
 const dataListeners = new Set<DataListener>()
 const exitListeners = new Set<ExitListener>()
 const runtimeListeners = new Set<RuntimeListener>()
 const exitedRuntimeStates = new Map<string, TerminalRuntimeState>()
-
-/** The command boundary a runtime event marks, if it marks one. */
-function commandMark(
-  type: string,
-  before: TerminalRuntimeState,
-  after: TerminalRuntimeState,
-  offset: number
-): TerminalMark | undefined {
-  if (type === 'COMMAND_STARTED' && after.runningCommand) {
-    const { id, command, startedAt } = after.runningCommand
-    return { offset, kind: 'start', id, command, at: startedAt }
-  }
-  if (type === 'COMMAND_FINISHED' && before.runningCommand && after.lastCommand) {
-    const { id, endedAt, exitCode } = after.lastCommand
-    return { offset, kind: 'end', id, exitCode, at: endedAt ?? Date.now() }
-  }
-  if (type === 'PROMPT_READY') {
-    const at = Date.now()
-    return { offset, kind: 'prompt', id: `prompt-${offset}`, cwd: after.cwd, at }
-  }
-  return undefined
-}
 
 function resolveCwd(cwd?: string): string {
   return cwd && existsSync(cwd) ? cwd : homedir()
@@ -137,48 +102,17 @@ export function createSession(options: SpawnOptions): TerminalSessionInfo {
   const session: Session = {
     info,
     pty: child,
-    backlog: '',
-    sequence: 0,
-    streamLength: 0,
-    marks: [],
-    parser: new TerminalProtocolParser(),
-    runtime: new TerminalRuntime(id, cwd)
+    transcript: new TerminalTranscript(id, cwd)
   }
   sessions.set(id, session)
 
   child.onData((data) => {
-    const parsed = session.parser.parse(data)
-    const chunkStart = session.streamLength
-    const marks: TerminalMark[] = []
-    let position = chunkStart
-    for (const fragment of parsed.fragments) {
-      if (fragment.kind === 'terminal') {
-        session.runtime.appendOutput(fragment.data)
-        position += fragment.data.length
-      } else {
-        const before = session.runtime.snapshot()
-        session.runtime.apply(fragment.event)
-        const after = session.runtime.snapshot()
-        const mark = commandMark(fragment.event.type, before, after, position)
-        if (mark) {
-          session.marks.push(mark)
-          marks.push({ ...mark, offset: mark.offset - chunkStart })
-        }
-        emitRuntimeState(after)
-      }
-    }
-    session.streamLength = chunkStart + parsed.terminalData.length
-    session.backlog = (session.backlog + parsed.terminalData).slice(-BACKLOG_LIMIT)
-    const backlogStart = session.streamLength - session.backlog.length
-    while (session.marks.length > 0 && session.marks[0]!.offset < backlogStart)
-      session.marks.shift()
-    session.sequence += 1
-    const output: TerminalOutput = { data: parsed.terminalData, sequence: session.sequence, marks }
-    for (const listener of dataListeners) listener(id, output)
+    const update = session.transcript.append(data)
+    for (const state of update.runtimeStates) emitRuntimeState(state)
+    for (const listener of dataListeners) listener(id, update.output)
   })
   child.onExit(({ exitCode }) => {
-    session.runtime.terminate(exitCode)
-    const runtimeState = session.runtime.snapshot()
+    const runtimeState = session.transcript.terminate(exitCode)
     exitedRuntimeStates.set(id, runtimeState)
     emitRuntimeState(runtimeState)
     if (info.taskId) exitedTaskIds.set(id, { taskId: info.taskId, workspaceId: info.workspaceId })
@@ -208,18 +142,11 @@ export function killSession(id: string): void {
 export function sessionBacklog(id: string): TerminalOutput {
   const session = sessions.get(id)
   if (!session) return { data: '', sequence: 0, marks: [] }
-  const start = session.streamLength - session.backlog.length
-  return {
-    data: session.backlog,
-    sequence: session.sequence,
-    marks: session.marks
-      .filter((mark) => mark.offset >= start)
-      .map((mark) => ({ ...mark, offset: mark.offset - start }))
-  }
+  return session.transcript.backlog()
 }
 
 export function terminalRuntimeState(id: string): TerminalRuntimeState | undefined {
-  return sessions.get(id)?.runtime.snapshot() ?? exitedRuntimeStates.get(id)
+  return sessions.get(id)?.transcript.runtimeState() ?? exitedRuntimeStates.get(id)
 }
 
 /** The task a session belongs to, with its workspace — ids repeat across workspaces. */
