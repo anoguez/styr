@@ -34,6 +34,11 @@ The card meta row keeps the id and counters `shrink-0 whitespace-nowrap`, and le
 label truncate. The agent state dot is also `shrink-0` — colour carries the state, so it has to
 survive when the label does not.
 
+A task's `orchestrate` flag ("Dispatch can start it") is switchable from the card without opening
+the dialog: the paper-plane hover action, the context menu, and the _Manual_ marker in the meta row,
+which only an opted-out task that is not Done shows. All three write `{ orchestrate }` through
+`tasks.update`; the card re-renders from the file like any other write.
+
 ## Settings
 
 `SettingsDialog` is a nav plus one pane per section, driven by the `SECTIONS` array in
