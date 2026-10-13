@@ -65,15 +65,15 @@ export function BriefTab({
         }`}
       >
         <div className="flex items-center gap-2">
-          <span className="text-[12px] font-semibold text-dim">Context files</span>
-          <span className="text-[11.5px] text-faint">
+          <span className="shrink-0 text-[12px] font-semibold text-dim">Context files</span>
+          <span className="min-w-0 truncate text-[11.5px] text-faint">
             {dragging
               ? 'Drop to attach.'
-              : 'Files or folders — click Add or drop them here. Paths go into the prompt; nothing is copied.'}
+              : 'Add or drop files and folders. Only paths go into the prompt.'}
           </span>
           <button
             type="button"
-            className={`${GHOST_BTN} ml-auto h-6`}
+            className={`${GHOST_BTN} ml-auto h-6 shrink-0`}
             onClick={() => {
               void window.api.settings.pickFiles(repoPath || undefined).then(add)
             }}
@@ -89,7 +89,9 @@ export function BriefTab({
               title={file}
               className="inline-flex h-[26px] max-w-full items-center gap-1.5 rounded-[7px] border border-edge bg-card pl-2 pr-1 text-[12px] text-ink"
             >
-              <FileIcon size={12} />
+              <span className="text-faint">
+                <FileIcon size={12} />
+              </span>
               <span className="whitespace-nowrap">{fileName(file)}</span>
               <span className="truncate font-mono text-[10.5px] text-faint">
                 {file.replace(/\/[^/]+$/, '')}

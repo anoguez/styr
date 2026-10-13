@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import type { TaskDiff } from '@core/diff.js'
 import { formatAccelerator } from '@core/shortcuts.js'
 import type { Task } from '@core/types.js'
 import { useTaskDiff } from '../../hooks/useTaskDiff.js'
 import { changesTitle } from '../../lib/taskForm.js'
-import { DiffIcon, ExternalIcon, FolderIcon, TrashIcon } from '../icons.js'
+import { ArchiveIcon, DiffIcon, ExternalIcon, FolderIcon, MoreIcon, TrashIcon } from '../icons.js'
+import { ActionsMenu } from '../TerminalMenu.js'
 import { DiffCount } from '../ui.js'
 import { GHOST_BTN } from './fields.js'
 
@@ -19,12 +20,14 @@ function ChangesButton({
   return (
     <button
       type="button"
-      className={`${GHOST_BTN} h-7`}
+      className="mr-1 inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-edge-strong bg-raised/70 px-2 text-[12px] font-medium text-ink transition-colors hover:bg-raised disabled:pointer-events-none disabled:opacity-40"
       disabled={count === 0}
       title={changesTitle(changes)}
       onClick={onShow}
     >
-      <DiffIcon />
+      <span className="text-dim">
+        <DiffIcon />
+      </span>
       Changes
       {changes && count > 0 ? (
         <DiffCount
@@ -37,7 +40,7 @@ function ChangesButton({
   )
 }
 
-/** What an existing task's file can do: open, reveal, show changes, archive, delete. */
+/** What an existing task's file can do: show changes, open, reveal, and (under ⋯) archive, delete. */
 function TaskActions({
   task,
   onShowChanges,
@@ -50,11 +53,15 @@ function TaskActions({
   onClose: () => void
 }): ReactNode {
   const { changes, noGit } = useTaskDiff(task)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const closeMenu = useCallback(() => setMenuOpen(false), [])
   return (
     <div className="flex items-center gap-0.5">
+      {noGit ? null : <ChangesButton changes={changes} onShow={() => onShowChanges(task)} />}
       <button
         type="button"
-        className={`${GHOST_BTN} h-7`}
+        title={task.filePath}
+        className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap`}
         onClick={() => void window.api.tasks.openInEditor(task.id)}
       >
         <ExternalIcon />
@@ -62,36 +69,51 @@ function TaskActions({
       </button>
       <button
         type="button"
-        className={`${GHOST_BTN} h-7`}
+        title="Show the task file in its folder"
+        className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap`}
         onClick={() => void window.api.tasks.reveal(task.id)}
       >
         <FolderIcon />
         Reveal
       </button>
-      {noGit ? null : <ChangesButton changes={changes} onShow={() => onShowChanges(task)} />}
-      <button
-        type="button"
-        className={`${GHOST_BTN} h-7`}
-        title={
-          task.archivedAt
-            ? 'Put this task back on the board'
-            : 'Take this task off the board; the file is kept'
-        }
-        onClick={() => void window.api.tasks.archive(task.id, !task.archivedAt).then(onClose)}
-      >
-        {task.archivedAt ? 'Unarchive' : 'Archive'}
-      </button>
-      <span className="mx-1 h-4 w-px bg-edge" />
-      <button
-        type="button"
-        aria-label="Delete task"
-        title="Delete task"
-        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-[7px] px-2 text-[12px] text-danger transition-colors hover:bg-red-500/10"
-        onClick={onDelete}
-      >
-        <TrashIcon size={14} />
-        Delete
-      </button>
+      <span className="relative">
+        <button
+          type="button"
+          aria-label="More actions"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          // The menu closes itself on any mousedown outside it; this keeps that from reopening it.
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={() => setMenuOpen((open) => !open)}
+          className={`${GHOST_BTN} size-7 justify-center !px-0 ${menuOpen ? 'bg-raised/70 text-ink' : ''}`}
+        >
+          <MoreIcon size={14} />
+        </button>
+        {menuOpen ? (
+          <ActionsMenu
+            className="bottom-full left-0 mb-1.5"
+            onClose={closeMenu}
+            groups={[
+              [
+                task.archivedAt
+                  ? {
+                      label: 'Unarchive',
+                      note: 'back on the board',
+                      icon: <ArchiveIcon />,
+                      run: () => void window.api.tasks.archive(task.id, false).then(onClose)
+                    }
+                  : {
+                      label: 'Archive',
+                      note: 'file is kept',
+                      icon: <ArchiveIcon />,
+                      run: () => void window.api.tasks.archive(task.id, true).then(onClose)
+                    }
+              ],
+              [{ label: 'Delete task…', danger: true, icon: <TrashIcon />, run: onDelete }]
+            ]}
+          />
+        ) : null}
+      </span>
     </div>
   )
 }
@@ -143,6 +165,7 @@ export function TaskFooter({
   task,
   saving,
   canStart,
+  run,
   onSave,
   onSaveAndStart,
   onSavePreset,
@@ -154,6 +177,8 @@ export function TaskFooter({
   saving: boolean
   /** Done tasks have nothing to start. */
   canStart: boolean
+  /** What Save & Start will do, from `runSummary`. */
+  run: { text: string; title: string }
   onSave: () => void
   onSaveAndStart: () => void
   /** Resolves true once saved, which closes the name field. */
@@ -163,7 +188,7 @@ export function TaskFooter({
   onClose: () => void
 }): ReactNode {
   return (
-    <footer className="flex shrink-0 items-center gap-2 border-t border-edge bg-chrome/40 py-3 pl-3 pr-4">
+    <footer className="relative flex shrink-0 items-center gap-2 border-t border-edge bg-chrome/40 py-3 pl-3 pr-4">
       {task ? (
         <TaskActions
           task={task}
@@ -175,11 +200,16 @@ export function TaskFooter({
         <SavePresetForm onSave={onSavePreset} />
       )}
       <div className="flex-1" />
+      {canStart ? (
+        <span title={run.title} className="min-w-0 truncate font-mono text-[10.5px] text-faint">
+          {run.text}
+        </span>
+      ) : null}
       <button
         type="button"
         disabled={saving}
         onClick={onSave}
-        className="inline-flex h-[30px] items-center gap-2 rounded-lg border border-edge-strong bg-raised/70 px-3 text-[12.5px] font-medium text-dim transition-colors hover:bg-raised hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+        className="inline-flex h-[30px] shrink-0 items-center gap-2 rounded-lg border border-edge-strong bg-raised/70 px-3 text-[12.5px] font-medium text-dim transition-colors hover:bg-raised hover:text-ink disabled:pointer-events-none disabled:opacity-40"
       >
         Save
         <kbd className="font-mono text-[10px] text-faint">{formatAccelerator('mod+enter')}</kbd>
@@ -189,7 +219,7 @@ export function TaskFooter({
           type="button"
           disabled={saving}
           onClick={onSaveAndStart}
-          className="inline-flex h-[30px] items-center gap-[7px] rounded-lg border border-accent bg-accent px-3.5 text-[12.5px] font-semibold text-[var(--color-on-accent)] shadow-[0_1px_0_rgba(255,255,255,0.12)_inset] transition-colors hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-40"
+          className="inline-flex h-[30px] shrink-0 items-center gap-[7px] rounded-lg border border-accent bg-accent px-3.5 text-[12.5px] font-semibold text-[var(--color-on-accent)] shadow-[0_1px_0_rgba(255,255,255,0.12)_inset] transition-colors hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-40"
         >
           <svg aria-hidden viewBox="0 0 16 16" width="11" height="11" fill="currentColor">
             <path d="M5 3.5v9l7.25-4.5z" />

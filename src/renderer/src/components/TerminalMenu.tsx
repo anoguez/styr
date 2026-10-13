@@ -8,6 +8,11 @@ export interface MenuItem {
   label: string
   kbd?: string
   agent?: boolean
+  /** Destructive: drawn in the danger colour. */
+  danger?: boolean
+  icon?: ReactNode
+  /** A short aside after the label, such as what the action keeps. */
+  note?: string
   disabled?: boolean
   run: () => void
 }
@@ -62,15 +67,21 @@ export function ActionsMenu({
               type="button"
               role="menuitem"
               disabled={item.disabled}
-              className={`flex h-[26px] w-full items-center gap-2 rounded-md px-2 text-left text-[12.5px] hover:bg-raised focus:bg-raised focus:outline-none disabled:opacity-40 ${
-                item.agent ? 'text-accent-ink' : 'text-ink'
+              className={`flex h-[26px] w-full items-center gap-2 rounded-md px-2 text-left text-[12.5px] focus:outline-none disabled:opacity-40 ${
+                item.danger
+                  ? 'text-danger hover:bg-danger/10 focus:bg-danger/10'
+                  : `hover:bg-raised focus:bg-raised ${item.agent ? 'text-accent-ink' : 'text-ink'}`
               }`}
               onClick={() => {
                 onClose()
                 item.run()
               }}
             >
+              {item.icon ? (
+                <span className={item.danger ? undefined : 'text-dim'}>{item.icon}</span>
+              ) : null}
               <span className="flex-1">{item.label}</span>
+              {item.note ? <span className="text-[11px] text-faint">{item.note}</span> : null}
               {item.kbd ? <Kbd>{item.kbd}</Kbd> : null}
             </button>
           ))}

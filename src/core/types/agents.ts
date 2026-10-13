@@ -6,6 +6,12 @@ export const AGENT_PROVIDER_LABELS: Record<'claude' | 'codex', string> = {
   codex: 'Codex'
 }
 
+/** The agent's name in running text ("what Claude receives"). */
+export const AGENT_PROVIDER_SHORT_LABELS: Record<'claude' | 'codex', string> = {
+  claude: 'Claude',
+  codex: 'Codex'
+}
+
 /** The program name each agent CLI is started by, to recognise one typed into a shell. */
 export const AGENT_PROVIDER_PROGRAMS: Record<'claude' | 'codex', string> = {
   claude: 'claude',

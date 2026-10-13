@@ -75,3 +75,44 @@ export const TrashIcon = (props: IconProps): ReactNode => (
     <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />
   </Icon>
 )
+
+export const ChevronIcon = (props: IconProps): ReactNode => (
+  <Icon {...props}>
+    <path d="M4 6l4 4 4-4" />
+  </Icon>
+)
+
+export const ArchiveIcon = (props: IconProps): ReactNode => (
+  <Icon {...props}>
+    <path d="M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3" />
+  </Icon>
+)
+
+export const RefreshIcon = (props: IconProps): ReactNode => (
+  <Icon {...props}>
+    <path d="M12.5 6.5A4.75 4.75 0 0 0 3.6 5.2M3.5 9.5a4.75 4.75 0 0 0 8.9 1.3" />
+    <path d="M3.5 2.5v3h3M12.5 13.5v-3h-3" />
+  </Icon>
+)
+
+export const UnlinkIcon = (props: IconProps): ReactNode => (
+  <Icon {...props}>
+    <path d="M6.5 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9.5 11.5l-1 1A2.5 2.5 0 0 1 5 9l1-1M3 3l10 10" />
+  </Icon>
+)
+
+/** Three dots, for a "More actions" menu button. Filled, so it reads at small sizes. */
+export const MoreIcon = ({ size = 13 }: IconProps): ReactNode => (
+  <svg
+    aria-hidden
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="currentColor"
+    className="shrink-0"
+  >
+    <circle cx="3.5" cy="8" r="1.3" />
+    <circle cx="8" cy="8" r="1.3" />
+    <circle cx="12.5" cy="8" r="1.3" />
+  </svg>
+)

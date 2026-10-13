@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { Task } from '@core/types.js'
+import { AGENT_PROVIDER_SHORT_LABELS, type Task } from '@core/types.js'
 import { Chip } from '../ui.js'
 import { GHOST_BTN } from './fields.js'
 
@@ -62,9 +62,21 @@ export function ChatsTab({
   const sessions = [...task.sessions].reverse()
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-5 pt-4">
-      <p className="m-0 text-[12px] leading-normal text-faint">
-        Every run on this task, newest first. Opening one resumes it with its original provider.
-      </p>
+      <div className="flex items-center gap-2">
+        <p className="m-0 flex-1 text-[12px] leading-normal text-faint">
+          Every run on this task, newest first. Opening one resumes it with its original provider.
+        </p>
+        {task.agentSession ? (
+          <button
+            type="button"
+            title="Forget the current chat, so the next run starts a new one"
+            className={`${GHOST_BTN} h-[26px] shrink-0`}
+            onClick={onForget}
+          >
+            Start fresh next run
+          </button>
+        ) : null}
+      </div>
       {sessions.length > 0 ? (
         <ul className="m-0 flex list-none flex-col divide-y divide-edge overflow-hidden rounded-[10px] border border-edge bg-chrome p-0">
           {sessions.map((entry) => (
@@ -72,7 +84,7 @@ export function ChatsTab({
               <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
                 <span className="flex items-center gap-1.5 text-[12.5px] text-ink">
                   <span className="truncate">{entry.label}</span>
-                  <Chip>{entry.provider === 'codex' ? 'Codex' : 'Claude'}</Chip>
+                  <Chip>{AGENT_PROVIDER_SHORT_LABELS[entry.provider]}</Chip>
                   {entry.id === task.agentSession?.id ? (
                     <Chip tone="accent">continues next</Chip>
                   ) : null}
@@ -94,15 +106,6 @@ export function ChatsTab({
       ) : (
         <p className="m-0 text-[12px] text-faint">No agent has run on this task yet.</p>
       )}
-      {task.agentSession ? (
-        <button
-          type="button"
-          className={`${GHOST_BTN} -ml-2 h-[26px] self-start`}
-          onClick={onForget}
-        >
-          Forget current chat — next run starts fresh
-        </button>
-      ) : null}
     </div>
   )
 }

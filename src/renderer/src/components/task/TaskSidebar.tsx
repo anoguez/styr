@@ -1,12 +1,11 @@
 import type { ReactNode } from 'react'
 import type { Settings, Task } from '@core/types.js'
 import type { TaskForm } from '../../lib/taskForm.js'
-import { Select } from '../ui.js'
-import { AgentRunFields } from './AgentRunFields.js'
-import { BlockersField } from './BlockersField.js'
-import { DetailsFields } from './DetailsFields.js'
-import { SECTION_LABEL } from './fields.js'
+import { AgentFields, WorkspaceFields } from './AgentRunFields.js'
+import { PropertySelect } from './fields.js'
+import { PropertiesFields } from './PropertiesFields.js'
 
+/** "Start from": fills a new task's form from a saved preset. */
 function PresetPicker({
   presets,
   value,
@@ -17,29 +16,25 @@ function PresetPicker({
   onChange: (presetId: string) => void
 }): ReactNode {
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className={SECTION_LABEL}>Preset</span>
-      <Select
-        compact
-        aria-label="Preset"
+    <div className="-mx-1.5 -mt-1 flex flex-col gap-0.5 rounded-[9px] border border-accent/30 bg-accent/10 p-1.5 pl-1">
+      <PropertySelect
+        label="Start from"
+        ariaLabel="Preset"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        <option value="">Blank task</option>
-        {presets.map((preset) => (
-          <option key={preset.id} value={preset.id}>
-            {preset.name}
-          </option>
-        ))}
-      </Select>
-      <span className="text-[11px] leading-[1.4] text-faint">
-        Fills in this form from a saved starting point. The task keeps no link to it.
-      </span>
+        options={[
+          { value: '', label: 'Blank task' },
+          ...presets.map((preset) => ({ value: preset.id, label: preset.name }))
+        ]}
+        hint="Fills the form. The task keeps no link to it."
+        onChange={onChange}
+      />
     </div>
   )
 }
 
-/** The dialog's right column: preset (new tasks), blockers, details and how the agent runs. */
+const DIVIDER = <div className="h-px shrink-0 bg-edge" />
+
+/** The dialog's right column: preset (new tasks), properties, the agent, and where it runs. */
 export function TaskSidebar({
   form,
   patch,
@@ -66,24 +61,26 @@ export function TaskSidebar({
   onClose: () => void
 }): ReactNode {
   return (
-    <aside className="flex min-h-0 flex-col gap-5 overflow-y-auto border-l border-edge bg-chrome/50 p-4">
+    <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-l border-edge bg-chrome/50 px-4 pb-4 pt-3.5">
       {!task && settings.taskPresets.length > 0 ? (
         <PresetPicker presets={settings.taskPresets} value={appliedPresetId} onChange={onPreset} />
       ) : null}
-      <BlockersField
-        taskId={task?.id}
-        blockedBy={form.blockedBy}
+      <PropertiesFields
+        form={form}
+        patch={patch}
+        task={task}
+        saved={saved}
         allTasks={allTasks}
-        onChange={(blockedBy) => patch({ blockedBy })}
+        settings={settings}
       />
-      <DetailsFields form={form} patch={patch} saved={saved} settings={settings} />
-      <div className="h-px shrink-0 bg-edge" />
-      <AgentRunFields
+      {DIVIDER}
+      <AgentFields form={form} patch={patch} routedName={routedName} settings={settings} />
+      {DIVIDER}
+      <WorkspaceFields
         form={form}
         patch={patch}
         task={task}
         taskId={taskId}
-        routedName={routedName}
         settings={settings}
         onClose={onClose}
       />

@@ -7,6 +7,7 @@ import {
   inheritedModel,
   modelOptions,
   initialForm,
+  runSummary,
   savePresetPlan,
   taskPayload,
   templateNames,
@@ -277,5 +278,27 @@ describe('withContextFiles', () => {
 
   it('returns the same paths when nothing new is added', () => {
     expect(withContextFiles(['/a'], [])).toEqual(['/a'])
+  })
+})
+
+describe('runSummary', () => {
+  const claude = { provider: 'claude' as const, model: '' }
+
+  it('names provider, model and template for a fresh run', () => {
+    expect(runSummary(null, claude, undefined, 'Implement').text).toBe(
+      'Claude · default model · Implement'
+    )
+    expect(runSummary(null, claude, 'sonnet', 'Implement').text).toBe('Claude · sonnet · Implement')
+    expect(runSummary(null, { ...claude, model: 'opus' }, 'sonnet', 'Implement').text).toBe(
+      'Claude · opus · Implement'
+    )
+  })
+
+  it('says it resumes only a chat kept for the same provider', () => {
+    const task = { agentSession: { provider: 'claude' as const, id: '7f3a91c2-aaaa-bbbb' } }
+    expect(runSummary(task, claude, undefined, 'Implement').text).toBe('Resumes 7f3a91c2 · Claude')
+    expect(runSummary(task, { provider: 'codex', model: '' }, undefined, 'Review').text).toBe(
+      'Codex · default model · Review'
+    )
   })
 })
