@@ -184,9 +184,11 @@ describe('fish integration', () => {
 })
 
 const pwsh = onPath('pwsh')
+// pwsh alone takes about five seconds to start on a CI runner, past vitest's default timeout.
+const PWSH_TIMEOUT_MS = 30_000
 
 describe('PowerShell integration', () => {
-  it.skipIf(!pwsh)('wraps the prompt and the line reader', () => {
+  it.skipIf(!pwsh)('wraps the prompt and the line reader', { timeout: PWSH_TIMEOUT_MS }, () => {
     const output = withDirectory((home) => {
       const script = join(home, 'integration.ps1')
       writeFileSync(script, powershellIntegrationScript(), 'utf8')
