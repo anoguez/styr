@@ -12,6 +12,8 @@ export interface RunPalette {
   foreground: string
   background: string
   cursor: string
+  /** The grid's own selection highlight. */
+  selection: string
   /** The 16 ANSI colours, black to bright white. */
   ansi: readonly string[]
 }
@@ -43,6 +45,7 @@ export function paletteFromTheme(theme: ITheme): RunPalette {
     foreground,
     background: theme.background ?? 'transparent',
     cursor: theme.cursor ?? foreground,
+    selection: theme.selectionBackground ?? theme.cursor ?? foreground,
     ansi: ANSI_KEYS.map((key) => colours[key] ?? foreground)
   }
 }

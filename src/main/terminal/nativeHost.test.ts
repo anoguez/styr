@@ -232,6 +232,23 @@ describe('NativeTerminalHost', () => {
     host.detach('s1')
     expect(host.text('s1')).toBe('')
   })
+
+  it('reads styled lines past the screen, as plain rows from an engine without them', () => {
+    const { session, host } = setup()
+    session.emit('one\r\ntwo\r\nthree')
+    host.attach('s1', 80, 24)
+    expect(host.styledLines('s1', 1, 3).map((row) => [row.row, row.runs[0]?.text])).toEqual([
+      [1, 'two'],
+      [2, 'three']
+    ])
+    const engine = FakeEngine.instances[0]!
+    Object.assign(engine, { styledLines: undefined })
+    expect(host.styledLines('s1', 0, 1)).toEqual([
+      { row: 0, wrapped: false, runs: [{ text: 'one', width: 3, fg: -1, bg: -1, flags: 0 }] }
+    ])
+    host.detach('s1')
+    expect(host.styledLines('s1', 0, 1)).toEqual([])
+  })
 })
 
 /**

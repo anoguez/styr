@@ -26,6 +26,7 @@ import {
   type HistoryCursor
 } from '../lib/nativeTerminal/commandInput.js'
 import { runStyle, type RunPalette } from '../lib/nativeTerminal/style.js'
+import { isOpenableLink, linkRows } from '../lib/nativeTerminal/links.js'
 import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
 import { BlockStatus, quiet, type ActionBlock, type BlockActions } from './TerminalBlocks.js'
 
@@ -144,7 +145,9 @@ function Lines({
   cols: number
   look: Look
 }): ReactNode {
-  return logicalLines(rows, cols).map((runs, index) => <Line key={index} runs={runs} look={look} />)
+  return logicalLines(linkRows(rows, cols), cols).map((runs, index) => (
+    <Line key={index} runs={runs} look={look} />
+  ))
 }
 
 function Line({ runs, look }: { runs: EngineRun[]; look: Look }): ReactNode {
@@ -153,12 +156,36 @@ function Line({ runs, look }: { runs: EngineRun[]; look: Look }): ReactNode {
       className="break-all whitespace-pre-wrap"
       style={{ minHeight: look.lineHeight, lineHeight: `${look.lineHeight}px` }}
     >
-      {runs.map((run, index) => (
-        <span key={index} style={runStyle(run, look.palette)}>
-          {run.text}
-        </span>
-      ))}
+      {runs.map((run, index) =>
+        isOpenableLink(run.link) ? (
+          <LinkRun key={index} run={run} link={run.link} look={look} />
+        ) : (
+          <span key={index} style={runStyle(run, look.palette)}>
+            {run.text}
+          </span>
+        )
+      )}
     </div>
+  )
+}
+
+/**
+ * A web link in the output, opened only by a click that selected nothing. An OSC 8 link's text need
+ * not say where it goes, so the address is shown on hover.
+ */
+function LinkRun({ run, link, look }: { run: EngineRun; link: string; look: Look }): ReactNode {
+  return (
+    <span
+      title={link}
+      className="cursor-pointer hover:underline"
+      style={runStyle(run, look.palette)}
+      onClick={(event) => {
+        if (event.button !== 0 || !window.getSelection()?.isCollapsed) return
+        void window.api.terminal.openLink(link)
+      }}
+    >
+      {run.text}
+    </span>
   )
 }
 

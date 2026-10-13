@@ -1,5 +1,6 @@
 import { diagnosticDetail } from '@core/terminalEngine.js'
 import type {
+  EngineFrameLine,
   NativeAttachResult,
   NativeBlockEvent,
   NativeEngineFailure,
@@ -10,7 +11,7 @@ import type {
   TrackedBlock
 } from '@core/types.js'
 import type { NativeEngineFactory, NativeTerminalEngine } from './nativeEngine.js'
-import { BlockSession, supportsBlockList } from './blockSession.js'
+import { BlockSession, STYLED_BATCH, supportsBlockList } from './blockSession.js'
 
 /**
  * Runs Styr Terminal engines for the sessions the renderer shows with the native engine. The PTY is
@@ -27,6 +28,8 @@ export const NATIVE_SCROLLBACK = 10_000
  * worst, a piece stays under the engine's 1 MiB per-call limit.
  */
 export const WRITE_CHUNK = 128 * 1024
+/** Most lines one `styledLines` call reads: the whole scrollback and the largest screen. */
+const MAX_READ_LINES = NATIVE_SCROLLBACK + 500
 
 export interface NativeHostPorts {
   factory: () => NativeEngineFactory | undefined
@@ -184,6 +187,29 @@ export class NativeTerminalHost {
   lines(id: string, from: number, to: number): string {
     const entry = this.attached.get(id)
     return (entry && this.guard(id, () => entry.engine.lines(from, to))) ?? ''
+  }
+
+  /**
+   * Absolute lines [from, to) of the grid as styled rows, for copying a selection that reaches
+   * past the screen. An engine before 0.3.0 has no styled lines, so its rows are plain text.
+   */
+  styledLines(id: string, from: number, to: number): EngineFrameLine[] {
+    const entry = this.attached.get(id)
+    if (!entry) return []
+    const start = Math.max(0, Math.floor(from))
+    const end = Math.min(Math.floor(to), start + MAX_READ_LINES)
+    return (
+      this.guard(id, () => {
+        const { engine } = entry
+        const rows: EngineFrameLine[] = []
+        for (let batch = start; batch < end; batch += STYLED_BATCH) {
+          const last = Math.min(end, batch + STYLED_BATCH)
+          if (engine.styledLines) rows.push(...engine.styledLines(batch, last))
+          else for (let line = batch; line < last; line++) rows.push(plainRow(engine, line))
+        }
+        return rows
+      }) ?? []
+    )
   }
 
   /** Frees the engine; the panel closed, the session exited or the renderer fell back. */
@@ -361,6 +387,15 @@ function writeChunked(engine: Pick<NativeTerminalEngine, 'write'>, data: string)
     if (end < data.length && last >= 0xd800 && last <= 0xdbff) end -= 1
     engine.write(data.slice(start, end))
     start = end
+  }
+}
+
+function plainRow(engine: NativeTerminalEngine, line: number): EngineFrameLine {
+  const text = engine.lines(line, line + 1)
+  return {
+    row: line,
+    wrapped: false,
+    runs: text ? [{ text, width: [...text].length, fg: -1, bg: -1, flags: 0 }] : []
   }
 }
 

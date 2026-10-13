@@ -4,8 +4,10 @@ import {
   useRef,
   useState,
   type ClipboardEvent,
+  type CompositionEvent,
   type CSSProperties,
   type DragEvent,
+  type FormEvent,
   type KeyboardEvent,
   type MouseEvent,
   type MutableRefObject,
@@ -24,7 +26,29 @@ import { terminalTheme } from '../lib/palette.js'
 import { clipboardKey, isAppShortcut, multilineSequence } from '../lib/terminalKeys.js'
 import { usesControlAsPrimary } from '@core/shortcuts.js'
 import { ScreenModel } from '../lib/nativeTerminal/screen.js'
-import { BlockFeed, lineAtOffset, nativeBlockLayout } from '../lib/nativeTerminal/blocks.js'
+import {
+  BlockFeed,
+  lineAtOffset,
+  nativeBlockLayout,
+  viewportTop
+} from '../lib/nativeTerminal/blocks.js'
+import {
+  cellAt,
+  encodeMouse,
+  mouseButton,
+  reportsMouse,
+  type MouseButton,
+  type MouseReport
+} from '../lib/nativeTerminal/mouse.js'
+import { isOpenableLink, linkRows } from '../lib/nativeTerminal/links.js'
+import { rowCells } from '../lib/nativeTerminal/cells.js'
+import {
+  isEmptySelection,
+  orderedRange,
+  selectionSpans,
+  selectionText,
+  type GridSelection
+} from '../lib/nativeTerminal/selection.js'
 import { BlockListStore } from '../lib/nativeTerminal/blockList.js'
 import { TerminalBlockList, type InputHint } from './TerminalBlockList.js'
 import { AgentBlockList } from './AgentBlockList.js'
@@ -111,6 +135,8 @@ export function NativeTerminalView({
   const model = useRef<ScreenModel | null>(null)
   const listRef = useRef<BlockListStore | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  /** The grid's hidden input: keys and input methods (IME) type into it, never into the page. */
+  const imeRef = useRef<HTMLTextAreaElement | null>(null)
   const [, setVersion] = useState(0)
   const [exitCode, setExitCode] = useState<number | null>(null)
   const [cell, setCell] = useState<Cell>({ width: 8, height: 16 })
@@ -262,7 +288,7 @@ export function NativeTerminalView({
 
     if (handle) {
       handle.current = {
-        focus: () => (inputRef.current ?? element).focus(),
+        focus: () => (inputRef.current ?? imeRef.current ?? element).focus(),
         // The engine and its scrollback are in the main process.
         text: () => window.api.terminal.native.text(sessionId),
         lines: (from, to) => window.api.terminal.native.lines(sessionId, from, to)
@@ -352,6 +378,38 @@ export function NativeTerminalView({
   /** Keys go to Styr's input rather than straight to the PTY. */
   const typing = prompting || agentMode
   const grid = list ? (takeover && !agentMode ? state : null) : state
+  // Rows with their links split out; rows are cached by identity, so this is cheap per frame.
+  const gridLines = grid?.lines
+  const gridCols = grid?.cols ?? 0
+  const linkedGrid = useMemo(
+    () => (gridLines ? linkRows(gridLines, gridCols) : []),
+    [gridLines, gridCols]
+  )
+  const gridRef = useRef(grid)
+  gridRef.current = grid
+  const linkedRef = useRef(linkedGrid)
+  linkedRef.current = linkedGrid
+
+  // The grid's own selection, in buffer lines, so it can reach into the scrollback.
+  const [selection, setSelection] = useState<GridSelection | null>(null)
+  const selectionRef = useRef(selection)
+  selectionRef.current = selection
+  const hasGridSelection = (): boolean =>
+    selectionRef.current !== null && !isEmptySelection(selectionRef.current)
+  const clearSelection = (): void => {
+    if (!selectionRef.current) return
+    selectionRef.current = null
+    setSelection(null)
+    onSelectionRef.current?.(null)
+  }
+  // A new width reflows the buffer, so the selected lines are no longer where they were.
+  useEffect(() => clearSelection(), [gridCols])
+  /** The selection's text, read from the engine's buffer so it reaches past the screen. */
+  const gridSelectionText = async (picked: GridSelection): Promise<string> => {
+    const { start, end } = orderedRange(picked)
+    const lines = await window.api.terminal.native.styledLines(sessionId, start.line, end.line + 1)
+    return selectionText(picked, lines, gridRef.current?.cols ?? 0)
+  }
 
   // Typing goes to Styr's input at a prompt and straight to the PTY while a command runs; the
   // input comes and goes with the prompt, so focus follows it.
@@ -364,7 +422,7 @@ export function NativeTerminalView({
       !host.current.contains(document.activeElement) ||
       document.activeElement === document.body
     )
-      host.current.focus()
+      (imeRef.current ?? host.current).focus()
   }
   useEffect(() => {
     if (!active) return
@@ -378,15 +436,21 @@ export function NativeTerminalView({
     return host.current.contains(selection.anchorNode) ? selection.toString() : ''
   }
 
-  const fromInput = (target: EventTarget): boolean => target instanceof HTMLTextAreaElement
+  /** From Styr's command input, which handles its own keys (the grid's hidden input does not). */
+  const fromInput = (target: EventTarget): boolean =>
+    target instanceof HTMLTextAreaElement && target !== imeRef.current
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     // The command input handles its own keys.
     if (fromInput(event.target)) return
     const native = event.nativeEvent
-    const clipboard = clipboardKey(native, selectedText() !== '')
+    // An input method is composing: its keys are its own until it commits the text.
+    if (native.isComposing || native.keyCode === 229) return
+    const gridSelected = grid !== null && hasGridSelection()
+    const clipboard = clipboardKey(native, gridSelected || selectedText() !== '')
     if (clipboard === 'copy') {
       event.preventDefault()
+      if (gridSelected) return copyGridSelection()
       void navigator.clipboard.writeText(selectedText())
       window.getSelection()?.removeAllRanges()
       return
@@ -411,7 +475,23 @@ export function NativeTerminalView({
     })
     if (sequence === null) return
     event.preventDefault()
+    clearSelection()
     write(sequence)
+  }
+
+  /** Copies the grid's selection, which is read from the engine, so after the copy event. */
+  const copyGridSelection = (): void => {
+    const picked = selectionRef.current
+    if (!picked) return
+    void gridSelectionText(picked).then((text) => navigator.clipboard.writeText(text))
+    clearSelection()
+  }
+
+  // ⌘C on macOS arrives as the menu's copy, not as a key the grid sees.
+  const onCopy = (event: ClipboardEvent<HTMLDivElement>): void => {
+    if (grid === null || !hasGridSelection()) return
+    event.preventDefault()
+    copyGridSelection()
   }
 
   /** Puts text into the command input as if typed, so it can still be edited before running. */
@@ -437,6 +517,19 @@ export function NativeTerminalView({
     const whole = Math.trunc(lines)
     wheelRemainder.current = (lines - whole) * cell.height
     if (whole === 0) return
+    if (state && reportsMouse(state.modes, event.shiftKey)) {
+      const report: MouseReport = {
+        kind: 'press',
+        button: whole < 0 ? 'wheelUp' : 'wheelDown',
+        ...pointerCell(event),
+        shiftKey: false,
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey
+      }
+      const sequence = encodeMouse(report, state.modes)
+      if (sequence) window.api.terminal.write(sessionId, sequence.repeat(Math.abs(whole)))
+      return
+    }
     if (state?.altScreen) {
       // Without mouse reporting, a full-screen program scrolls with the arrow keys (as in xterm.js).
       const key = whole < 0 ? 'ArrowUp' : 'ArrowDown'
@@ -456,13 +549,147 @@ export function NativeTerminalView({
     hovered.current = line
     onHoverRef.current?.(line)
   }
+  const focusGrid = (): void => (imeRef.current ?? host.current)?.focus()
+
+  /** The grid cell under the pointer, kept on the screen. */
+  const pointerCell = (event: {
+    clientX: number
+    clientY: number
+  }): { col: number; row: number } => {
+    const box = host.current?.getBoundingClientRect()
+    const screen = gridRef.current
+    if (!box || !screen) return { col: 0, row: 0 }
+    return cellAt(event.clientX - box.left, event.clientY - box.top, cellRef.current, screen)
+  }
+
+  /** The web link in a grid cell, if there is one. */
+  const linkAt = (point: { col: number; row: number }): string | undefined => {
+    const row = linkedRef.current[point.row]
+    const link = row ? rowCells(row)[point.col]?.link : undefined
+    return isOpenableLink(link) ? link : undefined
+  }
+
+  const sendMouse = (report: MouseReport): void => {
+    const modes = gridRef.current?.modes
+    const sequence = modes ? encodeMouse(report, modes) : null
+    if (sequence) window.api.terminal.write(sessionId, sequence)
+  }
+
+  // A press in the grid is followed to its release wherever the pointer goes.
+  const stopDrag = useRef<(() => void) | null>(null)
+  useEffect(() => () => stopDrag.current?.(), [])
+  const follow = (
+    move: (event: globalThis.MouseEvent) => void,
+    up: (event: globalThis.MouseEvent) => void
+  ): void => {
+    stopDrag.current?.()
+    const onUp = (event: globalThis.MouseEvent): void => {
+      stop()
+      up(event)
+    }
+    const stop = (): void => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', onUp)
+      stopDrag.current = null
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', onUp)
+    stopDrag.current = stop
+  }
+
+  const onMouseDown = (event: MouseEvent<HTMLDivElement>): void => {
+    const screen = gridRef.current
+    if (!screen || !host.current) return
+    const point = pointerCell(event)
+    const link = linkAt(point)
+    // ⌘-click (Ctrl elsewhere) opens a link even while the program takes the mouse.
+    const primary = usesControlAsPrimary() ? event.ctrlKey : event.metaKey
+    const button = mouseButton(event.button)
+    const modifiers = { shiftKey: false, altKey: event.altKey, ctrlKey: event.ctrlKey }
+
+    if (button && reportsMouse(screen.modes, event.shiftKey) && !(primary && link)) {
+      event.preventDefault()
+      focusGrid()
+      clearSelection()
+      sendMouse({ kind: 'press', button, ...point, ...modifiers })
+      let last = point
+      follow(
+        (move) => {
+          const next = pointerCell(move)
+          if (next.col === last.col && next.row === last.row) return
+          last = next
+          sendMouse({ kind: 'move', button, ...next, ...modifiers })
+        },
+        (up) => sendMouse({ kind: 'release', button, ...pointerCell(up), ...modifiers })
+      )
+      return
+    }
+    if (event.button !== 0) return
+    event.preventDefault()
+    focusGrid()
+    const at = { line: viewportTop(screen) + point.row, col: point.col }
+    const unit = event.detail >= 3 ? 'line' : event.detail === 2 ? 'word' : 'cell'
+    const extend = event.shiftKey && selectionRef.current
+    const started: GridSelection = {
+      anchor: extend ? selectionRef.current!.anchor : at,
+      head: at,
+      unit: extend ? selectionRef.current!.unit : unit
+    }
+    selectionRef.current = started
+    setSelection(started)
+    onSelectionRef.current?.(null)
+    follow(
+      (move) => {
+        const current = selectionRef.current
+        const box = host.current?.getBoundingClientRect()
+        const live = gridRef.current
+        if (!current || !box || !live) return
+        // Past the top or bottom edge the view scrolls, so a selection can reach into history.
+        if (move.clientY < box.top) window.api.terminal.native.scroll(sessionId, 1)
+        else if (move.clientY > box.bottom) window.api.terminal.native.scroll(sessionId, -1)
+        const next = pointerCell(move)
+        const head = { line: viewportTop(live) + next.row, col: next.col }
+        if (head.line === current.head.line && head.col === current.head.col) return
+        const moved = { ...current, head }
+        selectionRef.current = moved
+        setSelection(moved)
+      },
+      (up) => {
+        const current = selectionRef.current
+        if (!current || isEmptySelection(current)) {
+          clearSelection()
+          // A click, not a drag: the explicit gesture that opens a link.
+          if (link && !extend) void window.api.terminal.openLink(link)
+          return
+        }
+        const box = host.current?.getBoundingClientRect()
+        void gridSelectionText(current).then((text) => {
+          if (selectionRef.current !== current || !text.trim() || !box) return
+          onSelectionRef.current?.({ text, x: up.clientX - box.left, y: up.clientY - box.top })
+        })
+      }
+    )
+  }
+
+  const hoverCell = useRef<{ col: number; row: number } | null>(null)
   const onMouseMove = (event: MouseEvent<HTMLDivElement>): void => {
     if (!state || !host.current || list) return
     const offset = event.clientY - host.current.getBoundingClientRect().top
     hover(lineAtOffset(state, offset, cell.height))
+    // Any-motion tracking (1003) wants the pointer even with no button down.
+    if (state.modes.mouse === 'motion' && !stopDrag.current && !event.shiftKey) {
+      const point = pointerCell(event)
+      const last = hoverCell.current
+      if (last && last.col === point.col && last.row === point.row) return
+      hoverCell.current = point
+      const button: MouseButton = 'none'
+      sendMouse({ kind: 'move', button, ...point, shiftKey: false, altKey: false, ctrlKey: false })
+    }
   }
 
   const onMouseUp = (event: MouseEvent<HTMLDivElement>): void => {
+    // The grid follows its own presses (`onMouseDown`).
+    if (grid) return
     const text = selectedText()
     if (!text.trim() || !host.current) {
       onSelectionRef.current?.(null)
@@ -478,6 +705,28 @@ export function NativeTerminalView({
   const focusReport = (focused: boolean): void => {
     if (state?.modes.focusEvents)
       window.api.terminal.write(sessionId, focused ? '\x1b[I' : '\x1b[O')
+  }
+  /** Focus moving inside the terminal (to its hidden input, say) is not the terminal's focus. */
+  const leftTerminal = (related: EventTarget | null): boolean =>
+    !(related instanceof Node && host.current?.contains(related))
+
+  // An input method's text arrives when it commits; until then it is shown at the cursor.
+  const [composition, setComposition] = useState('')
+  const onCompositionEnd = (event: CompositionEvent<HTMLTextAreaElement>): void => {
+    setComposition('')
+    event.currentTarget.value = ''
+    if (!event.data) return
+    clearSelection()
+    write(event.data)
+  }
+  /** Text typed without a key the grid encodes: the emoji picker, dictation, an accent menu. */
+  const onImeInput = (event: FormEvent<HTMLTextAreaElement>): void => {
+    if ((event.nativeEvent as InputEvent).isComposing) return
+    const text = event.currentTarget.value
+    event.currentTarget.value = ''
+    if (!text) return
+    clearSelection()
+    write(text)
   }
 
   const onDragOver = (event: DragEvent<HTMLDivElement>): void => {
@@ -522,12 +771,23 @@ export function NativeTerminalView({
       }}
       onKeyDown={onKeyDown}
       onPaste={onPaste}
+      onCopy={onCopy}
       onWheel={onWheel}
+      onMouseDown={onMouseDown}
       onMouseUp={onMouseUp}
       onMouseMove={onMouseMove}
-      onMouseLeave={() => hover(null)}
-      onFocus={() => focusReport(true)}
-      onBlur={() => focusReport(false)}
+      onMouseLeave={() => {
+        hover(null)
+        hoverCell.current = null
+      }}
+      onFocus={(event) => {
+        // Keys go to the grid's hidden input, so an input method can compose.
+        if (event.target === host.current && imeRef.current) imeRef.current.focus()
+        if (leftTerminal(event.relatedTarget)) focusReport(true)
+      }}
+      onBlur={(event) => {
+        if (leftTerminal(event.relatedTarget)) focusReport(false)
+      }}
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
@@ -592,9 +852,66 @@ export function NativeTerminalView({
           onClearBlocks={() => window.api.terminal.native.clearBlocks(sessionId)}
         />
       ) : null}
-      {grid?.lines.map((line) => (
+      {grid && selection
+        ? selectionSpans(selection, viewportTop(grid), grid.rows, grid.cols, grid.lines).map(
+            (span) => (
+              <div
+                key={span.row}
+                aria-hidden
+                className="pointer-events-none absolute"
+                style={{
+                  top: span.row * cell.height,
+                  left: span.from * cell.width,
+                  width: (span.to - span.from) * cell.width,
+                  height: cell.height,
+                  background: palette.selection
+                }}
+              />
+            )
+          )
+        : null}
+      {linkedGrid.map((line) => (
         <Row key={line.row} line={line} cell={cell} palette={palette} />
       ))}
+      {grid ? (
+        <textarea
+          ref={imeRef}
+          aria-label="Terminal input"
+          tabIndex={-1}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          className="pointer-events-none absolute resize-none overflow-hidden border-0 bg-transparent p-0 opacity-0"
+          // At the cursor, so an input method's candidate window opens beside it.
+          style={{
+            ...font,
+            left: grid.cursor.col * cell.width,
+            top: grid.cursor.row * cell.height,
+            width: cell.width,
+            height: cell.height,
+            outline: 'none'
+          }}
+          onCompositionStart={() => setComposition('')}
+          onCompositionUpdate={(event) => setComposition(event.data)}
+          onCompositionEnd={onCompositionEnd}
+          onInput={onImeInput}
+        />
+      ) : null}
+      {grid && composition ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute z-10 underline"
+          style={{
+            left: grid.cursor.col * cell.width,
+            top: grid.cursor.row * cell.height,
+            height: cell.height,
+            color: palette.foreground,
+            background: palette.background
+          }}
+        >
+          {composition}
+        </span>
+      ) : null}
       {grid?.cursor.visible ? (
         <div
           aria-hidden
@@ -622,15 +939,20 @@ function Row({
 }): ReactNode {
   return (
     <div style={{ height: cell.height }}>
-      {line.runs.map((run, index) => (
-        <span
-          key={index}
-          className="inline-block overflow-hidden align-top"
-          style={{ ...runStyle(run, palette), width: run.width * cell.width }}
-        >
-          {run.text}
-        </span>
-      ))}
+      {line.runs.map((run, index) => {
+        const link = isOpenableLink(run.link) ? run.link : undefined
+        return (
+          <span
+            key={index}
+            className={`inline-block overflow-hidden align-top ${link ? 'cursor-pointer hover:underline' : ''}`}
+            style={{ ...runStyle(run, palette), width: run.width * cell.width }}
+            // An OSC 8 link's text need not say where it goes; the address is shown on hover.
+            title={link}
+          >
+            {run.text}
+          </span>
+        )
+      })}
     </div>
   )
 }

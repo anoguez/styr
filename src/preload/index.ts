@@ -20,6 +20,7 @@ import type {
   TaskFilter,
   TaskPatch,
   TaskStatus,
+  EngineFrameLine,
   NativeAttachResult,
   NativeEngineFailure,
   NativeBlockEvent,
@@ -274,6 +275,9 @@ const api = {
       text: (id: string): Promise<string> => ipcRenderer.invoke('terminal:nativeText', id),
       lines: (id: string, from: number, to: number): Promise<string> =>
         ipcRenderer.invoke('terminal:nativeLines', id, from, to),
+      /** Absolute lines [from, to) as styled rows, for copying a selection past the screen. */
+      styledLines: (id: string, from: number, to: number): Promise<EngineFrameLine[]> =>
+        ipcRenderer.invoke('terminal:nativeStyledLines', id, from, to),
       detach: (id: string): void => ipcRenderer.send('terminal:nativeDetach', id),
       clearBlocks: (id: string): void => ipcRenderer.send('terminal:nativeClearBlocks', id),
       onBlocks: (handler: (event: NativeBlockEvent) => void): (() => void) =>

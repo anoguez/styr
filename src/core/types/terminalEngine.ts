@@ -41,9 +41,10 @@ export const TERMINAL_ENGINE_CAPABILITIES: Record<TerminalEngineId, TerminalEngi
   native: {
     // Needs a package with command marks (0.2.0 and later); an older one draws no blocks.
     commandBlocks: true,
-    webLinks: false,
-    mouseReporting: false,
-    scrollbackSelection: false,
+    // Plain URLs always; OSC 8 links with a package that reports them (0.4.0 and later).
+    webLinks: true,
+    mouseReporting: true,
+    scrollbackSelection: true,
     fileDrop: true,
     bracketedPaste: true
   }
@@ -116,6 +117,11 @@ export interface EngineRun {
   fg: EngineColor
   bg: EngineColor
   flags: number
+  /**
+   * The OSC 8 hyperlink the run's cells carry (package 0.4.0), as the program wrote it: any scheme,
+   * and not necessarily what the text says. The view opens only web links, and only on a click.
+   */
+  link?: string
 }
 
 export interface EngineFrameLine {

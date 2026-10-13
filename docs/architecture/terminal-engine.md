@@ -64,10 +64,38 @@ remounting would cost the running one its scrollback.
 ## Untrusted output
 
 Terminal output is untrusted. `NativeTerminalView` puts every character in as React text — never
-markup — and turns nothing into a link or action. Bounds live on both sides: the engine caps a write
+markup. Links are the one thing output can offer (`lib/nativeTerminal/links.ts`): plain `http(s)`
+URLs found in the text and OSC 8 hyperlinks the engine reports on runs (`EngineRun.link`, package
+0.4.0). They open only on an explicit click — a press and release on the same cell, never a drag —
+through `terminal:openLink`, which takes web links alone; an OSC 8 link's address is shown on hover,
+since its text need not say where it goes, and any other scheme (`file:`, `javascript:`) is plain
+text. Bounds live on both sides: the engine caps a write
 at 1 MiB (the host splits backlog and bursts at `WRITE_CHUNK` UTF-16 units, never inside a surrogate
 pair), scrollback at `NATIVE_SCROLLBACK` lines, a frame at one viewport, and queued replies at 64 KiB.
 OSC 52 clipboard reads are ignored by the engine. Bracketed paste strips an embedded end marker.
+
+## The grid: pointer, selection and input
+
+What the grid does with the pointer depends on the program (`lib/nativeTerminal/mouse.ts`):
+
+- **Mouse reporting.** When the frame's `modes.mouse` asks for it (1000 click, 1002 drag, 1003
+  motion), presses, releases, motion and the wheel are encoded as xterm does — SGR when
+  `modes.sgrMouse` (1006), else the X10 form, which cannot say past column/row 223 — and written to
+  the PTY like keys. The engine only reports the modes; it encodes nothing. Shift keeps the pointer
+  for selecting, and ⌘-click (Ctrl elsewhere) still opens a link.
+- **Selection** is the grid's own (`selection.ts`), in buffer lines rather than DOM nodes, so it
+  reaches into the scrollback: dragging past the top or bottom edge scrolls the engine, double click
+  takes a word and triple click a line, Shift-click extends. Copying (⌘C arrives as the menu's
+  `copy` event; Ctrl+C elsewhere as a key) and the selection popover read the lines from the engine
+  (`terminal:nativeStyledLines`) and cut them by cell (`cells.ts`), so wide characters keep their
+  columns. A width change clears the selection, since the buffer reflows under it.
+- **Input** goes through a hidden textarea at the cursor rather than the focusable `div`, so input
+  methods work: the preedit is drawn at the cursor and the committed text written on
+  `compositionend`; keys are not encoded while `isComposing`. Text that arrives without a key the
+  grid encodes (the emoji picker, dictation) is written from the `input` event. Styr's own `❯` input
+  is a textarea already; Enter while composing confirms the composition, never submits.
+
+The block list keeps the DOM's selection: its rows are all on the page.
 
 ## Command blocks
 
@@ -92,8 +120,8 @@ surface's `TerminalBlocks` overlay, fed the same `BlockLayout`. Only where the l
 
 ## Block list (Warp-style)
 
-With zsh and Styr's shell integration, a native session is drawn as the terminal design's block
-list instead of a grid. The shell integration's `PROMPT_READY` becomes a `prompt` mark beside the
+With Styr's shell integration (zsh, bash, fish and PowerShell 7; `ui.md`, "Shell integration"), a
+native session is drawn as the terminal design's block list instead of a grid. The shell integration's `PROMPT_READY` becomes a `prompt` mark beside the
 command `start`/`end` marks, and the host starts a `BlockSession` (`main/terminal/blockSession.ts`)
 at a session's first prompt mark; a shell that sends none stays a grid.
 
@@ -110,7 +138,11 @@ at a session's first prompt mark; a shell that sends none stays a grid.
 - Finished blocks are capped (`MAX_FINISHED_BLOCKS`, `MAX_FINISHED_ROWS` in the main process,
   `VIEW_FINISHED_BLOCKS` in the view) and a command's own engine keeps `BLOCK_SCROLLBACK` lines.
 - The PTY gets the columns left after the list's indent (`LIST_INSET`), so output wraps where it is
-  shown. Output a program laid out in columns keeps the width it ran at.
+  shown. A finished block is rejoined into logical lines, so text re-wraps at any later width, but
+  output a program laid out in columns (`ls`, tables) keeps the width it ran at. That is
+  deliberately not fixed by replaying the block's bytes at the new width: the program chose its
+  columns from the width it was given, so a replay draws the same layout and only re-wraps it, which
+  the logical lines already do. Only running the command again lays it out anew (Retry).
 
 ## Agent blocks
 
@@ -149,20 +181,25 @@ while the agent waits, and Styr's `❯` input. It is provider-agnostic end to en
 
 ## Capabilities and known limitations (experimental level)
 
-| Capability                                                                | xterm.js                   | Styr Terminal                                                                  |
-| ------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------ |
-| Command blocks                                                            | yes                        | yes — with a package that has command marks (0.2.0 and later)                  |
-| Clickable links                                                           | yes                        | no                                                                             |
-| Mouse reporting to programs                                               | yes                        | no — reported in `modes.mouse`, not forwarded                                  |
-| Select/copy beyond screen                                                 | yes                        | partly — DOM selection is the visible screen; copy actions read the scrollback |
-| Bracketed paste, file drop                                                | yes                        | yes                                                                            |
-| Alternate screen (vim, TUIs)                                              | yes                        | yes — wheel sends arrow keys, as xterm.js does                                 |
-| IME composition                                                           | yes                        | no                                                                             |
-| Hyperlinks (OSC 8), images (sixel, kitty, iTerm2), kitty keyboard, OSC 52 | partly                     | no                                                                             |
-| Screen readers                                                            | xterm's accessibility tree | `role="log"` over plain text rows                                              |
+| Capability                                            | xterm.js                   | Styr Terminal                                                              |
+| ----------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------- |
+| Command blocks                                        | yes                        | yes — with a package that has command marks (0.2.0 and later)              |
+| Clickable links                                       | yes                        | yes — web URLs; OSC 8 with package 0.4.0                                   |
+| Mouse reporting to programs                           | yes                        | yes — SGR and X10 (to cell 223); not UTF-8 (1005) or urxvt (1015)          |
+| Select/copy beyond screen                             | yes                        | yes — the grid's own selection, read from the engine's scrollback          |
+| Bracketed paste, file drop                            | yes                        | yes                                                                        |
+| Alternate screen (vim, TUIs)                          | yes                        | yes — without mouse reporting the wheel sends arrow keys, as xterm.js does |
+| IME composition                                       | yes                        | yes — grid and Styr's input                                                |
+| Hyperlinks (OSC 8)                                    | yes                        | yes — package 0.4.0; web links only                                        |
+| Images (sixel, kitty, iTerm2), kitty keyboard, OSC 52 | partly                     | no                                                                         |
+| Screen readers                                        | xterm's accessibility tree | `role="log"` over plain text rows                                          |
 
 Wide characters render in fixed two-cell boxes; fonts without a glyph may still look misaligned.
 High-DPI follows the browser's own text rendering (no canvas).
+
+Command blocks and the block list need the shell integration, so `/bin/sh`, cmd and Windows
+PowerShell 5.1 stay a grid. A block list's finished output re-wraps but keeps a column layout's width
+(see "Block list").
 
 ## Compatibility checklist
 
@@ -185,6 +222,30 @@ ELECTRON_RUN_AS_NODE=1 STYR_TERMINAL_PATH=<styr-terminal>/packages/node \
 
 For a dev run of the app with the engine: `STYR_TERMINAL_PATH=<styr-terminal>/packages/node
 STYR_EXPERIMENTAL_TERMINAL=1 yarn dev`.
+
+### Results (2026-10-13, darwin-arm64, engine 0.4.0 local build)
+
+Run in a dev build of the app (Electron, isolated `HOME`/`STYR_HOME`), driven through the window:
+
+| Check                                                                | Result                                                     |
+| -------------------------------------------------------------------- | ---------------------------------------------------------- |
+| UTF-8 (é, emoji in two cells), SGR 256 and 24-bit colour, bold       | pass                                                       |
+| CR/LF, backspace, cursor movement (`less`, `vim`)                    | pass                                                       |
+| Alternate screen in and out (`less`, `vim`)                          | pass — the screen before is restored                       |
+| Resize while running a TUI (`vim` follows to the new size)           | pass                                                       |
+| Scrollback: wheel, selection past the screen, copy (48 lines)        | pass                                                       |
+| DSR/DA replies (PSReadLine, `vim`)                                   | pass                                                       |
+| Ctrl+C, Ctrl+D, Ctrl+Z (job stopped, `kill %1`)                      | pass                                                       |
+| Arrow keys and application cursor mode (`vim`)                       | pass                                                       |
+| Mouse: `vim mouse=a` click, drag, wheel (SGR); raw X10 and SGR bytes | pass — bytes checked exactly                               |
+| Links: URL click, drag does not open, OSC 8 opens its target         | pass — `file:` OSC 8 not clickable                         |
+| IME: preedit at the cursor, commit in the grid and in Styr's input   | pass — Chromium's IME emulation (CDP), not a physical IME  |
+| `git log` (colour), `less`                                           | pass                                                       |
+| `claude`, `codex`: TUI draws and exits                               | pass — first-run screens (no sign-in in the isolated home) |
+| Block list with zsh, bash 3.2, fish 4.9, PowerShell 7                | pass                                                       |
+| `htop`                                                               | not run — not installed here                               |
+
+Bracketed paste and Shift+Enter are covered by the unit tests (`keys`, `commandInput`).
 
 ## Platforms
 
