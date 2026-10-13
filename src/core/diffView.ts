@@ -113,24 +113,87 @@ export function buildRows(patch: string): DiffRow[] {
         i++
         continue
       }
-      // A run of deletions then additions: pair them up for word-level emphasis.
-      let j = i
-      while (lines[j]?.kind === 'del') j++
-      const dels = lines.slice(i, j)
-      let k = j
-      while (lines[k]?.kind === 'add') k++
-      const adds = lines.slice(j, k)
-      const paired = dels.length === adds.length
-      dels.forEach((del, n) => {
-        const segments = paired ? emphasise(del.text, adds[n]!.text)[0] : plain(del.text)
-        rows.push({ kind: 'del', oldLine: oldLine++, segments })
-      })
-      adds.forEach((add, n) => {
-        const segments = paired ? emphasise(dels[n]!.text, add.text)[1] : plain(add.text)
-        rows.push({ kind: 'add', newLine: newLine++, segments })
-      })
-      i = k
+      i = pushChange(
+        rows,
+        lines,
+        i,
+        () => oldLine++,
+        () => newLine++
+      )
     }
   })
+  return rows
+}
+
+/**
+ * Pushes the run of deletions then additions at `start` as rows, pairing them up for word-level
+ * emphasis when they are as many; returns the index after the run.
+ */
+function pushChange(
+  rows: DiffRow[],
+  lines: PatchLine[],
+  start: number,
+  oldLine: () => number | undefined,
+  newLine: () => number | undefined
+): number {
+  let j = start
+  while (lines[j]?.kind === 'del') j++
+  const dels = lines.slice(start, j)
+  let k = j
+  while (lines[k]?.kind === 'add') k++
+  const adds = lines.slice(j, k)
+  const paired = dels.length === adds.length
+  dels.forEach((del, n) => {
+    const segments = paired ? emphasise(del.text, adds[n]!.text)[0] : plain(del.text)
+    rows.push({ kind: 'del', oldLine: oldLine(), segments })
+  })
+  adds.forEach((add, n) => {
+    const segments = paired ? emphasise(dels[n]!.text, add.text)[1] : plain(add.text)
+    rows.push({ kind: 'add', newLine: newLine(), segments })
+  })
+  return k
+}
+
+/**
+ * Rows of a patch without line numbers, as an agent's edit is (`editPatch`, or a Codex
+ * `apply_patch`): `+`, `-` and ` ` lines, parts split by a line starting `@@` (drawn as a `hunk`
+ * row with its text after the `@@`). File headers (`***`, `+++`, `---`) are dropped.
+ */
+export function editRows(patch: string): DiffRow[] {
+  const rows: DiffRow[] = []
+  let run: PatchLine[] = []
+  const flush = (): void => {
+    for (let i = 0; i < run.length;) {
+      const line = run[i]!
+      if (line.kind === 'ctx') {
+        rows.push({ kind: 'ctx', segments: plain(line.text) })
+        i++
+      } else {
+        i = pushChange(
+          rows,
+          run,
+          i,
+          () => undefined,
+          () => undefined
+        )
+      }
+    }
+    run = []
+  }
+  for (const line of patch.split('\n')) {
+    if (/^(\*\*\*|\+\+\+ |--- )/.test(line) || line.startsWith('\\')) continue
+    if (line.startsWith('@@')) {
+      flush()
+      const text = line.slice(2).trim()
+      // A bare `@@` before anything is shown parts nothing.
+      if (rows.length > 0 || text) rows.push({ kind: 'hunk', text })
+      continue
+    }
+    const marker = line[0]
+    if (marker === '+') run.push({ kind: 'add', text: line.slice(1) })
+    else if (marker === '-') run.push({ kind: 'del', text: line.slice(1) })
+    else run.push({ kind: 'ctx', text: marker === ' ' ? line.slice(1) : line })
+  }
+  flush()
   return rows
 }

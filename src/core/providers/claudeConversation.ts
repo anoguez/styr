@@ -1,6 +1,7 @@
 import {
   editPatch,
   lineCount,
+  outputText,
   type ConversationAdapter,
   type ConversationToolUse,
   type ToolDescription
@@ -31,10 +32,28 @@ function promptText(raw: string): string {
   )
 }
 
-/** One line naming what a call works on: its file, command, pattern or address. */
+/** An MCP tool's server and name, from Claude Code's `mcp__<server>__<tool>`. */
+function mcpTool(tool: string): { server: string; name: string } | null {
+  const match = /^mcp__(.+?)__(.+)$/.exec(tool)
+  return match ? { server: match[1]!, name: match[2]! } : null
+}
+
+/** An MCP call's arguments in a line, as Claude Code's own view lists them. */
+function argumentsLine(input: Record<string, unknown>): string {
+  return Object.entries(input)
+    .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value))
+    .map(([key, value]) => {
+      const shown = typeof value === 'string' ? JSON.stringify(value.split('\n')[0]) : String(value)
+      return `${key}: ${shown.length > 120 ? `${shown.slice(0, 119)}…` : shown}`
+    })
+    .join(', ')
+}
+
+/** What a call works on: its file, command (every line of it), pattern or address. */
 function summary(use: ConversationToolUse): string {
   const { input } = use
-  const first =
+  if (mcpTool(use.tool)) return argumentsLine(input)
+  return (
     str(input, 'file_path') ??
     str(input, 'notebook_path') ??
     str(input, 'command') ??
@@ -45,11 +64,12 @@ function summary(use: ConversationToolUse): string {
     str(input, 'prompt') ??
     Object.values(input).find((value): value is string => typeof value === 'string') ??
     ''
-  const line = first.split('\n')[0] ?? ''
-  return first.includes('\n') ? `${line} …` : line
+  ).trim()
 }
 
 const COUNTED = new Set(['Read', 'Bash', 'Grep', 'Glob'])
+/** Tools whose result says nothing the block does not show already: a file read, an edit's diff. */
+const QUIET = new Set(['Read', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'TodoWrite'])
 
 function result(use: ConversationToolUse): string | undefined {
   if (use.text === undefined) return undefined
@@ -57,6 +77,11 @@ function result(use: ConversationToolUse): string | undefined {
   if (use.isError) return first?.slice(0, 160) ?? 'failed'
   if (COUNTED.has(use.tool)) return lineCount(use.text)
   return first?.slice(0, 160)
+}
+
+function output(use: ConversationToolUse): string | undefined {
+  if (use.text === undefined || (QUIET.has(use.tool) && !use.isError)) return undefined
+  return outputText(use.text) || undefined
 }
 
 function edits(use: ConversationToolUse): { old: string; next: string }[] {
@@ -77,9 +102,13 @@ function describeTool(use: ConversationToolUse): ToolDescription {
   const path = str(use.input, 'file_path')
   const patch = path ? editPatch(edits(use)) : null
   const outcome = result(use)
+  const shown = output(use)
+  const mcp = mcpTool(use.tool)
   return {
+    ...(mcp ? { name: `${mcp.server} · ${mcp.name}` } : {}),
     summary: summary(use),
     ...(outcome !== undefined ? { result: outcome } : {}),
+    ...(shown ? { output: shown } : {}),
     ...(patch && path ? { edit: { path, ...patch } } : {})
   }
 }

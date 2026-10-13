@@ -5,6 +5,7 @@ import {
   DEFAULT_APPROVAL_OPTIONS,
   editPatch,
   lineCount,
+  outputText,
   parseAgentConversation,
   promptHistory,
   type AgentConversation,
@@ -104,11 +105,12 @@ describe('parseAgentConversation', () => {
 })
 
 describe('conversation helpers', () => {
-  it('turns edits into a patch with counts', () => {
+  it('turns edits into a line diff with counts', () => {
+    // The quoted context shows unchanged; only what changed counts.
     expect(editPatch([{ old: 'a\nb', next: 'a\nc\nd' }])).toEqual({
-      patch: '-a\n-b\n+a\n+c\n+d',
-      additions: 3,
-      deletions: 2
+      patch: ' a\n-b\n+c\n+d',
+      additions: 2,
+      deletions: 1
     })
     expect(
       editPatch([
@@ -116,7 +118,38 @@ describe('conversation helpers', () => {
         { old: 'c', next: '' }
       ])
     ).toEqual({ patch: '-a\n+b\n@@\n-c', additions: 1, deletions: 2 })
+    expect(editPatch([{ old: 'x', next: 'x' }])).toEqual({ patch: '', additions: 0, deletions: 0 })
     expect(editPatch([])).toBeNull()
+  })
+
+  it('keeps three unchanged lines around a change and parts distant changes', () => {
+    const old = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'].join('\n')
+    const next = old.replace('1\n', 'one\n').replace('12', 'twelve')
+    expect(editPatch([{ old, next }])!.patch.split('\n')).toEqual([
+      '-1',
+      '+one',
+      ' 2',
+      ' 3',
+      ' 4',
+      '@@',
+      ' 9',
+      ' 10',
+      ' 11',
+      '-12',
+      '+twelve'
+    ])
+  })
+
+  it('draws a huge edit as removed then added', () => {
+    const old = Array.from({ length: 600 }, (_, i) => `o${i}`).join('\n')
+    const next = Array.from({ length: 600 }, (_, i) => `n${i}`).join('\n')
+    expect(editPatch([{ old, next }])).toMatchObject({ additions: 600, deletions: 600 })
+  })
+
+  it('drops terminal escapes from output', () => {
+    expect(outputText('\x1b[31mred\x1b[0m\n\x1b]8;;https://a\x07link\x1b]8;;\x07\n\n')).toBe(
+      'red\nlink'
+    )
   })
 
   it('counts lines with something on them', () => {

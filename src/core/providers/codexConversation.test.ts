@@ -161,7 +161,7 @@ describe('Codex conversation adapter', () => {
     ).toBe('Do this')
   })
 
-  it('describes a command by its first line and its output by line count', () => {
+  it('describes a command whole, its output and its line count', () => {
     expect(
       codexConversation.describeTool({
         id: 'c1',
@@ -169,7 +169,7 @@ describe('Codex conversation adapter', () => {
         input: { command: 'rg TODO\nsrc' },
         text: 'a\nb'
       })
-    ).toEqual({ summary: 'rg TODO', result: '2 lines' })
+    ).toEqual({ summary: 'rg TODO\nsrc', result: '2 lines', output: 'a\nb' })
     expect(
       codexConversation.describeTool({
         id: 'c2',
@@ -178,6 +178,6 @@ describe('Codex conversation adapter', () => {
         text: 'boom\nmore',
         isError: true
       })
-    ).toEqual({ summary: 'false', result: 'boom' })
+    ).toEqual({ summary: 'false', result: 'boom', output: 'boom\nmore' })
   })
 })

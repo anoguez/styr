@@ -152,6 +152,13 @@ drawn by Styr from its conversation instead of its TUI, as the task's block mode
 person's prompts, the agent's messages, each tool call with how it went, an edit's diff, an approval
 while the agent waits, and Styr's `❯` input. It is provider-agnostic end to end:
 
+- **Tool calls and diffs** read as the CLI's own view does: `⏺ Tool what it works on`, wrapped
+  rather than cut (a long command folds after three lines), then `⎿` with the first lines of what it
+  returned (`ToolDescription.output`, escapes stripped; an adapter leaves out what the block already
+  shows, like a file read or an edit's result) and "+N lines". `editPatch` diffs each edit by line,
+  so the context an agent quotes to place an edit shows unchanged, with three lines around each
+  change; `editRows` (`core/diffView.ts`) draws it, and Codex's `apply_patch`, with the Changes
+  pane's word emphasis. An MCP tool shows as `server · tool` with its arguments.
 - `core/agentConversation.ts` is the neutral shape — `{ at, working, messages }`, each message's
   tool calls with their results — and the mapping to `StyrBlock`s. It names no provider.
 - Each terminal gets `STYR_CONVERSATION_FILE` (`main/usage.ts`), watched like the context files and
