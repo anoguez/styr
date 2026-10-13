@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.31.0](https://github.com/anoguez/styr/compare/v0.30.0...v0.31.0) (2026-10-13)
+
+
+### Features
+
+* add the Worklog view, Worklog settings and Suggest hours ([#148](https://github.com/anoguez/styr/issues/148)) ([9a9466f](https://github.com/anoguez/styr/commit/9a9466fc2bd3e02e4b3789ddd6e588be8fcff713))
+* wrap agent tool calls and draw edits as line diffs in Styr Terminal ([#150](https://github.com/anoguez/styr/issues/150)) ([2c0abae](https://github.com/anoguez/styr/commit/2c0abae26bf2a44461b484ccf3d8105d8be65baf))
+
 ## [0.30.0](https://github.com/anoguez/styr/compare/v0.29.0...v0.30.0) (2026-10-13)
 
 
