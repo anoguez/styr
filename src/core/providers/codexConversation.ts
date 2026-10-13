@@ -28,7 +28,7 @@ function contentText(value: unknown): string {
     .map((part) => {
       if (typeof part === 'string') return part
       const item = record(part)
-      return item?.type === 'text' ? bounded(item.text) : ''
+      return item?.type === 'text' || item?.type === 'inputText' ? bounded(item.text) : ''
     })
     .filter(Boolean)
     .join('\n')
@@ -82,15 +82,17 @@ function itemTools(item: Record<string, unknown>): ConversationToolUse[] {
   if (type === 'mcpToolCall' || type === 'dynamicToolCall' || type === 'collabAgentToolCall') {
     const tool = bounded(item.tool, 200) || bounded(item.toolName, 200) || type
     const input = record(item.arguments) ?? record(item.input) ?? {}
+    // MCP: `result.content` or `error.message`; a dynamic tool: `contentItems`.
+    const error = bounded(record(item.error)?.message)
     const output =
-      contentText(item.result) || contentText(record(item.result)?.content ?? item.content)
+      error || contentText(record(item.result)?.content) || contentText(item.contentItems)
     return [
       {
         id,
         tool,
         input,
         ...(finished(item) || output ? { text: output } : {}),
-        ...(item.status === 'failed' ? { isError: true } : {})
+        ...(item.status === 'failed' || error || item.success === false ? { isError: true } : {})
       }
     ]
   }

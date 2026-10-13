@@ -72,6 +72,51 @@ describe('codexConversationFromThread', () => {
     expect(failed).toMatchObject({ id: 'c2', isError: true, text: '' })
   })
 
+  it('reads MCP and dynamic tool results and a declined file change', () => {
+    const [mcp, failedMcp, dynamic, declined] = codexConversationFromThread(
+      thread([
+        {
+          id: 'm1',
+          type: 'mcpToolCall',
+          server: 'styr',
+          tool: 'get_task',
+          arguments: { id: 'TASK-1' },
+          status: 'completed',
+          result: { content: [{ type: 'text', text: 'a\nb' }] },
+          error: null
+        },
+        {
+          id: 'm2',
+          type: 'mcpToolCall',
+          tool: 'get_task',
+          arguments: {},
+          status: 'failed',
+          result: null,
+          error: { message: 'not found' }
+        },
+        {
+          id: 'd1',
+          type: 'dynamicToolCall',
+          tool: 'lookup',
+          arguments: { q: 'x' },
+          status: 'completed',
+          success: true,
+          contentItems: [{ type: 'inputText', text: 'found' }]
+        },
+        {
+          id: 'f1',
+          type: 'fileChange',
+          status: 'declined',
+          changes: [{ path: 'a.ts', kind: { type: 'update' }, diff: '+x' }]
+        }
+      ])
+    )!.messages[0]!.toolUses
+    expect(mcp).toEqual({ id: 'm1', tool: 'get_task', input: { id: 'TASK-1' }, text: 'a\nb' })
+    expect(failedMcp).toMatchObject({ text: 'not found', isError: true })
+    expect(dynamic).toEqual({ id: 'd1', tool: 'lookup', input: { q: 'x' }, text: 'found' })
+    expect(declined).toMatchObject({ id: 'f1:0', text: '', isError: true })
+  })
+
   it('keeps the newest messages of a long thread', () => {
     const turns = Array.from({ length: 250 }, (_, index) => ({
       items: [

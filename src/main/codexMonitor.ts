@@ -7,6 +7,7 @@ import {
   FrameDecoder,
   MIN_CODEX_VERSION,
   ThreadBindings,
+  codexApproval,
   encodeTextFrame,
   isSupportedCodexVersion,
   parseCodexVersion,
@@ -87,6 +88,7 @@ interface Connection {
 interface PendingApproval {
   requestId: number | string
   prompt: string
+  reply(allow: boolean): unknown
 }
 
 /**
@@ -161,7 +163,7 @@ export class CodexMonitor {
     connection.send({
       jsonrpc: '2.0',
       id: approval.requestId,
-      result: { decision: allow ? 'accept' : 'decline' }
+      result: approval.reply(allow)
     })
     this.approvals.delete(taskId)
     this.refreshTask(taskId)
@@ -264,27 +266,16 @@ export class CodexMonitor {
           else pending.resolve(message.result)
           return
         }
-        if (
-          (message.method === 'item/commandExecution/requestApproval' ||
-            message.method === 'item/fileChange/requestApproval') &&
-          (typeof message.id === 'number' || typeof message.id === 'string')
-        ) {
-          const params = message.params as
-            | { threadId?: unknown; command?: unknown; reason?: unknown; itemId?: unknown }
-            | undefined
+        const approval = codexApproval(message.method, message.params)
+        if (approval && (typeof message.id === 'number' || typeof message.id === 'string')) {
           // A thread Styr does not own is another client's to answer: never decline it here.
-          const taskId =
-            typeof params?.threadId === 'string'
-              ? this.bindings.taskForThread(params.threadId)
-              : undefined
+          const taskId = this.bindings.taskForThread(approval.threadId)
           if (taskId) {
-            const detail =
-              typeof params?.command === 'string'
-                ? params.command
-                : typeof params?.reason === 'string'
-                  ? params.reason
-                  : 'Codex requests approval.'
-            this.approvals.set(taskId, { requestId: message.id, prompt: detail.slice(0, 2_000) })
+            this.approvals.set(taskId, {
+              requestId: message.id,
+              prompt: approval.prompt,
+              reply: approval.reply
+            })
             this.refreshTask(taskId)
           }
           return

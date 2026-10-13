@@ -101,6 +101,50 @@ export function startedThread(params: unknown): { threadId: string; cwd: string 
   return typeof cwd === 'string' ? { threadId: thread.id, cwd } : undefined
 }
 
+/** An approval the app-server asks a client for, and the reply that grants or refuses it. */
+export interface CodexApproval {
+  threadId: string
+  prompt: string
+  reply(allow: boolean): unknown
+}
+
+const decision = (allow: boolean): unknown => ({ decision: allow ? 'accept' : 'decline' })
+
+/**
+ * The approval a server request carries, or undefined when it is not one Styr answers. A command
+ * or file change takes accept/decline; a permissions request is granted as asked, or nothing.
+ */
+export function codexApproval(method: unknown, params: unknown): CodexApproval | undefined {
+  const request = asRecord(params)
+  if (!request || typeof request.threadId !== 'string') return undefined
+  const reason = typeof request.reason === 'string' ? request.reason : undefined
+  const prompt = (text: string | undefined, fallback: string): string =>
+    (text || fallback).slice(0, 2_000)
+  if (method === 'item/commandExecution/requestApproval') {
+    const command = typeof request.command === 'string' ? request.command : undefined
+    return {
+      threadId: request.threadId,
+      prompt: prompt(command ?? reason, 'Codex wants to run a command.'),
+      reply: decision
+    }
+  }
+  if (method === 'item/fileChange/requestApproval')
+    return {
+      threadId: request.threadId,
+      prompt: prompt(reason, 'Codex wants to change files.'),
+      reply: decision
+    }
+  if (method === 'item/permissions/requestApproval') {
+    const permissions = asRecord(request.permissions) ?? {}
+    return {
+      threadId: request.threadId,
+      prompt: prompt(reason, 'Codex asks for more permissions.'),
+      reply: (allow) => ({ permissions: allow ? permissions : {}, scope: 'turn' })
+    }
+  }
+  return undefined
+}
+
 export interface ThreadUpdate {
   taskId: string
   event: CodexEvent

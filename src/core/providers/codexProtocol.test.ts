@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   FrameDecoder,
   ThreadBindings,
+  codexApproval,
   encodeTextFrame,
   eventForStatus,
   isSupportedCodexVersion,
@@ -195,5 +196,44 @@ describe('WebSocket framing', () => {
     const [message] = decoder.push(rest)
     expect(message?.opcode).toBe(1)
     expect(message?.payload.toString()).toBe('hello')
+  })
+})
+
+describe('codexApproval', () => {
+  it('answers a command or file change with accept or decline', () => {
+    const command = codexApproval('item/commandExecution/requestApproval', {
+      threadId: 't1',
+      itemId: 'c1',
+      command: 'rm -rf build'
+    })
+    expect(command).toMatchObject({ threadId: 't1', prompt: 'rm -rf build' })
+    expect(command?.reply(true)).toEqual({ decision: 'accept' })
+    expect(command?.reply(false)).toEqual({ decision: 'decline' })
+    const files = codexApproval('item/fileChange/requestApproval', {
+      threadId: 't1',
+      reason: 'write outside the workspace'
+    })
+    expect(files?.prompt).toBe('write outside the workspace')
+    expect(files?.reply(false)).toEqual({ decision: 'decline' })
+  })
+
+  it('grants a permissions request as asked, or nothing', () => {
+    const permissions = { network: { enabled: true } }
+    const request = codexApproval('item/permissions/requestApproval', {
+      threadId: 't1',
+      permissions,
+      reason: null
+    })
+    expect(request?.prompt).toBe('Codex asks for more permissions.')
+    expect(request?.reply(true)).toEqual({ permissions, scope: 'turn' })
+    expect(request?.reply(false)).toEqual({ permissions: {}, scope: 'turn' })
+  })
+
+  it('ignores other requests and malformed params', () => {
+    expect(codexApproval('item/tool/call', { threadId: 't1' })).toBeUndefined()
+    expect(
+      codexApproval('item/commandExecution/requestApproval', { command: 'ls' })
+    ).toBeUndefined()
+    expect(codexApproval('item/commandExecution/requestApproval', null)).toBeUndefined()
   })
 })
