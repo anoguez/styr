@@ -1,7 +1,11 @@
 import { useState, type ReactNode } from 'react'
 import { ipcMessage } from '../lib/ipcMessage.js'
 import type { Settings, Task } from '@core/types.js'
+import { RefreshIcon, UnlinkIcon } from './icons.js'
 import { Button, inputBase } from './ui.js'
+
+const ICON_BTN =
+  'inline-flex size-[22px] shrink-0 items-center justify-center rounded-[5px] text-faint hover:bg-raised/70 hover:text-ink disabled:opacity-40'
 
 /**
  * The task dialog's link to an external item. Linking reads the source and never writes to it, so
@@ -40,34 +44,45 @@ export function SourceLink({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="grid min-h-8 grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
+      <div className="grid min-h-8 grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
         <span className="text-[12px] text-dim">Issue</span>
         {ref ? (
-          <div className="flex min-w-0 items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1 pl-2">
             <a
               href={ref.url}
               target="_blank"
               rel="noreferrer"
+              title={
+                ref.remoteUpdatedAt
+                  ? `Remote last updated ${new Date(ref.remoteUpdatedAt).toLocaleString()}`
+                  : ref.url
+              }
               className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--color-accent-text)] hover:underline"
             >
               {ref.target ?? ref.provider}#{ref.id}
             </a>
             {ref.sourceId ? (
-              <Button
-                variant="subtle"
+              <button
+                type="button"
+                aria-label="Refresh from remote"
+                title="Refresh from remote"
                 disabled={busy}
+                className={ICON_BTN}
                 onClick={() => void run(() => window.api.sources.refresh(task.id))}
               >
-                Refresh
-              </Button>
+                <RefreshIcon size={12} />
+              </button>
             ) : null}
-            <Button
-              variant="subtle"
+            <button
+              type="button"
+              aria-label="Unlink issue"
+              title="Unlink issue"
               disabled={busy}
+              className={ICON_BTN}
               onClick={() => void run(() => window.api.sources.unlink(task.id))}
             >
-              Unlink
-            </Button>
+              <UnlinkIcon size={12} />
+            </button>
           </div>
         ) : (
           <div className="flex min-w-0 items-center gap-1.5">
@@ -88,12 +103,7 @@ export function SourceLink({
           </div>
         )}
       </div>
-      {ref?.remoteUpdatedAt ? (
-        <div className="pl-[84px] text-[11.5px] text-dim">
-          Remote last updated {new Date(ref.remoteUpdatedAt).toLocaleString()}
-        </div>
-      ) : null}
-      {error ? <span className="pl-[84px] text-[11.5px] text-danger">{error}</span> : null}
+      {error ? <span className="pl-[92px] text-[11.5px] text-danger">{error}</span> : null}
     </div>
   )
 }

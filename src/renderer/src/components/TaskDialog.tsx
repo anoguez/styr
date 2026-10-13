@@ -1,5 +1,11 @@
 import { useRef, useState, type ReactNode } from 'react'
-import type { Settings, Task, TaskPreset } from '@core/types.js'
+import { indexTasks, openBlockers } from '@core/blocking.js'
+import {
+  AGENT_PROVIDER_SHORT_LABELS,
+  type Settings,
+  type Task,
+  type TaskPreset
+} from '@core/types.js'
 import { useSubmitShortcut } from '../hooks/useSubmitShortcut.js'
 import {
   choosePreset,
@@ -83,6 +89,10 @@ export function TaskDialog({
   }
 
   const { routed: routedName, effective: templateName } = templateNames(settings, form)
+  const waitingOn = openBlockers(
+    { id: task?.id ?? '', status: form.status, blockedBy: form.blockedBy },
+    indexTasks(allTasks)
+  ).length
 
   async function save(): Promise<Task | null> {
     const payload = taskPayload(form)
@@ -152,8 +162,9 @@ export function TaskDialog({
         >
           <TaskHeader
             task={task}
-            taskId={taskId}
-            useWorktree={form.useWorktree}
+            status={form.status}
+            openBlockers={waitingOn}
+            onStatus={(status) => patch({ status })}
             title={form.title}
             titleMissing={titleMissing}
             titleRef={titleRef}
@@ -164,7 +175,7 @@ export function TaskDialog({
             onClose={onClose}
           />
 
-          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_292px]">
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_304px]">
             <section className="flex min-h-0 min-w-0 flex-col">
               <TabNav task={task} tab={tab} onSelect={selectTab} />
               {tab === 'brief' ? (
@@ -188,7 +199,7 @@ export function TaskDialog({
               {tab === 'activity' && task ? <ActivityTab activity={task.activity} /> : null}
               {tab === 'prompt' ? (
                 <PromptTab
-                  agent={form.provider === 'codex' ? 'Codex' : 'Claude'}
+                  agent={AGENT_PROVIDER_SHORT_LABELS[form.provider]}
                   templateName={templateName}
                   preview={preview}
                   failed={previewError}

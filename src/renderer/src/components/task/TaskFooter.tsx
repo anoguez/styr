@@ -19,12 +19,14 @@ function ChangesButton({
   return (
     <button
       type="button"
-      className={`${GHOST_BTN} h-7`}
+      className="mr-1 inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-edge-strong bg-raised/70 px-2 text-[12px] font-medium text-ink transition-colors hover:bg-raised disabled:pointer-events-none disabled:opacity-40"
       disabled={count === 0}
       title={changesTitle(changes)}
       onClick={onShow}
     >
-      <DiffIcon />
+      <span className="text-dim">
+        <DiffIcon />
+      </span>
       Changes
       {changes && count > 0 ? (
         <DiffCount
@@ -37,7 +39,7 @@ function ChangesButton({
   )
 }
 
-/** What an existing task's file can do: open, reveal, show changes, archive, delete. */
+/** What an existing task's file can do: show changes, open, reveal, archive, delete. */
 function TaskActions({
   task,
   onShowChanges,
@@ -52,9 +54,11 @@ function TaskActions({
   const { changes, noGit } = useTaskDiff(task)
   return (
     <div className="flex items-center gap-0.5">
+      {noGit ? null : <ChangesButton changes={changes} onShow={() => onShowChanges(task)} />}
       <button
         type="button"
-        className={`${GHOST_BTN} h-7`}
+        title={task.filePath}
+        className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap`}
         onClick={() => void window.api.tasks.openInEditor(task.id)}
       >
         <ExternalIcon />
@@ -62,16 +66,16 @@ function TaskActions({
       </button>
       <button
         type="button"
-        className={`${GHOST_BTN} h-7`}
+        title="Show the task file in its folder"
+        className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap`}
         onClick={() => void window.api.tasks.reveal(task.id)}
       >
         <FolderIcon />
         Reveal
       </button>
-      {noGit ? null : <ChangesButton changes={changes} onShow={() => onShowChanges(task)} />}
       <button
         type="button"
-        className={`${GHOST_BTN} h-7`}
+        className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap`}
         title={
           task.archivedAt
             ? 'Put this task back on the board'
@@ -86,7 +90,7 @@ function TaskActions({
         type="button"
         aria-label="Delete task"
         title="Delete task"
-        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-[7px] px-2 text-[12px] text-danger transition-colors hover:bg-red-500/10"
+        className="inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-[7px] px-2 text-[12px] text-danger transition-colors hover:bg-danger/10"
         onClick={onDelete}
       >
         <TrashIcon size={14} />
@@ -163,7 +167,7 @@ export function TaskFooter({
   onClose: () => void
 }): ReactNode {
   return (
-    <footer className="flex shrink-0 items-center gap-2 border-t border-edge bg-chrome/40 py-3 pl-3 pr-4">
+    <footer className="relative flex shrink-0 items-center gap-2 border-t border-edge bg-chrome/40 py-3 pl-3 pr-4">
       {task ? (
         <TaskActions
           task={task}
@@ -179,7 +183,7 @@ export function TaskFooter({
         type="button"
         disabled={saving}
         onClick={onSave}
-        className="inline-flex h-[30px] items-center gap-2 rounded-lg border border-edge-strong bg-raised/70 px-3 text-[12.5px] font-medium text-dim transition-colors hover:bg-raised hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+        className="inline-flex h-[30px] shrink-0 items-center gap-2 rounded-lg border border-edge-strong bg-raised/70 px-3 text-[12.5px] font-medium text-dim transition-colors hover:bg-raised hover:text-ink disabled:pointer-events-none disabled:opacity-40"
       >
         Save
         <kbd className="font-mono text-[10px] text-faint">{formatAccelerator('mod+enter')}</kbd>
@@ -189,7 +193,7 @@ export function TaskFooter({
           type="button"
           disabled={saving}
           onClick={onSaveAndStart}
-          className="inline-flex h-[30px] items-center gap-[7px] rounded-lg border border-accent bg-accent px-3.5 text-[12.5px] font-semibold text-[var(--color-on-accent)] shadow-[0_1px_0_rgba(255,255,255,0.12)_inset] transition-colors hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-40"
+          className="inline-flex h-[30px] shrink-0 items-center gap-[7px] rounded-lg border border-accent bg-accent px-3.5 text-[12.5px] font-semibold text-[var(--color-on-accent)] shadow-[0_1px_0_rgba(255,255,255,0.12)_inset] transition-colors hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-40"
         >
           <svg aria-hidden viewBox="0 0 16 16" width="11" height="11" fill="currentColor">
             <path d="M5 3.5v9l7.25-4.5z" />

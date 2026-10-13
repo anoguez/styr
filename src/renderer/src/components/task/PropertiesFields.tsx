@@ -4,25 +4,26 @@ import {
   TASK_PRIORITY_LABELS,
   TASK_READINESS,
   TASK_READINESS_LABELS,
-  TASK_STATUS_LABELS,
   TASK_STATUSES,
+  TASK_STATUS_LABELS,
   type Settings,
   type Task,
   type TaskPriority,
-  type TaskReadiness,
-  type TaskStatus
+  type TaskReadiness
 } from '@core/types.js'
 import type { TaskForm } from '../../lib/taskForm.js'
 import { fileName } from '../../lib/terminalPath.js'
 import { SourceLink } from '../SourceLink.js'
-import { INPUT_TEXT, PropertySelect, SECTION_LABEL, TagsEditor } from './fields.js'
+import { BlockersField } from './BlockersField.js'
+import {
+  PROP_INPUT,
+  PROP_LABEL,
+  PROP_ROW,
+  PropertySelect,
+  SECTION_LABEL,
+  TagsEditor
+} from './fields.js'
 
-const STATUS_DOT: Record<TaskStatus, string> = {
-  backlog: 'var(--color-col-backlog)',
-  in_progress: 'var(--color-col-progress)',
-  in_review: 'var(--color-col-review)',
-  done: 'var(--color-col-done)'
-}
 const PRIORITY_DOT: Record<TaskPriority, string> = {
   low: 'var(--color-pri-low)',
   medium: 'var(--color-pri-medium)',
@@ -35,39 +36,38 @@ const READINESS_DOT: Record<TaskReadiness, string> = {
 }
 
 /** Pairs each value with its label, for a `PropertySelect`. */
-function optionsOf<T extends string>(
+export function optionsOf<T extends string>(
   values: readonly T[],
   labels: Record<T, string>
 ): { value: T; label: string }[] {
   return values.map((value) => ({ value, label: labels[value] }))
 }
 
-/** Status, priority, readiness, project, PR link, the linked source item and tags. */
-export function DetailsFields({
+export const STATUS_OPTIONS = optionsOf(TASK_STATUSES, TASK_STATUS_LABELS)
+
+/** Priority, readiness, project, tags, blockers, PR link and the linked source item. Status is
+ *  in the header. */
+export function PropertiesFields({
   form,
   patch,
+  task,
   saved,
+  allTasks,
   settings
 }: {
   form: TaskForm
   patch: (changes: Partial<TaskForm>) => void
+  task: Task | null
   /** The task as last saved; a source item can be linked only once it exists. */
   saved: Task | null
+  allTasks: Task[]
   settings: Settings
 }): ReactNode {
   // The source row can relink the task; that result is shown until the dialog closes.
   const [linkedTask, setLinkedTask] = useState<Task | null>(null)
-  const fieldClass = `h-7 w-full rounded-[7px] px-2 text-[12.5px] hover:border-edge hover:bg-card focus:border-accent focus:bg-chrome ${INPUT_TEXT}`
   return (
     <div className="flex flex-col gap-0.5">
-      <span className={`${SECTION_LABEL} pb-1.5`}>Details</span>
-      <PropertySelect
-        label="Status"
-        value={form.status}
-        dots={STATUS_DOT}
-        options={optionsOf(TASK_STATUSES, TASK_STATUS_LABELS)}
-        onChange={(status) => patch({ status })}
-      />
+      <span className={`${SECTION_LABEL} pb-1.5`}>Properties</span>
       <PropertySelect
         label="Priority"
         value={form.priority}
@@ -82,18 +82,25 @@ export function DetailsFields({
         options={optionsOf(TASK_READINESS, TASK_READINESS_LABELS)}
         onChange={(readiness) => patch({ readiness })}
       />
-      <div className="grid h-8 grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
-        <span className="text-[12px] text-dim">Project</span>
+      <div className={`${PROP_ROW} h-8`}>
+        <span className={PROP_LABEL}>Project</span>
         <input
           aria-label="Project"
           value={form.project}
           placeholder={fileName(form.repoPath.trim()) || 'None'}
           onChange={(event) => patch({ project: event.target.value })}
-          className={`border-transparent ${fieldClass}`}
+          className={PROP_INPUT}
         />
       </div>
-      <div className="grid h-8 grid-cols-[76px_minmax(0,1fr)] items-center gap-2">
-        <span className="text-[12px] text-dim">PR link</span>
+      <TagsEditor tags={form.tags} onChange={(tags) => patch({ tags })} />
+      <BlockersField
+        taskId={task?.id}
+        blockedBy={form.blockedBy}
+        allTasks={allTasks}
+        onChange={(blockedBy) => patch({ blockedBy })}
+      />
+      <div className={`${PROP_ROW} h-8`}>
+        <span className={PROP_LABEL}>PR link</span>
         <input
           aria-label="Pull request URL"
           type="url"
@@ -101,13 +108,12 @@ export function DetailsFields({
           placeholder="None"
           title="Optional link to the pull or merge request, on any host"
           onChange={(event) => patch({ prUrl: event.target.value })}
-          className={fieldClass}
+          className={PROP_INPUT}
         />
       </div>
       {saved ? (
         <SourceLink task={linkedTask ?? saved} settings={settings} onTask={setLinkedTask} />
       ) : null}
-      <TagsEditor tags={form.tags} onChange={(tags) => patch({ tags })} />
     </div>
   )
 }
