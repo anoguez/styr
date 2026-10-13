@@ -21,7 +21,7 @@ function source(overrides: Partial<PaletteSource> = {}): PaletteSource {
     withChanges: new Set<string>(),
     archivedCount: 0,
     presets: [],
-    experimental: { externalSources: false, nativeTerminal: false },
+    experimental: { externalSources: false, nativeTerminal: false, worklog: false },
     bindings: DEFAULT_SHORTCUTS,
     workspaces: [],
     activeWorkspaceId: 'default',
@@ -50,11 +50,22 @@ const byId = (entries: CommandEntry[], id: string): CommandEntry | undefined =>
 
 describe('buildCommandEntries', () => {
   it('lists every shortcut command, labelled by the state it toggles', () => {
-    const entries = buildCommandEntries(source({ terminalOpen: true, autoRunOn: true }), actions())
+    const entries = buildCommandEntries(
+      source({
+        terminalOpen: true,
+        autoRunOn: true,
+        experimental: { externalSources: false, nativeTerminal: false, worklog: true }
+      }),
+      actions()
+    )
     for (const command of SHORTCUT_COMMANDS) expect(byId(entries, `cmd:${command}`)).toBeDefined()
     expect(byId(entries, 'cmd:toggleTerminal')?.label).toBe('Hide terminal')
     expect(byId(entries, 'cmd:toggleAgents')?.label).toBe('Hide agents sidebar')
     expect(byId(entries, 'cmd:toggleAutoDispatch')?.label).toBe('Stop Dispatch auto-run')
+  })
+
+  it('leaves out the commands of an experimental feature that is off', () => {
+    expect(byId(buildCommandEntries(source(), actions()), 'cmd:viewWorklog')).toBeUndefined()
   })
 
   it('runs a command entry through the command handler', () => {
@@ -133,7 +144,7 @@ describe('buildCommandEntries', () => {
     expect(byId(off, 'settings:source-github')).toBeUndefined()
     expect(byId(off, 'settings:theme')).toBeDefined()
     const on = buildCommandEntries(
-      source({ experimental: { externalSources: true, nativeTerminal: false } }),
+      source({ experimental: { externalSources: true, nativeTerminal: false, worklog: false } }),
       actions()
     )
     expect(byId(on, 'settings:source-github')).toBeDefined()

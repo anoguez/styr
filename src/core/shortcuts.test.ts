@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   acceleratorFor,
+  commandEnabled,
   commandForEvent,
   formatAccelerator,
   isReserved,
@@ -101,5 +102,14 @@ describe('where Control is the primary modifier (Windows)', () => {
     setPrimaryModifier('ctrl')
     expect(isReserved('mod+c')).toBe(true)
     expect(isReserved('mod+n')).toBe(false)
+  })
+})
+
+describe('commandEnabled', () => {
+  const off = { externalSources: false, nativeTerminal: false, worklog: false }
+  it('turns a feature’s commands off with its experimental flag', () => {
+    expect(commandEnabled('viewWorklog', off)).toBe(false)
+    expect(commandEnabled('viewWorklog', { ...off, worklog: true })).toBe(true)
+    expect(commandEnabled('viewInbox', off)).toBe(true)
   })
 })

@@ -40,7 +40,7 @@ a board you can see, and in plain files you can read.
   the result in that folder and set the task to In Review, and you move it to Done yourself (nothing
   lands, so Styr never does it for you). The Research and Writing presets start that way. Parallel
   agents in one folder share it.
-- **Worklog.** A third view (`⌃3`) turns each task's trail — agent transcripts, activity notes and
+- **Worklog** (experimental, switch it on in Settings → Experimental). A third view (`⌃3`) turns each task's trail — agent transcripts, activity notes and
   branch commits — into hours per task per day, against the working hours set in Settings →
   Worklog, and copies the result straight into a spreadsheet or a CSV.
 - **Chats you can resume.** Each task remembers its conversations, whichever agent ran them, and

@@ -223,6 +223,8 @@ export interface ExperimentalSettings {
    * engine is bundled and loads; anywhere else terminals stay on xterm.js.
    */
   nativeTerminal: boolean
+  /** The Worklog view, its header tab and Settings → Worklog. */
+  worklog: boolean
 }
 
 export interface UpdateSettings {

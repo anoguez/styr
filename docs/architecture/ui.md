@@ -330,6 +330,9 @@ palette.
 
 ## Worklog
 
+Experimental, behind `experimental.worklog`: off, the tab, Settings → Worklog, the palette entry and
+`⌃3` (`commandEnabled` in `core/shortcuts.ts`) are gone, and a remembered Worklog view shows the board.
+
 The third view (`components/worklog/`) shows how long each task was worked on, per day, against
 `Settings.timesheet` (an app-wide key, edited in Settings → Worklog and in the view's own
 popover). Nothing about it is stored — hours are derived on each load, like the Inbox:

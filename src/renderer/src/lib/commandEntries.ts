@@ -1,5 +1,5 @@
 import { AGENT_STATE_LABELS } from '@core/agentState.js'
-import { SHORTCUT_LABELS, shortcutHint } from '@core/shortcuts.js'
+import { SHORTCUT_LABELS, commandEnabled, shortcutHint } from '@core/shortcuts.js'
 import {
   SHORTCUT_COMMANDS,
   type ExperimentalSettings,
@@ -69,7 +69,9 @@ export function buildCommandEntries(
     orchestrate: 'Dispatch — start waiting work',
     toggleAutoDispatch: source.autoRunOn ? 'Stop Dispatch auto-run' : 'Start Dispatch auto-run'
   }
-  const entries: CommandEntry[] = SHORTCUT_COMMANDS.map((command) => ({
+  const entries: CommandEntry[] = SHORTCUT_COMMANDS.filter((command) =>
+    commandEnabled(command, source.experimental)
+  ).map((command) => ({
     id: `cmd:${command}`,
     label: dynamicLabels[command] ?? SHORTCUT_LABELS[command],
     group: 'Actions',

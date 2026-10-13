@@ -136,7 +136,7 @@ export function shippedSettings(): Settings {
     autoDispatch: false,
     updates: { checkAutomatically: true },
     timesheet: DEFAULT_TIMESHEET,
-    experimental: { externalSources: false, nativeTerminal: false },
+    experimental: { externalSources: false, nativeTerminal: false, worklog: false },
     taskDefaults: { orchestrate: true, useWorktree: false },
     taskPresets: DEFAULT_TASK_PRESETS,
     doneCap: DEFAULT_DONE_CAP,

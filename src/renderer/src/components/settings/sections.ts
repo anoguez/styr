@@ -104,6 +104,7 @@ export const SECTIONS = [
     scope: 'app',
     blurb: 'Your working hours. The Worklog uses them to show what is left to log.',
     keys: ['timesheet'],
+    flag: 'worklog',
     words: 'hours worklog timesheet week day target logging rounding export'
   },
   {

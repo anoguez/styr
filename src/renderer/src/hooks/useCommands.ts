@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo } from 'react'
-import { commandForEvent } from '@core/shortcuts.js'
+import { commandEnabled, commandForEvent } from '@core/shortcuts.js'
 import type { ShortcutCommand, TerminalSessionInfo } from '@core/types.js'
 import type { CommandEntry } from '../components/CommandPalette.js'
 import { runShortcutCommand, type AppShellAction } from '../lib/appShell.js'
@@ -44,8 +44,11 @@ export function useCommands({
   const { sessions, activeSession, toggleTerminal, select, close } = terminals
   const { on: autoRunOn, setOn: setAutoOn } = autoRun
 
+  const { experimental } = palette
   const runCommand = useCallback(
     (command: ShortcutCommand) =>
+      // A command of an experimental feature that is off does nothing, from a key or the palette.
+      commandEnabled(command, experimental) &&
       runShortcutCommand(command, {
         dispatch,
         toggleTerminal,
@@ -59,6 +62,7 @@ export function useCommands({
         terminal: dispatchTerminalCommand
       }),
     [
+      experimental,
       dispatch,
       toggleTerminal,
       autoRunOn,
@@ -94,7 +98,6 @@ export function useCommands({
     withChanges,
     archivedCount,
     presets,
-    experimental,
     workspaces,
     activeWorkspaceId,
     workspaceNames,
