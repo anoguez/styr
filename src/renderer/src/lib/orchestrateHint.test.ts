@@ -71,8 +71,16 @@ describe('dispatchButton', () => {
     expect(button).toMatchObject({ mode: 'idle', label: 'Dispatch', badge: 1 })
   })
 
-  it('shows a manual run in progress', () => {
+  it('shows a manual run while its launches are in flight', () => {
     expect(dispatchButton(summary(), { on: false }, true).mode).toBe('dispatching')
+  })
+
+  it('goes back to Dispatch once launched, noting the agents still running', () => {
+    const occupied = { spec: 0, implement: 2, review: 0 }
+    const button = dispatchButton(summary({ occupied }), { on: false }, false)
+    expect(button).toMatchObject({ mode: 'idle', label: 'Dispatch' })
+    expect(button.title).toMatch(/2 running$/)
+    expect(isDispatchLive(button)).toBe(false)
   })
 
   it('becomes Auto-run with the running count when it is on', () => {

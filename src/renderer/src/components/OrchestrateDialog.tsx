@@ -29,7 +29,9 @@ export function OrchestrateDialog({
   const [confirmingStop, setConfirmingStop] = useState(false)
   const count = summary.dispatch.length
   const autoChanged = autoOn !== auto.on
-  const canConfirm = count > 0 || autoChanged
+  // While the stop question is open the switch reads off but Auto-run is still on; confirming then
+  // would start tasks with Auto-run left running, so the question must be answered first.
+  const canConfirm = (count > 0 || autoChanged) && !confirmingStop
   const confirm = (): void => onConfirm(autoOn)
   const running = ORCHESTRATION_LANES.reduce((sum, lane) => sum + summary.occupied[lane], 0)
   const notes = [
@@ -52,7 +54,7 @@ export function OrchestrateDialog({
           : 'Nothing is ready to start right now.'
       }
       onClose={onClose}
-      onSubmit={canConfirm ? confirm : onClose}
+      onSubmit={canConfirm ? confirm : confirmingStop ? undefined : onClose}
       footer={
         <>
           <Button onClick={onClose}>{canConfirm ? 'Cancel' : 'Close'}</Button>

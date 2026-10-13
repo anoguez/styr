@@ -35,7 +35,7 @@ export interface DispatchButtonState {
   title: string
 }
 
-/** A manual run and Auto-run both light the button and the header's sweep. */
+/** Launches in flight and Auto-run both light the button and the header's sweep. */
 export function isDispatchLive(state: Pick<DispatchButtonState, 'mode'>): boolean {
   return state.mode === 'dispatching' || state.mode === 'auto'
 }
@@ -43,11 +43,15 @@ export function isDispatchLive(state: Pick<DispatchButtonState, 'mode'>): boolea
 /**
  * The one Dispatch button in the header carries Auto-run too: a workspace has at most one Auto-run,
  * so its state is the button's state rather than a second button beside it.
+ *
+ * `launching` is only the moment a manual run's launches are in flight. Once they have started,
+ * Dispatch has nothing left to do — the agents run on their own and their cards say so — so the
+ * button goes back to plain Dispatch rather than staying "live" with nothing to stop.
  */
 export function dispatchButton(
   orchestration: OrchestrationSummary | null,
   auto: AutoDispatchState,
-  dispatching: boolean
+  launching: boolean
 ): DispatchButtonState {
   const running = orchestration
     ? ORCHESTRATION_LANES.reduce((sum, lane) => sum + orchestration.occupied[lane], 0)
@@ -60,8 +64,8 @@ export function dispatchButton(
       title: `Auto-run is on · ${running} running. Click to manage or stop it.`
     }
   }
-  if (dispatching)
-    return { mode: 'dispatching', label: 'Dispatching', badge: 0, title: 'Dispatch is running' }
+  if (launching)
+    return { mode: 'dispatching', label: 'Dispatching', badge: 0, title: 'Starting agents…' }
   const waiting = orchestration?.dispatch.length ?? 0
   const hint = orchestrateHint(orchestration)
   if (auto.paused) {
@@ -72,5 +76,6 @@ export function dispatchButton(
       title: `${auto.paused === 'limit' ? 'Auto-run started too many tasks in an hour' : 'Three launches in a row failed'}. ${hint}`
     }
   }
-  return { mode: 'idle', label: 'Dispatch', badge: waiting, title: hint }
+  const runningNote = running > 0 ? ` · ${running} running` : ''
+  return { mode: 'idle', label: 'Dispatch', badge: waiting, title: `${hint}${runningNote}` }
 }
