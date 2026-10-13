@@ -6,7 +6,8 @@ export default defineConfig({
   resolve: { alias: { '@core': fileURLToPath(new URL('./src/core', import.meta.url)) } },
   test: {
     // The Claude Code mod's own tests run under `claude plugin test`, against the engine's kit.
-    exclude: [...configDefaults.exclude, 'resources/claude/**'],
+    // `.styr/` holds Styr's task worktrees: other checkouts of this repo, not tests of this one.
+    exclude: [...configDefaults.exclude, 'resources/claude/**', '.styr/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
