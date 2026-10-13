@@ -9,6 +9,7 @@ import {
   taskPayload,
   templateNames,
   toForm,
+  withContextFiles,
   worktreeHint
 } from './taskForm.js'
 
@@ -218,5 +219,15 @@ describe('changesTitle', () => {
     )
     expect(changesTitle({ files: [], branch: '' })).toBe('No changes to show')
     expect(changesTitle({ files: [{}], branch: 'b' } as never)).toBe('View changes')
+  })
+})
+
+describe('withContextFiles', () => {
+  it('appends new paths in order, skipping duplicates and empty paths', () => {
+    expect(withContextFiles(['/a'], ['/b', '/a', '', '/b', '/c'])).toEqual(['/a', '/b', '/c'])
+  })
+
+  it('returns the same paths when nothing new is added', () => {
+    expect(withContextFiles(['/a'], [])).toEqual(['/a'])
   })
 })

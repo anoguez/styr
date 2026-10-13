@@ -232,3 +232,16 @@ export function changesTitle(changes: Pick<TaskDiff, 'files' | 'branch'> | null)
   if (changes.files.length > 0) return 'View changes'
   return changes.branch ? `No changes on ${changes.branch} yet` : 'No changes to show'
 }
+
+/** `current` with `added` appended, skipping paths already attached (picked twice, or dropped
+ *  again) and empty ones (a dragged item with no file on disk). */
+export function withContextFiles(current: string[], added: string[]): string[] {
+  const seen = new Set(current)
+  const next = [...current]
+  for (const file of added) {
+    if (!file || seen.has(file)) continue
+    seen.add(file)
+    next.push(file)
+  }
+  return next
+}
