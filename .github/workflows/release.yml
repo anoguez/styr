@@ -169,6 +169,10 @@ jobs:
           if [ -d resources/native/styr-terminal ]; then
             native="$app/Contents/Resources/native/styr-terminal"
             ls "$native"/*.node
+            # Only this build's own target is vendored (scripts/fetch-native-terminal.mjs).
+            if [ "$(ls "$native"/*.node | wc -l)" -ne 1 ]; then
+              echo "expected exactly one Styr Terminal binary in $native"; exit 1
+            fi
             for module in "$native"/*.node; do codesign --verify --strict --verbose=2 "$module"; done
           fi
           for dmg in dist/*.dmg; do

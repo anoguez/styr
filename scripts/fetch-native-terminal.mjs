@@ -5,6 +5,7 @@
 //
 // Everything that ends up in the app is pinned in native-terminal.lock.json: the exact version, the
 // tarball's integrity hash, and the SHA-256 of each platform binary. A mismatch fails the release.
+// Only the build's own target's binary is vendored; the package's other `.node` files are dropped.
 // No token, or a lock with nothing pinned, is a supported opt-out: the build goes on without the
 // engine and every terminal uses xterm.js.
 //
@@ -16,6 +17,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -74,6 +76,19 @@ export function checkPackage(directory, lock, binary) {
     throw new Error(`${binary.file} SHA-256 ${actual} does not match the lock file`)
 }
 
+/**
+ * Deletes every native binary but the pinned one. The package carries a `.node` for each target it
+ * is built for; the app needs only its own, and its loader (`index.js`) picks it by platform.
+ * Returns the files removed.
+ */
+export function keepOnlyBinary(directory, binary) {
+  const others = readdirSync(directory).filter(
+    (file) => file.endsWith('.node') && file !== binary.file
+  )
+  for (const file of others) rmSync(join(directory, file), { force: true })
+  return others
+}
+
 async function get(url, token) {
   const response = await fetch(url, {
     headers: {
@@ -112,6 +127,7 @@ async function main() {
     const untar = spawnSync('tar', ['-xzf', archive, '-C', work], { stdio: 'inherit' })
     if (untar.status !== 0) throw new Error('could not unpack the tarball')
     checkPackage(join(work, 'package'), lock, pin.binary)
+    keepOnlyBinary(join(work, 'package'), pin.binary)
     mkdirSync(dirname(DESTINATION), { recursive: true })
     renameSync(join(work, 'package'), DESTINATION)
   } finally {
