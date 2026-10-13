@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { AGENT_STATE_LABELS } from '@core/agentState.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
 import { timeAgo } from '../lib/timeAgo.js'
@@ -31,6 +31,7 @@ function BranchGlyph(): ReactNode {
 
 function AgentRowItem({
   row,
+  selected,
   diffStat,
   onActivate,
   onOpenTask,
@@ -38,6 +39,7 @@ function AgentRowItem({
   onShowChanges
 }: {
   row: AgentRow
+  selected: boolean
   diffStat?: DiffStat
   onShowChanges: (task: Task) => void
   onActivate: (row: AgentRow) => void
@@ -47,14 +49,26 @@ function AgentRowItem({
   const { task, agent, session } = row
   const state = agent?.state
   const label = state ? AGENT_STATE_LABELS[state] : 'No status yet'
+  const button = useRef<HTMLButtonElement>(null)
+
+  // a tab focused from the strip or the palette may belong to a row scrolled out of sight
+  useEffect(() => {
+    if (selected) button.current?.scrollIntoView({ block: 'nearest' })
+  }, [selected])
 
   return (
     <li className="group relative">
       <button
         type="button"
         onClick={() => onActivate(row)}
+        aria-current={selected ? 'true' : undefined}
+        ref={button}
         title={session ? 'Focus this terminal tab' : 'Resume this agent chat'}
-        className={`flex w-full flex-col gap-1.5 rounded-lg border border-transparent px-2.5 pt-2.5 text-left transition-colors hover:border-edge-strong hover:bg-raised ${diffStat ? 'pb-8' : 'pb-2.5'}`}
+        className={`flex w-full flex-col gap-1.5 rounded-lg border px-2.5 pt-2.5 text-left transition-colors ${
+          selected
+            ? 'border-accent/50 bg-accent/10'
+            : 'border-transparent hover:border-edge-strong hover:bg-raised'
+        } ${diffStat ? 'pb-8' : 'pb-2.5'}`}
       >
         <span className="flex items-center gap-1.5">
           <span
@@ -127,6 +141,7 @@ function AgentRowItem({
 
 export function AgentsSidebar({
   rows,
+  selectedTaskId,
   diffStats,
   onActivate,
   onOpenTask,
@@ -135,6 +150,8 @@ export function AgentsSidebar({
   onClose
 }: {
   rows: AgentRow[]
+  /** The task owning the active terminal tab; its row stays highlighted. */
+  selectedTaskId?: string
   diffStats: Map<string, DiffStat>
   onShowChanges: (task: Task) => void
   onActivate: (row: AgentRow) => void
@@ -179,6 +196,7 @@ export function AgentsSidebar({
             <AgentRowItem
               key={row.task.id}
               row={row}
+              selected={row.task.id === selectedTaskId}
               diffStat={diffStats.get(row.task.id)}
               onShowChanges={onShowChanges}
               onActivate={onActivate}

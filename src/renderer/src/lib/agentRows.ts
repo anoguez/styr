@@ -38,6 +38,19 @@ export function agentRowsFor(
   )
 }
 
+/**
+ * The task whose row the sidebar shows as selected: the one owning the active terminal tab. Only
+ * while the terminal is showing, so the highlight always points at a tab the user can see.
+ */
+export function selectedAgentTaskId(
+  rows: AgentRow[],
+  activeSession: string | null,
+  terminalOpen: boolean
+): string | undefined {
+  if (!terminalOpen || !activeSession) return undefined
+  return rows.find((row) => row.session?.id === activeSession)?.task.id
+}
+
 /** The status bar's summary: open tasks, the ones needing a spec, and running agents. */
 export function boardSummary(board: Record<TaskStatus, Task[]>, rows: AgentRow[]): string {
   const { total, needsSpec } = openTaskCounts(board)
