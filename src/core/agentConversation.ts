@@ -54,11 +54,48 @@ export interface AgentConversation {
    */
   promptInbox?: boolean
   /**
+   * The agent's reply as it streams in, before the CLI records it as a message: the step's text so
+   * far, while `working`. Absent when its source does not stream; the reply then shows at the end.
+   */
+  streaming?: string
+  /**
    * A decision the agent waits on that Styr can answer through the agent's own channel; the view
    * shows it as its approval. Without it a wait is answered by keys in the CLI's TUI.
    */
-  approval?: { id: string; prompt: string }
+  approval?: AgentApproval
 }
+
+/** How an answer to an approval goes: once, for good (the CLI remembers a rule), or refused. */
+export type ApprovalKind = 'allow' | 'allow-always' | 'deny'
+
+/** One answer an approval offers, as the CLI's own dialog words it. */
+export interface ApprovalOption {
+  /** What Styr sends back to pick it. */
+  id: string
+  label: string
+  kind: ApprovalKind
+}
+
+/** A permission the agent asks for: the real request, and the answers its CLI would offer. */
+export interface AgentApproval {
+  id: string
+  /** What the agent asks, in a line. */
+  prompt: string
+  /** The tool the agent wants to run and its arguments, as `ConversationToolUse` has them. */
+  tool?: string
+  input?: Record<string, unknown>
+  /** The answers on offer, in the CLI's order; absent means Allow and Deny. */
+  options?: ApprovalOption[]
+}
+
+/** Allow once and Deny: the answers of an approval that names none, and of a TUI's dialog. */
+export const DEFAULT_APPROVAL_OPTIONS: readonly ApprovalOption[] = [
+  { id: 'allow', label: 'Allow', kind: 'allow' },
+  { id: 'deny', label: 'Deny', kind: 'deny' }
+]
+
+export const approvalOptions = (approval: AgentApproval): readonly ApprovalOption[] =>
+  approval.options && approval.options.length > 0 ? approval.options : DEFAULT_APPROVAL_OPTIONS
 
 /** How one CLI's tool call reads in a block: what it works on, how it went, what it changed. */
 export interface ToolDescription {
@@ -72,6 +109,11 @@ export interface ConversationAdapter {
   /** What a user message says to the person, without the notes the CLI wraps around it. */
   promptText: (raw: string) => string
   describeTool: (use: ConversationToolUse) => ToolDescription
+  /**
+   * The key that makes the CLI's TUI attach the image on the clipboard to its input (Claude Code's
+   * Ctrl+V); absent when an image pasted in Styr's input cannot reach the CLI.
+   */
+  pasteImageKey?: string
 }
 
 const MAX_MESSAGES = 300
@@ -112,6 +154,36 @@ function parseToolUse(value: unknown): ConversationToolUse | null {
   }
 }
 
+const APPROVAL_KINDS: readonly string[] = ['allow', 'allow-always', 'deny']
+
+function parseApproval(value: unknown): AgentApproval | undefined {
+  if (!isRecord(value) || typeof value.id !== 'string') return undefined
+  const options = Array.isArray(value.options)
+    ? value.options
+        .slice(0, 6)
+        .filter(isRecord)
+        .filter(
+          (option) =>
+            typeof option.id === 'string' &&
+            /^[\w-]{1,32}$/.test(option.id) &&
+            typeof option.kind === 'string' &&
+            APPROVAL_KINDS.includes(option.kind)
+        )
+        .map((option) => ({
+          id: option.id as string,
+          label: text(option.label, 200) || (option.id as string),
+          kind: option.kind as ApprovalKind
+        }))
+    : []
+  return {
+    id: value.id.slice(0, 200),
+    prompt: text(value.prompt, 2_000),
+    ...(typeof value.tool === 'string' ? { tool: value.tool.slice(0, 200) } : {}),
+    ...(isRecord(value.input) ? { input: parseInput(value.input) } : {}),
+    ...(options.length > 0 ? { options } : {})
+  }
+}
+
 /** A conversation file, or null when it is not one. */
 export function parseAgentConversation(source: string): AgentConversation | null {
   let raw: unknown
@@ -145,20 +217,17 @@ export function parseAgentConversation(source: string): AgentConversation | null
         }))
         .filter((command) => /^[\w:.-]+$/.test(command.name))
     : undefined
+  const working = raw.working === true
+  const streaming = working ? text(raw.streaming, MAX_TEXT) : ''
+  const approval = parseApproval(raw.approval)
   return {
     at: text(raw.at, 64),
-    working: raw.working === true,
+    working,
     messages,
     ...(commands ? { commands } : {}),
     ...(raw.promptInbox === true ? { promptInbox: true } : {}),
-    ...(isRecord(raw.approval) && typeof raw.approval.id === 'string'
-      ? {
-          approval: {
-            id: raw.approval.id.slice(0, 200),
-            prompt: text(raw.approval.prompt, 2_000)
-          }
-        }
-      : {})
+    ...(streaming.trim() ? { streaming } : {}),
+    ...(approval ? { approval } : {})
   }
 }
 
@@ -192,7 +261,7 @@ export function lineCount(value: string): string {
 
 /**
  * The conversation as Styr blocks, oldest first: what the person typed, what the agent said, each
- * tool call (an edit also as its diff). A call without a result is still running while the turn
+ * tool call (an edit also as its diff), and the reply still streaming in (state `streaming`). A call without a result is still running while the turn
  * is, and was cut short once it is not.
  */
 export function agentBlocks(
@@ -247,6 +316,17 @@ export function agentBlocks(
       }
     }
   })
+  // The reply streaming in, unless the CLI has already recorded it as the last message.
+  const streaming = conversation.working ? conversation.streaming?.trim() : undefined
+  const last = conversation.messages.at(-1)
+  if (streaming && !(last?.role === 'assistant' && last.text.trim().startsWith(streaming))) {
+    const block: AgentMessageBlock = {
+      ...envelope('streaming', 'streaming'),
+      kind: 'agent-message',
+      payload: { role: 'assistant', text: streaming, ...(provider ? { provider } : {}) }
+    }
+    blocks.push(block)
+  }
   return blocks
 }
 

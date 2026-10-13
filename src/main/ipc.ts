@@ -170,7 +170,7 @@ const codexMonitor = new CodexMonitor(
         session.id,
         conversation,
         (text) => codexMonitor.submitPrompt(key, text),
-        (approvalId, allow) => codexMonitor.answerApproval(key, approvalId, allow)
+        (approvalId, option) => codexMonitor.answerApproval(key, approvalId, option === 'allow')
       )
   }
 )

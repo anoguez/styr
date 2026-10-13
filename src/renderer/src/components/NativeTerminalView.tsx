@@ -51,7 +51,7 @@ import {
 } from '../lib/nativeTerminal/selection.js'
 import { BlockListStore } from '../lib/nativeTerminal/blockList.js'
 import { TerminalBlockList, type InputHint } from './TerminalBlockList.js'
-import { AgentBlockList } from './AgentBlockList.js'
+import { AgentBlockList, type ApprovalRequest } from './AgentBlockList.js'
 import {
   AGENT_ENTER_DELAY_MS,
   agentPrompt,
@@ -59,7 +59,14 @@ import {
 } from '../lib/nativeTerminal/commandInput.js'
 import { isSlashCommand } from '../lib/nativeTerminal/commandMenu.js'
 import { agentProgramProvider } from '@core/handoff.js'
-import { agentBlocks, promptHistory, type AgentConversation } from '@core/agentConversation.js'
+import {
+  agentBlocks,
+  approvalOptions,
+  DEFAULT_APPROVAL_OPTIONS,
+  promptHistory,
+  type AgentConversation,
+  type ConversationAdapter
+} from '@core/agentConversation.js'
 import { conversationAdapter } from '@core/providers/conversation.js'
 import type { AgentProviderId } from '@core/providers/types.js'
 import type { BlockActions } from './TerminalBlocks.js'
@@ -340,9 +347,14 @@ export function NativeTerminalView({
     },
     []
   )
+  // Images pasted into the CLI's own input wait there for the prompt, so it must be typed too.
+  const [attachedImages, setAttachedImages] = useState(0)
+  useEffect(() => setAttachedImages(0), [sessionId])
   const sendAgentPrompt = (text: string): void => {
+    const inbox = conversation?.promptInbox === true && attachedImages === 0
+    setAttachedImages(0)
     // Through the agent's own channel when it has one, so the prompt is the person's own words.
-    if (promptRoute(text, conversation?.promptInbox === true) === 'inbox') {
+    if (promptRoute(text, inbox) === 'inbox') {
       void window.api.usage.sendPrompt(sessionId, text).then((sent) => {
         if (!sent) typeAgentPrompt(text)
       })
@@ -374,6 +386,10 @@ export function NativeTerminalView({
   const agentBlockList = useMemo(
     () => (conversation && adapter ? agentBlocks(conversation, sessionId, adapter, provider) : []),
     [conversation, adapter, sessionId, provider]
+  )
+  const approval = useMemo(
+    () => approvalRequest(conversation, adapter, agentWaiting ?? null),
+    [conversation, adapter, agentWaiting]
   )
   /** Keys go to Styr's input rather than straight to the PTY. */
   const typing = prompting || agentMode
@@ -799,12 +815,13 @@ export function NativeTerminalView({
           blocks={agentBlockList}
           working={conversation?.working ?? false}
           label={AGENT_PROVIDER_LABELS[provider]}
-          waiting={conversation?.approval?.prompt ?? agentWaiting ?? null}
+          approval={approval}
           look={{ palette, lineHeight: cell.height }}
           font={font}
           inputRef={inputRef}
           history={conversation && adapter ? promptHistory(conversation, adapter) : []}
           commands={conversation?.commands}
+          attachedImages={attachedImages}
           onSubmit={(text) => {
             sendAgentPrompt(text)
             // A command may answer in the CLI's own interface (a picker, a dialog), which only its
@@ -815,18 +832,23 @@ export function NativeTerminalView({
             }
           }}
           onInterrupt={() => window.api.terminal.write(sessionId, '\x1b')}
-          onAllow={() => {
+          onAnswer={(option) => {
             if (conversation?.approval)
               // Already answered in the CLI's own view when this fails: nothing left to do.
-              window.api.usage.approval(sessionId, conversation.approval.id, true).catch(() => {})
-            else window.api.terminal.write(sessionId, '\r')
+              window.api.usage
+                .approval(sessionId, conversation.approval.id, option.id)
+                .catch(() => {})
+            // The TUI's dialog: Enter takes its default (allow once), Escape refuses.
+            else window.api.terminal.write(sessionId, option.kind === 'deny' ? '\x1b' : '\r')
           }}
-          onDeny={() => {
-            if (conversation?.approval)
-              // Already answered in the CLI's own view when this fails: nothing left to do.
-              window.api.usage.approval(sessionId, conversation.approval.id, false).catch(() => {})
-            else window.api.terminal.write(sessionId, '\x1b')
-          }}
+          onPasteImage={
+            adapter?.pasteImageKey
+              ? () => {
+                  write(adapter.pasteImageKey!)
+                  setAttachedImages((count) => count + 1)
+                }
+              : undefined
+          }
           onShowTui={() => setTuiFor(running?.id ?? null)}
         />
       ) : null}
@@ -1002,4 +1024,35 @@ function useAgentConversation(sessionId: string): AgentConversation | null {
     }
   }, [sessionId])
   return conversation
+}
+
+/**
+ * What the view shows while the agent waits: the request its channel carries, with its options, or
+ * else what Styr's agent status says, answered by keys in the TUI.
+ */
+function approvalRequest(
+  conversation: AgentConversation | null,
+  adapter: ConversationAdapter | undefined,
+  waiting: string | null
+): ApprovalRequest | null {
+  const approval = conversation?.approval
+  if (approval) {
+    const described =
+      approval.tool && adapter
+        ? adapter.describeTool({
+            id: approval.id,
+            tool: approval.tool,
+            input: approval.input ?? {}
+          })
+        : undefined
+    return {
+      prompt: approval.prompt,
+      ...(approval.tool ? { tool: approval.tool } : {}),
+      ...(described?.summary ? { summary: described.summary } : {}),
+      ...(described?.edit ? { edit: described.edit } : {}),
+      options: approvalOptions(approval),
+      keys: false
+    }
+  }
+  return waiting ? { prompt: waiting, options: DEFAULT_APPROVAL_OPTIONS, keys: true } : null
 }
