@@ -56,6 +56,7 @@ export function PropertySelect<T extends string>({
   options,
   dots,
   hint,
+  hintTitle,
   onChange
 }: {
   label: string
@@ -64,6 +65,8 @@ export function PropertySelect<T extends string>({
   options: { value: T; label: string }[]
   dots?: Partial<Record<T, string>>
   hint?: string
+  /** The longer explanation, on hover, so the hint itself stays one short line. */
+  hintTitle?: string
   onChange: (value: T) => void
 }): ReactNode {
   const current = options.find((option) => option.value === value) ?? options[0]
@@ -103,7 +106,11 @@ export function PropertySelect<T extends string>({
           </span>
         </span>
       </div>
-      {hint ? <span className={PROP_HINT}>{hint}</span> : null}
+      {hint ? (
+        <span title={hintTitle} className={PROP_HINT}>
+          {hint}
+        </span>
+      ) : null}
     </div>
   )
 }

@@ -87,13 +87,19 @@ export function BlockersField({
           </span>
         </span>
         {cycle ? (
-          <span className="text-[11px] leading-[1.4] text-[var(--color-col-review-text)]">
-            Dependency cycle: {cycle.join(' → ')}. None of these can start.
+          <span
+            title={`${cycle.join(' → ')}. None of these can start.`}
+            className="text-[11px] leading-[1.4] text-[var(--color-col-review-text)]"
+          >
+            Dependency cycle.
           </span>
         ) : null}
         {missing.length > 0 ? (
-          <span className="text-[11px] leading-[1.4] text-[var(--color-col-review-text)]">
-            {missing.join(', ')} not found — ignored until it exists. Remove it to clear this.
+          <span
+            title="Ignored until it exists. Remove it to clear this."
+            className="text-[11px] leading-[1.4] text-[var(--color-col-review-text)]"
+          >
+            {missing.join(', ')} not found.
           </span>
         ) : null}
       </div>

@@ -9,23 +9,24 @@ import {
   type TaskForm
 } from '../../lib/taskForm.js'
 import { BranchIcon, ChevronIcon, FolderIcon } from '../icons.js'
-import {
-  PROP_HINT,
-  PROP_LABEL,
-  PROP_ROW,
-  PropertySelect,
-  RowToggle,
-  SECTION_LABEL
-} from './fields.js'
+import { PROP_LABEL, PROP_ROW, PropertySelect, RowToggle, SECTION_LABEL } from './fields.js'
 
-/** What the Model field's hint says: where the model comes from when it is left on Default. */
-function modelHint(form: TaskForm, settings: Settings, inherited: string | undefined): string {
+/** The Model field's hint: where the model comes from when it is left on Default. */
+function modelHint(
+  form: TaskForm,
+  settings: Settings,
+  inherited: string | undefined
+): { text: string; title?: string } {
   const label = AGENT_PROVIDER_LABELS[form.provider]
-  if (form.model) return `Used whenever ${label} runs this task.`
-  if (inherited) return `From ${templateNames(settings, form).effective}.`
-  return settings.agentModels[form.provider].length > 0
-    ? `${label} runs its default model.`
-    : `${label} runs its default model. Register models in Settings → Agents to pick one.`
+  if (form.model) return { text: `Used whenever ${label} runs this task.` }
+  if (inherited) return { text: `From ${templateNames(settings, form).effective}.` }
+  return {
+    text: `${label} runs its default model.`,
+    title:
+      settings.agentModels[form.provider].length > 0
+        ? undefined
+        : 'Register models in Settings → Agents to pick one.'
+  }
 }
 
 /** How an agent runs the task: provider, model, prompt template, and whether Dispatch may start it. */
@@ -42,6 +43,7 @@ export function AgentFields({
   settings: Settings
 }): ReactNode {
   const inherited = inheritedModel(settings, form)
+  const model = modelHint(form, settings, inherited)
   return (
     <div className="flex flex-col gap-0.5">
       <span className={`${SECTION_LABEL} pb-1.5`}>Agent</span>
@@ -64,7 +66,8 @@ export function AgentFields({
           { value: '', label: inherited ? `Default — ${inherited}` : 'Default' },
           ...modelOptions(settings, form).map((name) => ({ value: name, label: name }))
         ]}
-        hint={modelHint(form, settings, inherited)}
+        hint={model.text}
+        hintTitle={model.title}
         onChange={(model) => patch({ model })}
       />
       <PropertySelect
@@ -78,10 +81,11 @@ export function AgentFields({
             label: template.name
           }))
         ]}
-        hint={
+        hint={form.promptTemplateId ? 'Pinned — used in any column.' : 'Follows the column.'}
+        hintTitle={
           form.promptTemplateId
-            ? 'Pinned — used whatever column the task is in.'
-            : `Follows the column. Currently runs ${routedName}.`
+            ? 'Used whatever column the task is in.'
+            : `Moves with the task's column. Currently runs ${routedName}.`
         }
         onChange={(promptTemplateId) => patch({ promptTemplateId })}
       />
@@ -121,8 +125,14 @@ export function WorkspaceFields({
   const { info: branchInfo, loaded } = useBranches(form.repoPath, form.useWorktree)
   const notARepo = loaded && branchInfo.branches.length === 0
   const hint = worktreeHint(form, taskId, notARepo)
-  // The worktree cannot be made as asked: say why, in place of the usual explanation.
-  const warning = form.useWorktree && (!form.repoPath || notARepo) ? hint : null
+  // The worktree cannot be made as asked: say why in a few words, in full on hover.
+  const warning = !form.useWorktree
+    ? null
+    : !form.repoPath
+      ? 'Set a directory first.'
+      : notARepo
+        ? 'Not a git repository: runs in the folder.'
+        : null
   const existing = form.useWorktree && task?.worktreePath ? task : null
   return (
     <div className="flex flex-col gap-0.5">
@@ -134,7 +144,12 @@ export function WorkspaceFields({
             aria-label="Working directory"
             value={form.repoPath}
             placeholder={settings.defaultRepoPath || 'Workspace folder'}
-            title={form.repoPath}
+            title={
+              form.repoPath ||
+              (settings.defaultRepoPath
+                ? `Empty: runs in ${settings.defaultRepoPath}`
+                : 'No working directory set: the agent runs in the workspace folder.')
+            }
             onChange={(event) => patch({ repoPath: event.target.value })}
             className="min-w-0 flex-1 bg-transparent font-mono text-[11.5px] text-ink outline-none placeholder:text-faint"
           />
@@ -153,11 +168,6 @@ export function WorkspaceFields({
           </button>
         </div>
       </div>
-      {!form.repoPath.trim() && !settings.defaultRepoPath ? (
-        <span className={PROP_HINT}>
-          No working directory set: the agent runs in the workspace folder.
-        </span>
-      ) : null}
       <RowToggle
         checked={form.useWorktree}
         onChange={(useWorktree) => patch({ useWorktree })}
@@ -229,7 +239,10 @@ export function WorkspaceFields({
             </div>
           ) : null}
           {warning ? (
-            <span className="text-[11px] leading-[1.4] text-[var(--color-col-review-text)]">
+            <span
+              title={hint}
+              className="text-[11px] leading-[1.4] text-[var(--color-col-review-text)]"
+            >
               {warning}
             </span>
           ) : existing ? null : (
