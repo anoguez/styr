@@ -158,6 +158,22 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
     host.detach('s')
   })
 
+  it('reports OSC 8 links on runs (package 0.4.0), each on a run of its own', () => {
+    const { factory } = load()
+    const engine = factory!.create({ cols: 80, rows: 4, scrollback: 100 })
+    try {
+      engine.write('see \x1b]8;;https://example.com/a\x1b\\docs\x1b]8;;\x1b\\ now\r\n')
+      const runs = engine.snapshot().lines[0]!.runs
+      expect(runs.map((run) => [run.text, run.link ?? null])).toEqual([
+        ['see ', null],
+        ['docs', 'https://example.com/a'],
+        [' now', null]
+      ])
+    } finally {
+      engine.dispose()
+    }
+  })
+
   it('survives adversarial input without throwing', () => {
     const { factory } = load()
     const engine = factory!.create({ cols: 80, rows: 24, scrollback: 100 })

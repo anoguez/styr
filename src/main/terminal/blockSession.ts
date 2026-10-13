@@ -29,7 +29,7 @@ const PROMPT_SCROLLBACK = 200
 export const MAX_FINISHED_BLOCKS = 200
 export const MAX_FINISHED_ROWS = 50_000
 /** `styledLines` returns at most this many lines per call (protocol). */
-const STYLED_BATCH = 5000
+export const STYLED_BATCH = 5000
 /** The mark on the last history row already sent for the running command. */
 const SENT_MARK = 'styr-sent'
 const CLEAR_COMMAND = /^\s*(clear|reset|tput\s+(clear|reset))\s*$/

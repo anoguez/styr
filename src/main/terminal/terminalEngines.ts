@@ -151,6 +151,9 @@ export function registerTerminalEngines(
   ipcMain.handle('terminal:nativeLines', (_event, id: string, from: number, to: number) =>
     host.lines(String(id), Number(from), Number(to))
   )
+  ipcMain.handle('terminal:nativeStyledLines', (_event, id: string, from: number, to: number) =>
+    host.styledLines(String(id), Number(from), Number(to))
+  )
   ipcMain.on('terminal:nativeDetach', (_event, id: string) => host.detach(String(id)))
   ipcMain.on('terminal:nativeClearBlocks', (_event, id: string) => host.clearBlocks(String(id)))
   // The renderer reports what each view ended up with, so the report shows sessions that never
