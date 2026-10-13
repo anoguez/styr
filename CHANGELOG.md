@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/anoguez/styr/compare/v0.31.0...v0.32.0) (2026-10-13)
+
+
+### Features
+
+* rework the Task dialog to the v3 design ([#152](https://github.com/anoguez/styr/issues/152)) ([34f6518](https://github.com/anoguez/styr/commit/34f65183cc466e7e0c355a8f6464636e9acaf0de))
+
 ## [0.31.0](https://github.com/anoguez/styr/compare/v0.30.0...v0.31.0) (2026-10-13)
 
 
