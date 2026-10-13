@@ -25,7 +25,6 @@ function PresetPicker({
           { value: '', label: 'Blank task' },
           ...presets.map((preset) => ({ value: preset.id, label: preset.name }))
         ]}
-        hint="Fills the form. The task keeps no link to it."
         onChange={onChange}
       />
     </div>
