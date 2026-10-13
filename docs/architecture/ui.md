@@ -318,7 +318,7 @@ them and send them to the shell.
 
 ## Inbox
 
-The header's Board/Inbox switch (`⌘1`/`⌘2`, the `viewBoard`/`viewInbox` commands) swaps the board for
+The header's Board/Inbox/Worklog switch (`⌃1`/`⌃2`/`⌃3`, the `viewBoard`/`viewInbox`/`viewWorklog` commands) swaps the board for
 `Inbox.tsx`: the same tasks regrouped as Needs you / Running / Up next / Done. The grouping is
 `buildInbox` in `core/inbox.ts` — pure, derived from tasks, agent states and the Orchestrate queue,
 and it writes nothing, so the two views cannot disagree. A working agent outranks `needs_spec`.
@@ -327,3 +327,28 @@ inbox cannot answer a permission prompt, so a waiting agent's action is "Open te
 is `App` state remembered in the renderer's `localStorage` (`styr:view`) — a per-machine convenience,
 not a setting, so it stays out of the config files — and task search is available from the command
 palette.
+
+## Worklog
+
+The third view (`components/worklog/`) shows how long each task was worked on, per day, against
+`Settings.timesheet` (an app-wide key, edited in Settings → Timesheet and in the view's own
+popover). Nothing about it is stored — hours are derived on each load, like the Inbox:
+
+- `core/worklogSources.ts` (node) collects each task's signals: the `"timestamp"` of every record in
+  its agents' transcripts (found through `AgentProvider.transcriptPath`, cached by mtime and size),
+  its activity notes, and the author times of the commits on its own branch past the base. Tasks
+  Done before the span are not read. `worklog:load` runs it on demand only, yielding between tasks —
+  never from `notifyTasksChanged`.
+- `core/worklog.ts` (pure, renderer-safe) does the rest: signals within `IDLE_GAP_MS` join one
+  stretch that opens `LEAD_MS` early (`workIntervals`); time two tasks share is split evenly between
+  them, so a day never holds more hours than it had (`hoursByTaskDay`); each task's day is rounded
+  by `roundMinutes` before any total; `worklogFrame` lays out the day/week/month columns and the
+  span to fetch, and `buildWorklog` counts into them. `timesheetTable` + `formatTable` produce the
+  copied TSV/CSV.
+- `useWorklog` refetches whenever the board's tasks change, so today's hours grow as agents work.
+
+Terminal activity outside an agent session is not a source: nothing records it to disk. Adding it
+means persisting it somewhere a file can rebuild, not keeping it in memory.
+
+Project colours come from theme tokens in a fixed order over the sorted project names, so a project
+keeps its colour across periods. Tasks without a `project` group under "No project".

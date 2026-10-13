@@ -126,6 +126,7 @@ describe('runShortcutCommand', () => {
     expect(after('quickTask').quickAdd).toBe(true)
     expect(after('commandPalette').palette).toBe('command')
     expect(after('viewInbox').view).toBe('inbox')
+    expect(after('viewWorklog').view).toBe('worklog')
     expect(after('settings').settings).toEqual({ section: undefined })
     expect(after('toggleAgents').agentsOpen).toBe(false)
     expect(after('orchestrate').confirmDispatch).toBe(true)

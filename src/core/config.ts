@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { defaultShell } from './platformShell.js'
 import {
   DEFAULT_DONE_CAP,
+  DEFAULT_TIMESHEET,
   DEFAULT_SHORTCUTS,
   DEFAULT_TASK_PRESETS,
   DEFAULT_THEME,
@@ -134,6 +135,7 @@ export function shippedSettings(): Settings {
     orchestration: { spec: 1, implement: 2, review: 1 },
     autoDispatch: false,
     updates: { checkAutomatically: true },
+    timesheet: DEFAULT_TIMESHEET,
     experimental: { externalSources: false, nativeTerminal: false },
     taskDefaults: { orchestrate: true, useWorktree: false },
     taskPresets: DEFAULT_TASK_PRESETS,

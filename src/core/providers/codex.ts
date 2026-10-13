@@ -71,6 +71,7 @@ export const codexProvider: AgentProvider = {
     return codexCommand(settings, { sessionId, resume, forkFrom, cwd, model, prompt, syntax })
   },
   sessionExists: (id, root) => codexTranscript(id, root) !== undefined,
+  transcriptPath: codexTranscript,
   sessionTime: (id, root) => {
     const file = codexTranscript(id, root)
     return file ? new Date(statSync(file).mtimeMs).toISOString() : undefined

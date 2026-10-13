@@ -811,6 +811,8 @@ export function Stepper({
   max,
   onChange,
   label,
+  step = 1,
+  format = String,
   className = ''
 }: {
   value: number
@@ -818,9 +820,13 @@ export function Stepper({
   max: number
   onChange: (value: number) => void
   label: string
+  /** How far one press moves the value. */
+  step?: number
+  /** How the value reads between the buttons. */
+  format?: (value: number) => string
   className?: string
 }): ReactNode {
-  const step = 'grid size-7 place-items-center text-dim hover:text-ink disabled:opacity-40'
+  const stepClass = 'grid size-7 place-items-center text-dim hover:text-ink disabled:opacity-40'
   const glyph = {
     viewBox: '0 0 16 16',
     width: 12,
@@ -840,20 +846,20 @@ export function Stepper({
         type="button"
         aria-label={`Decrease ${label}`}
         disabled={value <= min}
-        className={step}
-        onClick={() => onChange(Math.max(min, value - 1))}
+        className={stepClass}
+        onClick={() => onChange(Math.max(min, value - step))}
       >
         <svg aria-hidden {...glyph}>
           <path d="M3.5 8h9" />
         </svg>
       </button>
-      <span className="flex-1 text-center font-mono text-[12px] text-ink">{value}</span>
+      <span className="flex-1 text-center font-mono text-[12px] text-ink">{format(value)}</span>
       <button
         type="button"
         aria-label={`Increase ${label}`}
         disabled={value >= max}
-        className={step}
-        onClick={() => onChange(Math.min(max, value + 1))}
+        className={stepClass}
+        onClick={() => onChange(Math.min(max, value + step))}
       >
         <svg aria-hidden {...glyph}>
           <path d="M8 3.5v9M3.5 8h9" />

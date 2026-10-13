@@ -97,7 +97,8 @@ import {
 } from './sourceSync.js'
 import { adapterFor, runCommand, sourceProviders } from '@core/sources/index.js'
 import { taskFilterSchema, settingsChangeSchema, workspaceIdSchema } from '@core/taskSchema.js'
-import type { Task, TaskStatus } from '@core/types.js'
+import type { Task, TaskStatus, WorklogTask } from '@core/types.js'
+import { collectWorklog, diskWorklogSources } from '@core/worklogSources.js'
 import { createTaskWrites } from './taskWrites.js'
 import { closeIndex, findTask, queryTasks, syncIndex } from './taskIndex.js'
 import { startWatching, startWatchingAgents } from './watcher.js'
@@ -300,6 +301,21 @@ async function computeDiffStats(): Promise<Record<string, DiffStat>> {
     }
   }
   return stats
+}
+
+/**
+ * The Worklog's hours for `[from, to)`, read from each task's transcripts, notes and commits. On
+ * demand only, never from `notifyTasksChanged`; the loop yields between tasks like the diff stats.
+ */
+async function loadWorklog(from: number, to: number): Promise<WorklogTask[]> {
+  const { activeWorkspaceId, worktreeLocation } = loadSettings()
+  const sources = diskWorklogSources(activeWorkspaceId, worktreeLocation)
+  const worked: WorklogTask[] = []
+  for (const task of queryTasks()) {
+    await new Promise((resolve) => setImmediate(resolve))
+    worked.push(...collectWorklog([task], from, to, sources))
+  }
+  return worked
 }
 
 export function notifyTasksChanged(): void {
@@ -552,6 +568,12 @@ export function registerIpcHandlers(): void {
     return diffStatsRun
   })
   ipcMain.handle('agents:list', () => agentStatuses())
+  ipcMain.handle('worklog:load', (_event, from: unknown, to: unknown) => {
+    const span = z
+      .object({ from: z.number().finite(), to: z.number().finite() })
+      .parse({ from, to })
+    return loadWorklog(span.from, span.to)
+  })
 
   ipcMain.handle('tasks:create', (_event, draft: unknown) => taskWrites.create(draft))
   ipcMain.handle('tasks:update', (_event, id: string, patch: unknown) =>

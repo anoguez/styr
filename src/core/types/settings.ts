@@ -15,6 +15,7 @@ export const SHORTCUT_COMMANDS = [
   'commandPalette',
   'viewBoard',
   'viewInbox',
+  'viewWorklog',
   'settings',
   'toggleTerminal',
   'toggleAgents',
@@ -59,6 +60,7 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   commandPalette: ['mod+shift+p', 'mod+k'],
   viewBoard: ['ctrl+1'],
   viewInbox: ['ctrl+2'],
+  viewWorklog: ['ctrl+3'],
   settings: ['mod+,'],
   toggleTerminal: ['ctrl+`', 'mod+`'],
   toggleAgents: [],
@@ -126,6 +128,7 @@ export interface Settings {
   theme: ThemeSettings
   shortcuts: ShortcutBindings
   updates: UpdateSettings
+  timesheet: TimesheetSettings
   experimental: ExperimentalSettings
   taskDefaults: TaskDefaults
   taskPresets: TaskPreset[]
@@ -140,6 +143,7 @@ export const GLOBAL_SETTING_KEYS = [
   'storageDir',
   'activeWorkspaceId',
   'updates',
+  'timesheet',
   'shortcuts',
   'experimental'
 ] as const satisfies readonly (keyof Settings)[]
@@ -224,6 +228,38 @@ export interface ExperimentalSettings {
 export interface UpdateSettings {
   /** Check when the app opens and every few hours after. A manual check works either way. */
   checkAutomatically: boolean
+}
+
+/** A rounding step for Worklog entries, in minutes; 0 keeps them exact. */
+export const TIMESHEET_ROUNDINGS = [0, 15, 30] as const
+export type TimesheetRounding = (typeof TIMESHEET_ROUNDINGS)[number]
+
+export type WorklogPeriod = 'day' | 'week' | 'month'
+
+/** The person's working hours, which the Worklog measures logged time against. */
+export interface TimesheetSettings {
+  /** What a full working day counts as, in hours (half-hour steps). */
+  hoursPerDay: number
+  /** Monday first, whatever `weekStart` says. Other days have no target. */
+  workingDays: boolean[]
+  weekStart: 'mon' | 'sun'
+  /** The period the Worklog opens on. */
+  period: WorklogPeriod
+  groupBy: 'task' | 'project'
+  /** Applied per task per day, before totals. */
+  roundMinutes: TimesheetRounding
+  /** What Copy for timesheet puts on the clipboard. */
+  copyFormat: 'tsv' | 'csv'
+}
+
+export const DEFAULT_TIMESHEET: TimesheetSettings = {
+  hoursPerDay: 8,
+  workingDays: [true, true, true, true, true, false, false],
+  weekStart: 'mon',
+  period: 'week',
+  groupBy: 'task',
+  roundMinutes: 15,
+  copyFormat: 'tsv'
 }
 
 /**

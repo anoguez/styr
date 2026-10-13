@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   ANSI_COLOURS,
   DEFAULT_DONE_CAP,
+  DEFAULT_TIMESHEET,
   DEFAULT_SHORTCUTS,
   DEFAULT_TERMINAL_PALETTE,
   MAX_TASK_PRESETS,
@@ -228,6 +229,19 @@ export const settingsSchema = z.object({
   updates: z
     .object({ checkAutomatically: z.boolean().default(true) })
     .default({ checkAutomatically: true }),
+  timesheet: z
+    .object({
+      hoursPerDay: z.number().min(0.5).max(24).default(DEFAULT_TIMESHEET.hoursPerDay),
+      workingDays: z.array(z.boolean()).length(7).default(DEFAULT_TIMESHEET.workingDays),
+      weekStart: z.enum(['mon', 'sun']).default(DEFAULT_TIMESHEET.weekStart),
+      period: z.enum(['day', 'week', 'month']).default(DEFAULT_TIMESHEET.period),
+      groupBy: z.enum(['task', 'project']).default(DEFAULT_TIMESHEET.groupBy),
+      roundMinutes: z
+        .union([z.literal(0), z.literal(15), z.literal(30)])
+        .default(DEFAULT_TIMESHEET.roundMinutes),
+      copyFormat: z.enum(['tsv', 'csv']).default(DEFAULT_TIMESHEET.copyFormat)
+    })
+    .default(DEFAULT_TIMESHEET),
   experimental: z
     .object({
       externalSources: z.boolean().default(false),
@@ -262,6 +276,7 @@ const GLOBAL_KEY_MASK = {
   storageDir: true,
   activeWorkspaceId: true,
   updates: true,
+  timesheet: true,
   shortcuts: true,
   experimental: true
 } as const satisfies Record<GlobalSettingKey, true>

@@ -3,7 +3,7 @@ import { shortcutHint } from '@core/shortcuts.js'
 import type { ShortcutBindings } from '@core/types.js'
 import type { View } from '../../lib/appShell.js'
 
-/** Board | Inbox, with the count of tasks that need you on Inbox. */
+/** Board | Inbox | Worklog, with the count of tasks that need you on Inbox. */
 export function ViewTabs({
   view,
   needsYou,
@@ -24,7 +24,8 @@ export function ViewTabs({
       {(
         [
           { id: 'board', label: 'Board', command: 'viewBoard' },
-          { id: 'inbox', label: 'Inbox', command: 'viewInbox' }
+          { id: 'inbox', label: 'Inbox', command: 'viewInbox' },
+          { id: 'worklog', label: 'Worklog', command: 'viewWorklog' }
         ] as const
       ).map((tab) => (
         <button
@@ -32,7 +33,7 @@ export function ViewTabs({
           type="button"
           role="tab"
           aria-selected={view === tab.id}
-          title={`${tab.label} view ${shortcutHint(bindings, tab.command)}`.trim()}
+          title={`${tab.id === 'worklog' ? tab.label : `${tab.label} view`} ${shortcutHint(bindings, tab.command)}`.trim()}
           onClick={() => onChange(tab.id)}
           className={`inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors ${
             view === tab.id

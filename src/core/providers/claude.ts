@@ -123,6 +123,7 @@ export const claudeProvider: AgentProvider = {
   newSessionId: () => randomUUID(),
 
   sessionExists: (sessionId, homeRoot) => findTranscript(sessionId, homeRoot) !== undefined,
+  transcriptPath: findTranscript,
 
   sessionTime(sessionId, homeRoot) {
     const file = findTranscript(sessionId, homeRoot)

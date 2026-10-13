@@ -22,6 +22,7 @@ import { AppHeader, BrandMark } from './components/header/AppHeader.js'
 import { DispatchButton } from './components/header/DispatchButton.js'
 import { ViewTabs } from './components/header/ViewTabs.js'
 import { Inbox } from './components/Inbox.js'
+import { Worklog } from './components/worklog/Worklog.js'
 import { OrchestrateDialog, StopAutoRunDialog } from './components/OrchestrateDialog.js'
 import { PerformanceDialog } from './components/PerformanceDialog.js'
 import { ProblemsBanner } from './components/ProblemsBanner.js'
@@ -234,6 +235,20 @@ export default function App(): ReactNode {
               >
                 {loading ? (
                   <p className="p-6 text-dim">Loading board…</p>
+                ) : view === 'worklog' ? (
+                  <Worklog
+                    timesheet={settings.timesheet}
+                    bindings={bindings}
+                    refresh={allTasks}
+                    onTimesheetChange={(timesheet) =>
+                      void save({
+                        workspaceId: settings.activeWorkspaceId,
+                        workspace: workspaceSettingsFor(settings),
+                        global: { ...globalSettingsFor(settings), timesheet }
+                      })
+                    }
+                    onOpenSettings={() => openSettings('timesheet')}
+                  />
                 ) : view === 'inbox' ? (
                   <Inbox
                     tasks={tasks}
