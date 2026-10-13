@@ -261,6 +261,25 @@ character, so ANSI, TUIs, selection and scrollback are untouched. The pipeline, 
 Not blocks: agent sessions (a task session, or a shell running `claude`/`codex` — one long command)
 and the alternate screen. `TerminalSurface` skips both; the bar reports agent state instead.
 
+### Shell integration
+
+The marks come from Styr's hooks in the shell (`main/terminal/shellIntegration.ts`), which report
+each prompt and command as private `OSC 777;STYR` records. `resolveShell` says which a shell gets
+(`TerminalShell.integration`); a shell without one starts unchanged and draws no blocks. Each is
+installed without typing anything into the terminal, and the user's own startup files are still
+read:
+
+- **zsh**: a private `ZDOTDIR` whose files source the user's, then add `preexec`/`precmd`/`chpwd`.
+- **bash** (3.2 and later, Git Bash too): `--init-file`, which reads the login profile as `-l`
+  would, then hooks bash-preexec's arrays when the profile loaded it, or else a `DEBUG` trap (chained
+  to one the profile set) and `PROMPT_COMMAND` (string or array). The command line comes from
+  `history 1`; a line history did not record (`ignorespace`) falls back to its first command.
+- **fish** (3 and later): `--init-command` sources hooks on `fish_preexec`, `fish_postexec` and
+  `fish_prompt`.
+- **PowerShell 7**: `-NoExit -EncodedCommand` (a command, so no execution policy refuses it) wraps
+  `prompt` and PSReadLine's `PSConsoleHostReadLine`. A failed cmdlet reports exit 1, not a stale
+  `$LASTEXITCODE`. Windows PowerShell 5.1 and cmd get none.
+
 ## Terminal keys
 
 A terminal sends a bare CR for both Enter and Shift+Enter, so Claude Code cannot tell them apart.

@@ -11,7 +11,7 @@ import type {
   TerminalRuntimeState,
   TerminalSessionInfo
 } from '@core/types.js'
-import { shellIntegrationEnvironment } from './shellIntegration.js'
+import { shellIntegrationLaunch } from './shellIntegration.js'
 import { TerminalProtocolParser } from './terminalProtocol.js'
 import { TerminalRuntime } from './terminalRuntime.js'
 
@@ -115,12 +115,13 @@ export function createSession(options: SpawnOptions): TerminalSessionInfo {
   const cwd = resolveCwd(options.cwd)
   const shell = resolveShell(options.shell)
   const environment = { ...shell.environment, ...sanitisedEnv(id, options.env) }
-  const child = spawn(shell.path, shell.interactiveArgs, {
+  const launch = shellIntegrationLaunch(shell, environment)
+  const child = spawn(shell.path, launch.args, {
     name: 'xterm-256color',
     cols: 100,
     rows: 30,
     cwd,
-    env: { ...environment, ...shellIntegrationEnvironment(shell.path, environment) }
+    env: { ...environment, ...launch.env }
   })
 
   const info: TerminalSessionInfo = {

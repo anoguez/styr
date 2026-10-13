@@ -29,6 +29,11 @@ export interface TerminalShell {
   terminalCommandArgs(line: string): string[]
   /** Extra environment for a terminal running it. */
   environment: Record<string, string>
+  /**
+   * Which of Styr's shell integrations (prompt and command marks, `main/terminal/shellIntegration`)
+   * a terminal running it gets; undefined for a shell without one.
+   */
+  integration?: ShellIntegrationKind
   /** Why agents cannot be launched from it, in words; undefined when they can. */
   unsupported?: string
 }
@@ -50,6 +55,15 @@ export function defaultShell(
 }
 
 type ShellKind = 'posix' | 'pwsh' | 'windows-powershell' | 'cmd'
+
+/** The shells Styr can mark prompts and commands in. */
+export type ShellIntegrationKind = 'zsh' | 'bash' | 'fish' | 'pwsh'
+
+const POSIX_INTEGRATIONS: Record<string, ShellIntegrationKind> = {
+  zsh: 'zsh',
+  bash: 'bash',
+  fish: 'fish'
+}
 
 function executableName(path: string): string {
   return (path.replace(/\\/g, '/').split('/').pop() ?? path).toLowerCase().replace(/\.exe$/, '')
@@ -101,7 +115,8 @@ export function resolveShell(
         terminalCommandArgs: (line) => ['-i', '-l', '-c', line],
         // Git Bash's login profile changes to $HOME unless CHERE_INVOKING is set, which would drop
         // a task's worktree as the working directory.
-        environment: windows ? { CHERE_INVOKING: '1' } : {}
+        environment: windows ? { CHERE_INVOKING: '1' } : {},
+        ...(POSIX_INTEGRATIONS[name] ? { integration: POSIX_INTEGRATIONS[name] } : {})
       }
     case 'pwsh': {
       // -Command loads the same profile an interactive session does, so one form serves both.
@@ -119,7 +134,8 @@ export function resolveShell(
         interactiveArgs: windows ? ['-NoLogo'] : ['-Login', '-NoLogo'],
         commandArgs: run,
         terminalCommandArgs: run,
-        environment: {}
+        environment: {},
+        integration: 'pwsh'
       }
     }
     case 'windows-powershell':

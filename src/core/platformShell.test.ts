@@ -45,6 +45,17 @@ describe('resolveShell on macOS and Linux', () => {
     expect(shell.unsupported).toBeUndefined()
   })
 
+  it('names the shell integration each shell gets, and none for the others', () => {
+    expect(resolveShell('/bin/zsh', 'darwin').integration).toBe('zsh')
+    expect(resolveShell('/bin/bash', 'linux').integration).toBe('bash')
+    expect(resolveShell('/usr/bin/fish', 'linux').integration).toBe('fish')
+    expect(resolveShell('/opt/homebrew/bin/pwsh', 'darwin').integration).toBe('pwsh')
+    expect(resolveShell('/bin/sh', 'darwin').integration).toBeUndefined()
+    expect(resolveShell(GIT_BASH, 'win32').integration).toBe('bash')
+    expect(resolveShell('powershell.exe', 'win32').integration).toBeUndefined()
+    expect(resolveShell('cmd.exe', 'win32').integration).toBeUndefined()
+  })
+
   it('falls back to the platform default when Settings names no shell', () => {
     expect(resolveShell('', 'darwin', { SHELL: '/bin/zsh' }).path).toBe('/bin/zsh')
   })
