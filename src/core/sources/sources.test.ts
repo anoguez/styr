@@ -12,7 +12,15 @@ import {
   githubAdapter,
   parseGithubRemote
 } from './github.js'
-import { contentHash, fieldHashes, planBlockers, planPush, planSync } from './sync.js'
+import {
+  contentHash,
+  fieldHashes,
+  planBlockers,
+  planPush,
+  planSync,
+  previewPlan,
+  selectActions
+} from './sync.js'
 import type { CommandRunner, RunResult } from './types.js'
 
 const ok = (stdout = ''): RunResult => ({ code: 0, stdout, stderr: '' })
@@ -454,5 +462,50 @@ describe('planBlockers', () => {
       )
     ).toEqual([])
     expect(planBlockers(tasks, [item({ id: '1' })], source(), TARGET)).toEqual([])
+  })
+})
+
+describe('reviewed syncs', () => {
+  // TASK-0001 is linked to #42; #43 is new; #44 is linked but only its link needs refreshing
+  const quiet = task({
+    id: 'TASK-0002',
+    externalRef: { ...task().externalRef!, id: '44', remoteUpdatedAt: 'old' }
+  })
+  const tasks = [task(), quiet]
+  const items = [
+    item({ title: 'Crash on boot', updatedAt: 'new' }),
+    item({ id: '43', title: 'New one' }),
+    item({ id: '44', updatedAt: 'new' })
+  ]
+  const plan = planSync(tasks, items, source(), 'github', where)
+
+  it('lists new items and visible updates, leaving link-only refreshes out', () => {
+    expect(previewPlan(plan, tasks)).toEqual([
+      {
+        itemId: '42',
+        kind: 'update',
+        title: 'Crash on boot',
+        taskId: 'TASK-0001',
+        changes: ['Title']
+      },
+      {
+        itemId: '43',
+        kind: 'create',
+        title: 'New one',
+        changes: [],
+        url: 'https://github.com/acme/styr/issues/42'
+      }
+    ])
+  })
+
+  it('applies only the ticked items, plus refreshes there was nothing to ask about', () => {
+    const picked = selectActions(plan, tasks, ['43'])
+    expect(picked.actions.map((action) => [action.kind, action.itemId])).toEqual([
+      ['create', '43'],
+      ['update', '44']
+    ])
+    expect(picked.created).toBe(1)
+    expect(picked.updated).toBe(0)
+    expect(selectActions(plan, tasks, ['42']).updated).toBe(1)
   })
 })

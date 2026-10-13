@@ -128,6 +128,25 @@ export interface SourceSyncState {
   updated: number
 }
 
+/** One line of a sync's review list: an item and what applying it would do to the board. */
+export interface SyncPreviewEntry {
+  itemId: string
+  kind: 'create' | 'update'
+  /** The task's title after the sync. */
+  title: string
+  taskId?: string
+  /** What visibly changes, in words; empty for a new task. */
+  changes: string[]
+  url?: string
+}
+
+/** What a reviewed sync would do, for the user to pick from before anything is applied. */
+export interface SyncPreview {
+  entries: SyncPreviewEntry[]
+  /** Set when the source could not be read; `entries` is then empty. */
+  error?: string
+}
+
 /** Whether an adapter's command-line tool is usable. */
 export type CliStatus =
   | { state: 'missing' }
@@ -168,6 +187,11 @@ export interface SourceAdapter {
    * this; its tasks get the default repo path.
    */
   readonly fixedTarget?: string
+  /**
+   * Imports are reviewed first: the source never syncs on a timer, and a sync applies only the
+   * items the user ticked in its preview.
+   */
+  readonly reviewImports?: boolean
   status(run: CommandRunner): Promise<CliStatus>
   /** Which repository of this provider a checkout belongs to, or null (not a git repo, other host). */
   detectTarget(repoPath: string): string | null

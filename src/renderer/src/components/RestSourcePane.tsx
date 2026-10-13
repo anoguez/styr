@@ -8,10 +8,22 @@ import {
   type RestRequest,
   type RestTestResult,
   type SourceConfig,
-  type SourceSyncState
+  type SourceSyncState,
+  type SyncPreview
 } from '@core/types.js'
 import { ipcMessage } from '../lib/ipcMessage.js'
-import { Button, Card, CardRow, Chip, Eyebrow, Hint, Select, Switch, inputBase } from './ui.js'
+import {
+  Button,
+  Card,
+  CardRow,
+  Checkbox,
+  Chip,
+  Eyebrow,
+  Hint,
+  Select,
+  Switch,
+  inputBase
+} from './ui.js'
 
 const PROVIDER = 'rest'
 
@@ -20,7 +32,8 @@ const DEFAULT_SOURCE: SourceConfig = {
   provider: PROVIDER,
   access: 'read',
   enabled: false,
-  pollMinutes: 15,
+  // reviewed imports never poll
+  pollMinutes: 0,
   labels: [],
   includeClosed: false,
   mirrorStatus: false,
@@ -140,6 +153,134 @@ function TestResult({ result }: { result: RestTestResult }): ReactNode {
         </pre>
       </div>
     </div>
+  )
+}
+
+function lastSync(state: SourceSyncState | undefined): string {
+  if (state?.error) return state.error
+  if (!state?.lastAt) return 'Nothing imported yet.'
+  const at = new Date(state.lastAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return `Last applied ${at}: ${state.created} new, ${state.updated} updated.`
+}
+
+/**
+ * Review-first syncing: the source is read and the changes listed with checkboxes, all ticked;
+ * only the ticked ones are applied. Nothing is imported on a timer.
+ */
+function SyncReview({
+  canAct,
+  dirty,
+  state
+}: {
+  canAct: boolean
+  dirty: boolean
+  state: SourceSyncState | undefined
+}): ReactNode {
+  const [loading, setLoading] = useState(false)
+  const [preview, setPreview] = useState<SyncPreview | null>(null)
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
+
+  async function review(): Promise<void> {
+    setLoading(true)
+    try {
+      const next = await window.api.sources.preview(PROVIDER)
+      setPreview(next)
+      setPicked(new Set(next.entries.map((entry) => entry.itemId)))
+    } catch (failure) {
+      setPreview({ entries: [], error: ipcMessage(failure) })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function apply(): Promise<void> {
+    await window.api.sources.apply(PROVIDER, [...picked])
+    setPreview(null)
+  }
+
+  function toggle(itemId: string, on: boolean): void {
+    const next = new Set(picked)
+    if (on) next.add(itemId)
+    else next.delete(itemId)
+    setPicked(next)
+  }
+
+  const entries = preview?.entries ?? []
+  const busy = loading || state?.syncing === true
+
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <Hint>{dirty ? 'Save first, then review.' : lastSync(state)}</Hint>
+        <span className="flex-1" />
+        <Button
+          variant="subtle"
+          disabled={!canAct || dirty || busy}
+          title={dirty ? 'Save first, then review' : undefined}
+          onClick={() => void review()}
+        >
+          {loading ? 'Reading…' : preview ? 'Read again' : 'Review changes'}
+        </Button>
+      </div>
+
+      {preview?.error ? <Hint>{preview.error}</Hint> : null}
+      {preview && !preview.error && entries.length === 0 ? (
+        <Hint>Everything is up to date. Nothing to import.</Hint>
+      ) : null}
+
+      {entries.length > 0 ? (
+        <>
+          <div className="flex items-center gap-2">
+            <Eyebrow>
+              {picked.size} of {entries.length} selected
+            </Eyebrow>
+            <span className="flex-1" />
+            <Button
+              variant="subtle"
+              onClick={() => setPicked(new Set(entries.map((entry) => entry.itemId)))}
+            >
+              All
+            </Button>
+            <Button variant="subtle" onClick={() => setPicked(new Set())}>
+              None
+            </Button>
+          </div>
+          <div className="flex max-h-[320px] flex-col gap-2 overflow-auto">
+            {entries.map((entry) => (
+              <div key={entry.itemId} className="flex min-w-0 items-start gap-2">
+                <span className="min-w-0 flex-1">
+                  <Checkbox
+                    checked={picked.has(entry.itemId)}
+                    onChange={(on) => toggle(entry.itemId, on)}
+                    label={`#${entry.itemId} ${entry.title}`}
+                    hint={
+                      entry.kind === 'create'
+                        ? 'New task in Backlog'
+                        : `Updates ${entry.taskId}: ${entry.changes.join(', ')}`
+                    }
+                  />
+                </span>
+                <Chip tone={entry.kind === 'create' ? 'accent' : 'neutral'}>
+                  {entry.kind === 'create' ? 'New' : 'Update'}
+                </Chip>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="subtle" onClick={() => setPreview(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={picked.size === 0 || busy}
+              onClick={() => void apply()}
+            >
+              {state?.syncing ? 'Applying…' : `Apply ${picked.size}`}
+            </Button>
+          </div>
+        </>
+      ) : null}
+    </>
   )
 }
 
@@ -415,47 +556,16 @@ export function RestSourcePane({
                 onChange={(includeClosed) => change({ includeClosed })}
               />
             </Row>
-            <Row label="Check every">
-              <Select
-                aria-label="Poll interval"
-                compact
-                value={String(source.pollMinutes)}
-                onChange={(event) => change({ pollMinutes: Number(event.target.value) })}
-              >
-                <option value="0">Manual only</option>
-                <option value="5">5 minutes</option>
-                <option value="15">15 minutes</option>
-                <option value="60">1 hour</option>
-              </Select>
-            </Row>
           </CardRow>
-          <CardRow className="flex flex-col gap-2 px-3.5 py-3">
-            <div className="flex items-center gap-2">
-              <Hint>
-                {dirty
-                  ? 'Save to sync.'
-                  : state?.error
-                    ? state.error
-                    : state?.lastAt
-                      ? `Last synced ${new Date(state.lastAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}: ${state.created} new, ${state.updated} updated.`
-                      : 'Not synced yet.'}
-              </Hint>
-              <span className="flex-1" />
-              <Button
-                variant="subtle"
-                disabled={!canAct || dirty || state?.syncing}
-                title={dirty ? 'Save first, then sync' : undefined}
-                onClick={() => void window.api.sources.sync(PROVIDER)}
-              >
-                {state?.syncing ? 'Syncing…' : 'Sync now'}
-              </Button>
-            </div>
+          <CardRow className="flex flex-col gap-2.5 px-3.5 py-3">
+            <SyncReview canAct={canAct} dirty={dirty} state={state} />
           </CardRow>
         </Card>
       ) : null}
       <Hint>
-        Items are imported as Backlog tasks with the default repo path from General, and stay
-        linked. Styr only sends the request above; it never writes anything else to the API.
+        Nothing is imported until you review and apply it. New items become Backlog tasks with the
+        default repo path from General, and stay linked. Styr only sends the request above; it never
+        writes anything else to the API.
       </Hint>
     </>
   )

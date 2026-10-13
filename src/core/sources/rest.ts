@@ -220,7 +220,7 @@ async function fetchItems(config: SourceConfig, fetchImpl: Fetch): Promise<Remot
 
 /**
  * A REST endpoint that lists items. Read-only: it has no writer, so `writableSource` refuses it.
- * Labels filter like GitHub's; the endpoint is asked again for a single item, since a generic API
+ * Imports are reviewed before they apply. Labels filter like GitHub's; the endpoint is asked again for a single item, since a generic API
  * has no agreed URL for one.
  */
 export function makeRestAdapter(fetchImpl: Fetch = (...args) => fetch(...args)): SourceAdapter {
@@ -229,6 +229,7 @@ export function makeRestAdapter(fetchImpl: Fetch = (...args) => fetch(...args)):
     label: 'REST API',
     tagPrefix: 'rest',
     fixedTarget: REST_TARGET,
+    reviewImports: true,
     status: async () => ({ state: 'ready', version: '' }),
     detectTarget: () => REST_TARGET,
 

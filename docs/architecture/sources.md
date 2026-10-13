@@ -74,6 +74,14 @@ has no agreed URL for one item; its "not found" error feeds the stale-link note.
 read-only by construction: there is no `rest` entry in `WRITERS`, so `writableSource` refuses it,
 and the pane has no access control. The task dialog's Issue row only links GitHub.
 
+**Imports are reviewed, never automatic** (`SourceAdapter.reviewImports`, set by REST):
+`restartSourcePolling` skips the source, and the pane's **Review changes** calls `previewSource`,
+which reads the source and writes nothing (`addUnlistedLinked` with `report` off) and returns
+`previewPlan`'s list — new items and updates that visibly change a task (title, description,
+labels, Done). **Apply** sends the ticked item ids to `syncSource(id, selected)`, which re-reads
+the source and applies `selectActions`: the ticked items plus link-only refreshes there was
+nothing to ask about. Every `SyncAction` carries its `itemId` for this.
+
 **Send test request** calls `sources:restTest` with the draft (validated by
 `restSourceSettingsSchema`, refused while the flag is off); `testRestRequest` runs in the main
 process (no CORS), never throws, and returns status, timing, headers, a pretty-printed body capped

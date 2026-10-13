@@ -89,6 +89,7 @@ import {
   listSourceTargets,
   observeTasks,
   refreshTask,
+  previewSource,
   resetSourceObserver,
   restartSourcePolling,
   sourceStates,
@@ -540,6 +541,10 @@ export function registerIpcHandlers(): void {
     listSourceTargets(String(sourceId))
   )
   ipcMain.handle('sources:sync', (_event, sourceId: string) => syncSource(String(sourceId)))
+  ipcMain.handle('sources:preview', (_event, sourceId: string) => previewSource(String(sourceId)))
+  ipcMain.handle('sources:apply', (_event, sourceId: string, itemIds: unknown) =>
+    syncSource(String(sourceId), z.array(z.string()).parse(itemIds))
+  )
   ipcMain.handle('sources:link', (_event, taskId: string, text: string) =>
     linkTask(String(taskId), String(text))
   )

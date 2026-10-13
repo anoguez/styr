@@ -25,7 +25,9 @@ export type {
   SourceAccess,
   SourceConfig,
   SourceSyncState,
-  SourceTarget
+  SourceTarget,
+  SyncPreview,
+  SyncPreviewEntry
 } from './sources/types.js'
 export { DEFAULT_REST_SETTINGS, REST_METHODS } from './sources/types.js'
 
