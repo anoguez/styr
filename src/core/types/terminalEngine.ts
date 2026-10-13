@@ -41,8 +41,7 @@ export const TERMINAL_ENGINE_CAPABILITIES: Record<TerminalEngineId, TerminalEngi
   native: {
     // Needs a package with command marks (0.2.0 and later); an older one draws no blocks.
     commandBlocks: true,
-    // Plain URLs always; OSC 8 links only with a package that reports `EngineRun.link` (none
-    // released yet: the pinned 0.3.0 does not).
+    // Plain URLs always; OSC 8 links with a package that reports them (0.4.0 and later).
     webLinks: true,
     mouseReporting: true,
     scrollbackSelection: true,
@@ -119,8 +118,7 @@ export interface EngineRun {
   bg: EngineColor
   flags: number
   /**
-   * The OSC 8 hyperlink the run's cells carry, as the program wrote it (absent before a styr-terminal
-   * release that reports it; 0.3.0 does not): any scheme,
+   * The OSC 8 hyperlink the run's cells carry (package 0.4.0), as the program wrote it: any scheme,
    * and not necessarily what the text says. The view opens only web links, and only on a click.
    */
   link?: string
