@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -16,9 +17,10 @@ import type {
 import { CommandInput, type Look } from './TerminalBlockList.js'
 import type { AgentCommand, ApprovalOption } from '@core/agentConversation.js'
 import { quiet } from './TerminalBlocks.js'
+import { editRows } from '@core/diffView.js'
 
-/** Lines of a diff shown before "Show all". */
-const DIFF_PREVIEW = 12
+/** Rows of a diff shown before "Show all". */
+const DIFF_PREVIEW = 16
 
 type Patch = Pick<DiffBlock['payload'], 'patch' | 'additions' | 'deletions'>
 
@@ -211,6 +213,17 @@ function Message({
   )
 }
 
+/** Lines of a call's summary (a long command) shown before "more". */
+const SUMMARY_PREVIEW = 3
+/** Lines of a call's output shown under it before "+N lines". */
+const OUTPUT_PREVIEW = 4
+
+const wrapped: CSSProperties = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }
+
+/**
+ * A tool call as Claude Code's own view draws it: `⏺ Tool what it works on`, wrapped rather than
+ * cut, then `⎿` and how it went — the first lines of its output, an edit's diff.
+ */
 function ToolCall({
   block,
   diff,
@@ -220,76 +233,195 @@ function ToolCall({
   diff?: DiffBlock
   look: Look
 }): ReactNode {
-  const { tool, summary, result } = block.payload
-  const tone =
-    block.state === 'failed'
-      ? 'text-danger'
-      : block.state === 'streaming'
-        ? 'text-col-progress wd-pulse'
-        : block.state === 'cancelled'
-          ? 'text-faint'
-          : 'text-col-done'
+  const [open, setOpen] = useState(false)
+  const { tool, summary, result, output } = block.payload
+  const failed = block.state === 'failed'
+  const tone = failed
+    ? 'text-danger'
+    : block.state === 'streaming'
+      ? 'text-col-progress wd-pulse'
+      : block.state === 'cancelled'
+        ? 'text-faint'
+        : 'text-col-done'
+  const summaryLines = summary.split('\n')
+  const longSummary = summaryLines.length > SUMMARY_PREVIEW || summary.length > 360
+  const shownSummary =
+    longSummary && !open
+      ? `${summaryLines.slice(0, SUMMARY_PREVIEW).join('\n').slice(0, 360)} …`
+      : summary
+  const outcome =
+    block.state === 'streaming'
+      ? 'running…'
+      : block.state === 'cancelled'
+        ? 'interrupted'
+        : // An edit's diff says how it went; its "updated" line adds nothing.
+          diff && !failed
+          ? undefined
+          : result
   return (
     <section
-      aria-label={`${tool} ${summary}, ${block.state === 'streaming' ? 'running' : block.state}`}
+      aria-label={`${tool} ${summaryLines[0] ?? ''}, ${block.state === 'streaming' ? 'running' : block.state}`}
       className="-mx-0.5 shrink-0 px-2 py-[3px]"
+      style={{ lineHeight: `${look.lineHeight}px` }}
     >
-      <div className="flex min-h-[22px] items-center gap-2">
+      <div className="flex gap-2">
         <span aria-hidden className={tone}>
           ⏺
         </span>
-        <span className="text-ink shrink-0 font-medium">{tool}</span>
-        <span className="text-dim min-w-0 flex-1 truncate">{summary}</span>
-        <span
-          title={result}
-          className={`max-w-[45%] min-w-0 shrink truncate font-mono text-[10.5px] ${block.state === 'failed' ? 'text-danger' : 'text-faint'}`}
-        >
-          {block.state === 'streaming'
-            ? 'running'
-            : block.state === 'cancelled'
-              ? 'interrupted'
-              : (result ?? '')}
-        </span>
+        <div className="min-w-0 flex-1" style={wrapped}>
+          <span className="text-ink font-medium">{tool}</span>
+          {summary ? <span className="text-dim"> {shownSummary}</span> : null}
+          {longSummary ? (
+            <button
+              type="button"
+              className={`${quiet} ml-1 h-5 align-middle font-sans`}
+              onClick={() => setOpen(!open)}
+            >
+              {open ? 'less' : 'more'}
+            </button>
+          ) : null}
+        </div>
       </div>
-      {diff ? <Diff patch={diff.payload} look={look} /> : null}
+      {output && block.state !== 'streaming' ? (
+        <Output text={output} failed={failed} />
+      ) : outcome ? (
+        <Elbow>
+          <span
+            className={`${failed ? 'text-danger' : 'text-faint'} ${block.state === 'streaming' ? 'wd-pulse' : ''}`}
+            style={wrapped}
+          >
+            {outcome}
+          </span>
+        </Elbow>
+      ) : null}
+      {diff ? (
+        <div className="ml-[18px]">
+          <Diff patch={diff.payload} look={look} />
+        </div>
+      ) : null}
     </section>
   )
 }
 
+/** The `⎿` that hangs what a call returned under it. */
+function Elbow({ children }: { children: ReactNode }): ReactNode {
+  return (
+    <div className="flex gap-2 pl-[18px]">
+      <span aria-hidden className="text-faint shrink-0">
+        ⎿
+      </span>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  )
+}
+
+function Output({ text, failed }: { text: string; failed: boolean }): ReactNode {
+  const [open, setOpen] = useState(false)
+  const lines = text.split('\n')
+  const hidden = lines.length - OUTPUT_PREVIEW
+  // Hiding a single line saves nothing over its "+1 line" button.
+  const long = hidden > 1
+  return (
+    <Elbow>
+      <div className={failed ? 'text-danger' : 'text-dim'} style={wrapped}>
+        {long && !open ? lines.slice(0, OUTPUT_PREVIEW).join('\n') : text}
+      </div>
+      {long ? (
+        <button
+          type="button"
+          className={`${quiet} -ml-1.5 h-5 font-sans`}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? 'Show less' : `+${hidden} lines`}
+        </button>
+      ) : null}
+    </Elbow>
+  )
+}
+
+/** How each kind of diff row is tinted and marked. */
+const ROW_STYLE = {
+  ctx: { bg: 'transparent', gutter: 'transparent', mark: ' ', color: 'text-faint' },
+  add: {
+    bg: 'var(--color-diff-add)',
+    gutter: 'var(--color-diff-add-gutter)',
+    mark: '+',
+    color: 'text-col-done'
+  },
+  del: {
+    bg: 'var(--color-diff-del)',
+    gutter: 'var(--color-diff-del-gutter)',
+    mark: '−',
+    color: 'text-danger'
+  }
+} as const
+
+/** An edit's change: each line wrapped under its `+`/`−`, the words that changed highlighted. */
 function Diff({ patch: change, look }: { patch: Patch; look: Look }): ReactNode {
   const [open, setOpen] = useState(false)
   const { patch, additions, deletions } = change
-  const lines = patch.split('\n')
-  const shown = open ? lines : lines.slice(0, DIFF_PREVIEW)
+  const rows = useMemo(() => editRows(patch), [patch])
+  const shown = open ? rows : rows.slice(0, DIFF_PREVIEW)
   return (
-    <div className="mt-1 ml-[18px] overflow-hidden rounded-md border border-edge">
-      <div className="text-faint flex items-center gap-2 border-b border-edge px-2 font-mono text-[10.5px]">
+    <div className="mt-1 overflow-hidden rounded-md border border-edge">
+      <div className="flex items-center justify-end gap-2 border-b border-edge px-2 font-mono text-[10.5px]">
         <span className="text-col-done">+{additions}</span>
         <span className="text-danger">−{deletions}</span>
       </div>
-      <div className="overflow-x-auto" style={{ lineHeight: `${look.lineHeight}px` }}>
-        {shown.map((line, index) => (
-          <div
-            key={index}
-            className={`px-2 whitespace-pre ${
-              line.startsWith('+')
-                ? 'bg-diff-add'
-                : line.startsWith('-')
-                  ? 'bg-diff-del'
-                  : 'text-faint'
-            }`}
-          >
-            {line === '@@' ? '⋯' : line || ' '}
-          </div>
-        ))}
+      <div style={{ lineHeight: `${look.lineHeight}px` }}>
+        {shown.map((row, index) => {
+          if (row.kind === 'hunk' || row.kind === 'fold') {
+            return (
+              <div key={index} className="text-faint flex">
+                <span aria-hidden className="w-5 shrink-0 text-center">
+                  ⋯
+                </span>
+                <span className="min-w-0 flex-1 truncate">
+                  {row.kind === 'hunk' ? row.text : ''}
+                </span>
+              </div>
+            )
+          }
+          const style = ROW_STYLE[row.kind]
+          const wordBg =
+            row.kind === 'add' ? 'var(--color-diff-add-word)' : 'var(--color-diff-del-word)'
+          return (
+            <div key={index} className="flex" style={{ background: style.bg }}>
+              <span
+                aria-hidden
+                className={`w-5 shrink-0 text-center select-none ${style.color}`}
+                style={{ background: style.gutter }}
+              >
+                {style.mark}
+              </span>
+              <span
+                className={`min-w-0 flex-1 pr-2 pl-1.5 ${row.kind === 'ctx' ? 'text-dim' : 'text-ink'}`}
+                style={wrapped}
+              >
+                {row.segments.every((segment) => segment.text === '')
+                  ? // A blank line keeps its row.
+                    ' '
+                  : row.segments.map((segment, at) => (
+                      <span
+                        key={at}
+                        className="rounded-sm"
+                        style={segment.em ? { background: wordBg } : undefined}
+                      >
+                        {segment.text}
+                      </span>
+                    ))}
+              </span>
+            </div>
+          )
+        })}
       </div>
-      {lines.length > DIFF_PREVIEW ? (
+      {rows.length > DIFF_PREVIEW ? (
         <button
           type="button"
           className={`${quiet} h-6 w-full justify-center rounded-none font-sans`}
           onClick={() => setOpen(!open)}
         >
-          {open ? 'Show less' : `Show all ${lines.length} lines`}
+          {open ? 'Show less' : `Show all ${rows.length} lines`}
         </button>
       ) : null}
     </div>

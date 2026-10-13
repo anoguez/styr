@@ -33,9 +33,27 @@ describe('Claude Code conversation adapter', () => {
     )
     expect(
       describeTool(use('Bash', { command: 'yarn test\nyarn lint', description: 'checks' })).summary
-    ).toBe('yarn test …')
+    ).toBe('yarn test\nyarn lint')
     expect(describeTool(use('Grep', { pattern: 'TODO', path: 'src' })).summary).toBe('TODO')
     expect(describeTool(use('Mystery', { count: 3, label: 'thing' })).summary).toBe('thing')
+  })
+
+  it('names an MCP tool by its server and lists its arguments', () => {
+    const described = describeTool(
+      use('mcp__claude_design__read_file', { project_id: 'p1', path: 'a.html', limit: 3 })
+    )
+    expect(described.name).toBe('claude_design · read_file')
+    expect(described.summary).toBe('project_id: "p1", path: "a.html", limit: 3')
+  })
+
+  it('shows what a call returned, except what the block shows already', () => {
+    expect(describeTool(use('Bash', {}, { text: 'one\ntwo\n' })).output).toBe('one\ntwo')
+    expect(describeTool(use('Read', {}, { text: 'file body' })).output).toBeUndefined()
+    expect(describeTool(use('Edit', {}, { text: 'Updated' })).output).toBeUndefined()
+    expect(describeTool(use('Edit', {}, { text: 'no match', isError: true })).output).toBe(
+      'no match'
+    )
+    expect(describeTool(use('Bash', {}, { text: '  \n' })).output).toBeUndefined()
   })
 
   it('says how a call went', () => {

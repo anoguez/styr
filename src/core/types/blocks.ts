@@ -46,7 +46,15 @@ export type AgentMessageBlock = BlockEnvelope<
 
 export type AgentToolCallBlock = BlockEnvelope<
   'agent-tool-call',
-  { tool: string; summary: string; result?: string }
+  {
+    tool: string
+    /** What the call works on, whole (a command keeps its lines). */
+    summary: string
+    /** How it went, in a line. */
+    result?: string
+    /** What it returned worth showing under it, capped by the conversation's parser. */
+    output?: string
+  }
 >
 
 export type DiffBlock = BlockEnvelope<

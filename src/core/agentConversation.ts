@@ -99,8 +99,14 @@ export const approvalOptions = (approval: AgentApproval): readonly ApprovalOptio
 
 /** How one CLI's tool call reads in a block: what it works on, how it went, what it changed. */
 export interface ToolDescription {
+  /** The tool's name as shown, when it reads better than the CLI's (an MCP tool's server and name). */
+  name?: string
+  /** What the call works on, whole: a command keeps all its lines, so the view can wrap it. */
   summary: string
+  /** How it went, in a line: "3 lines", an error's first line. */
   result?: string
+  /** What it returned worth a look (a command's output, an error), shown under the call. */
+  output?: string
   edit?: Pick<DiffBlock['payload'], 'path' | 'patch' | 'additions' | 'deletions'>
 }
 
@@ -233,7 +239,87 @@ export function parseAgentConversation(source: string): AgentConversation | null
 
 const lines = (value: string): string[] => (value === '' ? [] : value.split('\n'))
 
-/** A patch of edits to one file as removed then added lines, with counts; null for none. */
+/** Unchanged lines kept around a change, as `git diff` keeps them. */
+const DIFF_CONTEXT = 3
+/** Past this many line pairs an edit is drawn as removed then added rather than diffed. */
+const MAX_DIFF_CELLS = 250_000
+
+type DiffLine = { mark: ' ' | '-' | '+'; text: string }
+
+/** One edit as a line diff: the common prefix and suffix unchanged, the middle by longest common subsequence. */
+function lineDiff(removed: string[], added: string[]): DiffLine[] {
+  let start = 0
+  while (start < removed.length && start < added.length && removed[start] === added[start]) start++
+  let oldEnd = removed.length
+  let newEnd = added.length
+  while (oldEnd > start && newEnd > start && removed[oldEnd - 1] === added[newEnd - 1]) {
+    oldEnd--
+    newEnd--
+  }
+  const a = removed.slice(start, oldEnd)
+  const b = added.slice(start, newEnd)
+  const middle: DiffLine[] = []
+  if (a.length * b.length > MAX_DIFF_CELLS) {
+    middle.push(...a.map((text) => ({ mark: '-' as const, text })))
+    middle.push(...b.map((text) => ({ mark: '+' as const, text })))
+  } else {
+    // lengths[i][j]: the longest common subsequence of a[i..] and b[j..].
+    const width = b.length + 1
+    const lengths = new Uint32Array((a.length + 1) * width)
+    for (let i = a.length - 1; i >= 0; i--) {
+      for (let j = b.length - 1; j >= 0; j--) {
+        lengths[i * width + j] =
+          a[i] === b[j]
+            ? lengths[(i + 1) * width + j + 1]! + 1
+            : Math.max(lengths[(i + 1) * width + j]!, lengths[i * width + j + 1]!)
+      }
+    }
+    let i = 0
+    let j = 0
+    while (i < a.length || j < b.length) {
+      if (i < a.length && j < b.length && a[i] === b[j]) {
+        middle.push({ mark: ' ', text: a[i++]! })
+        j++
+      } else if (
+        j >= b.length ||
+        (i < a.length && lengths[(i + 1) * width + j]! >= lengths[i * width + j + 1]!)
+      ) {
+        middle.push({ mark: '-', text: a[i++]! })
+      } else {
+        middle.push({ mark: '+', text: b[j++]! })
+      }
+    }
+  }
+  return [
+    ...removed.slice(0, start).map((text) => ({ mark: ' ' as const, text })),
+    ...middle,
+    ...removed.slice(oldEnd).map((text) => ({ mark: ' ' as const, text }))
+  ]
+}
+
+/** The changed lines with `DIFF_CONTEXT` unchanged ones around them, hunks parted by `@@`. */
+function hunks(diff: DiffLine[]): string[] {
+  const changed = diff.flatMap((line, index) => (line.mark === ' ' ? [] : [index]))
+  const keep = new Set<number>()
+  for (const index of changed) {
+    for (let at = index - DIFF_CONTEXT; at <= index + DIFF_CONTEXT; at++) keep.add(at)
+  }
+  const out: string[] = []
+  let last = -1
+  diff.forEach((line, index) => {
+    if (!keep.has(index)) return
+    if (last >= 0 && index > last + 1) out.push('@@')
+    out.push(`${line.mark}${line.text}`)
+    last = index
+  })
+  return out
+}
+
+/**
+ * A patch of edits to one file, with counts; null for none. Each edit is diffed by line, so what
+ * an edit only repeats (the context an agent quotes to place it) shows unchanged; edits and
+ * distant changes are parted by `@@`.
+ */
 export function editPatch(
   edits: { old: string; next: string }[]
 ): Pick<DiffBlock['payload'], 'patch' | 'additions' | 'deletions'> | null {
@@ -242,15 +328,19 @@ export function editPatch(
   let deletions = 0
   const parts: string[] = []
   for (const edit of edits) {
-    const removed = lines(edit.old)
-    const added = lines(edit.next)
-    deletions += removed.length
-    additions += added.length
-    parts.push(
-      [...removed.map((line) => `-${line}`), ...added.map((line) => `+${line}`)].join('\n')
-    )
+    const diff = lineDiff(lines(edit.old), lines(edit.next))
+    additions += diff.filter((line) => line.mark === '+').length
+    deletions += diff.filter((line) => line.mark === '-').length
+    const hunk = hunks(diff)
+    if (hunk.length > 0) parts.push(hunk.join('\n'))
   }
   return { patch: parts.join('\n@@\n'), additions, deletions }
+}
+
+/** A tool's output as text to show: terminal escapes dropped, trailing blank lines trimmed. */
+export function outputText(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '').trimEnd()
 }
 
 /** "3 lines", "no output": how much a call returned. */
@@ -298,11 +388,16 @@ export function agentBlocks(
           : use.isError
             ? 'failed'
             : 'completed'
-      const { summary, result, edit } = adapter.describeTool(use)
+      const { name, summary, result, output, edit } = adapter.describeTool(use)
       const call: AgentToolCallBlock = {
         ...envelope(use.id, state),
         kind: 'agent-tool-call',
-        payload: { tool: use.tool, summary, ...(result !== undefined ? { result } : {}) }
+        payload: {
+          tool: name ?? use.tool,
+          summary,
+          ...(result !== undefined ? { result } : {}),
+          ...(output ? { output } : {})
+        }
       }
       blocks.push(call)
       if (edit) {

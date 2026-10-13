@@ -1,5 +1,6 @@
 import {
   lineCount,
+  outputText,
   parseAgentConversation,
   type AgentConversation,
   type ConversationAdapter,
@@ -171,18 +172,20 @@ function describeTool(use: ConversationToolUse): ToolDescription {
       edit: { path, patch, additions, deletions }
     }
   }
-  const summary = command.split('\n')[0] ?? ''
   const output = use.text
+  const shown = output === undefined ? '' : outputText(output)
   return {
-    summary:
-      summary ||
+    summary: (
+      command ||
       Object.values(use.input).find((entry): entry is string => typeof entry === 'string') ||
-      '',
+      ''
+    ).trim(),
     ...(output !== undefined
       ? {
           result: use.isError ? output.split('\n')[0]?.slice(0, 160) || 'failed' : lineCount(output)
         }
-      : {})
+      : {}),
+    ...(shown ? { output: shown } : {})
   }
 }
 
