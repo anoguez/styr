@@ -6,12 +6,11 @@ import type {
   NativeEngineFailure,
   NativeEngineStatus,
   NativeFrameEvent,
-  TerminalMark,
-  TerminalOutput,
-  TrackedBlock
+  TerminalOutput
 } from '@core/types.js'
 import type { NativeEngineFactory, NativeTerminalEngine } from './nativeEngine.js'
 import { BlockSession, STYLED_BATCH, supportsBlockList } from './blockSession.js'
+import { CommandBlockTracker } from './commandBlockTracker.js'
 
 /**
  * Runs Styr Terminal engines for the sessions the renderer shows with the native engine. The PTY is
@@ -45,23 +44,12 @@ export interface NativeHostPorts {
   defer: (task: () => void) => void
 }
 
-/** What the host knows of a command beyond where its mark is. */
-interface Command {
-  command: string
-  startedAt: number
-  endedAt?: number
-  exitCode?: number
-  /** Lines from the command's row to just past its output, fixed when it ends. */
-  span?: number
-}
-
 interface Attached {
   attachId: number
   engine: NativeTerminalEngine
   flushQueued: boolean
-  /** The engine can mark lines, so the session gets command blocks. */
-  marks: boolean
-  commands: Map<string, Command>
+  /** Tracks command marks when the engine supports them. */
+  commandBlocks?: CommandBlockTracker
   /** The blocks last sent, to send them again only when they change. */
   sentBlocks: string
   /** The engine can draw the Warp-style block list (package 0.3.0). */
@@ -108,8 +96,7 @@ export class NativeTerminalHost {
         attachId: this.nextAttachId++,
         engine,
         flushQueued: false,
-        marks: supportsMarks(engine),
-        commands: new Map(),
+        commandBlocks: CommandBlockTracker.create(engine),
         sentBlocks: '',
         canList: supportsBlockList(engine),
         size: { cols, rows },
@@ -122,7 +109,7 @@ export class NativeTerminalHost {
       const frame = engine.snapshot()
       // Everything so far is in the snapshot; the next frame should carry only what changes.
       engine.takeFrame()
-      const blocks = blocksOf(entry)
+      const blocks = entry.commandBlocks?.snapshot() ?? []
       entry.sentBlocks = JSON.stringify(blocks)
       entry.blockList?.takeResponses()
       const blockList = entry.blockList?.snapshot()
@@ -255,7 +242,7 @@ export class NativeTerminalHost {
       const responses = entry.engine.takeResponses()
       if (responses) this.ports.writeToPty(id, responses)
       const frame = entry.engine.takeFrame() ?? undefined
-      const blocks = blocksOf(entry)
+      const blocks = entry.commandBlocks?.snapshot() ?? []
       const key = JSON.stringify(blocks)
       const changed = key !== entry.sentBlocks
       entry.sentBlocks = key
@@ -285,14 +272,6 @@ export class NativeTerminalHost {
   }
 }
 
-function supportsMarks(engine: NativeTerminalEngine): boolean {
-  return (
-    typeof engine.markLine === 'function' &&
-    typeof engine.markedLines === 'function' &&
-    typeof engine.cursorPosition === 'function'
-  )
-}
-
 /**
  * Writes output and places its command marks between the right two pieces of it, so the engine's
  * cursor is exactly where the shell's was when it reported the boundary (as `writeOutput` does for
@@ -311,7 +290,7 @@ function writeMarked(entry: Attached, output: Pick<TerminalOutput, 'data' | 'mar
   for (const mark of [...output.marks].sort((left, right) => left.offset - right.offset)) {
     const offset = Math.min(Math.max(mark.offset, written), output.data.length)
     write(output.data.slice(written, offset))
-    if (entry.marks) applyMark(entry, mark)
+    entry.commandBlocks?.observe(mark)
     if (entry.blockList) entry.blockList.mark(mark)
     else if (entry.canList && mark.kind === 'prompt') {
       entry.blockList = new BlockSession(entry.create, entry.size, mark)
@@ -319,63 +298,6 @@ function writeMarked(entry: Attached, output: Pick<TerminalOutput, 'data' | 'mar
     written = offset
   }
   write(output.data.slice(written))
-}
-
-function applyMark(entry: Attached, mark: TerminalMark): void {
-  const { engine, commands } = entry
-  if (mark.kind === 'prompt') return
-  if (mark.kind === 'start') {
-    // The shell announces a command after Enter has moved the cursor down, so its own row is the
-    // one above. No mark (the alternate screen, say) means no block.
-    if (engine.markLine!(mark.id, -1) === null) return
-    commands.set(mark.id, { command: mark.command ?? '', startedAt: mark.at })
-    return
-  }
-  const command = commands.get(mark.id)
-  if (!command || command.endedAt !== undefined) return
-  const start = engine.markedLines!().find((line) => line.id === mark.id)
-  if (!start) {
-    commands.delete(mark.id)
-    return
-  }
-  const cursor = engine.cursorPosition!()
-  // Output without a final newline leaves the cursor on its last row, which then belongs to it.
-  const end = cursor.line + (cursor.col > 0 ? 1 : 0)
-  command.span = Math.max(1, end - start.line)
-  command.endedAt = mark.at
-  command.exitCode = mark.exitCode
-}
-
-/**
- * Where the session's commands are now. A command whose mark is gone (its row was trimmed from the
- * history, cleared or rewritten) is forgotten, which also keeps `commands` bounded by the buffer.
- */
-function blocksOf(entry: Attached): TrackedBlock[] {
-  if (!entry.marks || entry.commands.size === 0) return []
-  const { engine, commands } = entry
-  const marked = new Map(engine.markedLines!().map((line) => [line.id, line.line]))
-  const cursor = engine.cursorPosition!()
-  const blocks: TrackedBlock[] = []
-  for (const [id, command] of commands) {
-    const startLine = marked.get(id)
-    if (startLine === undefined) {
-      commands.delete(id)
-      continue
-    }
-    const open = command.span === undefined
-    const endLine = open ? cursor.line + (cursor.col > 0 ? 1 : 0) : startLine + (command.span ?? 1)
-    blocks.push({
-      id,
-      command: command.command,
-      startedAt: command.startedAt,
-      ...(command.endedAt !== undefined ? { endedAt: command.endedAt } : {}),
-      ...(command.exitCode !== undefined ? { exitCode: command.exitCode } : {}),
-      startLine,
-      endLine: Math.max(endLine, startLine + 1),
-      open
-    })
-  }
-  return blocks.sort((left, right) => left.startLine - right.startLine)
 }
 
 function writeChunked(engine: Pick<NativeTerminalEngine, 'write'>, data: string): void {
