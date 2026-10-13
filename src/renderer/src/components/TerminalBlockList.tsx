@@ -430,7 +430,8 @@ export function CommandInput({
   commands,
   onSubmit,
   onClearBlocks,
-  onEscape
+  onEscape,
+  onPasteImage
 }: {
   look: Look
   inputRef: RefObject<HTMLTextAreaElement | null>
@@ -444,6 +445,8 @@ export function CommandInput({
   onClearBlocks?: () => void
   /** Escape, when it means something here (interrupting an agent). */
   onEscape?: () => void
+  /** An image pasted with no text, for a program that takes one; absent, the paste is ignored. */
+  onPasteImage?: () => void
   /** The program's slash commands, offered in a menu while `/name` is typed. */
   commands?: AgentCommand[]
 }): ReactNode {
@@ -561,6 +564,17 @@ export function CommandInput({
               if (cursor.current.index !== null) cursor.current = { ...cursor.current, index: null }
             }}
             onKeyDown={onKeyDown}
+            onPaste={(event) => {
+              const { clipboardData } = event
+              if (!onPasteImage || clipboardData.getData('text/plain')) return
+              const image = [...clipboardData.items].some(
+                (item) => item.kind === 'file' && item.type.startsWith('image/')
+              )
+              if (!image) return
+              event.preventDefault()
+              event.stopPropagation()
+              onPasteImage()
+            }}
           />
           {!typed && text === '' && hints.length > 0 ? (
             <span

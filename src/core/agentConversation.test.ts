@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   agentBlocks,
+  approvalOptions,
+  DEFAULT_APPROVAL_OPTIONS,
   editPatch,
   lineCount,
   parseAgentConversation,
@@ -178,5 +180,89 @@ describe('agentBlocks', () => {
         adapter
       )
     ).toEqual(['Rename the helper'])
+  })
+})
+
+describe('streaming replies', () => {
+  const streamed = (working: boolean, streaming: string, messages: unknown[] = []): string =>
+    JSON.stringify({ at: '2026-10-10T08:00:00.000Z', working, streaming, messages })
+
+  it('keeps the streamed text only while a turn runs, bounded', () => {
+    expect(parseAgentConversation(streamed(true, 'Hel'))?.streaming).toBe('Hel')
+    expect(parseAgentConversation(streamed(false, 'Hel'))?.streaming).toBeUndefined()
+    expect(parseAgentConversation(streamed(true, '  '))?.streaming).toBeUndefined()
+    expect(parseAgentConversation(streamed(true, 'x'.repeat(20_000)))?.streaming).toHaveLength(
+      8_000
+    )
+  })
+
+  it('draws the reply as a streaming message after the conversation', () => {
+    const conversation = parseAgentConversation(
+      streamed(true, 'Working on it', [{ role: 'user', text: 'go', toolUses: [] }])
+    )!
+    const last = agentBlocks(conversation, 's1', adapter).at(-1)
+    expect(last).toMatchObject({
+      kind: 'agent-message',
+      state: 'streaming',
+      payload: { role: 'assistant', text: 'Working on it' }
+    })
+  })
+
+  it('does not draw it twice once the agent has recorded the message', () => {
+    const conversation = parseAgentConversation(
+      streamed(true, 'Done', [{ role: 'assistant', text: 'Done.', toolUses: [] }])
+    )!
+    const blocks = agentBlocks(conversation, 's1', adapter)
+    expect(blocks.filter((block) => block.kind === 'agent-message')).toHaveLength(1)
+    expect(blocks[0]?.state).toBe('completed')
+  })
+})
+
+describe('approvals', () => {
+  const withApproval = (approval: unknown): string =>
+    JSON.stringify({ at: '2026-10-10T08:00:00.000Z', working: true, messages: [], approval })
+
+  it('carries the real request and its options', () => {
+    const parsed = parseAgentConversation(
+      withApproval({
+        id: 'p1',
+        prompt: 'The agent wants to run a command',
+        tool: 'run',
+        input: { target: 'npm test', nested: { dropped: true } },
+        options: [
+          { id: 'allow', label: 'Yes', kind: 'allow' },
+          { id: 'always', label: "Yes, don't ask again", kind: 'allow-always' },
+          { id: 'bad id!', label: 'Nope', kind: 'allow' },
+          { id: 'odd', label: 'Odd', kind: 'maybe' },
+          { id: 'deny', label: 'No', kind: 'deny' }
+        ]
+      })
+    )
+    expect(parsed?.approval).toEqual({
+      id: 'p1',
+      prompt: 'The agent wants to run a command',
+      tool: 'run',
+      input: { target: 'npm test' },
+      options: [
+        { id: 'allow', label: 'Yes', kind: 'allow' },
+        { id: 'always', label: "Yes, don't ask again", kind: 'allow-always' },
+        { id: 'deny', label: 'No', kind: 'deny' }
+      ]
+    })
+    expect(approvalOptions(parsed!.approval!).map((option) => option.id)).toEqual([
+      'allow',
+      'always',
+      'deny'
+    ])
+  })
+
+  it('offers Allow and Deny for an approval that names no options', () => {
+    const parsed = parseAgentConversation(withApproval({ id: 'p2', prompt: 'May I?' }))
+    expect(parsed?.approval).toEqual({ id: 'p2', prompt: 'May I?' })
+    expect(approvalOptions(parsed!.approval!)).toBe(DEFAULT_APPROVAL_OPTIONS)
+  })
+
+  it('ignores an approval without an id', () => {
+    expect(parseAgentConversation(withApproval({ prompt: 'May I?' }))?.approval).toBeUndefined()
   })
 })

@@ -157,7 +157,7 @@ while the agent waits, and Styr's `❯` input. It is provider-agnostic end to en
 - Each terminal gets `STYR_CONVERSATION_FILE` (`main/usage.ts`), watched like the context files and
   sent as `agent:conversation`. Whatever a provider's source is, it lands there in that shape. Claude
   Code's mod (`resources/claude/usage-mod`) writes it from `$.session.messages()` on session start,
-  prompt submit, each tool call and turn end. Codex has no source yet, so it keeps its TUI.
+  prompt submit, each tool call and turn end, and on each streamed step and permission request. Codex has no source yet, so it keeps its TUI.
 - What differs per CLI when drawing — its tool names, the notes it wraps a prompt in — is a
   `ConversationAdapter` in `core/providers/conversation.ts` (Claude's in `claudeConversation.ts`),
   keyed by provider id like `AGENT_PROVIDER_LABELS`. Which CLI a command starts comes from
@@ -170,9 +170,25 @@ while the agent waits, and Styr's `❯` input. It is provider-agnostic end to en
   inbox, a `/command` (it may open the CLI's picker) and a one-line `@path` mention (only the TUI
   expands those). Typed prompts go as one bracketed paste and Enter as its own keystroke after
   `AGENT_ENTER_DELAY_MS`: written together, an agent's input takes the Enter as part of a paste.
-- Everything else the view sends goes to the CLI's PTY as if typed: Escape to interrupt or deny,
-  Enter to allow. The CLI still decides
-  everything; "<agent> view" shows its own TUI for menus and dialogs, and "Styr view" returns.
+- **Streaming.** The file's `streaming` is the reply's text so far while a turn runs, drawn as an
+  `agent-message` block in state `streaming` until the CLI records the message (`agentBlocks` drops
+  it once the last message starts with it). Claude's mod fills it from `turn.step` text chunks,
+  main loop only, clipped like a message and written at most every `STREAM_EVERY_MS`.
+- **Approvals.** The file's `approval` carries the real request — `tool`, `input` and the CLI's
+  `options` (`allow` / `allow-always` / `deny` kinds; none means Allow and Deny) — and the view
+  draws it with the adapter's `describeTool` (an edit's diff included). Styr answers it by option
+  id over `agent:approval`: a provider with a live channel (Codex's daemon) answers through
+  `publishAgentConversation`'s handler; otherwise `sendApprovalAnswer` appends
+  `{"approval", "option"}` to the inbox. Claude's mod shows it from a `classic.PermissionRequest`
+  hook while the TUI's dialog is up too, waits on its own `tail` of the inbox, and returns the
+  dialog's decision (Yes; Yes with the request's `permission_suggestions`; No with `interrupt`).
+  Whichever answers first wins: the wait ends when the tool call settles or the turn ends.
+- **Images.** A plugin's prompt carries no image bytes, so an image pasted into Styr's input goes
+  the keystroke way: the adapter's `pasteImageKey` (Claude's Ctrl+V) makes the TUI attach it from
+  the clipboard, and the next prompt is typed into the TUI rather than sent through the inbox.
+- Without a channel the view types: Escape to interrupt or deny, Enter to allow (the dialog's
+  default option, so the buttons show the keys). The CLI still decides everything; "<agent> view"
+  shows its own TUI for menus and dialogs, and "Styr view" returns.
 - The file may carry the CLI's slash commands (`commands`; Claude's from `$.command.list()`), which
   the input offers in a menu while `/name` is typed (`commandMenu.ts`). A command may answer in the
   CLI's own interface (a picker, a dialog), so sending one shows that view, and the next change to

@@ -13,7 +13,11 @@ import {
 import { app, BrowserWindow, ipcMain } from 'electron'
 import chokidar from 'chokidar'
 import { configDir } from '@core/config.js'
-import { parseAgentConversation, type AgentConversation } from '@core/agentConversation.js'
+import {
+  approvalOptions,
+  parseAgentConversation,
+  type AgentConversation
+} from '@core/agentConversation.js'
 import { codexTranscript } from '@core/providers/codex.js'
 import { findTask } from './taskIndex.js'
 import { sessionTask } from './terminal/ptyManager.js'
@@ -85,6 +89,27 @@ export function sendPrompt(terminalId: string, text: unknown): boolean {
   return true
 }
 
+/**
+ * Answers the approval the conversation file shows through the inbox, as an `{"approval", "option"}`
+ * line the agent's side reads (Claude Code's mod answers its permission request with it). Refused
+ * when the file no longer shows that approval or that option: it was answered in the CLI's view.
+ */
+export function sendApprovalAnswer(terminalId: string, approvalId: string, optionId: string): void {
+  if (!/^[\w-]{1,64}$/.test(terminalId)) throw new Error('Not an agent terminal.')
+  const approval = readConversation(terminalId)?.approval
+  if (
+    !approval ||
+    approval.id !== approvalId ||
+    !approvalOptions(approval).some((o) => o.id === optionId)
+  )
+    throw new Error('This approval is no longer waiting for a decision.')
+  appendFileSync(
+    promptInbox(terminalId),
+    `${JSON.stringify({ approval: approvalId, option: optionId })}\n`,
+    { mode: 0o600 }
+  )
+}
+
 /** The file is rewritten whole on every change; past this it is not read. */
 const MAX_CONVERSATION_BYTES = 8 * 1024 * 1024
 
@@ -136,17 +161,16 @@ const ROLLOUT_TAIL_BYTES = 256 * 1024
 const rolloutPaths = new Map<string, string>()
 const liveConversations = new Map<string, AgentConversation>()
 const conversationPrompts = new Map<string, (text: string) => Promise<void>>()
-const conversationApprovals = new Map<
-  string,
-  (approvalId: string, allow: boolean) => Promise<void>
->()
+/** Answers an approval through the agent's own channel, by the option picked. */
+type ApprovalAnswer = (approvalId: string, optionId: string) => Promise<void>
+const conversationApprovals = new Map<string, ApprovalAnswer>()
 
 /** All live conversation sources publish through the same renderer channel and prompt route. */
 export function publishAgentConversation(
   terminalId: string,
   conversation: AgentConversation,
   submitPrompt?: (text: string) => Promise<void>,
-  answerApproval?: (approvalId: string, allow: boolean) => Promise<void>
+  answerApproval?: ApprovalAnswer
 ): void {
   liveConversations.set(terminalId, conversation)
   if (submitPrompt) conversationPrompts.set(terminalId, submitPrompt)
@@ -215,10 +239,12 @@ export function initUsage(): void {
   })
   ipcMain.handle(
     'agent:approval',
-    async (_event, terminalId: string, approvalId: string, allow: boolean) => {
+    async (_event, terminalId: string, approvalId: string, optionId: string) => {
+      const id = String(approvalId).slice(0, 200)
+      const option = String(optionId).slice(0, 32)
       const answer = conversationApprovals.get(String(terminalId))
-      if (!answer) throw new Error('This agent conversation cannot answer approvals through Styr.')
-      await answer(String(approvalId).slice(0, 200), allow === true)
+      if (answer) await answer(id, option)
+      else sendApprovalAnswer(String(terminalId), id, option)
     }
   )
   // Ids are not reused, so files from a previous run are only litter.

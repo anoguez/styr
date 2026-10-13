@@ -14,52 +14,77 @@ import type {
   StyrBlock
 } from '@core/types/blocks.js'
 import { CommandInput, type Look } from './TerminalBlockList.js'
-import type { AgentCommand } from '@core/agentConversation.js'
+import type { AgentCommand, ApprovalOption } from '@core/agentConversation.js'
 import { quiet } from './TerminalBlocks.js'
 
 /** Lines of a diff shown before "Show all". */
 const DIFF_PREVIEW = 12
 
+type Patch = Pick<DiffBlock['payload'], 'patch' | 'additions' | 'deletions'>
+
+/** What the agent waits on the person for, as the view shows it. */
+export interface ApprovalRequest {
+  /** What the agent asks, in a line. */
+  prompt: string
+  /** The tool it wants to run and what that works on (a command, a file), when known. */
+  tool?: string
+  summary?: string
+  /** An edit's change, when the request is one. */
+  edit?: Patch
+  /** The answers, in the CLI's order. */
+  options: readonly ApprovalOption[]
+  /**
+   * Answered by keys in the CLI's TUI (Enter, Escape) rather than through its own channel: the
+   * dialog's default option, so the keys are shown on the buttons.
+   */
+  keys: boolean
+}
+
 /**
  * An agent CLI's session drawn by Styr, in place of its TUI: the person's prompts, the agent's
- * messages, each tool call with how it went and an edit's diff, an approval when the agent waits on
- * the person, and Styr's `❯` input. Provider-neutral: it draws blocks (`agentConversation.ts`) and
- * names the agent by `label`; what it sends — a prompt, Enter or Escape — goes to the CLI's PTY as
- * if typed, so the CLI itself still decides everything. Every character is React text.
+ * messages (the reply as it streams in), each tool call with how it went and an edit's diff, an
+ * approval with the CLI's own options when the agent waits on the person, and Styr's `❯` input.
+ * Provider-neutral: it draws blocks (`agentConversation.ts`) and names the agent by `label`; what it
+ * sends goes through the agent's own channel or to the CLI's PTY as if typed, so the CLI itself
+ * still decides everything. Every character is React text.
  */
 export function AgentBlockList({
   blocks,
   working,
   label,
-  waiting,
+  approval,
   look,
   font,
   inputRef,
   history,
   commands,
+  attachedImages = 0,
   onSubmit,
   onInterrupt,
-  onAllow,
-  onDeny,
+  onAnswer,
+  onPasteImage,
   onShowTui
 }: {
   blocks: StyrBlock[]
   working: boolean
   /** The agent CLI's name, e.g. "Claude Code". */
   label: string
-  /** The agent waits on the person (a permission, a question), with what it said. */
-  waiting: string | null
+  /** The agent waits on the person (a permission, a question). */
+  approval: ApprovalRequest | null
   look: Look
   font: CSSProperties
   inputRef: RefObject<HTMLTextAreaElement | null>
   history: string[]
   /** The CLI's slash commands, for the input's menu. */
   commands?: AgentCommand[]
+  /** Images pasted into the CLI's own input, which go with the next prompt. */
+  attachedImages?: number
   /** A prompt (or `/command`) as typed. */
   onSubmit: (text: string) => void
   onInterrupt: () => void
-  onAllow: () => void
-  onDeny: () => void
+  onAnswer: (option: ApprovalOption) => void
+  /** An image was pasted into the input; absent when the CLI cannot take one. */
+  onPasteImage?: () => void
   /** Shows the CLI's own interface instead (for its menus and dialogs). */
   onShowTui: () => void
 }): ReactNode {
@@ -91,16 +116,22 @@ export function AgentBlockList({
             <ToolCall key={block.id} block={block} diff={diffs.get(block.id)} look={look} />
           ) : null
         )}
-        {waiting ? (
+        {approval ? (
           <Approval
-            message={waiting}
+            request={approval}
             label={label}
-            onAllow={onAllow}
-            onDeny={onDeny}
+            look={look}
+            onAnswer={onAnswer}
             onShowTui={onShowTui}
           />
         ) : working ? (
           <Working label={label} onInterrupt={onInterrupt} />
+        ) : null}
+        {attachedImages > 0 ? (
+          <div className="text-faint -mx-0.5 shrink-0 px-2 font-sans text-[11.5px]">
+            {attachedImages === 1 ? 'An image' : `${attachedImages} images`} in {label}&apos;s
+            input, sent with your next prompt
+          </div>
         ) : null}
         <CommandInput
           look={look}
@@ -110,6 +141,7 @@ export function AgentBlockList({
           hints={[]}
           label={`Message ${label}`}
           onSubmit={onSubmit}
+          onPasteImage={onPasteImage}
           onEscape={working ? onInterrupt : undefined}
           trailing={
             <button
@@ -141,12 +173,15 @@ function Message({
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const user = block.payload.role === 'user'
+  // A reply streaming in shows whole, as it grows; it folds once the agent has recorded it.
+  const streaming = block.state === 'streaming'
   const lines = block.payload.text.split('\n')
-  const long = lines.length > MESSAGE_PREVIEW
+  const long = !streaming && lines.length > MESSAGE_PREVIEW
   const text = long && !open ? lines.slice(0, MESSAGE_PREVIEW).join('\n') : block.payload.text
   return (
     <section
-      aria-label={user ? 'Your message' : `${label}'s message`}
+      aria-label={user ? 'Your message' : `${label}'s message${streaming ? ', arriving' : ''}`}
+      aria-busy={streaming || undefined}
       className="-mx-0.5 flex shrink-0 gap-2 px-2 py-[3px]"
       style={{ lineHeight: `${look.lineHeight}px` }}
     >
@@ -157,6 +192,11 @@ function Message({
         className={`min-w-0 flex-1 break-words whitespace-pre-wrap ${user ? 'text-ink' : 'text-ink/90'}`}
       >
         {text}
+        {streaming ? (
+          <span aria-hidden className="text-accent-ink wd-pulse">
+            {' ▍'}
+          </span>
+        ) : null}
         {long ? (
           <button
             type="button"
@@ -211,14 +251,14 @@ function ToolCall({
               : (result ?? '')}
         </span>
       </div>
-      {diff ? <Diff block={diff} look={look} /> : null}
+      {diff ? <Diff patch={diff.payload} look={look} /> : null}
     </section>
   )
 }
 
-function Diff({ block, look }: { block: DiffBlock; look: Look }): ReactNode {
+function Diff({ patch: change, look }: { patch: Patch; look: Look }): ReactNode {
   const [open, setOpen] = useState(false)
-  const { patch, additions, deletions } = block.payload
+  const { patch, additions, deletions } = change
   const lines = patch.split('\n')
   const shown = open ? lines : lines.slice(0, DIFF_PREVIEW)
   return (
@@ -296,18 +336,20 @@ function Working({ label, onInterrupt }: { label: string; onInterrupt: () => voi
 }
 
 function Approval({
-  message,
+  request,
   label,
-  onAllow,
-  onDeny,
+  look,
+  onAnswer,
   onShowTui
 }: {
-  message: string
+  request: ApprovalRequest
   label: string
-  onAllow: () => void
-  onDeny: () => void
+  look: Look
+  onAnswer: (option: ApprovalOption) => void
   onShowTui: () => void
 }): ReactNode {
+  const { prompt, tool, summary, edit, options, keys } = request
+  const firstAllow = options.find((option) => option.kind !== 'deny')
   return (
     <section
       role="alertdialog"
@@ -318,23 +360,39 @@ function Approval({
         <span aria-hidden className="text-accent-ink">
           ✦
         </span>
-        <span className="min-w-0 flex-1">{message}</span>
+        <span className="min-w-0 flex-1">{prompt}</span>
       </div>
+      {tool && summary ? (
+        <div className="mt-1 flex min-w-0 gap-2 pl-5 font-mono text-[11px]">
+          <span className="text-ink shrink-0 font-medium">{tool}</span>
+          <span className="text-dim min-w-0 flex-1 break-all whitespace-pre-wrap">{summary}</span>
+        </div>
+      ) : null}
+      {edit ? (
+        <div className="font-mono text-[11px]">
+          <Diff patch={edit} look={look} />
+        </div>
+      ) : null}
       <div className="mt-2 flex flex-wrap items-center gap-1 pl-5">
-        <button
-          type="button"
-          className="border-accent/40 bg-accent/15 text-accent-ink hover:bg-accent/30 inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2 text-[11.5px] font-medium"
-          onClick={onAllow}
-        >
-          Allow <span className="text-faint font-mono text-[10px]">↵</span>
-        </button>
-        <button
-          type="button"
-          className="border-edge-strong text-dim hover:bg-raised/70 hover:text-ink inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2 text-[11.5px] font-medium"
-          onClick={onDeny}
-        >
-          Deny <span className="text-faint font-mono text-[10px]">esc</span>
-        </button>
+        {options.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className={
+              option.kind === 'deny'
+                ? 'border-edge-strong text-dim hover:bg-raised/70 hover:text-ink inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2 text-[11.5px] font-medium'
+                : 'border-accent/40 bg-accent/15 text-accent-ink hover:bg-accent/30 inline-flex h-[22px] min-w-0 items-center gap-1.5 rounded-md border px-2 text-[11.5px] font-medium'
+            }
+            onClick={() => onAnswer(option)}
+          >
+            <span className="truncate">{option.label}</span>
+            {keys && option === firstAllow ? (
+              <span className="text-faint font-mono text-[10px]">↵</span>
+            ) : keys && option.kind === 'deny' ? (
+              <span className="text-faint font-mono text-[10px]">esc</span>
+            ) : null}
+          </button>
+        ))}
         <button
           type="button"
           className="text-dim hover:bg-raised/70 hover:text-ink inline-flex h-[22px] items-center rounded-md px-2 text-[11.5px] font-medium"

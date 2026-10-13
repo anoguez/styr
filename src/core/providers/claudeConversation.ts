@@ -84,4 +84,9 @@ function describeTool(use: ConversationToolUse): ToolDescription {
   }
 }
 
-export const claudeConversation: ConversationAdapter = { promptText, describeTool }
+export const claudeConversation: ConversationAdapter = {
+  promptText,
+  describeTool,
+  // Claude Code reads an image off the clipboard on Ctrl+V (Cmd+V pastes only text).
+  pasteImageKey: '\x16'
+}
