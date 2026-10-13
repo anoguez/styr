@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.28.0](https://github.com/anoguez/styr/compare/v0.27.0...v0.28.0) (2026-10-13)
+
+
+### Features
+
+* close Styr Terminal compatibility gaps (mouse, links, IME, selection, shells) ([#138](https://github.com/anoguez/styr/issues/138)) ([83acee5](https://github.com/anoguez/styr/commit/83acee5d4f02158777bac4733fa996d2e54756a0))
+* drag and drop context files onto the task dialog ([#133](https://github.com/anoguez/styr/issues/133)) ([75454e5](https://github.com/anoguez/styr/commit/75454e5db193100df30ff28b1a8302a844b29351))
+* highlight the agent card of the active terminal tab ([#137](https://github.com/anoguez/styr/issues/137)) ([b0d48a8](https://github.com/anoguez/styr/commit/b0d48a80220ab0fb45744387cc3bc72363cda6e9))
+* optional per-provider models for tasks and prompt templates ([#135](https://github.com/anoguez/styr/issues/135)) ([721bd12](https://github.com/anoguez/styr/commit/721bd12bd954021149a2d7263eb1a3b5e65f5822))
+* Styr Terminal agent blocks for Codex via its app-server ([#129](https://github.com/anoguez/styr/issues/129)) ([aaf1515](https://github.com/anoguez/styr/commit/aaf151559fd68b987da7c65a91eaf2d2a4d297db))
+* vendor only the build target's Styr Terminal binary ([#136](https://github.com/anoguez/styr/issues/136)) ([3c635be](https://github.com/anoguez/styr/commit/3c635be8318b759e80813d5e8d943c802ecf2c64))
+
 ## [0.27.0](https://github.com/anoguez/styr/compare/v0.26.0...v0.27.0) (2026-10-12)
 
 
