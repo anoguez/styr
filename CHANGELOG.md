@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.29.0](https://github.com/anoguez/styr/compare/v0.28.0...v0.29.0) (2026-10-13)
+
+
+### Features
+
+* toggle Dispatch for a task from its card ([#140](https://github.com/anoguez/styr/issues/140)) ([c1e3039](https://github.com/anoguez/styr/commit/c1e30392e1cece19ce225777beb3086e4e301c9c))
+
+
+### Bug Fixes
+
+* Dispatch button only stays live while Dispatch is acting ([#139](https://github.com/anoguez/styr/issues/139)) ([d17c9ea](https://github.com/anoguez/styr/commit/d17c9ea1391d81af7c706f3f4b649a827a3897c2))
+* give the PowerShell integration test time for pwsh to start on CI ([#141](https://github.com/anoguez/styr/issues/141)) ([43cb3f7](https://github.com/anoguez/styr/commit/43cb3f7e71e57541666f8d890c74b7656f2f62cd))
+
 ## [0.28.0](https://github.com/anoguez/styr/compare/v0.27.0...v0.28.0) (2026-10-13)
 
 
