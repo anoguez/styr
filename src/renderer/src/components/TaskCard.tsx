@@ -174,7 +174,7 @@ export function TaskCardBody({
   ) : null
   // Opted-out tasks say so on the card, since Dispatch silently passes them by otherwise.
   const optedOutClass =
-    'inline-flex h-[18px] shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1 font-medium text-faint'
+    'inline-flex size-[18px] shrink-0 items-center justify-center rounded-md text-faint'
   const optedOut =
     task.orchestrate || task.status === 'done' ? null : onToggleDispatch ? (
       <button
@@ -190,12 +190,15 @@ export function TaskCardBody({
         onDoubleClick={(event) => event.stopPropagation()}
       >
         <DispatchGlyph off />
-        Manual
       </button>
     ) : (
-      <span className={`${optedOutClass} -mx-1`} title="Only you can start this task">
+      <span
+        role="img"
+        aria-label="Only you can start this task"
+        title="Only you can start this task"
+        className={`${optedOutClass} -mx-1`}
+      >
         <DispatchGlyph off />
-        Manual
       </span>
     )
   // "Needs spec" and "Chat to resume" are states too, so they share the strip with the agent.

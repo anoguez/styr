@@ -35,8 +35,8 @@ label truncate. The agent state dot is also `shrink-0` — colour carries the st
 survive when the label does not.
 
 A task's `orchestrate` flag ("Dispatch can start it") is switchable from the card without opening
-the dialog: the paper-plane hover action, the context menu, and the _Manual_ marker in the meta row,
-which only an opted-out task that is not Done shows. All three write `{ orchestrate }` through
+the dialog: the paper-plane hover action, the context menu, and the struck-through plane in the meta
+row, which only an opted-out task that is not Done shows. All three write `{ orchestrate }` through
 `tasks.update`; the card re-renders from the file like any other write.
 
 ## Settings
