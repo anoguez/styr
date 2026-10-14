@@ -17,3 +17,4 @@ temp-cert-export/
 
 # Optional private native packages, vendored by the release job
 resources/native/*/
+test-results/
