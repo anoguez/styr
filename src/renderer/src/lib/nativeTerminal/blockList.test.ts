@@ -11,9 +11,11 @@ import {
   VIEW_FINISHED_BLOCKS,
   VIEW_FINISHED_ROWS,
   VIEW_HISTORY_ROWS,
+  chunkText,
   commandHistory,
   liveRows,
   logicalLines,
+  outputChunks,
   rowsText
 } from './blockList.js'
 import { ScreenModel } from './screen.js'
@@ -215,6 +217,32 @@ describe('block list rows', () => {
       'end'
     ])
     expect(rowsText(rows, 6)).toBe('hello world\n\nend')
+  })
+
+  it('cuts finished output into chunks at line ends, every row kept once', () => {
+    const rows = Array.from({ length: HISTORY_CHUNK_ROWS * 2 + 10 }, (_, index) =>
+      row(index, `line ${index}`, index === HISTORY_CHUNK_ROWS - 1)
+    )
+    const chunks = outputChunks(rows)
+    expect(chunks.map((chunk) => chunk.length)).toEqual([
+      HISTORY_CHUNK_ROWS + 1,
+      HISTORY_CHUNK_ROWS,
+      9
+    ])
+    expect(chunks.flat()).toEqual(rows)
+    expect(chunks.every((chunk) => !chunk.at(-1)!.wrapped || chunk === chunks.at(-1))).toBe(true)
+    expect(outputChunks([])).toEqual([])
+  })
+
+  it('writes a chunk as the text its styled lines show, line for line', () => {
+    const rows = [row(0, 'hello', true), row(1, 'world'), row(2, ''), row(3, 'end  ')]
+    // What selecting the styled lines copies: one line per logical line, wrap padding kept.
+    const styled = logicalLines(rows, 6).map((runs) => runs.map((run) => run.text).join(''))
+    expect(chunkText(rows, 6)).toBe(styled.join('\n'))
+    expect(chunkText(rows, 6).split('\n')).toHaveLength(3)
+    // A trailing line break draws no line, so a final empty line needs one more.
+    expect(chunkText([row(0, 'a'), row(1, '')], 6)).toBe('a\n\n')
+    expect(chunkText([row(0, '')], 6)).toBe('\n')
   })
 
   it('shows the live screen down to the cursor or the last row with text', () => {

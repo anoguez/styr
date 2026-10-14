@@ -439,7 +439,8 @@ export function NativeTerminalView({
   const focusRef = useRef<() => void>(() => {})
   focusRef.current = () => {
     if (!host.current) return
-    if (typing && inputRef.current) inputRef.current.focus()
+    // Without scrolling: a command that ends while the reader is scrolled up leaves them there.
+    if (typing && inputRef.current) inputRef.current.focus({ preventScroll: true })
     else if (
       !host.current.contains(document.activeElement) ||
       document.activeElement === document.body
