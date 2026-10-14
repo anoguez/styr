@@ -1,4 +1,4 @@
-import type { OrchestrationLane, Task } from './types.js'
+import { AUTO_REWORK_LIMIT, type OrchestrationLane, type Task } from './types.js'
 import type { OrchestrationPlan } from './orchestrate.js'
 import { laneFor } from './orchestrate.js'
 
@@ -80,4 +80,51 @@ export function decideAutoRun(input: AutoRunInput): AutoRunDecision {
   const launch = plan.dispatch.slice(0, budget)
   for (const { task } of launch) memory.set(memoryKey(workspaceId, task.id), launchSignature(task))
   return { launch, memory, ...(plan.dispatch.length > budget ? { pause: 'limit' as const } : {}) }
+}
+
+export { AUTO_REWORK_LIMIT }
+
+/** `workspace:task` → how many reviews Auto-run started came back asking for fixes. Memory only. */
+export type ReworkCounts = ReadonlyMap<string, number>
+
+export interface ReworkTally {
+  counts: Map<string, number>
+  /** Tasks that reached the limit on this pass, to notify about once. */
+  capped: Task[]
+  /** Every task at or over the limit: Auto-run leaves them out of the plan. */
+  held: Set<string>
+}
+
+/**
+ * Counts review→Backlog bounces. A bounce is seen as `pruneMemory` would see it: a task Auto-run
+ * started in the review lane is now in Backlog, so the reviewer asked for fixes. Call it with the
+ * memory from before pruning. A task that reaches Done, or is gone, starts over from zero.
+ */
+export function tallyRework(
+  tasks: readonly Task[],
+  workspaceId: string,
+  memory: AutoMemory,
+  previous: ReworkCounts
+): ReworkTally {
+  const prefix = `${workspaceId}:`
+  const byKey = new Map(tasks.map((task) => [memoryKey(workspaceId, task.id), task]))
+  const counts = new Map<string, number>()
+  for (const [key, count] of previous) {
+    const task = byKey.get(key)
+    if (!key.startsWith(prefix) || (task && task.status !== 'done')) counts.set(key, count)
+  }
+  const capped: Task[] = []
+  for (const [key, signature] of memory) {
+    const task = byKey.get(key)
+    if (!task || !signature.startsWith('review|') || task.status !== 'backlog') continue
+    const count = (counts.get(key) ?? 0) + 1
+    counts.set(key, count)
+    if (count === AUTO_REWORK_LIMIT) capped.push(task)
+  }
+  const held = new Set<string>()
+  for (const [key, count] of counts) {
+    const task = byKey.get(key)
+    if (task && count >= AUTO_REWORK_LIMIT) held.add(task.id)
+  }
+  return { counts, capped, held }
 }

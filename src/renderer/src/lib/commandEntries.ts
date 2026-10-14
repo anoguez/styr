@@ -46,6 +46,8 @@ export interface PaletteActions {
   launchAgent: (taskId: string) => void
   activateTask: (taskId: string) => void
   selectSession: (id: string) => void
+  /** Fetch `origin` and move In Review work whose PR was merged to Done. */
+  checkMergedWork: () => void
 }
 
 const KEYWORDS: Partial<Record<ShortcutCommand, string>> = {
@@ -111,6 +113,14 @@ export function buildCommandEntries(
     mode: 'command',
     keywords: 'slow cpu memory profile diagnostics usage lag',
     run: () => dispatch({ type: 'set', toggle: 'performance', open: true })
+  })
+  entries.push({
+    id: 'action:checkMerged',
+    label: 'Check for merged work',
+    group: 'Actions',
+    mode: 'command',
+    keywords: 'fetch pull request pr merged landed origin remote refresh review done',
+    run: () => actions.checkMergedWork()
   })
   entries.push({
     id: 'view:archive',

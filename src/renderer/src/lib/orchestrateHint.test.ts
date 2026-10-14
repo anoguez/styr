@@ -17,6 +17,7 @@ const summary = (over: Partial<OrchestrationSummary> = {}): OrchestrationSummary
   blocked: 0,
   missingWorkingDir: 0,
   idleSessions: 0,
+  reworkHeld: [],
   ...over
 })
 

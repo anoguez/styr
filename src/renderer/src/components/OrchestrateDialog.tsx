@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import {
+  AUTO_REWORK_LIMIT,
   ORCHESTRATION_LANES,
   ORCHESTRATION_LANE_LABELS,
   type AutoDispatchState,
@@ -42,6 +43,9 @@ export function OrchestrateDialog({
     summary.optedOut > 0 ? `${summary.optedOut} opted out of Dispatch` : '',
     summary.missingWorkingDir > 0
       ? `${summary.missingWorkingDir} skipped — no working directory`
+      : '',
+    summary.reworkHeld.length > 0
+      ? `${summary.reworkHeld.join(', ')} failed review ${AUTO_REWORK_LIMIT} times — Auto-run leaves ${summary.reworkHeld.length === 1 ? 'it' : 'them'} to you; this run starts ${summary.reworkHeld.length === 1 ? 'it' : 'them'} anyway`
       : ''
   ].filter(Boolean)
 

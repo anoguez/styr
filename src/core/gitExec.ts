@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { MAX_PATCH_BYTES } from './diff.js'
@@ -63,6 +63,22 @@ export function git(args: string[], cwd: string, timeout?: number): string {
     timeout,
     stdio: ['ignore', 'pipe', 'pipe']
   }).trim()
+}
+
+/**
+ * `git()` in a child process the caller does not wait on: for slow, network-bound commands that
+ * must stay off the main process's thread. It never prompts for credentials — a fetch that would
+ * ask fails instead of hanging.
+ */
+export function gitAsync(args: string[], cwd: string, timeout: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'git',
+      args,
+      { cwd, env: { ...cleanEnv(), GIT_TERMINAL_PROMPT: '0' }, encoding: 'utf8', timeout },
+      (error, stdout) => (error ? reject(error) : resolve(stdout.trim()))
+    )
+  })
 }
 
 /** Like `git()` but keeps the output intact and returns stdout of a command that may exit 1. */

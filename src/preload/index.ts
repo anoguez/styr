@@ -77,6 +77,8 @@ const api = {
       ipcRenderer.invoke('tasks:removeWorktree', id),
     reveal: (id: string): Promise<void> => ipcRenderer.invoke('tasks:reveal', id),
     openInEditor: (id: string): Promise<void> => ipcRenderer.invoke('tasks:openInEditor', id),
+    /** Fetches `origin` and moves In Review work whose PR was merged to Done. */
+    checkMerged: (): Promise<void> => ipcRenderer.invoke('tasks:checkMerged'),
     onChanged: (handler: () => void): (() => void) => subscribe('tasks:changed', handler),
     onActivateRequested: (handler: (taskId: string) => void): (() => void) =>
       subscribe('tasks:activate', handler as (...args: never[]) => void)

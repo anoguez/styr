@@ -58,6 +58,7 @@ import {
   workspaceTaskCount
 } from '@core/workspaces.js'
 import { createAutoDispatch } from '@core/autoDispatchRunner.js'
+import { AUTO_REWORK_LIMIT } from '@core/autoDispatch.js'
 import { buildInbox, summariseInbox } from '@core/inbox.js'
 import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
 import {
@@ -82,7 +83,7 @@ import {
   setArchived,
   updateTask
 } from '@core/taskStore.js'
-import { settleLandedTasks } from './landing.js'
+import { fetchAndSettle, settleLandedTasks } from './landing.js'
 import {
   initSourceSync,
   linkTask,
@@ -329,6 +330,31 @@ export function notifyTasksChanged(): void {
   autoDispatch.request()
 }
 
+/**
+ * Fetches `origin` where In Review work waits to land, then settles what landed — how a PR merged
+ * on the host is noticed. Event-driven only (window focus, a Dispatch run, an Auto-run pass, the
+ * palette), throttled and coalesced per repository, and never part of `notifyTasksChanged`.
+ */
+export async function checkForMergedWork(): Promise<void> {
+  try {
+    if (await fetchAndSettle()) notifyTasksChanged()
+  } catch (error) {
+    console.warn('landing: checking for merged work failed:', error)
+  }
+}
+
+/** How long a Dispatch run or Auto-run pass waits for that check before going ahead without it. */
+const MERGED_WORK_WAIT_MS = 5_000
+
+/** The check, awaited for at most `MERGED_WORK_WAIT_MS`: a slow remote never holds up a dispatch. */
+function checkForMergedWorkBriefly(): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, MERGED_WORK_WAIT_MS)
+  })
+  return Promise.race([checkForMergedWork(), deadline]).finally(() => clearTimeout(timer))
+}
+
 const taskWrites = createTaskWrites({
   findTask,
   createTask,
@@ -426,6 +452,7 @@ const autoDispatch = createAutoDispatch({
   enabled: () => loadSettings().autoDispatch,
   setEnabled: writeAutoDispatchFlag,
   workspaceId: () => loadSettings().activeWorkspaceId,
+  beforePass: checkForMergedWorkBriefly,
   snapshot: (skip) => ({ plan: buildPlan(skip), tasks: queryTasks() }),
   launch: async (task, lane) => {
     // The renderer only learns of sessions it asked for, so tell it about this one.
@@ -438,6 +465,15 @@ const autoDispatch = createAutoDispatch({
     } catch {
       // The task may have been deleted meanwhile; there is nothing to note it on.
     }
+  },
+  reworkCapped: (task) => {
+    const message = `${task.id} failed review ${AUTO_REWORK_LIMIT} times; it needs you.`
+    try {
+      addNote(task.id, 'styr', `${message} Auto-run no longer starts it; Dispatch now still does.`)
+    } catch {
+      // The task may have been deleted meanwhile; the notification still says so.
+    }
+    if (Notification.isSupported()) new Notification({ title: 'Styr', body: message }).show()
   },
   paused: (reason) => {
     if (Notification.isSupported()) {
@@ -471,7 +507,8 @@ function summarisePlan(): OrchestrationSummary {
     optedOut: plan.optedOut,
     blocked: plan.blocked,
     missingWorkingDir: plan.missingWorkingDir,
-    idleSessions: plan.idleSessions
+    idleSessions: plan.idleSessions,
+    reworkHeld: plan.dispatch.map(({ task }) => task.id).filter((id) => autoDispatch.held().has(id))
   }
 }
 
@@ -638,9 +675,12 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('orchestrate:plan', () => summarisePlan())
+  ipcMain.handle('tasks:checkMerged', () => checkForMergedWork())
 
   ipcMain.handle('orchestrate:run', async (_event, taskIds?: string[]) => {
     const wanted = taskIds ? new Set(taskIds) : null
+    // A review whose PR was merged since the dialog opened is Done now, and drops out of the plan.
+    await checkForMergedWorkBriefly()
     const plan = buildPlan()
     return Promise.all(
       plan.dispatch

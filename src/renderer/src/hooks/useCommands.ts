@@ -132,7 +132,8 @@ export function useCommands({
           archiveTask,
           launchAgent,
           activateTask,
-          selectSession: select
+          selectSession: select,
+          checkMergedWork: () => void window.api.tasks.checkMerged()
         }
       ),
     [

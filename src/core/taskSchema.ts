@@ -77,7 +77,8 @@ export const taskSessionRefSchema = z.object({
   id: z.string(),
   provider: z.enum(['claude', 'codex']).default('claude'),
   startedAt: z.string(),
-  label: z.string()
+  label: z.string(),
+  templateId: z.string().optional()
 })
 
 export const activityEntrySchema = z.object({

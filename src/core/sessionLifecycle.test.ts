@@ -2,9 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { shippedSettings } from './config.js'
 import type { AgentStatus } from './agentState.js'
 import {
+  REWORK_PREFACE,
   createSessionLifecycle,
+  isReviewSession,
   launchPatch,
   monitorKey,
+  reworkLaunch,
   splitMonitorKey,
   type SessionPorts
 } from './sessionLifecycle.js'
@@ -167,7 +170,13 @@ describe('launchPatch', () => {
     const patch = launchPatch(settings, task(), plan, undefined, 'abc', 'Fork of X', () => 'NOW')
     expect(patch.agentSession).toEqual({ provider: 'claude', id: 'abc' })
     expect(patch.sessions).toEqual([
-      { id: 'abc', provider: 'claude', startedAt: 'NOW', label: 'Fork of X' }
+      {
+        id: 'abc',
+        provider: 'claude',
+        startedAt: 'NOW',
+        label: 'Fork of X',
+        templateId: 'implement'
+      }
     ])
   })
 
@@ -178,6 +187,107 @@ describe('launchPatch', () => {
       sessions: [{ id: 'abc', provider: 'claude', startedAt: 'x', label: 'y' }]
     } as Partial<Task>)
     expect(launchPatch(settings, t, { provider: 'claude' }, undefined, 'abc')).toEqual({})
+  })
+})
+
+describe('rework after a failed review', () => {
+  const settings = shippedSettings()
+  const implementer = {
+    id: 'saved-chat',
+    provider: 'claude' as const,
+    startedAt: '1',
+    label: 'Implement the task',
+    templateId: 'implement'
+  }
+  const reviewer = {
+    id: 'review-chat',
+    provider: 'claude' as const,
+    startedAt: '2',
+    label: 'Review the work',
+    templateId: 'code-review'
+  }
+  const bounced = (extra: Partial<Task> = {}): Task =>
+    task({
+      status: 'backlog',
+      agentSession: { provider: 'claude', id: 'review-chat' },
+      sessions: [implementer, reviewer],
+      ...extra
+    } as Partial<Task>)
+  const onDisk = (ids: string[]) => (entry: { id: string }) => ids.includes(entry.id)
+
+  it('tells a review run from an implement run, by template id or, for older entries, by name', () => {
+    const t = bounced()
+    expect(isReviewSession(settings, t, reviewer)).toBe(true)
+    expect(isReviewSession(settings, t, implementer)).toBe(false)
+    const { templateId: _, ...legacy } = reviewer
+    expect(isReviewSession(settings, t, legacy)).toBe(true)
+    // A pinned template runs both lanes, so neither counts as a review.
+    expect(isReviewSession(settings, bounced({ promptTemplateId: 'implement' }), reviewer)).toBe(
+      false
+    )
+  })
+
+  it('resumes the implementer, not the reviewer, with the prompt and the rework preface', () => {
+    expect(
+      reworkLaunch(
+        settings,
+        bounced(),
+        { provider: 'claude' },
+        onDisk(['saved-chat', 'review-chat'])
+      )
+    ).toEqual({
+      provider: 'claude',
+      resume: 'saved-chat',
+      withPrompt: true,
+      promptPreface: REWORK_PREFACE
+    })
+  })
+
+  it("starts fresh, still with the preface, when the implementer's chat is gone", () => {
+    expect(reworkLaunch(settings, bounced(), {}, onDisk(['review-chat']))).toEqual({
+      provider: 'claude',
+      fresh: true,
+      withPrompt: true,
+      promptPreface: REWORK_PREFACE
+    })
+  })
+
+  it('only resumes an implementer of the provider the lane asked for', () => {
+    expect(
+      reworkLaunch(settings, bounced(), { provider: 'codex' }, onDisk(['saved-chat']))
+    ).toEqual({ provider: 'codex', fresh: true, withPrompt: true, promptPreface: REWORK_PREFACE })
+  })
+
+  it('leaves every other launch alone', () => {
+    const all = onDisk(['saved-chat', 'review-chat'])
+    const options = { withPrompt: true }
+    // The current chat is the implementer's own.
+    const own = bounced({ agentSession: { provider: 'claude', id: 'saved-chat' } })
+    expect(reworkLaunch(settings, own, options, all)).toBe(options)
+    // The review lane, a fresh start, a named chat, another template.
+    expect(reworkLaunch(settings, bounced({ status: 'in_review' }), options, all)).toBe(options)
+    const fresh = { fresh: true }
+    expect(reworkLaunch(settings, bounced(), fresh, all)).toBe(fresh)
+    const resume = { resume: 'review-chat' }
+    expect(reworkLaunch(settings, bounced(), resume, all)).toBe(resume)
+    const followup = { templateId: 'followup' }
+    expect(reworkLaunch(settings, bounced(), followup, all)).toBe(followup)
+    // Needs a spec first: the spec lane.
+    expect(reworkLaunch(settings, bounced({ readiness: 'needs_spec' }), options, all)).toBe(options)
+  })
+
+  it('startForTask plans the resume of the implementer', async () => {
+    const h = harness()
+    h.tasks.set('TASK-1', bounced())
+    const plan = vi.fn(h.ports.planLaunch)
+    h.ports.planLaunch = plan
+    await createSessionLifecycle(h.ports).startForTask('TASK-1', { withPrompt: true })
+    expect(plan.mock.calls[0]?.[2]).toMatchObject({
+      resume: 'saved-chat',
+      provider: 'claude',
+      withPrompt: true,
+      promptPreface: REWORK_PREFACE
+    })
   })
 })
 

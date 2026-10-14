@@ -2,7 +2,7 @@ import { askTitle, forkDescription } from './askAgent.js'
 import { askDraft, handoffDraft } from './derivedTask.js'
 import { agentHandoffPrompt, handoffFileName, isAgentProgram, renderHandoff } from './handoff.js'
 import type { LaunchOptions, LaunchPlan } from './launch.js'
-import { providerForLane } from './orchestrate.js'
+import { laneFor, providerForLane } from './orchestrate.js'
 import { resolveTemplateFor } from './prompt.js'
 import { createPullRequestPrompt } from './pullRequest.js'
 import { providerById } from './providers/index.js'
@@ -14,6 +14,7 @@ import {
   type Task,
   type TaskDraft,
   type TaskPatch,
+  type TaskSessionRef,
   type TerminalSessionInfo
 } from './types.js'
 import type { AgentStatus } from './agentState.js'
@@ -139,17 +140,81 @@ export function launchPatch(
     patch.agentSession = { provider: plan.provider, id: sessionId }
   }
   if (!task.sessions.some((entry) => entry.id === sessionId)) {
+    const template = resolveTemplateFor(settings, task, templateId)
     patch.sessions = [
       ...task.sessions,
       {
         id: sessionId,
         provider: plan.provider,
         startedAt: now(),
-        label: sessionLabel ?? resolveTemplateFor(settings, task, templateId).name
+        label: sessionLabel ?? template.name,
+        templateId: template.id
       }
     ]
   }
   return patch
+}
+
+/** What an implementer is told when it picks a task back up after a failed review. */
+export const REWORK_PREFACE = [
+  'A review of this task asked for fixes. Before anything else, read the latest note under',
+  '`## Activity` in the task file: it lists what to fix. Make those fixes, then hand the task back',
+  'for review as the instructions below describe.'
+].join('\n')
+
+/**
+ * Whether a history entry is a review run: the template it recorded (older entries: its name) is
+ * the one the task's In Review routing resolves to. Never true when the task routes implement and
+ * review to one template (a pinned one), since the two runs cannot then be told apart.
+ */
+export function isReviewSession(settings: Settings, task: Task, entry: TaskSessionRef): boolean {
+  const review = resolveTemplateFor(settings, { ...task, status: 'in_review', readiness: 'ready' })
+  const implement = resolveTemplateFor(settings, { ...task, status: 'backlog', readiness: 'ready' })
+  if (review.id === implement.id) return false
+  return entry.templateId !== undefined
+    ? entry.templateId === review.id
+    : entry.label === review.name
+}
+
+/**
+ * An implement run on a task whose current chat is a reviewer's — the review failed and sent it back
+ * — must not continue the reviewer. It continues the latest implementer chat that still exists on
+ * disk, else starts fresh; either way it is sent the prompt, led by `REWORK_PREFACE`. Any other
+ * launch, and one that names its own session or asks to start fresh, is returned unchanged.
+ */
+export function reworkLaunch(
+  settings: Settings,
+  task: Task,
+  options: LaunchOptions,
+  sessionExists: (entry: TaskSessionRef) => boolean
+): LaunchOptions {
+  if (options.fresh || options.resume || options.forkFrom || options.sessionId) return options
+  if (laneFor(task) !== 'implement') return options
+  if (
+    resolveTemplateFor(settings, task, options.templateId).id !==
+    resolveTemplateFor(settings, task).id
+  ) {
+    return options // an explicit pick of another template is the user's call
+  }
+  const pointer = task.agentSession
+  const current = pointer && task.sessions.find((entry) => entry.id === pointer.id)
+  if (!current || !isReviewSession(settings, task, current)) return options
+  const implementer = [...task.sessions]
+    .reverse()
+    .find(
+      (entry) =>
+        !isReviewSession(settings, task, entry) &&
+        (!options.provider || entry.provider === options.provider)
+    )
+  const rework = { ...options, withPrompt: true, promptPreface: REWORK_PREFACE }
+  if (implementer && sessionExists(implementer)) {
+    return { ...rework, resume: implementer.id, provider: implementer.provider }
+  }
+  return {
+    ...rework,
+    fresh: true,
+    provider: options.provider ?? implementer?.provider ?? task.provider ?? settings.defaultProvider
+  }
 }
 
 export function createSessionLifecycle(ports: SessionPorts) {
@@ -217,11 +282,14 @@ export function createSessionLifecycle(ports: SessionPorts) {
     ports.notifyAgents()
   }
 
-  async function start(taskId: string, options: LaunchOptions): Promise<TerminalSessionInfo> {
+  async function start(taskId: string, requested: LaunchOptions): Promise<TerminalSessionInfo> {
     const task = ports.findTask(taskId)
     if (!task) throw new Error(`Task ${taskId} not found`)
 
     const settings = ports.settings()
+    const options = reworkLaunch(settings, task, requested, (entry) =>
+      providerById(entry.provider).sessionExists(entry.id)
+    )
     const workspaceId = settings.activeWorkspaceId
     const key = monitorKey(workspaceId, task.id)
     const requestedProvider =

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { shippedSettings } from './config.js'
-import { AUTO_LAUNCH_LIMIT, decideAutoRun, memoryKey, pruneMemory } from './autoDispatch.js'
+import {
+  AUTO_LAUNCH_LIMIT,
+  AUTO_REWORK_LIMIT,
+  decideAutoRun,
+  memoryKey,
+  pruneMemory,
+  tallyRework
+} from './autoDispatch.js'
 import { planOrchestration } from './orchestrate.js'
 import type { Task } from './types.js'
 
@@ -84,5 +91,48 @@ describe('decideAutoRun', () => {
     const decision = decide([task()], new Map(), history)
     expect(decision.launch).toHaveLength(1)
     expect(decision.pause).toBeUndefined()
+  })
+})
+
+describe('tallyRework', () => {
+  const reviewed = new Map([[memoryKey('w', 'TASK-1'), 'review|in_review|ready']])
+
+  it('counts a review Auto-run started that came back to Backlog', () => {
+    const tally = tallyRework([task()], 'w', reviewed, new Map())
+    expect(tally.counts.get('w:TASK-1')).toBe(1)
+    expect(tally.capped).toEqual([])
+    expect(tally.held).toEqual(new Set())
+  })
+
+  it('ignores a review still in progress, an implement run, and a legacy In Progress bounce', () => {
+    expect(tallyRework([task({ status: 'in_review' })], 'w', reviewed, new Map()).counts.size).toBe(
+      0
+    )
+    expect(
+      tallyRework([task({ status: 'in_progress' })], 'w', reviewed, new Map()).counts.size
+    ).toBe(0)
+    const implemented = new Map([[memoryKey('w', 'TASK-1'), 'implement|backlog|ready']])
+    expect(tallyRework([task()], 'w', implemented, new Map()).counts.size).toBe(0)
+  })
+
+  it('caps at the limit, reporting the task only on the pass that reached it', () => {
+    const before = new Map([['w:TASK-1', AUTO_REWORK_LIMIT - 1]])
+    const reached = tallyRework([task()], 'w', reviewed, before)
+    expect(reached.capped.map((t) => t.id)).toEqual(['TASK-1'])
+    expect(reached.held).toEqual(new Set(['TASK-1']))
+    const later = tallyRework([task()], 'w', new Map(), reached.counts)
+    expect(later.capped).toEqual([])
+    expect(later.held).toEqual(new Set(['TASK-1']))
+  })
+
+  it('starts over once the task is Done or gone, and keeps other workspaces', () => {
+    const counts = new Map([
+      ['w:TASK-1', AUTO_REWORK_LIMIT],
+      ['w:TASK-2', 1],
+      ['other:TASK-1', 2]
+    ])
+    const tally = tallyRework([task({ status: 'done' })], 'w', new Map(), counts)
+    expect([...tally.counts]).toEqual([['other:TASK-1', 2]])
+    expect(tally.held).toEqual(new Set())
   })
 })

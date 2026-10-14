@@ -4,6 +4,7 @@ import { tasksDir } from '@core/settingsStore.js'
 import { migrateLegacySettings } from '@core/settingsMigration.js'
 import {
   broadcast,
+  checkForMergedWork,
   markAgentExited,
   notifyAgentsChanged,
   notifyTasksChanged,
@@ -193,6 +194,9 @@ app.whenReady().then(() => {
   createWindow()
   initUpdater()
   initUsage()
+
+  // You merge a PR in the browser and come back: that is when to look for it. Throttled per repo.
+  app.on('browser-window-focus', () => void checkForMergedWork())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
