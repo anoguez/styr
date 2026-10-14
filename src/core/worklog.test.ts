@@ -1,109 +1,32 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_TIMESHEET, type TimesheetSettings, type WorklogTask } from './types.js'
+import type { WorklogSessionDay, WorklogTask } from './types.js'
 import {
   buildWorklog,
-  clipIntervals,
   dayKey,
-  formatHours,
   formatTable,
-  hoursByTaskDay,
-  IDLE_GAP_MS,
-  LEAD_MS,
-  measuredHours,
-  roundHours,
-  suggestedHours,
-  timesheetTable,
+  formatTokens,
   weekStartOf,
-  workIntervals,
-  worklogFrame
+  worklogFrame,
+  worklogTable
 } from './worklog.js'
 
-const MIN = 60_000
-const HOUR = 60 * MIN
+const HOUR = 3_600_000
 /** Local time, so day boundaries hold whatever zone the tests run in. */
 const at = (day: number, hour: number, minute = 0, month = 9): number =>
   new Date(2026, month, day, hour, minute).getTime()
 // Tuesday 13 October 2026, mid-afternoon.
 const NOW = at(13, 15)
-const exact: TimesheetSettings = { ...DEFAULT_TIMESHEET, roundMinutes: 0 }
 
-function task(taskId: string, intervals: [number, number][], project?: string): WorklogTask {
-  return { taskId, title: `Title ${taskId}`, project, intervals }
+function task(taskId: string, sessions: WorklogSessionDay[], project?: string): WorklogTask {
+  return { taskId, title: `Title ${taskId}`, project, sessions }
 }
 
-describe('workIntervals', () => {
-  it('joins signals within the idle gap and opens each stretch with a lead', () => {
-    const start = at(13, 9)
-    const times = [start, start + 10 * MIN, start + 25 * MIN, start + 25 * MIN + IDLE_GAP_MS + 1]
-    expect(workIntervals(times)).toEqual([
-      [start - LEAD_MS, start + 25 * MIN],
-      [times[3]! - LEAD_MS, times[3]!]
-    ])
-  })
-
-  it('sorts its input and ignores unparseable times', () => {
-    expect(workIntervals([at(13, 10), NaN, at(13, 9, 50)])).toEqual([
-      [at(13, 9, 50) - LEAD_MS, at(13, 10)]
-    ])
-  })
-})
-
-describe('clipIntervals', () => {
-  it('cuts to the span and drops what falls outside', () => {
-    expect(
-      clipIntervals(
-        [
-          [0, 10],
-          [15, 30],
-          [40, 50]
-        ],
-        5,
-        40
-      )
-    ).toEqual([
-      [5, 10],
-      [15, 30]
-    ])
-  })
-})
-
-describe('hoursByTaskDay', () => {
-  it('shares time two tasks were worked on at once', () => {
-    const hours = hoursByTaskDay([
-      task('A', [[at(13, 9), at(13, 11)]]),
-      task('B', [[at(13, 10), at(13, 12)]])
-    ])
-    expect(hours.get('A')?.get('2026-10-13')).toBeCloseTo(1.5)
-    expect(hours.get('B')?.get('2026-10-13')).toBeCloseTo(1.5)
-  })
-
-  it('splits a stretch across midnight into both days', () => {
-    const hours = hoursByTaskDay([task('A', [[at(12, 23), at(13, 1)]])])
-    expect(hours.get('A')?.get('2026-10-12')).toBeCloseTo(1)
-    expect(hours.get('A')?.get('2026-10-13')).toBeCloseTo(1)
-  })
-})
-
-describe('roundHours and formatHours', () => {
-  it('rounds to the nearest step, or not at all', () => {
-    expect(roundHours(1.1, 15)).toBe(1)
-    expect(roundHours(1.15, 15)).toBe(1.25)
-    expect(roundHours(0.2, 30)).toBe(0)
-    expect(roundHours(1.1, 0)).toBe(1.1)
-  })
-
-  it('keeps a whole hour’s .0 and at most two decimals', () => {
-    expect(formatHours(8)).toBe('8.0')
-    expect(formatHours(7.75)).toBe('7.75')
-    expect(formatHours(1 / 3)).toBe('0.33')
-  })
-})
-
 describe('worklogFrame', () => {
-  it('lays out this week from its first day', () => {
-    const frame = worklogFrame('week', 0, NOW, 'mon')
+  it('lays out this week from its Monday', () => {
+    const frame = worklogFrame('week', 0, NOW)
     expect(frame.title).toBe('This week')
     expect(frame.range).toBe('Oct 12 – Oct 18, 2026')
+    expect(frame.chartTitle).toBe('Tokens per day')
     expect(frame.buckets.map((bucket) => `${bucket.label} ${bucket.sub}`)).toEqual([
       'Mon 12',
       'Tue 13',
@@ -117,13 +40,14 @@ describe('worklogFrame', () => {
     expect(frame.to).toBe(at(19, 0))
   })
 
-  it('starts the week on Sunday when asked', () => {
-    expect(weekStartOf('2026-10-13', 'sun')).toBe('2026-10-11')
-    expect(worklogFrame('week', 1, NOW, 'sun').title).toBe('Last week')
+  it('starts weeks on Monday', () => {
+    expect(weekStartOf('2026-10-13')).toBe('2026-10-12')
+    expect(weekStartOf('2026-10-18')).toBe('2026-10-12')
+    expect(worklogFrame('week', 1, NOW).title).toBe('Last week')
   })
 
   it('charts the week around the day it shows, and fetches all of it', () => {
-    const frame = worklogFrame('day', 1, NOW, 'mon')
+    const frame = worklogFrame('day', 1, NOW)
     expect(frame.title).toBe('Yesterday')
     expect(frame.range).toBe('Mon, Oct 12, 2026')
     expect(frame.selectedDay).toBe('2026-10-12')
@@ -133,9 +57,10 @@ describe('worklogFrame', () => {
   })
 
   it('groups a month into its weeks', () => {
-    const frame = worklogFrame('month', 1, NOW, 'mon')
+    const frame = worklogFrame('month', 1, NOW)
     expect(frame.title).toBe('September 2026')
     expect(frame.range).toBe('Sep 1 – Sep 30')
+    expect(frame.chartTitle).toBe('Tokens per week')
     expect(frame.buckets[0]).toMatchObject({ label: 'Sep 1', sub: '– 6' })
     expect(frame.buckets.flatMap((bucket) => bucket.days)).toHaveLength(30)
   })
@@ -143,92 +68,82 @@ describe('worklogFrame', () => {
 
 describe('buildWorklog', () => {
   const tasks = [
-    task('TASK-1', [[at(12, 9), at(12, 15)]], 'styr'),
-    task('TASK-2', [[at(13, 9), at(13, 11)]], 'styr'),
-    task('TASK-3', [[at(13, 13), at(13, 14)]])
-  ]
-  const frame = worklogFrame('week', 0, NOW, 'mon')
-
-  it('totals rows, buckets and projects against the target', () => {
-    const worklog = buildWorklog(frame, measuredHours(tasks), exact, NOW)
-    expect(worklog.rows.map((row) => [row.taskId, row.total])).toEqual([
-      ['TASK-1', 6],
-      ['TASK-2', 2],
-      ['TASK-3', 1]
-    ])
-    expect(worklog.buckets[0]).toMatchObject({ total: 6, target: 8, future: false })
-    expect(worklog.buckets[1]).toMatchObject({ total: 3, hasToday: true })
-    expect(worklog.buckets[5]).toMatchObject({ target: 0, future: true })
-    expect(worklog.groups.map((group) => [group.project, group.total])).toEqual([
-      ['styr', 8],
-      ['No project', 1]
-    ])
-    expect(worklog).toMatchObject({ logged: 9, target: 40, left: 31, current: true, todayLeft: 5 })
-  })
-
-  it('lists past working days short of a full day', () => {
-    const worklog = buildWorklog(frame, measuredHours(tasks), exact, NOW)
-    expect(worklog.gaps).toEqual([{ day: '2026-10-12', short: 2 }])
-  })
-
-  it('rounds each task’s day before totalling', () => {
-    const odd = [task('A', [[at(13, 9), at(13, 9, 10)]]), task('B', [[at(13, 10), at(13, 10, 50)]])]
-    const worklog = buildWorklog(frame, measuredHours(odd), { ...exact, roundMinutes: 30 }, NOW)
-    expect(worklog.rows.map((row) => row.total)).toEqual([1])
-    expect(worklog.logged).toBe(1)
-  })
-
-  it('sets no target on days that are not working days', () => {
-    const worklog = buildWorklog(
-      frame,
-      measuredHours([]),
-      { ...exact, workingDays: [true, false, false, false, false, false, false] },
-      NOW
-    )
-    expect(worklog.target).toBe(8)
-    expect(worklog.todayLeft).toBe(0)
-  })
-})
-
-describe('suggestedHours', () => {
-  it('builds the view from suggested days, naming tasks it knows and keeping notes', () => {
-    const hours = suggestedHours(
+    task(
+      'TASK-1',
       [
-        {
-          day: '2026-10-12',
-          generatedAt: '',
-          entries: [
-            { taskId: 'TASK-1', hours: 6, note: 'Index rebuild' },
-            { taskId: 'Meetings', hours: 2 }
-          ]
-        },
-        { day: '2026-10-13', generatedAt: '', entries: [{ taskId: 'TASK-1', hours: 3 }] }
+        { day: '2026-10-12', sessionId: 's1', tokens: 1000 },
+        { day: '2026-10-13', sessionId: 's1', tokens: 500 },
+        { day: '2026-10-13', sessionId: 's2', tokens: 250 }
       ],
-      (id) => (id === 'TASK-1' ? { taskId: id, title: 'Index', project: 'styr' } : undefined)
-    )
-    const worklog = buildWorklog(worklogFrame('week', 0, NOW, 'mon'), hours, exact, NOW)
-    expect(worklog.rows.map((row) => [row.taskId, row.title, row.total])).toEqual([
-      ['TASK-1', 'Index', 9],
-      ['Meetings', 'Meetings', 2]
+      'styr'
+    ),
+    task('TASK-2', [{ day: '2026-10-13', sessionId: 's3', tokens: 4000 }], 'other'),
+    // A session whose transcript is gone: counted, with no tokens.
+    task('TASK-3', [{ day: '2026-10-14', sessionId: 's4', tokens: 0 }])
+  ]
+  const worklog = buildWorklog(worklogFrame('week', 0, NOW), tasks, NOW)
+
+  it('totals tokens per row, bucket and project, most tokens first', () => {
+    expect(worklog.rows.map((row) => [row.taskId, row.tokens, row.sessions])).toEqual([
+      ['TASK-2', 4000, 1],
+      ['TASK-1', 1750, 2],
+      ['TASK-3', 0, 1]
     ])
-    expect(worklog.buckets[0]?.total).toBe(8)
-    expect(hours.notes?.get('TASK-1')?.get('2026-10-12')).toBe('Index rebuild')
+    expect(worklog.rows[1]!.cells.slice(0, 3)).toEqual([1000, 750, 0])
+    expect(worklog.groups.map((group) => [group.project, group.tokens])).toEqual([
+      ['other', 4000],
+      ['styr', 1750],
+      ['No project', 0]
+    ])
+    expect(worklog.tokens).toBe(5750)
+  })
+
+  it('counts a session once per bucket and once per period, however many days it ran', () => {
+    expect(worklog.sessions).toBe(4)
+    expect(worklog.buckets.slice(0, 3).map((bucket) => bucket.sessions)).toEqual([1, 3, 1])
+    const month = buildWorklog(worklogFrame('month', 0, NOW), tasks, NOW)
+    expect(month.buckets.find((bucket) => bucket.days.includes('2026-10-12'))!.sessions).toBe(4)
+  })
+
+  it('names the busiest day and splits buckets by project', () => {
+    expect(worklog.busiest).toEqual({ day: '2026-10-13', tokens: 4750 })
+    expect(worklog.buckets[1]!.byProject).toEqual({ styr: 750, other: 4000 })
+    expect(worklog.buckets[2]!.future).toBe(true)
+    expect(worklog.buckets[1]!.hasToday).toBe(true)
+  })
+
+  it('leaves out sessions outside the period', () => {
+    const lastWeek = buildWorklog(worklogFrame('week', 1, NOW), tasks, NOW)
+    expect(lastWeek.rows).toEqual([])
+    expect(lastWeek.busiest).toBeUndefined()
   })
 })
 
-describe('timesheetTable and formatTable', () => {
+describe('formatTokens', () => {
+  it('shortens counts to k and M', () => {
+    expect(formatTokens(0)).toBe('0')
+    expect(formatTokens(850)).toBe('850')
+    expect(formatTokens(12_340)).toBe('12.3k')
+    expect(formatTokens(2000)).toBe('2k')
+    expect(formatTokens(456_400)).toBe('456k')
+    expect(formatTokens(999_700)).toBe('1M')
+    expect(formatTokens(1_254_000)).toBe('1.25M')
+    expect(formatTokens(12_500_000)).toBe('12.5M')
+  })
+})
+
+describe('worklogTable and formatTable', () => {
   const worklog = buildWorklog(
-    worklogFrame('week', 0, NOW, 'mon'),
-    measuredHours([
-      task('TASK-1', [[at(12, 9), at(12, 11)]], 'styr'),
-      task('TASK-2', [[at(13, 9), at(13, 10)]], 'a, b')
-    ]),
-    exact,
+    worklogFrame('week', 0, NOW),
+    [
+      task('TASK-1', [{ day: '2026-10-12', sessionId: 's1', tokens: 1200 }], 'styr'),
+      task('TASK-2', [{ day: '2026-10-13', sessionId: 's2', tokens: 300 }], 'a, b')
+    ],
     NOW
   )
 
-  it('lays out a header, a line per task and the Logged line', () => {
-    const rows = timesheetTable(worklog, 'task')
+  it('lays out a header, a line per task with exact counts, and the Total line', () => {
+    const rows = worklogTable(worklog, 'task')
     expect(rows[0]).toEqual([
       'Task',
       'Title',
@@ -240,38 +155,41 @@ describe('timesheetTable and formatTable', () => {
       'Fri 16',
       'Sat 17',
       'Sun 18',
-      'Total'
+      'Sessions',
+      'Tokens'
     ])
     expect(rows[1]).toEqual([
       'TASK-1',
       'Title TASK-1',
       'styr',
-      '2.0',
+      '1200',
       '',
       '',
       '',
       '',
       '',
       '',
-      '2.0'
+      '1',
+      '1200'
     ])
     expect(rows[rows.length - 1]).toEqual([
       '',
-      'Logged',
+      'Total',
       '',
-      '2.0',
-      '1.0',
-      '0.0',
-      '0.0',
-      '0.0',
-      '0.0',
-      '0.0',
-      '3.0'
+      '1200',
+      '300',
+      '0',
+      '0',
+      '0',
+      '0',
+      '0',
+      '2',
+      '1500'
     ])
   })
 
   it('heads each project with its total when grouped by project', () => {
-    const rows = timesheetTable(worklog, 'project')
+    const rows = worklogTable(worklog, 'project')
     expect(rows.slice(1, 3).map((row) => row[0])).toEqual(['styr', '  TASK-1'])
   })
 

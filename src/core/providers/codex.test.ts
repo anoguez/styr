@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { syntaxFor } from '../shell.js'
-import { codexCommand } from './codex.js'
+import { codexCommand, codexTranscriptUsage } from './codex.js'
 
 const settings = { codexCommand: 'codex', codexApprovalReviewer: 'user' as const }
 
@@ -108,5 +108,36 @@ describe('codexCommand in PowerShell', () => {
     expect(command.startsWith('& codex --remote unix:// ')).toBe(true)
     expect(command).toContain("--cd 'C:\\my dir\\it''s'")
     expect(command.endsWith(" ''")).toBe(true)
+  })
+})
+
+describe('codexTranscriptUsage', () => {
+  const count = (timestamp: string, input: number, cached: number, output: number): string =>
+    JSON.stringify({
+      timestamp,
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: {
+            input_tokens: input,
+            cached_input_tokens: cached,
+            output_tokens: output
+          }
+        }
+      }
+    })
+
+  it('turns the running totals into calls, leaving cached input out', () => {
+    const text = [
+      count('2026-10-13T09:00:00Z', 9000, 7000, 100),
+      count('2026-10-13T09:00:01Z', 9000, 7000, 100),
+      '{"timestamp":"2026-10-13T09:00:30Z","type":"event_msg","payload":{"type":"token_count","info":null}}',
+      count('2026-10-13T09:01:00Z', 22000, 15000, 300)
+    ].join('\n')
+    expect(codexTranscriptUsage(text)).toEqual([
+      { at: Date.parse('2026-10-13T09:00:00Z'), tokens: 2100 },
+      { at: Date.parse('2026-10-13T09:01:00Z'), tokens: 5200 }
+    ])
   })
 })

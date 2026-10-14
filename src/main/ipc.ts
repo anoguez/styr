@@ -98,8 +98,6 @@ import {
 import { adapterFor, runCommand, sourceProviders } from '@core/sources/index.js'
 import { taskFilterSchema, settingsChangeSchema, workspaceIdSchema } from '@core/taskSchema.js'
 import type { Task, TaskStatus, WorklogData, WorklogTask } from '@core/types.js'
-import { dayKey } from '@core/worklog.js'
-import { readWorklogSuggestions } from '@core/worklogStore.js'
 import { collectWorklog, diskWorklogSources } from '@core/worklogSources.js'
 import { createTaskWrites } from './taskWrites.js'
 import { closeIndex, findTask, queryTasks, syncIndex } from './taskIndex.js'
@@ -306,20 +304,16 @@ async function computeDiffStats(): Promise<Record<string, DiffStat>> {
 }
 
 /**
- * The Worklog for `[from, to)`: hours measured from each task's transcripts, notes and commits,
- * and the suggested days in the span. On demand only, never from `notifyTasksChanged`; the loop
- * yields between tasks like the diff stats.
+ * The Worklog for `[from, to)`: each task's sessions and the tokens their transcripts record. On
+ * demand only, never from `notifyTasksChanged`; the loop yields between tasks like the diff stats.
  */
 async function loadWorklog(from: number, to: number): Promise<WorklogData> {
-  const settings = loadSettings()
-  const sources = diskWorklogSources(settings.activeWorkspaceId, settings.worktreeLocation)
   const tasks: WorklogTask[] = []
   for (const task of queryTasks()) {
     await new Promise((resolve) => setImmediate(resolve))
-    tasks.push(...collectWorklog([task], from, to, sources))
+    tasks.push(...collectWorklog([task], from, to, diskWorklogSources))
   }
-  const suggestions = readWorklogSuggestions(settings, dayKey(from), dayKey(to - 1))
-  return { tasks, suggestions }
+  return { tasks }
 }
 
 export function notifyTasksChanged(): void {

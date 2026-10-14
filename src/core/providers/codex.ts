@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ShellSyntax } from '../shell.js'
 import type { Settings } from '../types.js'
-import type { AgentProvider } from './types.js'
+import type { AgentProvider, TranscriptUsage, TranscriptUsageReader } from './types.js'
 
 function sessionDirectory(root: string): string {
   return join(root, '.codex', 'sessions')
@@ -20,6 +20,55 @@ function sessionFiles(path: string): string[] {
 
 export function codexTranscript(id: string, root = homedir()): string | undefined {
   return sessionFiles(sessionDirectory(root)).find((file) => file.includes(id))
+}
+
+interface CodexTokenCount {
+  timestamp?: string
+  payload?: {
+    type?: string
+    info?: {
+      total_token_usage?: {
+        input_tokens?: number
+        cached_input_tokens?: number
+        output_tokens?: number
+      }
+    } | null
+  }
+}
+
+/**
+ * The model calls in a Codex rollout. Its `token_count` events carry the session's running total
+ * (and repeat it unchanged at times), so each call is what that total grew by. Codex counts cached
+ * input inside `input_tokens`, so it is taken back out.
+ */
+export function codexUsageReader(): TranscriptUsageReader {
+  let total = 0
+  return (text) => {
+    const calls: TranscriptUsage[] = []
+    for (const line of text.split('\n')) {
+      if (!line.includes('"token_count"')) continue
+      let record: CodexTokenCount
+      try {
+        record = JSON.parse(line) as CodexTokenCount
+      } catch {
+        continue
+      }
+      const usage =
+        record.payload?.type === 'token_count' ? record.payload.info?.total_token_usage : undefined
+      const at = Date.parse(record.timestamp ?? '')
+      if (!usage || !Number.isFinite(at)) continue
+      const running =
+        (usage.input_tokens ?? 0) - (usage.cached_input_tokens ?? 0) + (usage.output_tokens ?? 0)
+      if (running > total) calls.push({ at, tokens: running - total })
+      total = running
+    }
+    return calls
+  }
+}
+
+/** Every model call in a whole Codex rollout. */
+export function codexTranscriptUsage(text: string): TranscriptUsage[] {
+  return codexUsageReader()(text)
 }
 
 export interface CodexCommandInput {
@@ -72,6 +121,7 @@ export const codexProvider: AgentProvider = {
   },
   sessionExists: (id, root) => codexTranscript(id, root) !== undefined,
   transcriptPath: codexTranscript,
+  transcriptUsageReader: codexUsageReader,
   sessionTime: (id, root) => {
     const file = codexTranscript(id, root)
     return file ? new Date(statSync(file).mtimeMs).toISOString() : undefined

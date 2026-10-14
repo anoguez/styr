@@ -1,10 +1,8 @@
-import { mkdirSync } from 'node:fs'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { pathsInWorkspace } from '@core/config.js'
 import { loadSettings, tasksDir } from '@core/settingsStore.js'
 import { agentsDir } from '@core/agentStore.js'
 import { listWorkspaces } from '@core/workspaces.js'
-import { worklogDir } from '@core/worklogStore.js'
 
 interface Watched {
   watcher: FSWatcher | null
@@ -49,12 +47,8 @@ function start(
   watcher.on('add', schedule).on('change', schedule).on('unlink', schedule)
 }
 
-/** The task files, and the Worklog's suggested days, which Suggest hours writes through MCP. */
 export function startWatching(onChange: () => void): void {
-  const settings = loadSettings()
-  const suggestions = worklogDir(settings)
-  mkdirSync(suggestions, { recursive: true })
-  start(tasks, [tasksDir(settings), suggestions], 150, onChange)
+  start(tasks, tasksDir(), 150, onChange)
 }
 
 /**

@@ -240,20 +240,7 @@ export default function App(): ReactNode {
                 {loading ? (
                   <p className="p-6 text-dim">Loading board…</p>
                 ) : view === 'worklog' ? (
-                  <Worklog
-                    timesheet={settings.timesheet}
-                    bindings={bindings}
-                    tasks={allTasks}
-                    onTimesheetChange={(timesheet) =>
-                      void save({
-                        workspaceId: settings.activeWorkspaceId,
-                        workspace: workspaceSettingsFor(settings),
-                        global: { ...globalSettingsFor(settings), timesheet }
-                      })
-                    }
-                    onOpenSettings={() => openSettings('worklog')}
-                    onSuggest={(title, prompt) => void launcher.suggestWorklog(title, prompt)}
-                  />
+                  <Worklog tasks={allTasks} />
                 ) : view === 'inbox' ? (
                   <Inbox
                     tasks={tasks}

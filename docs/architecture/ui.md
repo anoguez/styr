@@ -330,40 +330,36 @@ palette.
 
 ## Worklog
 
-Experimental, behind `experimental.worklog`: off, the tab, Settings → Worklog, the palette entry and
-`⌃3` (`commandEnabled` in `core/shortcuts.ts`) are gone, and a remembered Worklog view shows the board.
+Experimental, behind `experimental.worklog`: off, the tab, the palette entry and `⌃3`
+(`commandEnabled` in `core/shortcuts.ts`) are gone, and a remembered Worklog view shows the board.
+It has no settings: weeks start on Monday, and the period and grouping are view state.
 
-The third view (`components/worklog/`) shows how long each task was worked on, per day, against
-`Settings.timesheet` (an app-wide key, edited in Settings → Worklog and in the view's own
-popover). Nothing about it is stored — hours are derived on each load, like the Inbox:
+The third view (`components/worklog/`) shows the agent work each task took, per day: the tokens its
+sessions used and how many sessions ran. Nothing about it is stored — it is derived on each load,
+like the Inbox:
 
-- `core/worklogSources.ts` (node) collects each task's signals: the `"timestamp"` of every record in
-  its agents' transcripts (found through `AgentProvider.transcriptPath`, cached by mtime and size),
-  its activity notes, and the author times of the commits on its own branch past the base. Tasks
-  Done before the span are not read. `worklog:load` runs it on demand only, yielding between tasks —
-  never from `notifyTasksChanged`.
-- `core/worklog.ts` (pure, renderer-safe) does the rest: signals within `IDLE_GAP_MS` join one
-  stretch that opens `LEAD_MS` early (`workIntervals`); time two tasks share is split evenly between
-  them, so a day never holds more hours than it had (`hoursByTaskDay`); each task's day is rounded
-  by `roundMinutes` before any total; `worklogFrame` lays out the day/week/month columns and the
-  span to fetch, and `buildWorklog` counts into them. `timesheetTable` + `formatTable` produce the
-  copied TSV/CSV.
-- `useWorklog` refetches whenever the board's tasks change, so today's hours grow as agents work.
+- `core/worklogSources.ts` (node) reads each of a task's `sessions` through its provider:
+  `AgentProvider.transcriptPath` finds the transcript and `AgentProvider.transcriptUsageReader`
+  parses it into model calls (`TranscriptUsage`: time, tokens, message id). `transcriptSources`
+  keeps each transcript read in memory between loads: its path is looked up once (finding a Claude
+  transcript scans every folder under `~/.claude/projects`), and since a transcript only grows, a
+  later load parses just the complete lines added past the stored byte offset; a file shorter than
+  that offset is read again from the start. Nothing of it is written to disk. A
+  session whose transcript is gone still counts on the day it started, with no tokens; a message id
+  already seen in an earlier session of the task (a fork's copied history) is not counted again.
+  Tasks Done before the span are not read. `worklog:load` runs it on demand only, yielding between
+  tasks — never from `notifyTasksChanged`.
+- Tokens are input + output + cache writes; cache reads are left out, or every long conversation
+  would read as millions of tokens. Claude Code writes one assistant message as several records
+  sharing a `message.id`, so a message counts once. Codex reports running totals in `token_count`
+  events (cached input inside `input_tokens`), so each call is what the total grew by.
+- `core/worklog.ts` (pure, renderer-safe) does the rest: `worklogFrame` lays out the day/week/month
+  columns and the span to fetch, `buildWorklog` counts tokens and distinct sessions into them (a
+  session spanning two days is one session in a week), and `worklogTable` + `formatTable` produce
+  the copied TSV and the exported CSV, with exact token counts.
+- `useWorklog` refetches whenever the board's tasks change, so today's numbers grow as agents work.
 
-**Suggest hours.** Measured hours are clock time, so with agents in parallel they fall short of the
-working day. Suggest hours starts an agent (a planning run tagged `worklog-suggest`, archived when it
-ends and left out of the Worklog itself) briefed by `worklogPrompt` (`core/worklogPrompt.ts`, pure):
-the template is `timesheet.suggestPrompt` (empty for `DEFAULT_WORKLOG_PROMPT`, edited in Settings →
-Worklog) with the period, working hours, days, measured table and task notes filled in. The agent
-submits hours per task per day through the MCP tool `suggest_worklog`, which writes
-`<workspace>/worklog/<day>.json` via `core/worklogStore.ts` — a day's file replaced whole. The task
-watcher also watches that folder, so the view refetches when a day lands. `buildWorklog` takes
-`WorklogHours`, from `measuredHours` or `suggestedHours`, so the Measured/Suggested switch rebuilds
-the same view (cards, chart, table, copy) from either; it shows Suggested by default when the period
-has any. Suggested days are the only Worklog data written to disk, and only on purpose.
-
-Terminal activity outside an agent session is not a source: nothing records it to disk. Adding it
-means persisting it somewhere a file can rebuild, not keeping it in memory.
+Terminal activity outside an agent session is not a source: nothing records it to disk.
 
 Project colours come from theme tokens in a fixed order over the sorted project names, so a project
 keeps its colour across periods. Tasks without a `project` group under "No project".
