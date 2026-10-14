@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.34.0](https://github.com/anoguez/styr/compare/v0.33.0...v0.34.0) (2026-10-14)
+
+
+### Features
+
+* add a REST API external source with test request and reviewed imports ([#151](https://github.com/anoguez/styr/issues/151)) ([617e5c6](https://github.com/anoguez/styr/commit/617e5c627d60bacdb5f7b727ba3d3bf2f430661a))
+
+
+### Bug Fixes
+
+* notice merged PRs and hand failed reviews back so Dispatch chains run unattended ([#163](https://github.com/anoguez/styr/issues/163)) ([272c517](https://github.com/anoguez/styr/commit/272c517403fe4ebd350da3b5d38ebcc2dcf53a15))
+
 ## [0.33.0](https://github.com/anoguez/styr/compare/v0.32.0...v0.33.0) (2026-10-14)
 
 
