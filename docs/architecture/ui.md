@@ -339,8 +339,12 @@ sessions used and how many sessions ran. Nothing about it is stored — it is de
 like the Inbox:
 
 - `core/worklogSources.ts` (node) reads each of a task's `sessions` through its provider:
-  `AgentProvider.transcriptPath` finds the transcript and `AgentProvider.transcriptUsage` parses it
-  into model calls (`TranscriptUsage`: time, tokens, message id), cached by mtime and size. A
+  `AgentProvider.transcriptPath` finds the transcript and `AgentProvider.transcriptUsageReader`
+  parses it into model calls (`TranscriptUsage`: time, tokens, message id). `transcriptSources`
+  keeps each transcript read in memory between loads: its path is looked up once (finding a Claude
+  transcript scans every folder under `~/.claude/projects`), and since a transcript only grows, a
+  later load parses just the complete lines added past the stored byte offset; a file shorter than
+  that offset is read again from the start. Nothing of it is written to disk. A
   session whose transcript is gone still counts on the day it started, with no tokens; a message id
   already seen in an earlier session of the task (a fork's copied history) is not counted again.
   Tasks Done before the span are not read. `worklog:load` runs it on demand only, yielding between

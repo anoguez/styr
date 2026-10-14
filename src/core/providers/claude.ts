@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { SUBAGENT_EVENTS } from '../agentState.js'
 import { agentsDir, subagentsDir, supportDir } from '../agentStore.js'
 import type { Settings } from '../types.js'
-import type { AgentProvider, TranscriptUsage } from './types.js'
+import type { AgentProvider, TranscriptUsage, TranscriptUsageReader } from './types.js'
 
 /**
  * Claude Code writes transcripts to ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl.
@@ -38,35 +38,42 @@ interface ClaudeUsageRecord {
  * (a line per content block), each carrying the message's usage, so a message counts once, at its
  * first record, with the largest usage any of its records reports.
  */
-export function claudeTranscriptUsage(text: string): TranscriptUsage[] {
+export function claudeUsageReader(): TranscriptUsageReader {
   const byId = new Map<string, TranscriptUsage>()
-  const calls: TranscriptUsage[] = []
-  for (const line of text.split('\n')) {
-    if (!line.includes('"usage"')) continue
-    let record: ClaudeUsageRecord
-    try {
-      record = JSON.parse(line) as ClaudeUsageRecord
-    } catch {
-      continue
+  return (text) => {
+    const calls: TranscriptUsage[] = []
+    for (const line of text.split('\n')) {
+      if (!line.includes('"usage"')) continue
+      let record: ClaudeUsageRecord
+      try {
+        record = JSON.parse(line) as ClaudeUsageRecord
+      } catch {
+        continue
+      }
+      const usage = record.message?.usage
+      const at = Date.parse(record.timestamp ?? '')
+      if (!usage || !Number.isFinite(at)) continue
+      const tokens =
+        (usage.input_tokens ?? 0) +
+        (usage.cache_creation_input_tokens ?? 0) +
+        (usage.output_tokens ?? 0)
+      const id = record.message?.id
+      const seen = id ? byId.get(id) : undefined
+      if (seen) {
+        seen.tokens = Math.max(seen.tokens, tokens)
+        continue
+      }
+      const call: TranscriptUsage = id ? { at, tokens, id } : { at, tokens }
+      if (id) byId.set(id, call)
+      calls.push(call)
     }
-    const usage = record.message?.usage
-    const at = Date.parse(record.timestamp ?? '')
-    if (!usage || !Number.isFinite(at)) continue
-    const tokens =
-      (usage.input_tokens ?? 0) +
-      (usage.cache_creation_input_tokens ?? 0) +
-      (usage.output_tokens ?? 0)
-    const id = record.message?.id
-    const seen = id ? byId.get(id) : undefined
-    if (seen) {
-      seen.tokens = Math.max(seen.tokens, tokens)
-      continue
-    }
-    const call: TranscriptUsage = id ? { at, tokens, id } : { at, tokens }
-    if (id) byId.set(id, call)
-    calls.push(call)
+    return calls
   }
-  return calls
+}
+
+/** Every model call in a whole Claude Code transcript. */
+export function claudeTranscriptUsage(text: string): TranscriptUsage[] {
+  return claudeUsageReader()(text)
 }
 
 /**
@@ -172,7 +179,7 @@ export const claudeProvider: AgentProvider = {
 
   sessionExists: (sessionId, homeRoot) => findTranscript(sessionId, homeRoot) !== undefined,
   transcriptPath: findTranscript,
-  transcriptUsage: claudeTranscriptUsage,
+  transcriptUsageReader: claudeUsageReader,
 
   sessionTime(sessionId, homeRoot) {
     const file = findTranscript(sessionId, homeRoot)

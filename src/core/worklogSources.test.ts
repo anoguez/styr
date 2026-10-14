@@ -1,7 +1,10 @@
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { TranscriptUsage } from './providers/types.js'
 import type { Task } from './types.js'
-import { collectWorklog, type WorklogSourcePorts } from './worklogSources.js'
+import { collectWorklog, transcriptSources, type WorklogSourcePorts } from './worklogSources.js'
 
 /** Local time, so day boundaries hold whatever zone the tests run in. */
 const at = (day: number, hour: number): number => new Date(2026, 9, day, hour).getTime()
@@ -105,5 +108,64 @@ describe('collectWorklog', () => {
       collectWorklog([task('TASK-1', { sessions: [session('s')] }), done], FROM, TO, counting)
     ).toEqual([])
     expect(asked).toBe(1)
+  })
+})
+
+describe('transcriptSources', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'styr-worklog-'))
+  const file = join(dir, 's1.jsonl')
+  const line = (at: number, tokens: number): string => `${JSON.stringify({ at, tokens })}\n`
+
+  /** A provider whose transcript is `file`, counting lookups and the text it is handed. */
+  function fake() {
+    const seen = { lookups: 0, parsed: [] as string[] }
+    const ports = transcriptSources(() => ({
+      transcriptPath: (id) => {
+        seen.lookups++
+        return id === 's1' ? file : undefined
+      },
+      transcriptUsageReader: () => (text) => {
+        seen.parsed.push(text)
+        return text
+          .split('\n')
+          .filter(Boolean)
+          .map((json) => JSON.parse(json) as TranscriptUsage)
+      }
+    }))
+    return { seen, usage: () => ports.sessionUsage('claude', 's1') }
+  }
+
+  it('finds a transcript once and reads only the lines added since', () => {
+    writeFileSync(file, line(1, 10))
+    const { seen, usage } = fake()
+    expect(usage()).toEqual([{ at: 1, tokens: 10 }])
+    expect(usage()).toEqual([{ at: 1, tokens: 10 }])
+    appendFileSync(file, line(2, 20))
+    expect(usage()).toEqual([
+      { at: 1, tokens: 10 },
+      { at: 2, tokens: 20 }
+    ])
+    expect(seen.lookups).toBe(1)
+    expect(seen.parsed).toEqual([line(1, 10), line(2, 20)])
+  })
+
+  it('leaves a line being written for the next read', () => {
+    writeFileSync(file, line(1, 10) + '{"at":2,')
+    const { seen, usage } = fake()
+    expect(usage()).toEqual([{ at: 1, tokens: 10 }])
+    appendFileSync(file, '"tokens":20}\n')
+    expect(usage()).toHaveLength(2)
+    expect(seen.parsed[1]).toBe(line(2, 20))
+  })
+
+  it('reads a rewritten transcript again, and looks a vanished one up again', () => {
+    writeFileSync(file, line(1, 10) + line(2, 20))
+    const { seen, usage } = fake()
+    usage()
+    writeFileSync(file, line(3, 30))
+    expect(usage()).toEqual([{ at: 3, tokens: 30 }])
+    rmSync(file)
+    expect(usage()).toBeUndefined()
+    expect(seen.lookups).toBe(2)
   })
 })

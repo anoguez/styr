@@ -17,6 +17,13 @@ export interface TranscriptUsage {
   id?: string
 }
 
+/**
+ * Parses a transcript a piece at a time as it grows: each call takes the whole lines appended since
+ * the last one and returns the model calls they add. It may raise the `tokens` of a call it
+ * returned earlier, when a later line completes it.
+ */
+export type TranscriptUsageReader = (lines: string) => TranscriptUsage[]
+
 export interface ProviderCommandInput {
   settings: Settings
   taskId: string
@@ -54,8 +61,8 @@ export interface AgentProvider {
   sessionTime(sessionId: string, homeRoot?: string): string | undefined
   /** The CLI's transcript of a conversation, one JSON record per line; undefined once it is gone. */
   transcriptPath(sessionId: string, homeRoot?: string): string | undefined
-  /** The model calls in a transcript's text, in order, for the Worklog. */
-  transcriptUsage(text: string): TranscriptUsage[]
+  /** A fresh reader of the model calls in a transcript, for the Worklog. */
+  transcriptUsageReader(): TranscriptUsageReader
   /** The command line that starts this CLI, as configured in Settings → Integrations. */
   command(settings: Settings): string
   /** The official command that installs this CLI on `platform`, as the user would paste it. */
