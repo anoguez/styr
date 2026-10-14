@@ -3,11 +3,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { indexTasks, openBlockers } from '@core/blocking.js'
 import { pinWorkspace } from '@core/config.js'
-import { loadSettings } from '@core/settingsStore.js'
 import { adapterFor, currentSources, runCommand, writableSource } from '@core/sources/index.js'
 import { addNote, createTask, deleteTask, getTask, listTasks, updateTask } from '@core/taskStore.js'
-import { TASK_ID_RE, worklogSuggestionSchema } from '@core/taskSchema.js'
-import { writeWorklogSuggestions } from '@core/worklogStore.js'
+import { TASK_ID_RE } from '@core/taskSchema.js'
 import { TASK_PRIORITIES, TASK_READINESS, TASK_STATUSES, type Task } from '@core/types.js'
 
 // Registered once for every agent, so the workspace comes from the agent that launched us.
@@ -250,36 +248,6 @@ server.registerTool(
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : String(error) })
     }
-  }
-)
-
-server.registerTool(
-  'suggest_worklog',
-  {
-    title: 'Suggest worklog hours',
-    description:
-      'Submit suggested timesheet hours for the Worklog: one entry per task per day. Each day ' +
-      "submitted replaces that day's earlier suggestion; other days are left alone.",
-    inputSchema: {
-      entries: z
-        .array(worklogSuggestionSchema)
-        .min(1)
-        .describe('Entries as { day: "YYYY-MM-DD", taskId, hours, note }')
-    }
-  },
-  async ({ entries }) => {
-    const known = new Set(listTasks().map((task) => task.id))
-    const days = writeWorklogSuggestions(loadSettings(), entries)
-    const unknown = [...new Set(entries.map((entry) => entry.taskId))].filter(
-      (id) => !known.has(id)
-    )
-    return json({
-      days: days.map((day) => ({
-        day: day.day,
-        hours: day.entries.reduce((sum, entry) => sum + entry.hours, 0)
-      })),
-      ...(unknown.length ? { notOnBoard: unknown } : {})
-    })
   }
 )
 

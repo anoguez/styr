@@ -1,5 +1,5 @@
 import type { Settings, Task, TaskDraft } from './types.js'
-import { PLAN_RUN_TAG, WORKLOG_RUN_TAG } from './planning.js'
+import { PLAN_RUN_TAG } from './planning.js'
 
 /** The settings a derived task takes its defaults from. */
 export type DraftDefaults = Pick<Settings, 'defaultRepoPath' | 'defaultProvider' | 'taskDefaults'>
@@ -95,16 +95,8 @@ export function terminalDraft(input: TerminalDraftInput, settings: DraftDefaults
 }
 
 /** The throwaway task behind a ⌘↵ planning run: ready, branchless, archived when the run ends. */
-/** The planning run behind Suggest hours: archived when it ends, and left out of the Worklog. */
-export function worklogDraft(
-  input: { title: string; description: string },
-  settings: DraftDefaults
-): TaskDraft {
-  return planDraft({ ...input, tags: [WORKLOG_RUN_TAG] }, settings)
-}
-
 export function planDraft(
-  input: { title: string; description: string; tags?: string[] },
+  input: { title: string; description: string },
   settings: DraftDefaults
 ): TaskDraft {
   return derivedDraft({
@@ -112,7 +104,7 @@ export function planDraft(
     description: input.description,
     priority: 'medium',
     readiness: 'ready',
-    tags: [PLAN_RUN_TAG, ...(input.tags ?? [])],
+    tags: [PLAN_RUN_TAG],
     repoPath: settings.defaultRepoPath.trim() || undefined,
     useWorktree: false,
     provider: settings.defaultProvider

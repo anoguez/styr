@@ -4,9 +4,6 @@ import type { TaskPreset } from './types.js'
 /** Marks the throwaway task behind a ⌘↵ planning run; it is archived when the session ends. */
 export const PLAN_RUN_TAG = 'quick-plan'
 
-/** Marks a Suggest hours run, a planning run of its own; the Worklog leaves its time out. */
-export const WORKLOG_RUN_TAG = 'worklog-suggest'
-
 export function isPlanRun(task: { tags: readonly string[] }): boolean {
   return task.tags.includes(PLAN_RUN_TAG)
 }

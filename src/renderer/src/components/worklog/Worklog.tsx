@@ -1,24 +1,18 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { shortcutHint } from '@core/shortcuts.js'
-import type { ShortcutBindings, Task, TimesheetSettings, WorklogPeriod } from '@core/types.js'
-import { worklogPrompt } from '@core/worklogPrompt.js'
+import { useMemo, useState, type ReactNode } from 'react'
+import type { Task, WorklogPeriod } from '@core/types.js'
 import {
   buildWorklog,
-  dayKey,
   dayLabel,
-  formatHours,
   formatTable,
-  measuredHours,
-  suggestedHours,
-  timesheetTable,
+  formatTokens,
   worklogFrame,
+  worklogTable,
   type Worklog as WorklogModel
 } from '@core/worklog.js'
 import { useWorklog } from '../../hooks/useWorklog.js'
 import { Button } from '../ui.js'
-import { HoursPerDayStepper, WorkingDaysPicker, weeklyTargetLabel } from './TimesheetControls.js'
-import { TimesheetTable } from './TimesheetTable.js'
 import { ProjectBreakdown, WorklogChart } from './WorklogChart.js'
+import { WorklogTable } from './WorklogTable.js'
 
 /** Fixed hues for projects, from the theme, in the order projects are first seen. */
 const PROJECT_TONES = [
@@ -35,20 +29,6 @@ const PERIODS: { id: WorklogPeriod; label: string; now: string }[] = [
   { id: 'week', label: 'Week', now: 'This week' },
   { id: 'month', label: 'Month', now: 'This month' }
 ]
-
-type HoursSource = 'measured' | 'suggested'
-
-const SOURCES: { id: HoursSource; label: string; hint: string }[] = [
-  {
-    id: 'measured',
-    label: 'Measured',
-    hint: 'Time measured from agent sessions, notes and commits'
-  },
-  { id: 'suggested', label: 'Suggested', hint: 'Hours an agent suggested with Suggest hours' }
-]
-
-const WARN = 'var(--color-col-review)'
-const OK = 'var(--color-col-done)'
 
 const tabClass = (on: boolean): string =>
   `inline-flex h-[22px] items-center rounded-md border px-2.5 text-[12px] font-medium transition-colors ${
@@ -82,186 +62,71 @@ interface SummaryCard {
   value: string
   unit: string
   hint: string
-  progress?: number
-  warn?: boolean
 }
 
-function summaryCards(worklog: WorklogModel, hoursPerDay: number): SummaryCard[] {
-  const percent = worklog.target ? Math.round((worklog.logged / worklog.target) * 100) : 0
-  const left = worklog.left > 1e-9
-  const gaps = worklog.gaps
+function summaryCards(worklog: WorklogModel): SummaryCard[] {
   const tasks = worklog.rows.length
-  const share = (hours: number): string =>
-    `${worklog.logged ? Math.round((hours / worklog.logged) * 100) : 0}%`
+  const share = (tokens: number): string =>
+    `${worklog.tokens ? Math.round((tokens / worklog.tokens) * 100) : 0}%`
   return [
     {
-      label: 'Logged',
+      label: 'Tokens',
       tone: 'var(--color-accent-soft)',
-      value: formatHours(worklog.logged),
-      unit: `of ${formatHours(worklog.target)}h`,
-      hint: `${percent}% of target`,
-      progress: Math.min(100, percent)
+      value: formatTokens(worklog.tokens),
+      unit: 'tokens',
+      hint: 'Input and output; cache reads not counted'
     },
     {
-      label: 'Left to log',
-      tone: left ? WARN : OK,
-      value: formatHours(worklog.left),
-      unit: 'h',
-      hint: worklog.current
-        ? `Incl. ${formatHours(worklog.todayLeft)}h still open today`
-        : left
-          ? 'Short for this period'
-          : 'Fully logged',
-      warn: left
+      label: 'Sessions',
+      tone: 'var(--color-col-progress)',
+      value: String(worklog.sessions),
+      unit: worklog.sessions === 1 ? 'session' : 'sessions',
+      hint: worklog.sessions
+        ? `${formatTokens(worklog.tokens / worklog.sessions)} tokens per session`
+        : 'No agent sessions in this period'
     },
     {
-      label: 'Days with gaps',
-      tone: gaps.length ? WARN : OK,
-      value: String(gaps.length),
-      unit: gaps.length === 1 ? 'day' : 'days',
-      hint: gaps.length
-        ? gaps
-            .slice(0, 2)
-            .map((gap) => `${dayLabel(gap.day)} −${formatHours(gap.short)}h`)
-            .join(' · ')
-        : `Every past working day hits ${formatHours(hoursPerDay)}h`
+      label: 'Busiest day',
+      tone: 'var(--color-col-done)',
+      value: worklog.busiest ? formatTokens(worklog.busiest.tokens) : '—',
+      unit: worklog.busiest ? 'tokens' : '',
+      hint: worklog.busiest ? dayLabel(worklog.busiest.day) : 'No tokens used yet'
     },
     {
       label: 'Tasks worked',
-      tone: 'var(--color-col-progress)',
+      tone: 'var(--color-col-backlog)',
       value: String(tasks),
       unit: tasks === 1 ? 'task' : 'tasks',
-      hint: worklog.groups.map((group) => `${group.project} ${share(group.total)}`).join(' · ')
+      hint: worklog.groups.map((group) => `${group.project} ${share(group.tokens)}`).join(' · ')
     }
   ]
 }
 
-/** The quick Worklog settings behind the header button; the rest live in Settings. */
-function TimesheetPopover({
-  timesheet,
-  bindings,
-  onChange,
-  onOpenSettings
-}: {
-  timesheet: TimesheetSettings
-  bindings: ShortcutBindings
-  onChange: (timesheet: TimesheetSettings) => void
-  onOpenSettings: () => void
-}): ReactNode {
-  return (
-    <div
-      role="dialog"
-      aria-label="Worklog settings"
-      className="absolute top-full right-0 z-40 mt-1.5 flex w-[280px] flex-col rounded-xl border border-edge-strong bg-chrome shadow-[0_16px_40px_-8px_rgba(0,0,0,0.7)]"
-    >
-      <div className="flex items-baseline gap-2 px-3 pt-3 pb-2.5">
-        <span className="text-[12.5px] font-semibold text-ink">Working hours</span>
-        <span className="ml-auto font-mono text-[11.5px] text-dim">
-          {weeklyTargetLabel(timesheet)} / week
-        </span>
-      </div>
-      <div className="flex flex-col gap-3 px-3 pb-3">
-        <div className="flex items-center gap-2.5">
-          <span className="flex-1 text-[12px] text-dim">Hours per day</span>
-          <HoursPerDayStepper
-            timesheet={timesheet}
-            className="w-[104px]"
-            onChange={(hoursPerDay) => onChange({ ...timesheet, hoursPerDay })}
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[12px] text-dim">Working days</span>
-          <WorkingDaysPicker
-            stretch
-            timesheet={timesheet}
-            onChange={(workingDays) => onChange({ ...timesheet, workingDays })}
-          />
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={onOpenSettings}
-        className="flex items-center justify-between rounded-b-xl border-t border-edge px-3 py-2.5 text-left text-[12px] text-dim hover:bg-raised hover:text-ink"
-      >
-        All worklog settings
-        <kbd className="font-mono text-[10px] text-faint">{shortcutHint(bindings, 'settings')}</kbd>
-      </button>
-    </div>
-  )
-}
-
 /**
- * The Worklog: how long each task was worked on, per day, against the working hours in Settings →
- * Timesheet, ready to copy into a timesheet. Every number is derived on the fly (`core/worklog.ts`).
+ * The Worklog: the agent work each task took, per day — tokens used and sessions run — read from the
+ * tasks' transcripts. Every number is derived on the fly (`core/worklog.ts`).
  */
 export function Worklog({
-  timesheet,
-  bindings,
-  tasks,
-  onTimesheetChange,
-  onOpenSettings,
-  onSuggest
+  tasks
 }: {
-  timesheet: TimesheetSettings
-  bindings: ShortcutBindings
   /** Every task on the board, archived included. A new array whenever they change, which refetches. */
   tasks: readonly Task[]
-  onTimesheetChange: (timesheet: TimesheetSettings) => void
-  onOpenSettings: () => void
-  /** Start an agent with the Suggest hours brief. */
-  onSuggest: (title: string, prompt: string) => void
 }): ReactNode {
-  const [period, setPeriod] = useState<WorklogPeriod>(timesheet.period)
+  const [period, setPeriod] = useState<WorklogPeriod>('week')
   const [offset, setOffset] = useState(0)
-  const [groupBy, setGroupBy] = useState(timesheet.groupBy)
+  const [groupBy, setGroupBy] = useState<'task' | 'project'>('task')
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
-  const [popoverOpen, setPopoverOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  // Which hours the view shows; unset follows the period: suggested ones when it has any.
-  const [chosenSource, setSource] = useState<HoursSource | null>(null)
-  const popover = useRef<HTMLDivElement>(null)
 
   const now = Date.now()
-  const frame = worklogFrame(period, offset, now, timesheet.weekStart)
+  const frame = worklogFrame(period, offset, now)
   const data = useWorklog(frame.from, frame.to, tasks)
-  const periodDays = frame.buckets.flatMap((bucket) => bucket.days)
-  const measured = useMemo(() => (data ? measuredHours(data.tasks) : null), [data])
-  const suggestedDays = (data?.suggestions ?? []).filter((day) => periodDays.includes(day.day))
-  const suggested = useMemo(() => {
-    if (!data) return null
-    const byId = new Map(tasks.map((task) => [task.id, task]))
-    return suggestedHours(data.suggestions, (taskId) => {
-      const task = byId.get(taskId)
-      return task ? { taskId, title: task.title, project: task.project } : undefined
-    })
-  }, [data, tasks])
-  const source: HoursSource = chosenSource ?? (suggestedDays.length ? 'suggested' : 'measured')
-  const hours = source === 'suggested' ? suggested : measured
   const worklog = useMemo(
-    () => (hours ? buildWorklog(frame, hours, timesheet, now) : null),
-    // `frame` and `now` are rebuilt every render; the span and the settings say when it changed.
+    () => (data ? buildWorklog(frame, data.tasks, now) : null),
+    // `frame` and `now` are rebuilt every render; the span says when it changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [hours, timesheet, period, offset]
+    [data, period, offset]
   )
-  const lastSuggested = suggestedDays
-    .map((day) => day.generatedAt)
-    .sort()
-    .pop()
-
-  const suggest = (): void => {
-    if (!measured) return
-    onSuggest(
-      `Suggest hours — ${frame.title}`,
-      worklogPrompt(timesheet.suggestPrompt, {
-        period: `${frame.title} (${frame.range})`,
-        days: periodDays,
-        today: dayKey(now),
-        timesheet,
-        measured,
-        tasks
-      })
-    )
-  }
 
   // Colours follow the project names, sorted, so a project keeps its colour across periods.
   const projects = useMemo(
@@ -271,26 +136,10 @@ export function Worklog({
   const colorOf = (project: string): string =>
     PROJECT_TONES[Math.max(0, projects.indexOf(project)) % PROJECT_TONES.length]!
 
-  useEffect(() => {
-    if (!popoverOpen) return
-    function onPointerDown(event: MouseEvent): void {
-      if (!popover.current?.contains(event.target as Node)) setPopoverOpen(false)
-    }
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') setPopoverOpen(false)
-    }
-    window.addEventListener('mousedown', onPointerDown)
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('mousedown', onPointerDown)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [popoverOpen])
-
-  const table = (format: TimesheetSettings['copyFormat']): string =>
-    worklog ? formatTable(timesheetTable(worklog, groupBy), format) : ''
+  const table = (format: 'tsv' | 'csv'): string =>
+    worklog ? formatTable(worklogTable(worklog, groupBy), format) : ''
   const copy = (): void => {
-    void navigator.clipboard.writeText(table(timesheet.copyFormat)).then(() => {
+    void navigator.clipboard.writeText(table('tsv')).then(() => {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1600)
     })
@@ -311,15 +160,7 @@ export function Worklog({
           <h1 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-ink">
             {frame.title}
           </h1>
-          <span className="text-[12px] text-dim">
-            {frame.range}
-            {source === 'suggested' && lastSuggested
-              ? ` · Suggested hours, ${new Date(lastSuggested).toLocaleString(undefined, {
-                  dateStyle: 'medium',
-                  timeStyle: 'short'
-                })}`
-              : ''}
-          </span>
+          <span className="text-[12px] text-dim">{frame.range}</span>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <div
@@ -343,34 +184,6 @@ export function Worklog({
               </button>
             ))}
           </div>
-          <div
-            role="tablist"
-            aria-label="Hours"
-            className="flex h-7 items-center gap-0.5 rounded-lg border border-edge-strong bg-chrome p-0.5"
-          >
-            {SOURCES.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                title={item.hint}
-                aria-selected={source === item.id}
-                disabled={item.id === 'suggested' && suggestedDays.length === 0}
-                className={`${tabClass(source === item.id)} disabled:opacity-40 disabled:hover:text-dim`}
-                onClick={() => setSource(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-          <Button
-            className="h-7"
-            disabled={!measured}
-            title="Start an agent that spreads the period's work over your working hours"
-            onClick={suggest}
-          >
-            Suggest hours
-          </Button>
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -397,57 +210,16 @@ export function Worklog({
               <Chevron />
             </button>
           </div>
-          <div ref={popover} className="relative">
-            <button
-              type="button"
-              title="Worklog settings"
-              aria-haspopup="dialog"
-              aria-expanded={popoverOpen}
-              onClick={() => setPopoverOpen((open) => !open)}
-              className={`inline-flex h-7 items-center gap-1.5 rounded-lg border border-edge-strong px-2.5 text-[12px] font-medium hover:bg-raised hover:text-ink ${
-                popoverOpen ? 'bg-raised text-ink' : 'bg-raised/70 text-dim'
-              }`}
-            >
-              <svg
-                aria-hidden
-                viewBox="0 0 16 16"
-                width="13"
-                height="13"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="8" cy="8" r="2.5" />
-                <circle cx="8" cy="8" r="5.6" strokeDasharray="1.7 1.9" />
-              </svg>
-              <span className="font-mono text-[11.5px]">{weeklyTargetLabel(timesheet)} / week</span>
-            </button>
-            {popoverOpen ? (
-              <TimesheetPopover
-                timesheet={timesheet}
-                bindings={bindings}
-                onChange={onTimesheetChange}
-                onOpenSettings={() => {
-                  setPopoverOpen(false)
-                  onOpenSettings()
-                }}
-              />
-            ) : null}
-          </div>
         </div>
       </div>
 
       {worklog ? (
         <>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-2">
-            {summaryCards(worklog, timesheet.hoursPerDay).map((card) => (
+            {summaryCards(worklog).map((card) => (
               <div
                 key={card.label}
-                className={`flex min-w-0 flex-col gap-1.5 rounded-[10px] border bg-panel/80 px-3.5 py-3 ${
-                  card.warn ? 'border-[var(--color-col-review)]/35' : 'border-edge'
-                }`}
+                className="flex min-w-0 flex-col gap-1.5 rounded-[10px] border border-edge bg-panel/80 px-3.5 py-3"
               >
                 <span className="flex items-center gap-[7px] text-[12px] font-medium text-dim">
                   <span
@@ -458,22 +230,11 @@ export function Worklog({
                   {card.label}
                 </span>
                 <span className="flex items-baseline gap-1.5">
-                  <span
-                    className="font-mono text-[24px] leading-none font-semibold"
-                    style={{ color: card.warn ? 'var(--color-col-review-text)' : undefined }}
-                  >
+                  <span className="font-mono text-[24px] leading-none font-semibold">
                     {card.value}
                   </span>
                   <span className="text-[12px] text-faint">{card.unit}</span>
                 </span>
-                {card.progress !== undefined ? (
-                  <div className="h-1 overflow-hidden rounded-full bg-raised">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-[var(--color-accent-soft)] to-[var(--color-col-progress)]"
-                      style={{ width: `${card.progress}%` }}
-                    />
-                  </div>
-                ) : null}
                 <span title={card.hint} className="truncate text-[11.5px] text-faint">
                   {card.hint || ' '}
                 </span>
@@ -488,11 +249,11 @@ export function Worklog({
 
           <section className="flex min-w-0 shrink-0 flex-col rounded-xl border border-edge bg-panel/80">
             <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-edge px-4 py-3">
-              <h2 className="m-0 text-[12.5px] font-semibold text-ink">Timesheet</h2>
+              <h2 className="m-0 text-[12.5px] font-semibold text-ink">Worklog</h2>
               <span className="text-[11.5px] text-faint">
                 {groupBy === 'project'
-                  ? 'Hours per project — click a project to collapse it'
-                  : 'Hours per task, ready to copy into your timesheet'}
+                  ? 'Tokens per project — click a project to collapse it'
+                  : 'Tokens and sessions per task'}
               </span>
               <div className="ml-auto flex flex-wrap items-center gap-1.5">
                 <div
@@ -523,16 +284,15 @@ export function Worklog({
                   disabled={worklog.rows.length === 0}
                   onClick={copy}
                 >
-                  {copied ? 'Copied ✓' : 'Copy for timesheet'}
+                  {copied ? 'Copied ✓' : 'Copy table'}
                 </Button>
               </div>
             </header>
-            <TimesheetTable
+            <WorklogTable
               worklog={worklog}
               groupBy={groupBy}
               collapsed={collapsed}
               colorOf={colorOf}
-              noteFor={(taskId, day) => hours?.notes?.get(taskId)?.get(day)}
               onToggleGroup={(project) =>
                 setCollapsed((current) => {
                   const next = new Set(current)

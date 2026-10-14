@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { openBlockers } from '@core/blocking.js'
-import { planDraft, terminalDraft, worklogDraft } from '@core/derivedTask.js'
+import { planDraft, terminalDraft } from '@core/derivedTask.js'
 import { planningPrompt, planTitle } from '@core/planning.js'
 import {
   TASK_STATUS_LABELS,
@@ -131,18 +131,6 @@ export function useAgentLauncher({
     [settings, launchAgent]
   )
 
-  /** Suggest hours: an agent run on a throwaway task, briefed with the worklog prompt. */
-  const suggestWorklog = useCallback(
-    async (title: string, prompt: string): Promise<void> => {
-      if (!settings) throw new Error('Settings have not loaded yet')
-      const task = await window.api.tasks.create(
-        worklogDraft({ title, description: prompt }, settings)
-      )
-      await launchAgent(task.id)
-    },
-    [settings, launchAgent]
-  )
-
   return {
     newShell,
     openTerminalFor,
@@ -152,7 +140,6 @@ export function useAgentLauncher({
     launchAgent,
     activateTask,
     createTaskFromTerminal,
-    planTasks,
-    suggestWorklog
+    planTasks
   }
 }

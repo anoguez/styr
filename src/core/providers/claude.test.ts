@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { settingsSchema } from '../taskSchema.js'
 import { syntaxFor } from '../shell.js'
-import { claudeProvider } from './claude.js'
+import { claudeProvider, claudeTranscriptUsage } from './claude.js'
 
 const workspace = mkdtempSync(join(tmpdir(), 'styr-claude-'))
 const build = (claudeApprovalMode: 'user' | 'auto', resume: boolean) =>
@@ -107,5 +107,36 @@ describe('claude in PowerShell', () => {
     expect(command).toMatch(
       /--session-id sid \(Get-Content -Raw -LiteralPath 'C:\\Users\\o''neil\\T\.txt'\)$/
     )
+  })
+})
+
+describe('claudeTranscriptUsage', () => {
+  const line = (id: string, timestamp: string, output: number): string =>
+    JSON.stringify({
+      type: 'assistant',
+      timestamp,
+      message: {
+        id,
+        usage: {
+          input_tokens: 2,
+          cache_creation_input_tokens: 100,
+          cache_read_input_tokens: 5000,
+          output_tokens: output
+        }
+      }
+    })
+
+  it('counts each message once, without cache reads', () => {
+    const text = [
+      line('m1', '2026-10-13T09:00:00Z', 10),
+      line('m1', '2026-10-13T09:00:02Z', 40),
+      '{"type":"user","timestamp":"2026-10-13T09:01:00Z"}',
+      'not json "usage"',
+      line('m2', '2026-10-13T09:02:00Z', 8)
+    ].join('\n')
+    expect(claudeTranscriptUsage(text)).toEqual([
+      { at: Date.parse('2026-10-13T09:00:00Z'), tokens: 142, id: 'm1' },
+      { at: Date.parse('2026-10-13T09:02:00Z'), tokens: 110, id: 'm2' }
+    ])
   })
 })

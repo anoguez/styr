@@ -4,6 +4,19 @@ import type { Settings } from '../types.js'
 export const AGENT_PROVIDER_IDS = ['claude', 'codex'] as const
 export type AgentProviderId = (typeof AGENT_PROVIDER_IDS)[number]
 
+/** One model call in a transcript: when it happened and the tokens it used. */
+export interface TranscriptUsage {
+  /** Epoch ms. */
+  at: number
+  /**
+   * Input and output tokens, cache writes included and cache reads left out: what the call cost
+   * in new work rather than in re-reading a conversation already cached.
+   */
+  tokens: number
+  /** The model message it belongs to, when the CLI names one; a fork repeats its parent's ids. */
+  id?: string
+}
+
 export interface ProviderCommandInput {
   settings: Settings
   taskId: string
@@ -41,6 +54,8 @@ export interface AgentProvider {
   sessionTime(sessionId: string, homeRoot?: string): string | undefined
   /** The CLI's transcript of a conversation, one JSON record per line; undefined once it is gone. */
   transcriptPath(sessionId: string, homeRoot?: string): string | undefined
+  /** The model calls in a transcript's text, in order, for the Worklog. */
+  transcriptUsage(text: string): TranscriptUsage[]
   /** The command line that starts this CLI, as configured in Settings → Integrations. */
   command(settings: Settings): string
   /** The official command that installs this CLI on `platform`, as the user would paste it. */

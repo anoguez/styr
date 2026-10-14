@@ -60,7 +60,7 @@ add a line here only for a rule that must hold in every change.
 - **Agent state.** `core/agentState.ts` is pure (renderer imports it); `agentStore.ts` is node-only.
   `idle` is never "finished"; `SessionStart` is `ready`, never `working`. Archived/Done agents drop
   out of every list and count via `isAgentArchived` — derive counts from the filtered rows.
-- **Derived, not stored.** Blocked (`openBlockers`), the Inbox grouping, the Worklog's hours and the
+- **Derived, not stored.** Blocked (`openBlockers`), the Inbox grouping, the Worklog's tokens and the
   Done cap compute from files and write nothing. Archive goes only through `setArchived`, not `TaskPatch`.
 - **Hand-edited task files.** Normalise in `markdown.ts`, never in zod schemas. A file with
   frontmatter that fails validation is skipped and never rewritten. Unparseable activity bullets

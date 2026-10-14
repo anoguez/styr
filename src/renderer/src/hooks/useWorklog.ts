@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react'
 import type { WorklogData } from '@core/types.js'
 
 /**
- * The tasks' working time over `[from, to)`, and the suggested days in it, from the main process.
- * Fetched again when the span changes and whenever `refresh` does (the board's tasks, which also
- * change when Suggest hours writes a day), so hours grow as agents work; the last answer for the
- * same span stays on screen meanwhile. Null until the span's first answer.
+ * The tasks' sessions and tokens over `[from, to)`, from the main process. Fetched again when the
+ * span changes and whenever `refresh` does (the board's tasks), so the numbers grow as agents work;
+ * the last answer for the same span stays on screen meanwhile. Null until the span's first answer.
  */
 export function useWorklog(from: number, to: number, refresh: unknown): WorklogData | null {
   const [loaded, setLoaded] = useState<{ span: string; data: WorklogData } | null>(null)

@@ -1,26 +1,13 @@
 /**
- * The Worklog: how long each task was worked on, per day, measured against the person's working
- * hours (`TimesheetSettings`). Derived, never stored — the main process turns a task's trail into
- * `WorklogTask` intervals (`worklogSources.ts`) and everything from there on is here, pure, so the
- * renderer can import it.
+ * The Worklog: how much agent work each task took, per day — the tokens its sessions used and how
+ * many sessions ran. Derived, never stored — the main process reads each task's sessions'
+ * transcripts into `WorklogTask`s (`worklogSources.ts`) and everything from there on is here,
+ * pure, so the renderer can import it.
  *
- * Days are local calendar days, keyed `YYYY-MM-DD`. Weekday indexes are Monday-first (0 = Monday),
- * matching `TimesheetSettings.workingDays`.
+ * Days are local calendar days, keyed `YYYY-MM-DD`. Weeks start on Monday; weekday indexes are
+ * Monday-first (0 = Monday).
  */
-import type {
-  TimesheetSettings,
-  WorklogDaySuggestions,
-  WorklogPeriod,
-  WorklogTask
-} from './types.js'
-
-const MINUTE = 60_000
-const HOUR = 60 * MINUTE
-
-/** Two signals this close together are one stretch of work; a longer silence is a break. */
-export const IDLE_GAP_MS = 20 * MINUTE
-/** What a signal opening a stretch counts for: the work just before it (reading, typing a prompt). */
-export const LEAD_MS = 5 * MINUTE
+import type { WorklogPeriod, WorklogSessionDay, WorklogTask } from './types.js'
 
 /** The label for tasks without a `project`. */
 export const NO_PROJECT = 'No project'
@@ -42,32 +29,6 @@ const MONTHS_LONG = [
   'November',
   'December'
 ]
-
-/**
- * Activity timestamps (epoch ms) as stretches of work: signals within `IDLE_GAP_MS` of each other
- * join one stretch, and each stretch starts `LEAD_MS` before its first signal. Sorted and disjoint.
- */
-export function workIntervals(times: readonly number[]): [number, number][] {
-  const sorted = times.filter(Number.isFinite).sort((a, b) => a - b)
-  const stretches: [number, number][] = []
-  for (const at of sorted) {
-    const last = stretches[stretches.length - 1]
-    if (last && at - last[1] <= IDLE_GAP_MS) last[1] = at
-    else stretches.push([at - LEAD_MS, at])
-  }
-  return stretches
-}
-
-/** `intervals` cut to `[from, to)`; empty pieces drop out. */
-export function clipIntervals(
-  intervals: readonly [number, number][],
-  from: number,
-  to: number
-): [number, number][] {
-  return intervals
-    .map(([start, end]): [number, number] => [Math.max(start, from), Math.min(end, to)])
-    .filter(([start, end]) => end > start)
-}
 
 function pad(value: number): string {
   return String(value).padStart(2, '0')
@@ -95,89 +56,30 @@ export function weekdayOf(day: string): number {
   return (dateOf(day).getDay() + 6) % 7
 }
 
-function nextMidnight(ms: number): number {
-  const date = new Date(ms)
-  date.setHours(24, 0, 0, 0)
-  return date.getTime()
-}
-
-/**
- * Hours per task per day. Time two tasks were worked on at once (two agents running side by side)
- * is shared evenly between them, so a day never holds more hours than it had.
- */
-export function hoursByTaskDay(tasks: readonly WorklogTask[]): Map<string, Map<string, number>> {
-  const edges: { at: number; taskId: string; opens: boolean }[] = []
-  for (const task of tasks) {
-    for (const [start, end] of task.intervals) {
-      // Cut at midnight, so every stretch between two edges lies within one day.
-      for (let from = start; from < end;) {
-        const to = Math.min(end, nextMidnight(from))
-        edges.push({ at: from, taskId: task.taskId, opens: true })
-        edges.push({ at: to, taskId: task.taskId, opens: false })
-        from = to
-      }
-    }
-  }
-  // Closing before opening at the same instant: a task's pieces meeting at midnight stay one task.
-  edges.sort((a, b) => a.at - b.at || Number(a.opens) - Number(b.opens))
-
-  const hours = new Map<string, Map<string, number>>()
-  const active = new Set<string>()
-  let previous = edges[0]?.at ?? 0
-  for (const edge of edges) {
-    if (edge.at > previous && active.size > 0) {
-      const share = (edge.at - previous) / active.size / HOUR
-      const day = dayKey(previous)
-      for (const taskId of active) {
-        const days = hours.get(taskId) ?? new Map<string, number>()
-        days.set(day, (days.get(day) ?? 0) + share)
-        hours.set(taskId, days)
-      }
-    }
-    previous = edge.at
-    if (edge.opens) active.add(edge.taskId)
-    else active.delete(edge.taskId)
-  }
-  return hours
-}
-
-/** To the nearest `minutes`; 0 leaves the value exact. */
-export function roundHours(hours: number, minutes: number): number {
-  if (!minutes) return hours
-  return (Math.round((hours * 60) / minutes) * minutes) / 60
-}
-
-/** `7.75`, `8.0`, `0.5` — two decimals at most, and a whole hour keeps its `.0`. */
-export function formatHours(hours: number): string {
-  const value = Math.round(hours * 100) / 100
-  return value % 1 === 0 ? value.toFixed(1) : String(value)
-}
-
 function shortDate(day: string): string {
   const date = dateOf(day)
   return `${MONTHS[date.getMonth()]} ${date.getDate()}`
 }
 
-/** The first day of the week holding `day`. */
-export function weekStartOf(day: string, weekStart: TimesheetSettings['weekStart']): string {
-  const weekday = weekdayOf(day)
-  return addDays(day, -(weekStart === 'mon' ? weekday : (weekday + 1) % 7))
+/** The Monday of the week holding `day`. */
+export function weekStartOf(day: string): string {
+  return addDays(day, -weekdayOf(day))
 }
 
-/** A column of the timesheet or a bar of the chart: one day, or one week of a month. */
+/** A column of the table or a bar of the chart: one day, or one week of a month. */
 export interface FrameBucket {
   days: string[]
   label: string
   sub: string
 }
 
-/** What a period at an offset covers, before any hours are counted. */
+/** What a period at an offset covers, before any use is counted. */
 export interface WorklogFrame {
   period: WorklogPeriod
   title: string
   range: string
   chartTitle: string
-  /** The timesheet's columns; together they hold the period's days. */
+  /** The table's columns; together they hold the period's days. */
   buckets: FrameBucket[]
   /** The chart's bars. The day view charts the week around its day. */
   chart: FrameBucket[]
@@ -193,12 +95,7 @@ function dayBucket(day: string): FrameBucket {
 }
 
 /** `offset` counts periods back from the one holding `now`. */
-export function worklogFrame(
-  period: WorklogPeriod,
-  offset: number,
-  now: number,
-  weekStart: TimesheetSettings['weekStart']
-): WorklogFrame {
+export function worklogFrame(period: WorklogPeriod, offset: number, now: number): WorklogFrame {
   const today = dayKey(now)
   const week = (start: string): FrameBucket[] =>
     [0, 1, 2, 3, 4, 5, 6].map((index) => dayBucket(addDays(start, index)))
@@ -207,18 +104,18 @@ export function worklogFrame(
     const day = addDays(today, -offset)
     const date = dateOf(day)
     const weekday = weekdayOf(day)
-    const start = weekStartOf(day, weekStart)
+    const start = weekStartOf(day)
     frame = {
       period,
       title: offset === 0 ? 'Today' : offset === 1 ? 'Yesterday' : DOW_LONG[weekday]!,
       range: `${DOW[weekday]}, ${shortDate(day)}, ${date.getFullYear()}`,
       chartTitle: `Week of ${shortDate(start)}`,
-      buckets: [{ days: [day], label: 'Hours', sub: '' }],
+      buckets: [{ days: [day], label: 'Tokens', sub: '' }],
       chart: week(start),
       selectedDay: day
     }
   } else if (period === 'week') {
-    const start = addDays(weekStartOf(today, weekStart), -7 * offset)
+    const start = addDays(weekStartOf(today), -7 * offset)
     const end = addDays(start, 6)
     const buckets = week(start)
     frame = {
@@ -226,7 +123,7 @@ export function worklogFrame(
       title:
         offset === 0 ? 'This week' : offset === 1 ? 'Last week' : `Week of ${shortDate(start)}`,
       range: `${shortDate(start)} – ${shortDate(end)}, ${dateOf(end).getFullYear()}`,
-      chartTitle: 'Hours per day',
+      chartTitle: 'Tokens per day',
       buckets,
       chart: buckets
     }
@@ -240,7 +137,7 @@ export function worklogFrame(
     }
     const weeks = new Map<string, string[]>()
     for (const day of days) {
-      const start = weekStartOf(day, weekStart)
+      const start = weekStartOf(day)
       weeks.set(start, [...(weeks.get(start) ?? []), day])
     }
     const buckets = [...weeks.values()].map((weekDays) => ({
@@ -252,7 +149,7 @@ export function worklogFrame(
       period,
       title: `${MONTHS_LONG[first.getMonth()]} ${first.getFullYear()}`,
       range: `${shortDate(firstDay)} – ${shortDate(days[days.length - 1]!)}`,
-      chartTitle: 'Hours per week',
+      chartTitle: 'Tokens per week',
       buckets,
       chart: buckets
     }
@@ -265,11 +162,12 @@ export function worklogFrame(
   }
 }
 
-/** A bucket with its hours counted. */
+/** A bucket with its use counted. */
 export interface WorklogBucket extends FrameBucket {
-  /** Hours the working days in it ask for. */
-  target: number
-  total: number
+  tokens: number
+  /** Distinct sessions that ran in it. */
+  sessions: number
+  /** Tokens per project. */
   byProject: Record<string, number>
   /** Starts after today. */
   future: boolean
@@ -280,111 +178,74 @@ export interface WorklogRow {
   taskId: string
   title: string
   project: string
-  /** Hours per bucket, in `Worklog.buckets` order. */
+  /** Tokens per bucket, in `Worklog.buckets` order. */
   cells: number[]
-  total: number
+  tokens: number
+  /** Distinct sessions over the period. */
+  sessions: number
 }
 
 export interface WorklogProjectGroup {
   project: string
   cells: number[]
-  total: number
+  tokens: number
+  sessions: number
   rows: WorklogRow[]
 }
 
 export interface Worklog extends Omit<WorklogFrame, 'buckets' | 'chart'> {
   buckets: WorklogBucket[]
   chart: WorklogBucket[]
-  /** Tasks with time in the period, most hours first. */
+  /** Tasks with a session in the period, most tokens first. */
   rows: WorklogRow[]
-  /** Projects with time in the period, most hours first. */
+  /** Projects with a session in the period, most tokens first. */
   groups: WorklogProjectGroup[]
-  logged: number
-  target: number
-  /** Target hours not yet logged. */
-  left: number
-  /** The period holds today, so some of `left` may still be worked. */
-  current: boolean
-  /** Of `left`, what today's own target still asks for. */
-  todayLeft: number
-  /** Past working days short of a full day, with how short. */
-  gaps: { day: string; short: number }[]
+  tokens: number
+  sessions: number
+  /** The period's day with the most tokens, if any were used. */
+  busiest?: { day: string; tokens: number }
 }
 
-/** What a timesheet line is about: a task, or a free-standing entry a suggestion added. */
-export type WorklogTaskInfo = Pick<WorklogTask, 'taskId' | 'title' | 'project'>
-
-/** Hours per task per day, and the tasks they belong to: measured or suggested. */
-export interface WorklogHours {
-  tasks: WorklogTaskInfo[]
-  byTaskDay: Map<string, Map<string, number>>
-  /** A suggested entry's note, by task then day. */
-  notes?: Map<string, Map<string, string>>
-}
-
-/** The time measured from the tasks' trails, shared between tasks worked on at once. */
-export function measuredHours(tasks: readonly WorklogTask[]): WorklogHours {
-  return { tasks: [...tasks], byTaskDay: hoursByTaskDay(tasks) }
-}
-
-/**
- * The hours an agent suggested. `info` names the tasks it mentions; an id it does not know (an
- * entry such as meetings) keeps the id as its title.
- */
-export function suggestedHours(
-  days: readonly WorklogDaySuggestions[],
-  info: (taskId: string) => WorklogTaskInfo | undefined
-): WorklogHours {
-  const byTaskDay = new Map<string, Map<string, number>>()
-  const notes = new Map<string, Map<string, string>>()
-  const tasks = new Map<string, WorklogTaskInfo>()
-  for (const { day, entries } of days) {
-    for (const entry of entries) {
-      if (!tasks.has(entry.taskId)) {
-        tasks.set(entry.taskId, info(entry.taskId) ?? { taskId: entry.taskId, title: entry.taskId })
-      }
-      const hours = byTaskDay.get(entry.taskId) ?? new Map<string, number>()
-      hours.set(day, (hours.get(day) ?? 0) + entry.hours)
-      byTaskDay.set(entry.taskId, hours)
-      if (entry.note) {
-        const taskNotes = notes.get(entry.taskId) ?? new Map<string, string>()
-        taskNotes.set(day, entry.note)
-        notes.set(entry.taskId, taskNotes)
-      }
-    }
+/** Tokens and session ids within a set of days. */
+function countIn(
+  sessions: readonly WorklogSessionDay[],
+  days: ReadonlySet<string>
+): { tokens: number; ids: Set<string> } {
+  let tokens = 0
+  const ids = new Set<string>()
+  for (const entry of sessions) {
+    if (!days.has(entry.day)) continue
+    tokens += entry.tokens
+    ids.add(entry.sessionId)
   }
-  return { tasks: [...tasks.values()], byTaskDay, notes }
+  return { tokens, ids }
 }
 
-/** Counts `hours` into `frame`, rounding each task's day by the timesheet. */
+/** Counts each task's sessions into `frame`. */
 export function buildWorklog(
   frame: WorklogFrame,
-  hours: WorklogHours,
-  timesheet: TimesheetSettings,
+  tasks: readonly WorklogTask[],
   now: number
 ): Worklog {
   const today = dayKey(now)
-  const working = (day: string): boolean => timesheet.workingDays[weekdayOf(day)] === true
-  const { tasks, byTaskDay } = hours
-  const hoursOn = (taskId: string, day: string): number =>
-    roundHours(byTaskDay.get(taskId)?.get(day) ?? 0, timesheet.roundMinutes)
-  const projectOf = (task: WorklogTaskInfo): string => task.project?.trim() || NO_PROJECT
-  const dayTotal = (day: string): number =>
-    tasks.reduce((sum, task) => sum + hoursOn(task.taskId, day), 0)
+  const projectOf = (task: WorklogTask): string => task.project?.trim() || NO_PROJECT
 
   const measure = (bucket: FrameBucket): WorklogBucket => {
+    const days = new Set(bucket.days)
     const byProject: Record<string, number> = {}
-    let total = 0
+    const ids = new Set<string>()
+    let tokens = 0
     for (const task of tasks) {
-      const hours = bucket.days.reduce((sum, day) => sum + hoursOn(task.taskId, day), 0)
-      if (!hours) continue
-      total += hours
-      byProject[projectOf(task)] = (byProject[projectOf(task)] ?? 0) + hours
+      const counted = countIn(task.sessions, days)
+      for (const id of counted.ids) ids.add(id)
+      if (!counted.tokens) continue
+      tokens += counted.tokens
+      byProject[projectOf(task)] = (byProject[projectOf(task)] ?? 0) + counted.tokens
     }
     return {
       ...bucket,
-      target: bucket.days.filter(working).length * timesheet.hoursPerDay,
-      total,
+      tokens,
+      sessions: ids.size,
       byProject,
       future: bucket.days[0]! > today,
       hasToday: bucket.days.includes(today)
@@ -393,58 +254,72 @@ export function buildWorklog(
   const buckets = frame.buckets.map(measure)
   const chart = frame.chart === frame.buckets ? buckets : frame.chart.map(measure)
 
+  const periodDays = buckets.flatMap((bucket) => bucket.days)
+  const inPeriod = new Set(periodDays)
   const rows = tasks
-    .map((task) => {
-      const cells = buckets.map((bucket) =>
-        bucket.days.reduce((sum, day) => sum + hoursOn(task.taskId, day), 0)
-      )
+    .map((task): WorklogRow => {
+      const cells = buckets.map((bucket) => countIn(task.sessions, new Set(bucket.days)).tokens)
       return {
         taskId: task.taskId,
         title: task.title,
         project: projectOf(task),
         cells,
-        total: cells.reduce((sum, hours) => sum + hours, 0)
+        tokens: cells.reduce((sum, tokens) => sum + tokens, 0),
+        sessions: countIn(task.sessions, inPeriod).ids.size
       }
     })
-    .filter((row) => row.total > 0)
-    .sort((a, b) => b.total - a.total || a.taskId.localeCompare(b.taskId))
+    .filter((row) => row.sessions > 0)
+    .sort(
+      (a, b) => b.tokens - a.tokens || b.sessions - a.sessions || a.taskId.localeCompare(b.taskId)
+    )
 
   const groups = new Map<string, WorklogProjectGroup>()
   for (const row of rows) {
     const group = groups.get(row.project) ?? {
       project: row.project,
       cells: buckets.map(() => 0),
-      total: 0,
+      tokens: 0,
+      sessions: 0,
       rows: []
     }
     group.rows.push(row)
-    group.cells = group.cells.map((hours, index) => hours + row.cells[index]!)
-    group.total += row.total
+    group.cells = group.cells.map((tokens, index) => tokens + row.cells[index]!)
+    group.tokens += row.tokens
+    group.sessions += row.sessions
     groups.set(row.project, group)
   }
 
-  const periodDays = buckets.flatMap((bucket) => bucket.days)
-  const logged = rows.reduce((sum, row) => sum + row.total, 0)
-  const target = buckets.reduce((sum, bucket) => sum + bucket.target, 0)
-  const current = periodDays.includes(today)
+  let busiest: Worklog['busiest']
+  for (const day of periodDays) {
+    const tokens = tasks.reduce(
+      (sum, task) => sum + countIn(task.sessions, new Set([day])).tokens,
+      0
+    )
+    if (tokens > (busiest?.tokens ?? 0)) busiest = { day, tokens }
+  }
+
   return {
     ...frame,
     buckets,
     chart,
     rows,
     groups: [...groups.values()].sort(
-      (a, b) => b.total - a.total || a.project.localeCompare(b.project)
+      (a, b) => b.tokens - a.tokens || b.sessions - a.sessions || a.project.localeCompare(b.project)
     ),
-    logged,
-    target,
-    left: Math.max(0, target - logged),
-    current,
-    todayLeft: current && working(today) ? Math.max(0, timesheet.hoursPerDay - dayTotal(today)) : 0,
-    gaps: periodDays
-      .filter((day) => day < today && working(day))
-      .map((day) => ({ day, short: timesheet.hoursPerDay - dayTotal(day) }))
-      .filter((gap) => gap.short > 1e-9)
+    tokens: rows.reduce((sum, row) => sum + row.tokens, 0),
+    sessions: rows.reduce((sum, row) => sum + row.sessions, 0),
+    busiest
   }
+}
+
+/** `850`, `12.3k`, `456k`, `1.25M`, `12.5M`: a token count at a glance. */
+export function formatTokens(tokens: number): string {
+  const trim = (value: string): string => value.replace(/\.0+$/, '')
+  if (tokens < 1000) return String(Math.round(tokens))
+  if (tokens < 100_000) return `${trim((tokens / 1000).toFixed(1))}k`
+  if (tokens < 999_500) return `${Math.round(tokens / 1000)}k`
+  if (tokens < 10_000_000) return `${trim((tokens / 1_000_000).toFixed(2))}M`
+  return `${trim((tokens / 1_000_000).toFixed(1))}M`
 }
 
 /** `Tue Oct 13`, for naming a day in a sentence. */
@@ -452,24 +327,31 @@ export function dayLabel(day: string): string {
   return `${DOW[weekdayOf(day)]} ${shortDate(day)}`
 }
 
-/** The timesheet as rows of cells, header and Logged line included, for copying or export. */
-export function timesheetTable(
-  worklog: Worklog,
-  groupBy: TimesheetSettings['groupBy']
-): string[][] {
-  const cells = (hours: number[]): string[] =>
-    hours.map((value) => (value ? formatHours(value) : ''))
+/**
+ * The table as rows of cells for copying or export: exact token counts per column, then the
+ * period's sessions and tokens, with a header and a Total line.
+ */
+export function worklogTable(worklog: Worklog, groupBy: 'task' | 'project'): string[][] {
+  const cells = (tokens: number[]): string[] => tokens.map((value) => (value ? String(value) : ''))
   const taskLine = (row: WorklogRow, indent = ''): string[] => [
     indent + row.taskId,
     row.title,
     row.project,
     ...cells(row.cells),
-    formatHours(row.total)
+    String(row.sessions),
+    String(row.tokens)
   ]
   const body =
     groupBy === 'project'
       ? worklog.groups.flatMap((group) => [
-          [group.project, '', group.project, ...cells(group.cells), formatHours(group.total)],
+          [
+            group.project,
+            '',
+            group.project,
+            ...cells(group.cells),
+            String(group.sessions),
+            String(group.tokens)
+          ],
           ...group.rows.map((row) => taskLine(row, '  '))
         ])
       : worklog.rows.map((row) => taskLine(row))
@@ -479,21 +361,23 @@ export function timesheetTable(
       'Title',
       'Project',
       ...worklog.buckets.map((bucket) => `${bucket.label} ${bucket.sub}`.trim()),
-      'Total'
+      'Sessions',
+      'Tokens'
     ],
     ...body,
     [
       '',
-      'Logged',
+      'Total',
       '',
-      ...worklog.buckets.map((bucket) => formatHours(bucket.total)),
-      formatHours(worklog.logged)
+      ...worklog.buckets.map((bucket) => String(bucket.tokens)),
+      String(worklog.sessions),
+      String(worklog.tokens)
     ]
   ]
 }
 
 /** Tab-separated (pastes into a spreadsheet as cells) or CSV. */
-export function formatTable(rows: string[][], format: TimesheetSettings['copyFormat']): string {
+export function formatTable(rows: string[][], format: 'tsv' | 'csv'): string {
   if (format === 'tsv') {
     return rows
       .map((row) => row.map((cell) => cell.replace(/[\t\r\n]+/g, ' ')).join('\t'))
