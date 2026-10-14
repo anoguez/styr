@@ -1,6 +1,8 @@
 import {
   memo,
+  useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -13,9 +15,11 @@ import type { AgentCommand } from '@core/agentConversation.js'
 import { matchCommands, slashQuery } from '../lib/nativeTerminal/commandMenu.js'
 import { formatAccelerator } from '@core/shortcuts.js'
 import {
+  chunkText,
   commandHistory,
   liveRows,
   logicalLines,
+  outputChunks,
   rowsText,
   type BlockListState,
   type HistoryChunk
@@ -100,10 +104,11 @@ export function TerminalBlockList({
       }}
     >
       <div className="flex min-h-full flex-col justify-end gap-1.5 whitespace-normal">
-        {state.finished.map((block) => (
+        {state.finished.map((block, index) => (
           <FinishedBlock
             key={block.id}
             block={block}
+            latest={!running && index === state.finished.length - 1}
             look={look}
             canRetry={canRetry}
             actions={actions}
@@ -151,6 +156,66 @@ function Lines({
     <Line key={index} runs={runs} look={look} />
   ))
 }
+
+/**
+ * Output rows cost the page a node per line and per styled run, which held the renderer's memory in
+ * gigabytes after a few large commands. So a chunk of rows is drawn styled only while the browser
+ * counts it as near the viewport (`content-visibility: auto`, which also keeps a chunk holding the
+ * selection relevant); elsewhere it is one plain text node whose layout the browser skips. Both
+ * draw the same characters at the same height, so the page's own selection and copy still reach
+ * every row. `eager` draws a chunk styled from the start, for the end of a block that has just
+ * finished in view.
+ */
+const OutputChunk = memo(
+  function OutputChunk({
+    rows,
+    cols,
+    look,
+    eager
+  }: {
+    rows: EngineFrameLine[]
+    cols: number
+    look: Look
+    eager: boolean
+  }): ReactNode {
+    const ref = useRef<HTMLDivElement>(null)
+    const [near, setNear] = useState(eager)
+    useEffect(() => {
+      const element = ref.current
+      if (!element) return
+      const changed = (event: Event): void =>
+        setNear(!(event as ContentVisibilityAutoStateChangeEvent).skipped)
+      element.addEventListener('contentvisibilityautostatechange', changed)
+      return () => element.removeEventListener('contentvisibilityautostatechange', changed)
+    }, [])
+    return (
+      <div
+        ref={ref}
+        style={{
+          contentVisibility: 'auto',
+          containIntrinsicBlockSize: `auto ${rows.length * look.lineHeight}px`
+        }}
+      >
+        {near ? (
+          <Lines rows={rows} cols={cols} look={look} />
+        ) : (
+          <div
+            className="break-all whitespace-pre-wrap"
+            style={{ lineHeight: `${look.lineHeight}px` }}
+          >
+            {chunkText(rows, cols)}
+          </div>
+        )}
+      </div>
+    )
+  },
+  // `eager` only seeds the first draw; a chunk never redraws for it as newer chunks arrive.
+  (before, after) =>
+    before.rows === after.rows && before.cols === after.cols && before.look === after.look
+)
+
+/** A chunk's styled view takes over from its text this many chunks from the end. */
+const EAGER_CHUNKS = 2
 
 function Line({ runs, look }: { runs: EngineRun[]; look: Look }): ReactNode {
   return (
@@ -241,16 +306,20 @@ function failNote(block: FinishedCommandBlock): string {
 /** Finished blocks never change, so one only re-renders when its own controls do. */
 const FinishedBlock = memo(function FinishedBlock({
   block,
+  latest,
   look,
   canRetry,
   actions
 }: {
   block: FinishedCommandBlock
+  /** The newest block, whose end is in view when it appears. */
+  latest: boolean
   look: Look
   canRetry: boolean
   actions?: BlockActions
 }): ReactNode {
   const [menuOpen, setMenuOpen] = useState(false)
+  const chunks = useMemo(() => outputChunks(block.output), [block.output])
   const failed = block.exitCode !== undefined && block.exitCode !== 0
   const action = asAction(block)
   const groups: MenuItem[][] = actions
@@ -277,7 +346,6 @@ const FinishedBlock = memo(function FinishedBlock({
       className={`group relative -mx-0.5 shrink-0 rounded-md px-2 py-[3px] outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent)] ${
         menuOpen ? 'bg-raised/30' : 'hover:bg-raised/30 focus-within:bg-raised/30'
       }`}
-      style={{ contentVisibility: 'auto' }}
     >
       <CommandRow command={block.command} tone={failed ? 'failed' : 'muted'}>
         {actions ? (
@@ -335,7 +403,15 @@ const FinishedBlock = memo(function FinishedBlock({
         </span>
       </CommandRow>
       <div className="pl-[18px]">
-        <Lines rows={block.output} cols={block.cols} look={look} />
+        {chunks.map((rows, index) => (
+          <OutputChunk
+            key={index}
+            rows={rows}
+            cols={block.cols}
+            look={look}
+            eager={latest && index >= chunks.length - EAGER_CHUNKS}
+          />
+        ))}
         {block.truncated ? (
           <div className="text-faint font-sans text-[11px]">Earlier output was trimmed.</div>
         ) : null}
@@ -424,7 +500,11 @@ function RunningBlock({
   )
 }
 
-/** A closed history chunk never changes: it is drawn once, not on every frame of the command. */
+/**
+ * A closed history chunk never changes: it is drawn once, not on every frame of the command.
+ * It stays styled while the command runs: turning chunks into text as they stream past slowed a
+ * 50 MiB `cat` by a third, and they become text once the block finishes (`OutputChunk`).
+ */
 const ClosedLines = memo(Lines)
 
 /**

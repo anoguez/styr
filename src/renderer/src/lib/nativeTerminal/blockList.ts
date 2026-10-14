@@ -152,6 +152,34 @@ function capFinished(blocks: FinishedCommandBlock[]): FinishedCommandBlock[] {
 }
 
 /**
+ * A finished block's output cut into chunks the way a running command's history is, so the view can
+ * draw each one styled near the viewport and as plain text elsewhere (`chunkText`).
+ */
+export function outputChunks(rows: EngineFrameLine[]): EngineFrameLine[][] {
+  const chunks: EngineFrameLine[][] = []
+  let open: EngineFrameLine[] | null = null
+  for (const row of rows) {
+    if (!open) {
+      open = []
+      chunks.push(open)
+    }
+    open.push(row)
+    if (closed(open)) open = null
+  }
+  return chunks
+}
+
+/**
+ * A chunk's logical lines as one string for a single pre-wrapped text node, which wraps, selects and
+ * copies as the styled lines do: same characters, one line per logical line. A trailing line break
+ * draws no line of its own, so a final empty line gets one more.
+ */
+export function chunkText(rows: EngineFrameLine[], cols: number): string {
+  const lines = logicalLines(rows, cols).map((runs) => runs.map((run) => run.text).join(''))
+  return lines.at(-1) === '' ? `${lines.join('\n')}\n` : lines.join('\n')
+}
+
+/**
  * A chunk closes at a line's end so no logical line spans two; a line that wraps on and on (one
  * huge line of output) is cut anyway at four chunks' worth, which keeps the row cap a cap.
  */

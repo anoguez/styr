@@ -105,7 +105,8 @@ What the grid does with the pointer depends on the program (`lib/nativeTerminal/
   grid encodes (the emoji picker, dictation) is written from the `input` event. Styr's own `❯` input
   is a textarea already; Enter while composing confirms the composition, never submits.
 
-The block list keeps the DOM's selection: its rows are all on the page.
+The block list keeps the DOM's selection: every row is on the page, as styled lines near the
+viewport and as plain text elsewhere (see "Block list").
 
 ## Command blocks
 
@@ -156,6 +157,15 @@ at a session's first prompt mark; a shell that sends none stays a grid.
   once full and drawn by a memoised component, so a frame redraws the open chunk and the live screen,
   not every row. The whole-session engine keeps parsing while the list is drawn, but its frames
   are not taken.
+- Renderer memory is the other risk (TASK-0124: 3× 50 MiB took the renderer from 393 MB to 1.3 GB,
+  with a JS heap of only 63 MB). The cost was the page itself: a `div` per line and a `span` per
+  styled run for every kept row. A finished block's output is cut into chunks (`outputChunks`),
+  each with `content-visibility: auto`. A chunk is drawn styled only while the browser says it is
+  near the viewport (`contentvisibilityautostatechange`); elsewhere it is one text node
+  (`chunkText`) with the same characters and height, whose layout the browser skips. Every row
+  stays on the page, so the DOM selection, copy and native wrapping work as before, and a chunk
+  holding the selection stays relevant. A running command's closed chunks stay styled: turning
+  them into text as they streamed past slowed a 50 MiB `cat` by a third.
 - The PTY gets the columns left after the list's indent (`LIST_INSET`), so output wraps where it is
   shown. A finished block is rejoined into logical lines, so text re-wraps at any later width, but
   output a program laid out in columns (`ls`, tables) keeps the width it ran at. That is
