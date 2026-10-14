@@ -54,6 +54,10 @@ interface Attached {
   attachId: number
   engine: NativeTerminalEngine
   flushQueued: boolean
+  /** A frame or block event the view has not acknowledged yet (`received`). */
+  inFlight: boolean
+  /** A flush found the view busy: what changed meanwhile goes out with the next acknowledgement. */
+  held: boolean
   /** Tracks command marks when the engine supports them. */
   commandBlocks?: CommandBlockTracker
   /** The blocks last sent, to send them again only when they change. */
@@ -104,6 +108,8 @@ export class NativeTerminalHost {
         attachId: this.nextAttachId++,
         engine,
         flushQueued: false,
+        inFlight: false,
+        held: false,
         commandBlocks: CommandBlockTracker.create(engine),
         sentBlocks: '',
         drawnMarks: [],
@@ -209,6 +215,21 @@ export class NativeTerminalHost {
     )
   }
 
+  /**
+   * The view has taken in the last frame or block event. Until it says so, a flush answers the
+   * program's queries but sends nothing to draw, so a burst of output (a `cat` arrives in ~1 KB
+   * chunks) reaches the view as a few large events, paced by how fast the view takes them, rather
+   * than one per chunk. Event-driven: no timer, and nothing is dropped, only gathered.
+   */
+  received(id: string, attachId: number): void {
+    const entry = this.attached.get(id)
+    if (!entry || entry.attachId !== attachId) return
+    entry.inFlight = false
+    if (!entry.held) return
+    entry.held = false
+    this.scheduleFlush(id)
+  }
+
   /** Frees the engine; the panel closed, the session exited or the renderer fell back. */
   detach(id: string): void {
     const entry = this.attached.get(id)
@@ -229,34 +250,43 @@ export class NativeTerminalHost {
     this.ports.defer(() => this.flush(id, entry))
   }
 
-  /** At most one frame per session per burst, however many PTY chunks arrived. */
+  /**
+   * At most one frame per session per burst, however many PTY chunks arrived, and none while the
+   * view has not taken the last one (`received`).
+   */
   private flush(id: string, entry: Attached): void {
     entry.flushQueued = false
     if (this.attached.get(id) !== entry) return
     this.guard(id, () => {
       const list = entry.blockList
+      // Replies go out on every flush, drawn or not: a program waiting for one must not wait on
+      // the view. With a block list, the live segment's engine is the one the program is talking
+      // to; the whole-session engine's replies duplicate them.
+      const responses = list
+        ? (entry.engine.takeResponses(), list.takeResponses())
+        : entry.engine.takeResponses()
+      if (responses) this.ports.writeToPty(id, responses)
+      if (entry.inFlight) {
+        entry.held = true
+        return
+      }
       if (list) {
-        // The live segment's engine is the one the program is talking to; it answers queries.
-        entry.engine.takeResponses()
-        const responses = list.takeResponses()
-        if (responses) this.ports.writeToPty(id, responses)
-        // The whole-session engine keeps parsing (copy all, a fallback to the grid) but its
-        // frames are not drawn while the block list is.
-        entry.engine.takeFrame()
+        // The whole-session engine keeps parsing (copy all, a remount) but its frames are never
+        // drawn while the block list is, so they are not taken: that would only diff its screen.
         const events = list.takeEvents()
         if (events.length > 0) {
+          entry.inFlight = true
           this.ports.sendBlocks({ id, attachId: entry.attachId, events })
         }
         return
       }
-      const responses = entry.engine.takeResponses()
-      if (responses) this.ports.writeToPty(id, responses)
       const frame = entry.engine.takeFrame() ?? undefined
       const blocks = entry.commandBlocks?.snapshot() ?? []
       const key = JSON.stringify(blocks)
       const changed = key !== entry.sentBlocks
       entry.sentBlocks = key
       if (frame || changed) {
+        entry.inFlight = true
         this.ports.sendFrame({
           id,
           attachId: entry.attachId,
@@ -265,7 +295,8 @@ export class NativeTerminalHost {
         })
       }
     })
-    if (entry.drawnMarks.length > 0 && this.attached.get(id) === entry) {
+    if (entry.held || this.attached.get(id) !== entry) return
+    if (entry.drawnMarks.length > 0) {
       const marks = entry.drawnMarks.splice(0)
       this.ports.drawn?.(id, marks)
     }

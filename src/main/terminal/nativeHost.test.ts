@@ -46,23 +46,41 @@ function setup(overrides: Partial<NativeHostPorts> = {}) {
   const failures: NativeEngineFailure[] = []
   const ptyWrites: string[] = []
   const deferred: (() => void)[] = []
+  /** Sent and not yet acknowledged, as the view's `received` would. */
+  const unacknowledged: { id: string; attachId: number }[] = []
   const factory: NativeEngineFactory = { info, create: (options) => new FakeEngine(options) }
   const host = new NativeTerminalHost({
     factory: () => factory,
     status: () => available,
     backlog: () => session.snapshot(),
     writeToPty: (_id, data) => ptyWrites.push(data),
-    sendFrame: (event) => frames.push(event),
-    sendBlocks: (event) => blockEvents.push(event),
+    sendFrame: (event) => {
+      frames.push(event)
+      unacknowledged.push(event)
+    },
+    sendBlocks: (event) => {
+      blockEvents.push(event)
+      unacknowledged.push(event)
+    },
     sendFailure: (failure) => failures.push(failure),
     defer: (task) => deferred.push(task),
     ...overrides
   })
   session.listeners.push((output) => host.write('s1', output))
-  const flush = (): void => {
+  /** Runs the deferred flushes; nothing is acknowledged, as with a view that is busy. */
+  const drain = (): void => {
     while (deferred.length > 0) deferred.shift()!()
   }
-  return { session, host, frames, blockEvents, failures, ptyWrites, flush }
+  /** Runs the deferred flushes with a view that acknowledges each event as it arrives. */
+  const flush = (): void => {
+    drain()
+    while (unacknowledged.length > 0) {
+      const { id, attachId } = unacknowledged.shift()!
+      host.received(id, attachId)
+      drain()
+    }
+  }
+  return { session, host, frames, blockEvents, failures, ptyWrites, flush, drain }
 }
 
 beforeEach(() => {
@@ -381,7 +399,7 @@ describe('NativeTerminalHost command blocks', () => {
     host.attach('s1', 80, 24)
     host.write('s1', output('$ ls\r\na\r\n', [start(6), end(9)]))
     flush()
-    FakeEngine.instances[0]!.marks.delete('c1')
+    FakeEngine.instances[0]!.unmark('c1')
     host.write('s1', output('more\r\n', [], 2))
     flush()
     expect(frames.at(-1)!.blocks).toEqual([])
@@ -508,5 +526,80 @@ describe('NativeTerminalHost block list', () => {
     host.clearBlocks('s1')
     flush()
     expect(blockEvents.at(-1)!.events.map((item) => item.kind)).toEqual(['cleared'])
+  })
+
+  it('gathers a burst into one event while the view has not taken the last one', () => {
+    const { host, blockEvents, ptyWrites, flush, drain } = setup()
+    const attached = host.attach('s1', 80, 3)
+    if (!attached.ok) throw new Error(attached.detail)
+    host.write('s1', {
+      data: '➜ ',
+      sequence: 1,
+      marks: [mark('prompt', 'p1', 0), mark('start', 'c1', 2, { command: 'cat log' })]
+    })
+    flush()
+    const before = blockEvents.length
+    // A `cat` arrives in many small chunks, each in its own burst.
+    for (let line = 1; line <= 30; line++) {
+      host.write('s1', { data: `${line}\r\n`, sequence: line + 1, marks: [] })
+      drain()
+    }
+    // The first chunk went out; the rest wait for the view to take it.
+    expect(blockEvents).toHaveLength(before + 1)
+    // Replies to the program do not wait for the view.
+    host.write('s1', { data: '\x1b[6n', sequence: 40, marks: [] })
+    drain()
+    expect(ptyWrites).toEqual(['\x1b[1;1R'])
+    expect(blockEvents).toHaveLength(before + 1)
+
+    host.received('s1', attached.attachId)
+    drain()
+    expect(blockEvents).toHaveLength(before + 2)
+    const history = blockEvents
+      .slice(before)
+      .flatMap((event) => event.events)
+      .flatMap((item) => (item.kind === 'history' ? item.rows : []))
+      .map((row) => row.runs[0]?.text)
+    // In order, each row once: nothing lost or repeated by gathering.
+    expect(history).toEqual(Array.from({ length: 28 }, (_, index) => String(index + 1)))
+  })
+
+  it('ignores an acknowledgement for an engine since replaced', () => {
+    const { host, blockEvents, drain } = setup()
+    const first = host.attach('s1', 80, 3)
+    const second = host.attach('s1', 80, 3)
+    if (!first.ok || !second.ok) throw new Error('attach failed')
+    host.write('s1', { data: '➜ ', sequence: 1, marks: [mark('prompt', 'p1', 0)] })
+    drain()
+    host.write('s1', { data: 'a', sequence: 2, marks: [] })
+    drain()
+    expect(blockEvents).toHaveLength(1)
+    host.received('s1', first.attachId)
+    drain()
+    expect(blockEvents).toHaveLength(1)
+    host.received('s1', second.attachId)
+    drain()
+    expect(blockEvents).toHaveLength(2)
+  })
+})
+
+describe('NativeTerminalHost pacing', () => {
+  it('sends a grid one frame at a time, the latest when the view takes the last', () => {
+    const { host, frames, drain } = setup()
+    const attached = host.attach('s1', 80, 24)
+    if (!attached.ok) throw new Error(attached.detail)
+    for (let line = 1; line <= 5; line++) {
+      host.write('s1', { data: `${line}\r\n`, sequence: line, marks: [] })
+      drain()
+    }
+    expect(frames).toHaveLength(1)
+    host.received('s1', attached.attachId)
+    drain()
+    expect(frames).toHaveLength(2)
+    expect(frames[1]!.frame?.lines.map((line) => line.runs[0]?.text)).toContain('5')
+    // Nothing changed since: an acknowledgement alone sends nothing.
+    host.received('s1', attached.attachId)
+    drain()
+    expect(frames).toHaveLength(2)
   })
 })

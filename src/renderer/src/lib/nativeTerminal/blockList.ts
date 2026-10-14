@@ -9,15 +9,31 @@ import type {
 } from '@core/types.js'
 import { ScreenModel } from './screen.js'
 
-/** Finished blocks the view keeps, and history rows of a running command; oldest go first. */
+/**
+ * Finished blocks the view keeps, the rows across them (the main process's `MAX_FINISHED_ROWS`),
+ * and history rows of a running command; oldest go first.
+ */
 export const VIEW_FINISHED_BLOCKS = 300
+export const VIEW_FINISHED_ROWS = 50_000
 export const VIEW_HISTORY_ROWS = 10_000
+/** Rows a history chunk takes before it is closed (more if its last line is still wrapping). */
+export const HISTORY_CHUNK_ROWS = 256
+
+/**
+ * A run of a running command's history rows. A chunk is closed once it holds `HISTORY_CHUNK_ROWS`
+ * and ends a logical line, and never changes after that, so the view draws it once (`id` keys it)
+ * and only redraws the open last chunk as output streams in.
+ */
+export interface HistoryChunk {
+  id: number
+  rows: EngineFrameLine[]
+}
 
 export interface BlockListState {
   finished: FinishedCommandBlock[]
   active: ActiveSegment
-  /** Rows of the running command that have scrolled off its screen. */
-  history: EngineFrameLine[]
+  /** Rows of the running command that have scrolled off its screen, oldest chunk first. */
+  history: HistoryChunk[]
   /** The live segment's screen: the prompt being drawn, or the running command's. */
   screen: ScreenModel
 }
@@ -32,6 +48,7 @@ export class BlockListStore {
   state: BlockListState | null = null
   private attachId: number | null = null
   private held: NativeBlockEvent[] = []
+  private nextChunk = 1
 
   attached(attachId: number, snapshot: BlockListSnapshot | undefined): void {
     this.attachId = attachId
@@ -39,9 +56,9 @@ export class BlockListStore {
       const screen = new ScreenModel()
       screen.reset(snapshot.frame)
       this.state = {
-        finished: snapshot.finished.slice(-VIEW_FINISHED_BLOCKS),
+        finished: capFinished(snapshot.finished),
         active: snapshot.active,
-        history: snapshot.history.slice(-VIEW_HISTORY_ROWS),
+        history: this.appendHistory([], snapshot.history),
         screen
       }
     }
@@ -77,7 +94,7 @@ export class BlockListStore {
     const state = this.state
     if (!state) return false
     if (event.kind === 'finished') {
-      state.finished = [...state.finished, event.block].slice(-VIEW_FINISHED_BLOCKS)
+      state.finished = capFinished([...state.finished, event.block])
       return true
     }
     if (event.kind === 'cleared') {
@@ -85,11 +102,62 @@ export class BlockListStore {
       return true
     }
     if (event.kind === 'history') {
-      state.history = [...state.history, ...event.rows].slice(-VIEW_HISTORY_ROWS)
+      state.history = this.appendHistory(state.history, event.rows)
       return true
     }
     return state.screen.push(event.frame)
   }
+
+  /**
+   * Adds rows to the open last chunk, closing it as it fills, and drops whole chunks from the front
+   * past `VIEW_HISTORY_ROWS`. Closed chunks keep their identity, so the view redraws only the last.
+   */
+  private appendHistory(chunks: HistoryChunk[], rows: EngineFrameLine[]): HistoryChunk[] {
+    if (rows.length === 0) return chunks
+    const next = [...chunks]
+    const last = next.at(-1)
+    let open: HistoryChunk | null = null
+    if (last && !closed(last.rows)) {
+      open = { id: last.id, rows: [...last.rows] }
+      next[next.length - 1] = open
+    }
+    for (const row of rows) {
+      if (!open) {
+        open = { id: this.nextChunk++, rows: [] }
+        next.push(open)
+      }
+      open.rows.push(row)
+      if (closed(open.rows)) open = null
+    }
+    let total = next.reduce((sum, chunk) => sum + chunk.rows.length, 0)
+    while (next.length > 1 && total - next[0]!.rows.length >= VIEW_HISTORY_ROWS) {
+      total -= next.shift()!.rows.length
+    }
+    return next
+  }
+}
+
+/** The newest finished blocks within both caps; the newest one is kept whatever its size. */
+function capFinished(blocks: FinishedCommandBlock[]): FinishedCommandBlock[] {
+  let start = Math.max(0, blocks.length - VIEW_FINISHED_BLOCKS)
+  let rows = 0
+  for (let index = blocks.length - 1; index >= start; index--) {
+    rows += blocks[index]!.output.length
+    if (rows > VIEW_FINISHED_ROWS && index < blocks.length - 1) {
+      start = index + 1
+      break
+    }
+  }
+  return start === 0 ? blocks : blocks.slice(start)
+}
+
+/**
+ * A chunk closes at a line's end so no logical line spans two; a line that wraps on and on (one
+ * huge line of output) is cut anyway at four chunks' worth, which keeps the row cap a cap.
+ */
+function closed(rows: EngineFrameLine[]): boolean {
+  if (rows.length >= HISTORY_CHUNK_ROWS * 4) return true
+  return rows.length >= HISTORY_CHUNK_ROWS && !rows.at(-1)!.wrapped
 }
 
 /**

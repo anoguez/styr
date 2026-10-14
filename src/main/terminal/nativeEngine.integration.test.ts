@@ -48,7 +48,11 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
       status: () => status,
       backlog: () => ({ data: backlog, sequence, marks: [] }),
       writeToPty: (_id, data) => replies.push(data),
-      sendFrame: (event) => frames.push(event),
+      sendFrame: (event) => {
+        frames.push(event)
+        // The view acknowledges each event as it arrives.
+        deferred.push(() => host.received('s', event.attachId))
+      },
       sendBlocks: () => {},
       sendFailure: (failure) => failures.push(failure),
       defer: (task) => deferred.push(task)
@@ -96,7 +100,10 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
       status: () => status,
       backlog: () => ({ data: '', sequence: 0, marks: [] }),
       writeToPty: () => {},
-      sendFrame: (event) => sent.push(event),
+      sendFrame: (event) => {
+        sent.push(event)
+        deferred.push(() => host.received('s', event.attachId))
+      },
       sendBlocks: () => {},
       sendFailure: () => {},
       defer: (task) => deferred.push(task)
@@ -127,7 +134,10 @@ describe.skipIf(!enabled)('Styr Terminal package (real build)', () => {
       backlog: () => ({ data: '', sequence: 0, marks: [] }),
       writeToPty: () => {},
       sendFrame: () => {},
-      sendBlocks: (event) => lists.push(event),
+      sendBlocks: (event) => {
+        lists.push(event)
+        deferred.push(() => host.received('s', event.attachId))
+      },
       sendFailure: () => {},
       defer: (task) => deferred.push(task)
     })

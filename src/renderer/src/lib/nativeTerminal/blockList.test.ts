@@ -7,7 +7,10 @@ import type {
 } from '@core/types.js'
 import {
   BlockListStore,
+  HISTORY_CHUNK_ROWS,
   VIEW_FINISHED_BLOCKS,
+  VIEW_FINISHED_ROWS,
+  VIEW_HISTORY_ROWS,
   commandHistory,
   liveRows,
   logicalLines,
@@ -116,6 +119,89 @@ describe('BlockListStore', () => {
     expect(store.state!.finished[0]!.id).toBe('c3')
     send(store, 1, [{ kind: 'cleared' }])
     expect(store.state!.finished).toEqual([])
+  })
+})
+
+describe('finished blocks', () => {
+  it('keeps the rows across finished blocks bounded, newest first', () => {
+    const store = new BlockListStore()
+    store.attached(1, undefined)
+    send(store, 1, [
+      { kind: 'segment', segment: { kind: 'prompt', id: 'p1' }, frame: frame(1, []) }
+    ])
+    const big = (id: string): FinishedCommandBlock => ({
+      ...block(id, 'cat log'),
+      output: Array.from({ length: VIEW_FINISHED_ROWS / 4 }, (_, index) => row(index, 'x'))
+    })
+    for (const id of ['a', 'b', 'c', 'd', 'e', 'f'])
+      send(store, 1, [{ kind: 'finished', block: big(id) }])
+    expect(store.state!.finished.map((item) => item.id)).toEqual(['c', 'd', 'e', 'f'])
+    // A block bigger than the cap on its own is still shown.
+    const huge = {
+      ...big('g'),
+      output: [
+        ...big('g').output,
+        ...big('g').output,
+        ...big('g').output,
+        ...big('g').output,
+        row(0, 'y')
+      ]
+    }
+    send(store, 1, [{ kind: 'finished', block: huge }])
+    expect(store.state!.finished.map((item) => item.id)).toEqual(['g'])
+  })
+})
+
+describe('running history', () => {
+  const running = (): BlockListStore => {
+    const store = new BlockListStore()
+    store.attached(1, {
+      finished: [],
+      active: { kind: 'running', id: 'c1', command: 'cat log', startedAt: 0 },
+      history: [],
+      frame: frame(1, [])
+    })
+    return store
+  }
+  const lines = (from: number, count: number, wrapped = false): EngineFrameLine[] =>
+    Array.from({ length: count }, (_, index) => row(from + index, String(from + index), wrapped))
+  const history = (store: BlockListStore, rows: EngineFrameLine[]): void => {
+    send(store, 1, [{ kind: 'history', rows }])
+  }
+  const texts = (store: BlockListStore): string[] =>
+    store.state!.history.flatMap((chunk) => chunk.rows.map((item) => item.runs[0]!.text))
+
+  it('closes chunks as they fill and leaves closed ones untouched', () => {
+    const store = running()
+    history(store, lines(0, 100))
+    history(store, lines(100, 200))
+    const [closed, open] = store.state!.history
+    expect(closed!.rows).toHaveLength(HISTORY_CHUNK_ROWS)
+    expect(open!.rows).toHaveLength(300 - HISTORY_CHUNK_ROWS)
+    history(store, lines(300, 10))
+    // The closed chunk is the same object, so the view need not draw it again.
+    expect(store.state!.history[0]).toBe(closed)
+    expect(store.state!.history[1]!.id).toBe(open!.id)
+    expect(texts(store)).toEqual(lines(0, 310).map((item) => item.runs[0]!.text))
+  })
+
+  it('never ends a chunk inside a wrapped line, unless the line goes on and on', () => {
+    const store = running()
+    history(store, [...lines(0, HISTORY_CHUNK_ROWS - 1), row(255, 'wr', true), row(256, 'ap')])
+    expect(store.state!.history[0]!.rows).toHaveLength(HISTORY_CHUNK_ROWS + 1)
+    const endless = running()
+    history(endless, lines(0, HISTORY_CHUNK_ROWS * 5, true))
+    expect(endless.state!.history[0]!.rows).toHaveLength(HISTORY_CHUNK_ROWS * 4)
+  })
+
+  it('drops the oldest chunks past the cap and keeps the newest rows', () => {
+    const store = running()
+    for (let from = 0; from < VIEW_HISTORY_ROWS + 2000; from += 500)
+      history(store, lines(from, 500))
+    const kept = texts(store)
+    expect(kept.length).toBeGreaterThanOrEqual(VIEW_HISTORY_ROWS)
+    expect(kept.length).toBeLessThan(VIEW_HISTORY_ROWS + HISTORY_CHUNK_ROWS)
+    expect(kept.at(-1)).toBe(String(VIEW_HISTORY_ROWS + 1999))
   })
 })
 

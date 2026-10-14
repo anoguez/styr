@@ -221,6 +221,9 @@ export function registerTerminalEngines(
     host.styledLines(String(id), Number(from), Number(to))
   )
   ipcMain.on('terminal:nativeDetach', (_event, id: string) => host.detach(String(id)))
+  ipcMain.on('terminal:nativeReceived', (_event, id: string, attachId: number) =>
+    host.received(String(id), Number(attachId))
+  )
   ipcMain.on('terminal:nativeClearBlocks', (_event, id: string) => host.clearBlocks(String(id)))
   // The renderer reports what each view ended up with, so the report shows sessions that never
   // asked for the native engine (or were refused before attaching) as well.

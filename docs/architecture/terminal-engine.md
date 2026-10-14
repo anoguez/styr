@@ -59,6 +59,14 @@ coalesced to one per session per event-loop turn (`setImmediate`, no timers), an
 replies to device queries (DSR, DA) are written back to the PTY — except replies to queries in the
 backlog, which whoever showed that output first already answered.
 
+**Pacing.** The view acknowledges every frame and block event as it arrives
+(`terminal:nativeReceived`, with its `attachId`). Until it does, a flush still writes the replies to
+the PTY but sends nothing to draw; the next acknowledgement sends everything that changed meanwhile.
+A `cat` reaches the main process in ~1 KB chunks, each its own event-loop turn, so without this the
+host sent one event per chunk. Paced by the view, a burst goes out as a few large events, and a slow
+view gets fewer, larger ones. No timer, and nothing is dropped: the engine holds the state, the
+events only gather it. An acknowledgement for a replaced engine is ignored.
+
 A view's engine is chosen once, at mount. Toggling the setting affects new terminals only, since
 remounting would cost the running one its scrollback.
 
@@ -138,7 +146,16 @@ at a session's first prompt mark; a shell that sends none stays a grid.
   Ctrl+C discards, Ctrl+L and `clear` empty the list. zsh's completion and autosuggestions do not
   see the line until it is submitted.
 - Finished blocks are capped (`MAX_FINISHED_BLOCKS`, `MAX_FINISHED_ROWS` in the main process,
-  `VIEW_FINISHED_BLOCKS` in the view) and a command's own engine keeps `BLOCK_SCROLLBACK` lines.
+  `VIEW_FINISHED_BLOCKS`, `VIEW_FINISHED_ROWS` in the view) and a command's own engine keeps
+  `BLOCK_SCROLLBACK` lines.
+- Output that cannot keep up is the block list's main risk (TASK-0123: a 5 MiB `cat` took 97 s).
+  Each history row is read and sent once: `markLine` with an id already in use adds a mark rather
+  than moving the old one, so `newHistory` starts after the **newest** sent mark. The fake engine
+  (`nativeEngineFixture.ts`) adds marks the same way, so a test catches a resend. In the view, a
+  running command's history is kept in chunks (`HistoryChunk`, `HISTORY_CHUNK_ROWS`) that are frozen
+  once full and drawn by a memoised component, so a frame redraws the open chunk and the live screen,
+  not every row. The whole-session engine keeps parsing while the list is drawn, but its frames
+  are not taken.
 - The PTY gets the columns left after the list's indent (`LIST_INSET`), so output wraps where it is
   shown. A finished block is rejoined into logical lines, so text re-wraps at any later width, but
   output a program laid out in columns (`ls`, tables) keeps the width it ran at. That is
