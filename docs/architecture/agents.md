@@ -166,9 +166,11 @@ session does not come back as whatever it was doing when the app last closed.
 `AgentsSidebar` lists any task that has an agent status _or_ an `agentSession`, so a chat you can
 resume is visible even before its first hook fires. `sortAgentRows` ranks waiting first.
 
-`markAgentExited` in `ipc.ts` records a locally observed terminal exit, and only wins over a hook
-record if its timestamp is newer (compared as parsed dates — the hook writes second precision and
-this writes milliseconds, so a string compare gets it backwards) — a hook write always beats a stale override.
+`markAgentExited` in `ipc.ts` records a locally observed terminal exit into the workspace it names.
+It writes the same status file the hooks write, so there is no timestamp comparison: the last write
+wins. A hook record that lands after the exit replaces it even when its second-precision `at` parses
+earlier than the exit's milliseconds; `ipc.test.ts` pins this. Any comparison added later must parse
+the dates — a string compare of the two precisions gets the order backwards.
 
 ### Subagents
 
