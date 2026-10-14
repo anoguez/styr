@@ -215,6 +215,11 @@ test('smoke', async () => {
     await page.mouse.down()
     await page.mouse.move(from.x + 20, from.y + from.height / 2, { steps: 5 })
     await page.mouse.move(to.x + to.width / 2, to.y + 80, { steps: 20 })
+    // Release only once dnd-kit has seen the card over the column (its screen-reader announcement):
+    // on a slow machine the last moves are not processed yet, and the card drops back onto itself.
+    await expect(page.getByRole('status').filter({ hasText: 'Draggable item' })).toContainText(
+      'over droppable area column:in_review'
+    )
     await page.mouse.up()
     await expect(column('In Review').getByText('Smoke task edited')).toBeVisible()
     await expect.poll(() => readTask('default', 'TASK-0001')).toMatch(/^status: in_review$/m)
