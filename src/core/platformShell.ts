@@ -30,7 +30,7 @@ export interface TerminalShell {
   /** Extra environment for a terminal running it. */
   environment: Record<string, string>
   /**
-   * Which of Styr's shell integrations (prompt and command marks, `main/terminal/shellIntegration`)
+   * Which of Styr's shell integrations (prompt and command marks, `host/terminals/shellIntegration`)
    * a terminal running it gets; undefined for a shell without one.
    */
   integration?: ShellIntegrationKind

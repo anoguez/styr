@@ -1,7 +1,7 @@
 # Terminal engines (Styr Terminal, experimental)
 
 Read this before touching `TerminalView`, `NativeTerminalView`, `TerminalEngineView`,
-`main/terminal/native*.ts`, `terminalEngines.ts` or the release job's native step.
+`host/terminals/native*.ts`, `terminalEngines.ts` or the release job's native step.
 
 ## The boundary
 
@@ -28,7 +28,7 @@ main: ptyManager (node-pty, backlog, marks) ──► NativeTerminalHost ──�
 
 ## Loading
 
-`main/terminal/nativeEngine.ts` is electron-free and testable; `terminalEngines.ts` binds it to the
+`host/terminals/nativeEngine.ts` is electron-free and testable; `terminalEngines.ts` binds it to the
 app. The package is **not in package.json**: it lives in a private registry, and yarn classic fails an
 install on an unreachable optional dependency, so a public clone would break. It is looked for at:
 
@@ -133,7 +133,7 @@ surface's `TerminalBlocks` overlay, fed the same `BlockLayout`. Only where the l
 
 With Styr's shell integration (zsh, bash, fish and PowerShell 7; `ui.md`, "Shell integration"), a
 native session is drawn as the terminal design's block list instead of a grid. The shell integration's `PROMPT_READY` becomes a `prompt` mark beside the
-command `start`/`end` marks, and the host starts a `BlockSession` (`main/terminal/blockSession.ts`)
+command `start`/`end` marks, and the host starts a `BlockSession` (`host/terminals/blockSession.ts`)
 at a session's first prompt mark; a shell that sends none stays a grid.
 
 - Each segment — the prompt, then each command — is written into its own fresh engine. A finished
@@ -269,7 +269,7 @@ needs it. To check the binary in Styr's own Electron runtime:
 
 ```sh
 ELECTRON_RUN_AS_NODE=1 STYR_TERMINAL_PATH=<styr-terminal>/packages/node \
-  node_modules/.bin/electron node_modules/vitest/vitest.mjs run src/main/terminal/nativeEngine.integration.test.ts
+  node_modules/.bin/electron node_modules/vitest/vitest.mjs run src/host/terminals/nativeEngine.integration.test.ts
 ```
 
 For a dev run of the app with the engine: `STYR_TERMINAL_PATH=<styr-terminal>/packages/node

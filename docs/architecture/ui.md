@@ -272,7 +272,7 @@ A task session's bar also shows the task's board column (`TASK_STATUS_LABELS`, d
 
 ### Shell integration
 
-The marks come from Styr's hooks in the shell (`main/terminal/shellIntegration.ts`), which report
+The marks come from Styr's hooks in the shell (`host/terminals/shellIntegration.ts`), which report
 each prompt and command as private `OSC 777;STYR` records. `resolveShell` says which a shell gets
 (`TerminalShell.integration`); a shell without one starts unchanged and draws no blocks. Each is
 installed without typing anything into the terminal, and the user's own startup files are still
