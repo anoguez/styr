@@ -75,6 +75,8 @@ export interface TaskSessionRef {
   provider: 'claude' | 'codex'
   startedAt: string
   label: string
+  /** The prompt template the run started with. Older entries have only the `label`. */
+  templateId?: string
 }
 
 export interface ExternalRef {

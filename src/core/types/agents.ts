@@ -44,6 +44,9 @@ export interface AutoDispatchState {
 }
 
 /** What Orchestrate would do, without the task objects the renderer does not need. */
+/** Failed reviews (review → Backlog) after which Auto-run stops starting a task: it needs a person. */
+export const AUTO_REWORK_LIMIT = 3
+
 export interface OrchestrationSummary {
   dispatch: {
     taskId: string
@@ -58,6 +61,8 @@ export interface OrchestrationSummary {
   blocked: number
   missingWorkingDir: number
   idleSessions: number
+  /** Planned tasks Auto-run holds back after too many failed reviews; Dispatch now still starts them. */
+  reworkHeld: string[]
 }
 
 export interface PromptTemplate {

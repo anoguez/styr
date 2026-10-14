@@ -103,6 +103,8 @@ export interface LaunchOptions {
   forkFrom?: string
   /** Names the chat in the task's history; defaults to the prompt template's name. */
   sessionLabel?: string
+  /** Put before the rendered prompt, e.g. to tell an implementer a review sent the task back. */
+  promptPreface?: string
 }
 
 export function planLaunch(
@@ -121,7 +123,9 @@ export function planLaunch(
 
   const writePrompt = (): string => {
     const file = join(supportDir(settings, 'prompts'), `${task.id}.txt`)
-    writeFileSync(file, renderPrompt(settings, task, templateId), 'utf8')
+    const rendered = renderPrompt(settings, task, templateId)
+    const text = options.promptPreface ? `${options.promptPreface}\n\n${rendered}` : rendered
+    writeFileSync(file, text, 'utf8')
     return syntax.fileContents(file)
   }
 

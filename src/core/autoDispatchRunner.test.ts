@@ -34,6 +34,9 @@ function setup(
     enabled?: boolean
     failLaunch?: boolean
     onLaunch?: () => void
+    beforePass?: () => void
+    /** Sessions end as soon as they start, so a task can be started again. */
+    sessionsEnd?: boolean
   } = {}
 ) {
   let clock = 0
@@ -45,25 +48,33 @@ function setup(
   const paused: string[] = []
   const states: unknown[] = []
   const notes: string[] = []
+  const capped: string[] = []
+  const calls: string[] = []
   const tasks = options.tasks ?? [task('A'), task('B', 1), task('C', 2)]
   const runner = createAutoDispatch({
     enabled: () => enabled,
     setEnabled: (on) => (enabled = on),
     workspaceId: () => workspace,
+    beforePass: async () => {
+      calls.push('beforePass')
+      options.beforePass?.()
+    },
     snapshot: (skip) => ({
       plan: planOrchestration(shippedSettings(), tasks, {
-        liveTaskIds: new Set(launched),
+        liveTaskIds: new Set(options.sessionsEnd ? [] : launched),
         agents: new Map(),
         skip
       }),
       tasks
     }),
-    launch: async (t) => {
+    launch: async (t, lane) => {
       if (options.failLaunch) throw new Error('boom')
+      calls.push(`launch ${t.id} ${lane}`)
       launched.push(t.id)
       options.onLaunch?.()
     },
     noteFailure: (t) => notes.push(t.id),
+    reworkCapped: (t) => capped.push(t.id),
     paused: (reason) => paused.push(reason),
     stateChanged: (state) => states.push(state),
     now: () => clock,
@@ -94,6 +105,9 @@ function setup(
     paused,
     states,
     notes,
+    capped,
+    calls,
+    tasks,
     timers,
     setEnabled: (on: boolean) => (enabled = on),
     setWorkspace: (id: string) => (workspace = id)
@@ -172,5 +186,48 @@ describe('createAutoDispatch', () => {
     t.setEnabled(true)
     t.runner.enabledChanged()
     expect(t.runner.state()).toEqual({ on: true })
+  })
+
+  it('runs the merged-work check before reading the board, so what it unblocks starts', async () => {
+    const review = { ...task('A'), status: 'in_review' } as Task
+    const dependent = { ...task('B', 1), blockedBy: ['A'] } as Task
+    const t = setup({
+      tasks: [review, dependent],
+      beforePass: () => (review.status = 'done')
+    })
+    t.runner.request()
+    await t.advance(AUTO_DEBOUNCE_MS)
+    expect(t.calls).toEqual(['beforePass', 'launch B implement'])
+  })
+
+  it('stops starting a task after three failed reviews, notifies once, and a toggle on resets it', async () => {
+    const a = { ...task('A'), status: 'in_review' } as Task
+    const t = setup({ tasks: [a], sessionsEnd: true })
+    const pass = async (): Promise<void> => {
+      t.runner.request()
+      await t.advance(AUTO_DEBOUNCE_MS)
+    }
+    for (let round = 0; round < 3; round += 1) {
+      await pass()
+      a.status = 'backlog' // the reviewer asked for fixes
+      await pass()
+      a.status = 'in_review' // the implementer finished again
+    }
+    expect(t.calls.filter((call) => call === 'launch A review')).toHaveLength(3)
+    expect(t.calls.filter((call) => call === 'launch A implement')).toHaveLength(2)
+    expect(t.capped).toEqual(['A'])
+    expect(t.runner.held()).toEqual(new Set(['A']))
+
+    const before = t.calls.length
+    await pass()
+    a.status = 'backlog'
+    await pass()
+    expect(t.calls.slice(before).filter((call) => call.startsWith('launch'))).toEqual([])
+    expect(t.capped).toEqual(['A'])
+
+    t.runner.enabledChanged()
+    await t.advance(AUTO_DEBOUNCE_MS)
+    expect(t.calls.at(-1)).toBe('launch A implement')
+    expect(t.runner.held()).toEqual(new Set())
   })
 })

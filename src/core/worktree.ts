@@ -5,6 +5,7 @@ import {
   branchNameFor,
   checkoutPath,
   git,
+  gitAsync,
   gitRaw,
   isGitRepo,
   refExists,
@@ -62,6 +63,14 @@ function hideInsideWorktrees(repoPath: string): void {
   if (existsSync(ignore)) return
   mkdirSync(dir, { recursive: true })
   writeFileSync(ignore, '# Created by Styr: task worktrees, kept out of this repository.\n*\n')
+}
+
+/**
+ * Updates `origin`'s refs without blocking: what lets landing see a PR merged on the host. Rejects
+ * when offline, without an `origin`, or when auth fails; callers treat that as "nothing new".
+ */
+export function fetchOrigin(repoPath: string): Promise<void> {
+  return gitAsync(['fetch', '--quiet', 'origin'], repoPath, 30_000).then(() => undefined)
 }
 
 /**

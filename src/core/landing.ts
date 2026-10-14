@@ -184,3 +184,79 @@ function cleanup(
     out.push({ kind: 'note', taskId: task.id, message })
   }
 }
+
+/** At most one `git fetch` per repository in this window, however many triggers arrive. */
+export const FETCH_THROTTLE_MS = 60_000
+
+/**
+ * The repositories worth fetching before a landing pass: those with an In Review worktree task.
+ * A Done task's cleanup needs no remote, and a task without a worktree has no branch to land.
+ */
+export function reposAwaitingLanding(tasks: readonly LandingTask[]): string[] {
+  const repos = new Set<string>()
+  for (const task of tasks) {
+    if (task.status === 'in_review' && task.useWorktree && task.repoPath) repos.add(task.repoPath)
+  }
+  return [...repos]
+}
+
+export interface RemoteFetchPorts {
+  /** Updates the repository's `origin` refs. Asynchronous: it must never block the main thread. */
+  fetch(repoPath: string): Promise<void>
+  /** A fetch failed (offline, no `origin`, auth). Called once per repository per session. */
+  warn(repoPath: string, error: unknown): void
+  now(): number
+}
+
+/**
+ * Fetches `origin` so a PR merged on the host becomes visible to `branchLanding`, which only reads
+ * local refs. Event-driven and best-effort: a repository is fetched at most once per `throttleMs`,
+ * a trigger that arrives while its fetch is in flight joins that fetch, and a failure resolves
+ * quietly (it is reported once, then carries on), so nothing that awaits it is ever blocked by it.
+ */
+export class RemoteFetcher {
+  private readonly lastStarted = new Map<string, number>()
+  private readonly inFlight = new Map<string, Promise<boolean>>()
+  private readonly warned = new Set<string>()
+
+  constructor(
+    private readonly ports: RemoteFetchPorts,
+    private readonly throttleMs: number = FETCH_THROTTLE_MS
+  ) {}
+
+  /** Resolves with the repositories whose refs this call's fetches updated. Never rejects. */
+  async refresh(repos: readonly string[]): Promise<string[]> {
+    const results = await Promise.all(
+      repos.map(async (repo) => ((await this.fetchOne(repo)) ? repo : undefined))
+    )
+    return results.filter((repo): repo is string => repo !== undefined)
+  }
+
+  private fetchOne(repo: string): Promise<boolean> {
+    const pending = this.inFlight.get(repo)
+    if (pending) return pending
+    const last = this.lastStarted.get(repo)
+    const now = this.ports.now()
+    if (last !== undefined && now - last < this.throttleMs) return Promise.resolve(false)
+    this.lastStarted.set(repo, now)
+    let started: Promise<void>
+    try {
+      started = this.ports.fetch(repo)
+    } catch (error) {
+      started = Promise.reject(error)
+    }
+    const run = started.then(
+      () => true,
+      (error: unknown) => {
+        if (!this.warned.has(repo)) {
+          this.warned.add(repo)
+          this.ports.warn(repo, error)
+        }
+        return false
+      }
+    )
+    const tracked = run.finally(() => this.inFlight.delete(repo))
+    this.inFlight.set(repo, tracked)
+    return tracked
+  }
+}

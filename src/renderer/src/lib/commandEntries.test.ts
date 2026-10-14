@@ -41,7 +41,8 @@ function actions(): PaletteActions {
     archiveTask: vi.fn(),
     launchAgent: vi.fn(),
     activateTask: vi.fn(),
-    selectSession: vi.fn()
+    selectSession: vi.fn(),
+    checkMergedWork: vi.fn()
   }
 }
 
@@ -156,5 +157,11 @@ describe('buildCommandEntries', () => {
         'settings:source-github'
       )
     ).toBeUndefined()
+  })
+
+  it('offers a check for merged work', () => {
+    const act = actions()
+    byId(buildCommandEntries(source(), act), 'action:checkMerged')?.run()
+    expect(act.checkMergedWork).toHaveBeenCalled()
   })
 })

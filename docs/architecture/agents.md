@@ -219,7 +219,19 @@ the template it will actually run. Change one and change the other.
 Only Backlog and In Review are dispatchable. In Progress is deliberately excluded: a dead session
 there does not mean the work is free to restart. So a spec run that stops after specifying must hand
 the task back to Backlog with `readiness: ready` (the spec template and `boardProtocol` say so);
-left in In Progress it is invisible to Orchestrate.
+left in In Progress it is invisible to Orchestrate. For the same reason a failed review hands the
+task back to **Backlog** with `readiness: ready` and the fixes listed in an Activity note (the shipped
+`code-review` template says so). Backlog's lane is implement, so the fixes are dispatched. Users who
+copied the older template, which said `in_progress`, keep their text until they update it.
+
+**Rework resumes the implementer.** `reworkLaunch` in `sessionLifecycle.ts` runs on every launch: an
+implement-lane launch on a task whose current `agentSession` is a review run continues the latest
+non-review chat in `Task.sessions` (of the requested provider, when the lane names one) if
+`provider.sessionExists` finds it, else starts fresh. Either way it sends the prompt, led by
+`REWORK_PREFACE` (`LaunchOptions.promptPreface`), which says a review asked for fixes and to read
+the latest Activity note. A run is a review when the template it recorded (`TaskSessionRef.templateId`;
+older entries: its `label`) is the one In Review routes to — never when a pinned template runs both
+lanes. A launch that is `fresh`, names a session or picks another template is left alone.
 
 `Task.sessions` is the append-only chat history; `Task.agentSession` is which of them the next
 run continues. They look redundant but are not — Forget clears the pointer while keeping the
@@ -277,6 +289,16 @@ wired in `ipc.ts`); the rules are pure in `core/autoDispatch.ts`.
   remembered tasks out of `planOrchestration`: left in, they take the lane's slot and starve the rest.
 - **Breaker.** `AUTO_LAUNCH_LIMIT` per rolling hour per workspace, and `AUTO_FAILURE_LIMIT`
   consecutive failed launches, switch Auto-run off with a notification.
+- **Rework cap.** `tallyRework` (`core/autoDispatch.ts`) counts review→Backlog bounces per
+  `workspace:task` in memory, seen the way the loop guard sees changes: a remembered review-lane
+  launch whose task is now Backlog. At `AUTO_REWORK_LIMIT` (3) failed reviews the task joins the
+  plan's `skip` set and `reworkCapped` notifies once ("TASK-x failed review 3 times; it needs you")
+  and notes the task. Manual Dispatch and launches still start it — the Dispatch dialog warns
+  (`OrchestrationSummary.reworkHeld`). Only reviews Auto-run started are counted; the count drops
+  when the task reaches Done or is deleted, and switching Auto-run on clears every count.
+- **Fetch first.** Each pass awaits `beforePass` (the merged-work check below, at most 5s) before
+  it reads the board, so a PR merged while the window was unfocused is Done before the plan is
+  built, and what it blocked starts in the same pass.
 - **Startup grace.** 30s after launch before the first pass; an explicit toggle skips it.
 - Switching Auto-run **on** in the Dispatch dialog is a draft: it is applied on confirm (after the
   listed tasks start, so the first pass does not race them), and Cancel discards it. Stopping is the
@@ -332,7 +354,7 @@ or host — `gh` only when there is a GitHub remote.
 Styr does not rely on the agent. The rules are `settleTasks` in `core/landing.ts` — pure over the
 `CheckoutGit` adapter (`checkoutGit` from `core/taskCheckout.ts`, faked in `landing.test.ts`) and a `LandingCache`, returning the task-file writes (and any per-task errors, which
 `main/landing.ts` logs rather than swallows); `main/landing.ts` only performs them. It runs from
-`notifyTasksChanged` (so the watcher covers external merges): an `in_review` worktree task whose branch has landed moves to `done`, and a
+`notifyTasksChanged` (so the watcher covers external merges), and after a fetch (below): an `in_review` worktree task whose branch has landed moves to `done`, and a
 `done` task with a `worktreePath` is cleaned up through `cleanupLandedTask` in `core/worktreeLanding.ts`.
 `branchLanding` checks the local base and `origin/<base>` — the task's `baseBranch` when set and still present, else the automatic base; "landed" is either zero commits ahead, or
 (squash/rebase) every file changed since the merge-base identical on the base. A branch with no
@@ -341,3 +363,15 @@ Cleanup never forces the worktree removal, uses `branch -D` only after that chec
 (no push, no remote branch deletion — it could close an open PR), and reports refusals once (deduped against the task's own latest styr note, so a restart does not repeat it —
 the note write retriggers the watcher). `worktreePath` is cleared via `taskStore` once the worktree
 is gone. Tasks with `useWorktree: false` are skipped entirely.
+
+**Merged on the host.** `branchLanding` reads only local refs, so a PR merged on GitHub is invisible
+until `origin` is fetched. `checkForMergedWork` (`ipc.ts`) → `fetchAndSettle` (`main/landing.ts`)
+fetches every repository with an In Review worktree task (`reposAwaitingLanding`), then settles the
+tasks in the repositories it fetched and, if that wrote, runs `notifyTasksChanged`. Triggers, all
+events and never an interval: a Styr window gaining focus (`browser-window-focus`), each Dispatch run
+and Auto-run pass (both wait at most 5s, then go ahead without it), and the palette's _Check for
+merged work_. `RemoteFetcher` (`core/landing.ts`) throttles to one fetch per repository per 60s and
+joins a trigger to a fetch already in flight. The fetch is `fetchOrigin` (`core/worktree.ts`): an
+asynchronous child process with `GIT_TERMINAL_PROMPT=0`, never the synchronous runners and never
+inside `notifyTasksChanged`. Failures (offline, no `origin`, auth) are logged once per repository
+per session and resolve as "nothing fetched"; they never block a launch or a dispatch.
