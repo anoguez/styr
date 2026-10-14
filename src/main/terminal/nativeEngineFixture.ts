@@ -15,8 +15,11 @@ export class FakeEngine implements NativeTerminalEngine {
   seq = 0
   dirty = true
   responses = ''
-  /** Marked lines by id, numbered like `screenLines()` (the fake keeps no separate history). */
-  readonly marks = new Map<string, number>()
+  /**
+   * Marked lines, numbered like `screenLines()` (the fake keeps no separate history). As in the
+   * real engine, marking with an id already in use adds a mark rather than moving the old one.
+   */
+  readonly marks: { id: string; line: number }[] = []
   /** Makes the next call to the named method throw, as a poisoned native engine would. */
   failOn: keyof NativeTerminalEngine | null = null
 
@@ -106,13 +109,18 @@ export class FakeEngine implements NativeTerminalEngine {
     this.check('markLine')
     const line = this.cursorPosition().line + offset
     if (line < 0) return null
-    this.marks.set(id, line)
+    this.marks.push({ id, line })
     return line
+  }
+
+  /** Drops the marks with `id`, as the real engine does when their row is trimmed or rewritten. */
+  unmark(id: string): void {
+    this.marks.splice(0, this.marks.length, ...this.marks.filter((mark) => mark.id !== id))
   }
 
   markedLines(): { id: string; line: number }[] {
     this.check('markedLines')
-    return [...this.marks].map(([id, line]) => ({ id, line }))
+    return [...this.marks].sort((left, right) => left.line - right.line)
   }
 
   /** History plus screen: the text's lines, and blank rows below them up to the screen height. */

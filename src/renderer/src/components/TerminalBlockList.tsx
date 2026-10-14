@@ -17,7 +17,8 @@ import {
   liveRows,
   logicalLines,
   rowsText,
-  type BlockListState
+  type BlockListState,
+  type HistoryChunk
 } from '../lib/nativeTerminal/blockList.js'
 import {
   inputAction,
@@ -112,7 +113,8 @@ export function TerminalBlockList({
           <RunningBlock
             command={active.command}
             startedAt={active.startedAt}
-            rows={[...state.history, ...liveRows(state.screen)]}
+            history={state.history}
+            live={liveRows(state.screen)}
             cols={cols}
             look={look}
             actions={actions}
@@ -373,14 +375,16 @@ const FinishedBlock = memo(function FinishedBlock({
 function RunningBlock({
   command,
   startedAt,
-  rows,
+  history,
+  live,
   cols,
   look,
   actions
 }: {
   command: string
   startedAt: number
-  rows: EngineFrameLine[]
+  history: HistoryChunk[]
+  live: EngineFrameLine[]
   cols: number
   look: Look
   actions?: BlockActions
@@ -410,11 +414,18 @@ function RunningBlock({
         </span>
       </CommandRow>
       <div className="pl-[18px]">
-        <Lines rows={rows} cols={cols} look={look} />
+        {history.slice(0, -1).map((chunk) => (
+          <ClosedLines key={chunk.id} rows={chunk.rows} cols={cols} look={look} />
+        ))}
+        {/* The last chunk may still be wrapping into the live screen, so they are drawn together. */}
+        <Lines rows={[...(history.at(-1)?.rows ?? []), ...live]} cols={cols} look={look} />
       </div>
     </section>
   )
 }
+
+/** A closed history chunk never changes: it is drawn once, not on every frame of the command. */
+const ClosedLines = memo(Lines)
 
 /**
  * Styr's `❯` input, for a shell's commands and an agent's prompts alike: the program sees a line

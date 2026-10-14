@@ -268,12 +268,13 @@ export class BlockSession {
   /**
    * History rows not yet sent. The last sent row carries a mark, so this stays right when the
    * engine trims its oldest lines: everything after the mark is new, and if the mark itself was
-   * trimmed, everything left is.
+   * trimmed, everything left is. Marking again adds a mark rather than moving the old one, so the
+   * newest says where the last take ended; the older ones go as their rows are trimmed.
    */
   private newHistory(): EngineFrameLine[] {
     const engine = this.segment.engine
     const end = this.historySize()
-    const sent = engine.markedLines().find((line) => line.id === SENT_MARK)
+    const sent = engine.markedLines().findLast((line) => line.id === SENT_MARK)
     const start = sent ? sent.line + 1 : 0
     if (start >= end) return []
     const rows = readLines(engine, start, end)

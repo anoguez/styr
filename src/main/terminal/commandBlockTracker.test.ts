@@ -79,7 +79,7 @@ describe('CommandBlockTracker', () => {
     tracker.observe(end('unknown'))
     engine.write('$ ls\r\n')
     tracker.observe(start())
-    engine.marks.delete('c1')
+    engine.unmark('c1')
 
     expect(tracker.snapshot()).toEqual([])
     tracker.observe(end())

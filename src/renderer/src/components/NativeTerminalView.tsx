@@ -149,6 +149,8 @@ export function NativeTerminalView({
   const [cell, setCell] = useState<Cell>({ width: 8, height: 16 })
   const cellRef = useRef(cell)
   const palette = useMemo(() => paletteFromTheme(terminalTheme(theme)), [theme])
+  // One object while neither changes, so memoised blocks and history chunks are not redrawn.
+  const look = useMemo(() => ({ palette, lineHeight: cell.height }), [palette, cell.height])
   const bindingsRef = useRef(bindings)
   bindingsRef.current = bindings
   const syntaxRef = useRef(syntaxFor(dialect))
@@ -251,6 +253,8 @@ export function NativeTerminalView({
 
     const offFrame = window.api.terminal.native.onFrame((event) => {
       if (event.id !== sessionId) return
+      // Acknowledged on arrival, whatever it is for: the host sends nothing more until it is.
+      window.api.terminal.native.received(sessionId, event.attachId)
       // Before the attach reply the engine's id is unknown; the model holds the frame until then.
       if (attachId !== null && event.attachId !== attachId) return
       const moved = event.blocks ? blocks.received(event.attachId, event.blocks) : false
@@ -258,7 +262,9 @@ export function NativeTerminalView({
       if (changed || moved) render()
     })
     const offList = window.api.terminal.native.onBlocks((event) => {
-      if (event.id === sessionId && list.received(event)) render()
+      if (event.id !== sessionId) return
+      window.api.terminal.native.received(sessionId, event.attachId)
+      if (list.received(event)) render()
     })
     const offFailed = window.api.terminal.native.onFailed((failure) => {
       if (failure.id === sessionId) fail(failure.reason, failure.detail)
@@ -816,7 +822,7 @@ export function NativeTerminalView({
           working={conversation?.working ?? false}
           label={AGENT_PROVIDER_LABELS[provider]}
           approval={approval}
-          look={{ palette, lineHeight: cell.height }}
+          look={look}
           font={font}
           inputRef={inputRef}
           history={conversation && adapter ? promptHistory(conversation, adapter) : []}
@@ -864,7 +870,7 @@ export function NativeTerminalView({
       {list && !takeover && !agentMode ? (
         <TerminalBlockList
           state={list}
-          look={{ palette, lineHeight: cell.height }}
+          look={look}
           font={font}
           inputRef={inputRef}
           hints={commandHints}

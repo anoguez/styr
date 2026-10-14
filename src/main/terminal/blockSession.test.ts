@@ -146,6 +146,21 @@ describe('BlockSession', () => {
     expect(next?.kind === 'history' && text(next.rows)).toEqual(['4'])
   })
 
+  it('sends each history row once however many takes a command streams over', () => {
+    // Every take leaves another sent mark (the engine adds one rather than moving the old); only
+    // the newest says where the next take starts.
+    const list = session(3)
+    list.mark(start('c1', 'cat log'))
+    list.takeEvents()
+    const sent: string[] = []
+    for (let line = 1; line <= 20; line++) {
+      list.write(`${line}\r\n`)
+      for (const event of list.takeEvents())
+        if (event.kind === 'history') sent.push(...text(event.rows))
+    }
+    expect(sent).toEqual(Array.from({ length: 18 }, (_, index) => String(index + 1)))
+  })
+
   it('gives a view attaching mid-command the history so far', () => {
     const list = session(3)
     list.mark(start('c1', 'seq 10'))

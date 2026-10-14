@@ -292,6 +292,9 @@ const api = {
         ipcRenderer.invoke('terminal:nativeStyledLines', id, from, to),
       detach: (id: string): void => ipcRenderer.send('terminal:nativeDetach', id),
       clearBlocks: (id: string): void => ipcRenderer.send('terminal:nativeClearBlocks', id),
+      /** The view took in a frame or block event; the host holds the next one until it does. */
+      received: (id: string, attachId: number): void =>
+        ipcRenderer.send('terminal:nativeReceived', id, attachId),
       onBlocks: (handler: (event: NativeBlockEvent) => void): (() => void) =>
         subscribe('terminal:nativeBlocks', handler as (...args: never[]) => void),
       onFrame: (handler: (event: NativeFrameEvent) => void): (() => void) =>
