@@ -11,6 +11,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
+      // The Electron entry points are loaded only by the ordering tests, which pin call order, not
+      // every handler. Counting them would measure the handler table; they were never counted before.
+      exclude: ['src/main/ipc.ts', 'src/main/index.ts'],
       // A floor just under today's numbers: new code without tests that pulls coverage down fails CI.
       // Raise these as coverage grows; never lower them to make a PR pass.
       thresholds: { lines: 85, statements: 82, functions: 82, branches: 73 }

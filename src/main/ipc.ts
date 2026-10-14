@@ -147,14 +147,10 @@ export function agentStatuses(): AgentStatus[] {
 }
 
 /**
- * Turns the Codex daemon's lifecycle broadcasts into the same agent records a Claude hook writes,
- * so the sidebar, tray and terminal dots need no Codex-specific code.
- */
-/**
  * Runs `work` with every task path resolved inside another workspace. Synchronous on purpose:
- * nothing else can observe the override while it is set.
+ * nothing else can observe the override while it is set. Exported for its test only.
  */
-function inOtherWorkspace<T>(workspaceId: string, work: () => T): T {
+export function inOtherWorkspace<T>(workspaceId: string, work: () => T): T {
   pinWorkspace(workspaceId)
   try {
     return work()

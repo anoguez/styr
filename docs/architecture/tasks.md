@@ -46,6 +46,40 @@ the steady state: `main/landing.ts` skips a task whose status, worktree and bran
 are unchanged (`LandingCache`, 5-minute expiry), and `git:diffStats` yields between tasks and runs
 one pass at a time. Check the panel's "Task change handling" line after touching either.
 
+### `notifyTasksChanged` baseline
+
+Measured on 2026-10-14 for the main-process refactor (TASK-0130) to compare against, by
+`src/main/notifyTasks.perf.test.ts`: the real SQLite index, landing pass and source observer over a
+200-task board (three notes each, no worktrees), timing the duration `ipc.ts` passes to
+`recordNotifyDuration` — the panel's number. 200 runs per row, milliseconds, Apple M4 Pro, macOS
+26.6, Node 24 under vitest (not Electron: compare like with like, on the same machine).
+
+| Case                                       | p50     | p95     | max     |
+| ------------------------------------------ | ------- | ------- | ------- |
+| Cold: index file deleted (first start)     | 7.3–7.9 | 8.2–9.3 | 10–12   |
+| Reopen: index closed (workspace switch)    | 1.6–1.8 | 1.9–2.1 | 2.3–3.2 |
+| Warm: nothing changed on disk              | 1.3     | 1.5–1.6 | 1.7–1.9 |
+| Warm: one task file written (a board edit) | 1.4–1.5 | 1.7–1.8 | 3.0–6.2 |
+
+Ranges span three runs. Re-run with `STYR_BENCH=1 yarn vitest run src/main/notifyTasks.perf.test.ts`
+(skipped otherwise; CI has no native modules). A refactor should stay within these ranges.
+
+## Main-process ordering tests
+
+The order and timing the main process depends on is pinned by characterisation tests. A change
+that fails one should be a deliberate change of behaviour, with the test and this note updated:
+
+- `src/main/ipc.test.ts` loads the real `ipc.ts` over a temporary storage folder, with Electron, the
+  index, the watchers and the terminals faked into one call log. It pins `notifyTasksChanged` (sync,
+  landing, observe, time, one broadcast, one Auto-run request; a burst is one Auto-run pass),
+  `notifyAgentsChanged`, `switchWorkspace` (synchronous, A→B→A ends on A, index closed before the
+  watchers restart), `inOtherWorkspace` (pin cleared after the work, on a throw, and never held
+  across an await), `markAgentExited` and the `terminal:launchAgent` dedupe per workspace.
+- `src/main/watcher.test.ts` pins the close race: a watcher restarted while the old one is still
+  closing keeps running.
+- `src/main/index.test.ts` pins the start-up call order: handlers before the window loads, the
+  Auto-run grace after the first index sync.
+
 ## Hand-edited task files
 
 Task markdown is edited by humans and by Claude sessions, not just by this app. Two rules protect it:
