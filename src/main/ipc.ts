@@ -2,25 +2,10 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { execFile, spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  Notification,
-  shell,
-  type OpenDialogOptions
-} from 'electron'
+import { app, ipcMain, shell } from 'electron'
 import { opensTextFiles, type AppInfo } from '@core/appFilter.js'
-import { pathsInWorkspace, pinWorkspace, workspaceDir } from '@core/config.js'
-import {
-  isSettingsFileBroken,
-  loadSettings,
-  persistSettings,
-  saveGlobalSettings,
-  saveWorkspaceSettings,
-  settingsFilePath
-} from '@core/settingsStore.js'
+import { pathsInWorkspace, workspaceDir } from '@core/config.js'
+import { loadSettings, persistSettings, saveWorkspaceSettings } from '@core/settingsStore.js'
 import {
   clearAgentStatus,
   readAllAgentStatuses,
@@ -44,34 +29,17 @@ import {
 } from '@core/worktree.js'
 import { taskCheckout, type CheckoutTask, type TaskCheckout } from '@core/taskCheckout.js'
 import { createSessionLifecycle, monitorKey, splitMonitorKey } from '@core/sessionLifecycle.js'
-import {
-  buildTrayModel,
-  createWorkspaceSession,
-  workspaceActivity
-} from '@core/workspaceSession.js'
-import {
-  createWorkspace,
-  listWorkspaces,
-  readBackgroundAgents,
-  readWorkspaceTasks,
-  renameWorkspace,
-  workspaceTaskCount
-} from '@core/workspaces.js'
+import { buildTrayModel, workspaceActivity } from '@core/workspaceSession.js'
+import { listWorkspaces, readBackgroundAgents } from '@core/workspaces.js'
 import { createAutoDispatch } from '@core/autoDispatchRunner.js'
 import { AUTO_REWORK_LIMIT } from '@core/autoDispatch.js'
-import { buildInbox, summariseInbox } from '@core/inbox.js'
 import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
-import {
-  globalSettingsFor,
-  workspaceSettingsFor,
-  type AutoDispatchPause,
-  type BrokenSettingsFile,
-  type OrchestrationLane,
-  type OrchestrationSummary,
-  type TerminalSessionInfo,
-  type WorkspaceBoardSummary,
-  type WorkspaceOverview,
-  type WorkspacesActivity
+import type {
+  AutoDispatchPause,
+  OrchestrationLane,
+  OrchestrationSummary,
+  TerminalSessionInfo,
+  WorkspacesActivity
 } from '@core/types.js'
 import {
   addNote,
@@ -101,13 +69,18 @@ import { adapterFor, runCommand, sourceProviders } from '@core/sources/index.js'
 import { testRestRequest } from '@core/sources/rest.js'
 import {
   restSourceSettingsSchema,
-  taskFilterSchema,
   settingsChangeSchema,
   workspaceIdSchema
 } from '@core/taskSchema.js'
 import type { Task, TaskStatus, WorklogData, WorklogTask } from '@core/types.js'
 import { collectWorklog, diskWorklogSources } from '@core/worklogSources.js'
-import { createTaskWrites } from './taskWrites.js'
+import { createTasksService } from '@host/tasksService.js'
+import {
+  createWorkspacesService,
+  diskWorkspaceStore,
+  inOtherWorkspace
+} from '@host/workspacesService.js'
+import { electronHost, electronWindows } from './electronHost.js'
 import { closeIndex, findTask, queryTasks, syncIndex } from './taskIndex.js'
 import { startWatching, startWatchingAgents } from './watcher.js'
 import { updateTray } from './tray.js'
@@ -128,8 +101,56 @@ import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
 import { resolveShell } from '@core/platformShell.js'
 
-function broadcast(channel: string, payload?: unknown): void {
-  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
+const { broadcast } = electronHost
+
+/**
+ * The tasks and workspaces services, wired to main's index, watchers and the services not yet in
+ * `src/host/`. Created before the session lifecycle below, which takes their functions as ports.
+ */
+const tasksService = createTasksService({
+  broadcast,
+  index: { sync: syncIndex, query: queryTasks, find: findTask },
+  store: {
+    createTask,
+    updateTask,
+    addNote,
+    reorderTasks,
+    setArchived,
+    deleteTask,
+    removeWorktree: (task) => activeTaskCheckout(task).removeWorktree(),
+    brokenTaskFiles
+  },
+  settleLandedTasks,
+  observeTasks,
+  recordNotifyDuration,
+  requestAutoRun: () => autoDispatch.request(),
+  notifyAgents: notifyAgentsChanged
+})
+
+const workspacesService = createWorkspacesService({
+  broadcast,
+  trashItem: electronHost.trashItem,
+  store: diskWorkspaceStore,
+  activeTasks: () => queryTasks(),
+  liveSessions: () => listSessions(),
+  activity: () => currentActivity(),
+  resetSources: resetSourceObserver,
+  restartSourcePolling,
+  closeIndex,
+  startTaskWatcher: () => startWatching(() => notifyTasksChanged()),
+  startAgentWatcher: () => startWatchingAgents(() => notifyAgentsChanged()),
+  notifyTasks: notifyTasksChanged,
+  notifyAgents: notifyAgentsChanged
+})
+
+export { inOtherWorkspace }
+
+export function notifyTasksChanged(): void {
+  tasksService.notifyTasksChanged()
+}
+
+export function switchWorkspace(id: string): void {
+  workspacesService.switchWorkspace(id)
 }
 
 /**
@@ -145,19 +166,6 @@ export function agentStatuses(): AgentStatus[] {
     const branch = dir ? readGitBranch(dir) : undefined
     return branch ? { ...status, branch } : status
   })
-}
-
-/**
- * Runs `work` with every task path resolved inside another workspace. Synchronous on purpose:
- * nothing else can observe the override while it is set. Exported for its test only.
- */
-export function inOtherWorkspace<T>(workspaceId: string, work: () => T): T {
-  pinWorkspace(workspaceId)
-  try {
-    return work()
-  } finally {
-    pinWorkspace(undefined)
-  }
 }
 
 /**
@@ -253,29 +261,6 @@ function currentActivity(): WorkspacesActivity {
   return latestActivity ?? { activeId: loadSettings().activeWorkspaceId, byWorkspace: {} }
 }
 
-/**
- * Inbox group sizes per workspace, for the switcher's menu. Built on demand — it parses every
- * background workspace's task files, which is fine on a click but not on every hook event. The
- * active board comes from the index; the others are read from disk without writing. A workspace that
- * cannot be read is left out, so the menu shows its agent state alone.
- */
-function workspaceBoardSummaries(): Record<string, WorkspaceBoardSummary> {
-  const settings = loadSettings()
-  const summaries: Record<string, WorkspaceBoardSummary> = {}
-  for (const workspace of listWorkspaces(settings)) {
-    try {
-      const active = workspace.id === settings.activeWorkspaceId
-      const scoped = active ? settings : pathsInWorkspace(settings, workspace.id)
-      const tasks = active ? queryTasks() : readWorkspaceTasks(settings, workspace.id)
-      const agents = new Map(readAllAgentStatuses(scoped).map((status) => [status.taskId, status]))
-      summaries[workspace.id] = summariseInbox(buildInbox(tasks, agents))
-    } catch (error) {
-      console.error(`Could not summarise workspace ${workspace.id}:`, error)
-    }
-  }
-  return summaries
-}
-
 /** A task's checkout in the active workspace, placed by that workspace's `worktreeLocation`. */
 function activeTaskCheckout(task: CheckoutTask): TaskCheckout {
   const { activeWorkspaceId, worktreeLocation } = loadSettings()
@@ -320,16 +305,6 @@ async function loadWorklog(from: number, to: number): Promise<WorklogData> {
   return { tasks }
 }
 
-export function notifyTasksChanged(): void {
-  const started = performance.now()
-  syncIndex()
-  if (settleLandedTasks()) syncIndex()
-  observeTasks(queryTasks())
-  recordNotifyDuration(performance.now() - started)
-  broadcast('tasks:changed')
-  autoDispatch.request()
-}
-
 /**
  * Fetches `origin` where In Review work waits to land, then settles what landed — how a PR merged
  * on the host is noticed. Event-driven only (window focus, a Dispatch run, an Auto-run pass, the
@@ -354,19 +329,6 @@ function checkForMergedWorkBriefly(): Promise<void> {
   })
   return Promise.race([checkForMergedWork(), deadline]).finally(() => clearTimeout(timer))
 }
-
-const taskWrites = createTaskWrites({
-  findTask,
-  createTask,
-  updateTask,
-  addNote,
-  reorderTasks,
-  setArchived,
-  deleteTask,
-  removeWorktree: (task) => activeTaskCheckout(task).removeWorktree(),
-  notifyTasks: notifyTasksChanged,
-  notifyAgents: notifyAgentsChanged
-})
 
 const lifecycle = createSessionLifecycle({
   settings: loadSettings,
@@ -473,13 +435,9 @@ const autoDispatch = createAutoDispatch({
     } catch {
       // The task may have been deleted meanwhile; the notification still says so.
     }
-    if (Notification.isSupported()) new Notification({ title: 'Styr', body: message }).show()
+    electronHost.notify('Styr', message)
   },
-  paused: (reason) => {
-    if (Notification.isSupported()) {
-      new Notification({ title: 'Styr', body: PAUSE_MESSAGES[reason] }).show()
-    }
-  },
+  paused: (reason) => electronHost.notify('Styr', PAUSE_MESSAGES[reason]),
   stateChanged: (state) => broadcast('orchestrate:autoState', state),
   now: () => Date.now(),
   setTimer: (run, ms) => setTimeout(run, ms),
@@ -512,49 +470,6 @@ function summarisePlan(): OrchestrationSummary {
   }
 }
 
-const workspaceSession = createWorkspaceSession({
-  loadSettings,
-  listWorkspaces,
-  workspaceDir,
-  saveActiveWorkspace: (settings, id) =>
-    saveGlobalSettings({ ...globalSettingsFor(settings), activeWorkspaceId: id }),
-  resetSources: resetSourceObserver,
-  restartSourcePolling,
-  closeIndex,
-  startTaskWatcher: () => startWatching(() => notifyTasksChanged()),
-  startAgentWatcher: () => startWatchingAgents(() => notifyAgentsChanged()),
-  notifyTasks: notifyTasksChanged,
-  notifyAgents: notifyAgentsChanged,
-  broadcast,
-  hasLiveSessions: (id) => listSessions().some((session) => session.workspaceId === id),
-  trash: (path) => shell.trashItem(path)
-})
-
-export const switchWorkspace = workspaceSession.switchWorkspace
-
-function brokenSettingsFiles(): BrokenSettingsFile[] {
-  const settings = loadSettings()
-  return listWorkspaces(settings)
-    .filter((workspace) => isSettingsFileBroken(settings, workspace.id))
-    .map((workspace) => ({
-      workspaceId: workspace.id,
-      path: settingsFilePath(settings, workspace.id)
-    }))
-}
-
-function workspaceOverview(): WorkspaceOverview {
-  const settings = loadSettings()
-  const sessions = listSessions()
-  return {
-    activeId: settings.activeWorkspaceId,
-    workspaces: listWorkspaces(settings).map((workspace) => ({
-      ...workspace,
-      taskCount: workspaceTaskCount(settings, workspace.id),
-      liveSessions: sessions.filter((session) => session.workspaceId === workspace.id).length
-    }))
-  }
-}
-
 export function registerIpcHandlers(): void {
   initSourceSync({
     onTasksChanged: notifyTasksChanged,
@@ -583,14 +498,12 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle('sources:unlink', (_event, taskId: string) => unlinkTask(String(taskId)))
   ipcMain.handle('sources:refresh', (_event, taskId: string) => refreshTask(String(taskId)))
-  ipcMain.handle('tasks:list', (_event, filter: unknown) =>
-    queryTasks(taskFilterSchema.parse(filter ?? {}))
-  )
-  ipcMain.handle('tasks:get', (_event, id: string) => findTask(id))
-  ipcMain.handle('tasks:problems', () => brokenTaskFiles())
+  ipcMain.handle('tasks:list', (_event, filter: unknown) => tasksService.list(filter))
+  ipcMain.handle('tasks:get', (_event, id: string) => tasksService.get(id))
+  ipcMain.handle('tasks:problems', () => tasksService.problems())
 
   ipcMain.handle('tasks:removeWorktree', (_event, taskId: string) =>
-    taskWrites.removeWorktree(taskId)
+    tasksService.removeWorktree(taskId)
   )
   ipcMain.handle('git:branches', (_event, repoPath: string) => listBranches(repoPath))
   ipcMain.handle('git:taskDiff', (_event, taskId: unknown): DiffResult => {
@@ -623,28 +536,28 @@ export function registerIpcHandlers(): void {
     return loadWorklog(span.from, span.to)
   })
 
-  ipcMain.handle('tasks:create', (_event, draft: unknown) => taskWrites.create(draft))
+  ipcMain.handle('tasks:create', (_event, draft: unknown) => tasksService.create(draft))
   ipcMain.handle('tasks:update', (_event, id: string, patch: unknown) =>
-    taskWrites.update(id, patch)
+    tasksService.update(id, patch)
   )
   ipcMain.handle('tasks:note', (_event, id: string, author: string, message: string) =>
-    taskWrites.note(id, author, message)
+    tasksService.note(id, author, message)
   )
   ipcMain.handle('tasks:reorder', (_event, status: TaskStatus, orderedIds: string[]) =>
-    taskWrites.reorder(status, orderedIds)
+    tasksService.reorder(status, orderedIds)
   )
   ipcMain.handle('tasks:archive', (_event, id: string, archived: boolean) =>
-    taskWrites.archive(id, archived)
+    tasksService.archive(id, archived)
   )
-  ipcMain.handle('tasks:delete', (_event, id: string) => taskWrites.delete(id))
+  ipcMain.handle('tasks:delete', (_event, id: string) => tasksService.delete(id))
 
   ipcMain.handle('tasks:reveal', (_event, id: string) => {
-    const task = findTask(id)
+    const task = tasksService.get(id)
     if (task) shell.showItemInFolder(task.filePath)
   })
 
   ipcMain.handle('tasks:openInEditor', (_event, id: string) => {
-    const task = findTask(id)
+    const task = tasksService.get(id)
     if (task) void openPathWith(task.filePath)
   })
 
@@ -660,7 +573,7 @@ export function registerIpcHandlers(): void {
   ipcMain.on('app:titleBarColors', (event, background: string, symbols: string) => {
     // macOS draws traffic lights, not an overlay; Windows and Linux both use the overlay.
     if (process.platform === 'darwin') return
-    BrowserWindow.fromWebContents(event.sender)?.setTitleBarOverlay({
+    electronWindows.setTitleBarOverlay(event.sender, {
       color: String(background),
       symbolColor: String(symbols)
     })
@@ -709,51 +622,29 @@ export function registerIpcHandlers(): void {
     try {
       persistSettings(parsed)
     } finally {
-      workspaceSession.afterSettingsSave(folderBefore, parsed.workspaceId)
+      workspacesService.afterSettingsSave(folderBefore, parsed.workspaceId)
       autoDispatch.enabledChanged()
     }
     return loadSettings()
   })
-  ipcMain.handle('settings:brokenFiles', () => brokenSettingsFiles())
+  ipcMain.handle('settings:brokenFiles', () => workspacesService.brokenSettingsFiles())
 
-  ipcMain.handle('workspaces:list', () => workspaceOverview())
-  ipcMain.handle('workspaces:activity', () => currentActivity())
-  ipcMain.handle('workspaces:boardSummary', () => workspaceBoardSummaries())
-  ipcMain.handle('workspaces:switch', (_event, id: string) => {
-    switchWorkspace(id)
-    return workspaceOverview()
-  })
-  ipcMain.handle('workspaces:create', (_event, name: string) => {
-    const settings = loadSettings()
-    // A new board starts with Auto-run off whatever the one it was copied from does.
-    const created = createWorkspace(settings, String(name), {
-      ...workspaceSettingsFor(settings),
-      autoDispatch: false
-    })
-    switchWorkspace(created.id)
-    return workspaceOverview()
-  })
-  ipcMain.handle('workspaces:rename', (_event, id: string, name: string) => {
-    renameWorkspace(loadSettings(), id, String(name))
-    notifyAgentsChanged()
-    broadcast('workspaces:changed')
-    return workspaceOverview()
-  })
-  ipcMain.handle('workspaces:delete', async (_event, id: string) => {
-    await workspaceSession.deleteWorkspace(id)
-    return workspaceOverview()
-  })
+  ipcMain.handle('workspaces:list', () => workspacesService.overview())
+  ipcMain.handle('workspaces:activity', () => workspacesService.activity())
+  ipcMain.handle('workspaces:boardSummary', () => workspacesService.boardSummaries())
+  ipcMain.handle('workspaces:switch', (_event, id: string) => workspacesService.switch(id))
+  ipcMain.handle('workspaces:create', (_event, name: string) => workspacesService.create(name))
+  ipcMain.handle('workspaces:rename', (_event, id: string, name: string) =>
+    workspacesService.rename(id, name)
+  )
+  ipcMain.handle('workspaces:delete', (_event, id: string) => workspacesService.delete(id))
 
   ipcMain.handle('settings:pickDirectory', async (event, current?: string) => {
-    const parent = BrowserWindow.fromWebContents(event.sender)
-    const options: OpenDialogOptions = {
+    const picked = await electronWindows.showOpenDialog(event.sender, {
       properties: ['openDirectory', 'createDirectory'],
       defaultPath: current
-    }
-    const result = parent
-      ? await dialog.showOpenDialog(parent, options)
-      : await dialog.showOpenDialog(options)
-    return result.canceled ? null : (result.filePaths[0] ?? null)
+    })
+    return picked?.[0] ?? null
   })
 
   ipcMain.handle('settings:listApps', () => listInstalledApps())
@@ -764,10 +655,9 @@ export function registerIpcHandlers(): void {
   )
 
   ipcMain.handle('settings:pickApp', async (event) => {
-    const parent = BrowserWindow.fromWebContents(event.sender)
     const windows = process.platform === 'win32'
     const linux = process.platform === 'linux'
-    const options: OpenDialogOptions = {
+    const result = await electronWindows.showOpenDialog(event.sender, {
       properties: ['openFile'],
       defaultPath: windows ? process.env.ProgramFiles : linux ? '/usr/bin' : '/Applications',
       // Linux programs have no extension to filter on.
@@ -776,26 +666,19 @@ export function registerIpcHandlers(): void {
         : linux
           ? []
           : [{ name: 'Applications', extensions: ['app'] }]
-    }
-    const result = parent
-      ? await dialog.showOpenDialog(parent, options)
-      : await dialog.showOpenDialog(options)
-    const picked = result.canceled ? undefined : result.filePaths[0]
+    })
+    const picked = result?.[0]
     // Windows and Linux have no `open -a`, so the program is kept by path and run directly.
     if (!picked) return null
     return process.platform === 'darwin' ? basename(picked, '.app') : picked
   })
 
   ipcMain.handle('settings:pickFiles', async (event, startIn?: string) => {
-    const parent = BrowserWindow.fromWebContents(event.sender)
-    const options: OpenDialogOptions = {
+    const picked = await electronWindows.showOpenDialog(event.sender, {
       properties: ['openFile', 'openDirectory', 'multiSelections'],
       defaultPath: startIn || loadSettings().defaultRepoPath || undefined
-    }
-    const result = parent
-      ? await dialog.showOpenDialog(parent, options)
-      : await dialog.showOpenDialog(options)
-    return result.canceled ? [] : result.filePaths
+    })
+    return picked ?? []
   })
 
   ipcMain.handle('terminal:create', (_event, options: SpawnOptions) =>
@@ -838,7 +721,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('tasks:forgetSession', (_event, taskId: string) =>
-    taskWrites.forgetSession(taskId)
+    tasksService.forgetSession(taskId)
   )
 
   // Removes the agent from the board: ends its live terminal, drops its status and forgets the
@@ -854,7 +737,7 @@ export function registerIpcHandlers(): void {
     }
     codexMonitor.release(monitorKey(workspaceId, id))
     clearAgentStatus(settings, id)
-    taskWrites.removeAgent(id)
+    tasksService.removeAgent(id)
   })
 
   ipcMain.handle('terminal:previewPrompt', (_event, taskId: string, templateId?: string) => {

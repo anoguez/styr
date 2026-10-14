@@ -4,6 +4,7 @@
     "src/main/**/*",
     "src/preload/**/*",
     "src/core/**/*",
+    "src/host/**/*",
     "src/mcp/**/*",
     "src/renderer/src/lib/terminalOutput.ts"
   ],
@@ -22,6 +23,6 @@
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
-    "paths": { "@core/*": ["./src/core/*"] }
+    "paths": { "@core/*": ["./src/core/*"], "@host/*": ["./src/host/*"] }
   }
 }

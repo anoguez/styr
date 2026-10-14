@@ -4,11 +4,12 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 const core = resolve('src/core')
+const host = resolve('src/host')
 const nodeExternals = ['electron', 'better-sqlite3', 'node-pty']
 
 export default defineConfig({
   main: {
-    resolve: { alias: { '@core': core } },
+    resolve: { alias: { '@core': core, '@host': host } },
     build: {
       externalizeDeps: true,
       rollupOptions: {

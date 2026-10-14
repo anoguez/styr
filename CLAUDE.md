@@ -7,16 +7,21 @@ Electron + React kanban board. See README.md for what it does and how to run it.
 - `src/core/` is the shared, Electron-free layer: types, zod schemas, config, markdown
   serialisation, the filesystem task store and the prompt builder. Both the main process and the MCP
   server import it. **Never import `electron` from `src/core/`** — it would break the MCP server.
+- `src/host/` is the Electron-free host layer: the services behind `ipc.ts`, taking injected ports
+  (`broadcast`, `notify`, `appPaths`, window operations) that `src/main/electronHost.ts`
+  implements. **Never import `electron` or `src/main/` from `src/host/`**; ESLint enforces both
+  layers. A service there has a fake-port test, and `ipc.ts` keeps only the `ipcMain.handle` lines
+  for its channels. The move happens in slices; `docs/architecture/host.md` says what has moved.
 - Markdown files under `<workspace folder>/tasks/` are the only source of truth. All writes go through
   `src/core/taskStore.ts`.
-- `src/main/taskIndex.ts` is a derived SQLite cache, written only by the main process. It must stay
+- `src/host/taskIndex.ts` is a derived SQLite cache, written only by the main process. It must stay
   reconstructible from the markdown alone — never store anything there that is not in a file. When
   you change its columns, bump `SCHEMA_VERSION`; the index drops and rebuilds itself from the task
   files, so no migration code is needed.
 - The main process serves renderer reads from the index (`queryTasks`, `findTask`) and routes writes
   through `taskStore`, then calls `notifyTasksChanged()` to re-index and broadcast.
 - External writes (the MCP server, an editor, a `git pull`) are picked up by the chokidar watcher in
-  `src/main/watcher.ts`, which runs the same `notifyTasksChanged()`.
+  `src/host/watcher.ts`, which runs the same `notifyTasksChanged()`.
 
 ## Where the detail lives
 
@@ -26,6 +31,7 @@ notes are in `docs/architecture/` — read the one for the area you are changing
 | Area                                                                                                              | File                                   |
 | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | Workspaces, per-workspace settings, `pinWorkspace`, settings store                                                | `docs/architecture/workspaces.md`      |
+| Host layer (`src/host/`): ports, services, the Electron-free rules, the extraction slices                         | `docs/architecture/host.md`            |
 | Git worktrees, base branch, landing                                                                               | `docs/architecture/worktrees.md`       |
 | Agent providers, Codex, launch, agent state, Orchestrate, Auto-run, prompt routing, "Done means landed"           | `docs/architecture/agents.md`          |
 | Menu bar, board, Settings dialog, terminal tabs/blocks/keys, theme, shortcuts, palette, inbox, worklog, title bar | `docs/architecture/ui.md`              |
