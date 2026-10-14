@@ -42,3 +42,29 @@ jobs:
 
       - run: yarn build
       - run: yarn test
+
+  # Starts the built app under Electron and drives it through the core flows (e2e/smoke.e2e.ts,
+  # docs/architecture/testing.md). Unlike the jobs above it runs the app, so the install keeps its
+  # scripts: Electron downloads its binary and postinstall builds the native modules for its ABI.
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      # Builds, then runs the smoke test against `out/` on a virtual display.
+      - run: xvfb-run --auto-servernum yarn test:smoke
+
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-test-results
+          path: test-results/
+          retention-days: 7
