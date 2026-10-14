@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.33.0](https://github.com/anoguez/styr/compare/v0.32.0...v0.33.0) (2026-10-14)
+
+
+### Features
+
+* report a Styr Terminal binary that will not load, and time both terminal engines ([#156](https://github.com/anoguez/styr/issues/156)) ([59ef2c5](https://github.com/anoguez/styr/commit/59ef2c54a8bd684915dacc55b593dba96a33f798))
+* rework the Worklog around tokens and sessions ([#154](https://github.com/anoguez/styr/issues/154)) ([c764604](https://github.com/anoguez/styr/commit/c7646044ae5c5a7e2a943cb249216c64aca5216d))
+
+
+### Bug Fixes
+
+* keep the Styr Terminal block list's renderer memory flat across large outputs ([#159](https://github.com/anoguez/styr/issues/159)) ([5827f6b](https://github.com/anoguez/styr/commit/5827f6b0580f2e698651cc07514d516c0eccce0a))
+* make the Styr Terminal block list keep up with large output ([#157](https://github.com/anoguez/styr/issues/157)) ([2ae5b65](https://github.com/anoguez/styr/commit/2ae5b65795b87719a6cd359d6c290f6b48dc46c4))
+
+
+### Documentation
+
+* keep the first macOS terminal engine benchmark data ([#158](https://github.com/anoguez/styr/issues/158)) ([36a4481](https://github.com/anoguez/styr/commit/36a44817f080d928d7a1d35d31135e08ad71942b))
+
 ## [0.32.0](https://github.com/anoguez/styr/compare/v0.31.0...v0.32.0) (2026-10-13)
 
 
