@@ -215,6 +215,12 @@ test('smoke', async () => {
     await page.mouse.down()
     await page.mouse.move(from.x + 20, from.y + from.height / 2, { steps: 5 })
     await page.mouse.move(to.x + to.width / 2, to.y + 80, { steps: 20 })
+    console.log('DIAG', JSON.stringify(await page.evaluate(async () => ({
+      visibility: document.visibilityState,
+      focus: document.hasFocus(),
+      size: [innerWidth, innerHeight],
+      raf: await Promise.race([new Promise((r) => requestAnimationFrame(() => r('raf ok'))), new Promise((r) => setTimeout(() => r('raf stalled'), 1000))])
+    }))), JSON.stringify({ from, to }))
     // Release only once dnd-kit has seen the card over the column (its screen-reader announcement):
     // on a slow machine the last moves are not processed yet, and the card drops back onto itself.
     await expect(page.getByRole('status').filter({ hasText: 'Draggable item' })).toContainText(
