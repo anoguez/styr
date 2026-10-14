@@ -16,11 +16,20 @@ export * from './types/worklog.js'
 export type {
   CliStatus,
   RemoteItem,
+  RestHeader,
+  RestMapping,
+  RestMethod,
+  RestRequest,
+  RestSourceSettings,
+  RestTestResult,
   SourceAccess,
   SourceConfig,
   SourceSyncState,
-  SourceTarget
+  SourceTarget,
+  SyncPreview,
+  SyncPreviewEntry
 } from './sources/types.js'
+export { DEFAULT_REST_SETTINGS, REST_METHODS } from './sources/types.js'
 
 export const ANSI_COLOURS = [
   'black',

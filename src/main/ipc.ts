@@ -89,6 +89,7 @@ import {
   listSourceTargets,
   observeTasks,
   refreshTask,
+  previewSource,
   resetSourceObserver,
   restartSourcePolling,
   sourceStates,
@@ -96,7 +97,13 @@ import {
   unlinkTask
 } from './sourceSync.js'
 import { adapterFor, runCommand, sourceProviders } from '@core/sources/index.js'
-import { taskFilterSchema, settingsChangeSchema, workspaceIdSchema } from '@core/taskSchema.js'
+import { testRestRequest } from '@core/sources/rest.js'
+import {
+  restSourceSettingsSchema,
+  taskFilterSchema,
+  settingsChangeSchema,
+  workspaceIdSchema
+} from '@core/taskSchema.js'
 import type { Task, TaskStatus, WorklogData, WorklogTask } from '@core/types.js'
 import { collectWorklog, diskWorklogSources } from '@core/worklogSources.js'
 import { createTaskWrites } from './taskWrites.js'
@@ -524,10 +531,20 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('sources:providers', () => sourceProviders())
   ipcMain.handle('sources:ghStatus', () => adapterFor('github')!.status(runCommand))
   ipcMain.handle('sources:state', () => sourceStates())
+  // sends the request as edited, unsaved; external sources are experimental, so only with the flag on
+  ipcMain.handle('sources:restTest', (_event, settings: unknown) => {
+    if (!loadSettings().experimental.externalSources)
+      throw new Error('Turn on External sources in Settings → Experimental first.')
+    return testRestRequest(restSourceSettingsSchema.parse(settings))
+  })
   ipcMain.handle('sources:targets', (_event, sourceId: string) =>
     listSourceTargets(String(sourceId))
   )
   ipcMain.handle('sources:sync', (_event, sourceId: string) => syncSource(String(sourceId)))
+  ipcMain.handle('sources:preview', (_event, sourceId: string) => previewSource(String(sourceId)))
+  ipcMain.handle('sources:apply', (_event, sourceId: string, itemIds: unknown) =>
+    syncSource(String(sourceId), z.array(z.string()).parse(itemIds))
+  )
   ipcMain.handle('sources:link', (_event, taskId: string, text: string) =>
     linkTask(String(taskId), String(text))
   )

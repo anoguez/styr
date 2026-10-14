@@ -56,3 +56,38 @@ repositories, with no list to maintain. Sync acts on the saved, active workspace
 pane disables it while there are unsaved changes. A bare `#12` in the task dialog's Issue row means
 the task's own repository; a pasted URL names its own. The MCP server has `list_sources` and a
 guarded `comment_on_source_item` (which takes the repository).
+
+## REST API source
+
+A second provider, `rest` (`src/core/sources/rest.ts`), behind the same flag and its own
+**REST API** page under Integrations (`RestSourcePane`). Still one source per provider: its
+`SourceConfig.rest` holds one request (method, URL, headers with a per-row switch, body — sent
+only for non-GET) and a mapping of dot paths (`data.items`, `fields.summary`, `labels[0].name`)
+from the JSON reply to `RemoteItem` fields. `mapItems` skips entries with no id; without an
+updated-at path, a content hash stands in for `updatedAt`, so `planSync`'s "unchanged" check still
+works. Closed is a list of state values compared without case.
+
+An endpoint is not found in a checkout, so the adapter has a `fixedTarget` (`rest`): `targetsOf`
+returns just that, with `Settings.defaultRepoPath` (or no repo path) for imported tasks, and
+`linkTask` uses it instead of `detectTarget`. `get` re-lists and finds by id, since a generic API
+has no agreed URL for one item; its "not found" error feeds the stale-link note. The source is
+read-only by construction: there is no `rest` entry in `WRITERS`, so `writableSource` refuses it,
+and the pane has no access control. The task dialog's Issue row only links GitHub.
+
+**Imports are reviewed, never automatic** (`SourceAdapter.reviewImports`, set by REST):
+`restartSourcePolling` skips the source, and the pane's **Review changes** calls `previewSource`,
+which reads the source and writes nothing (`addUnlistedLinked` with `report` off) and returns
+`previewPlan`'s list — new items and updates that visibly change a task (title, description,
+labels, Done). **Apply** sends the ticked item ids to `syncSource(id, selected)`, which re-reads
+the source and applies `selectActions`: the ticked items plus link-only refreshes there was
+nothing to ask about. Every `SyncAction` carries its `itemId` for this.
+
+**Send test request** calls `sources:restTest` with the draft (validated by
+`restSourceSettingsSchema`, refused while the flag is off); `testRestRequest` runs in the main
+process (no CORS), never throws, and returns status, timing, headers, a pretty-printed body capped
+at 64 KB, and the first five mapped items or the mapping error. Headers — tokens included — are
+stored in plain text in the workspace settings file; the pane says so.
+
+Both source pages edit `sources`, but a settings key belongs to one section, so the REST page
+lists no keys and carries `provider`; `unsavedChanges` judges a page with a `provider` by its own
+entry in `sources`.

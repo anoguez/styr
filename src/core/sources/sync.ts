@@ -4,6 +4,7 @@ import type {
   RemoteItem,
   SourceConfig,
   SourceTarget,
+  SyncPreviewEntry,
   Task,
   TaskDraft,
   TaskPatch
@@ -17,9 +18,9 @@ export function contentHash(title: string, body: string): string {
 }
 
 export type SyncAction =
-  | { kind: 'create'; draft: TaskDraft }
-  | { kind: 'update'; taskId: string; patch: TaskPatch; note?: string }
-  | { kind: 'note'; taskId: string; note: string }
+  | { kind: 'create'; itemId: string; draft: TaskDraft }
+  | { kind: 'update'; itemId: string; taskId: string; patch: TaskPatch; note?: string }
+  | { kind: 'note'; itemId: string; taskId: string; note: string }
 
 export interface SyncPlan {
   actions: SyncAction[]
@@ -114,6 +115,7 @@ export function planSync(
       if (item.state === 'closed' && !source.includeClosed) continue
       plan.actions.push({
         kind: 'create',
+        itemId: item.id,
         draft: {
           title: item.title,
           description: item.body,
@@ -122,7 +124,8 @@ export function planSync(
           ...(defaults.useWorktree !== undefined ? { useWorktree: defaults.useWorktree } : {}),
           ...(defaults.orchestrate !== undefined ? { orchestrate: defaults.orchestrate } : {}),
           tags: tagsFor(tagPrefix, item),
-          repoPath: where.repoPath,
+          // a REST source with no default repo path has none to give
+          ...(where.repoPath ? { repoPath: where.repoPath } : {}),
           externalRef: refFor(source, target, item)
         }
       })
@@ -175,6 +178,7 @@ export function planSync(
     }
     plan.actions.push({
       kind: 'update',
+      itemId: item.id,
       taskId: task.id,
       patch,
       ...(notes.length ? { note: notes.join(' ') } : {})
@@ -182,6 +186,71 @@ export function planSync(
     plan.updated++
   }
   return plan
+}
+
+/** What an update visibly changes; link bookkeeping alone is not a change worth asking about. */
+function visibleChanges(task: Task, patch: TaskPatch): string[] {
+  const changes: string[] = []
+  if (patch.title !== undefined && patch.title !== task.title) changes.push('Title')
+  if (patch.description !== undefined && patch.description !== task.description)
+    changes.push('Description')
+  if (patch.tags && patch.tags.join('\n') !== task.tags.join('\n')) changes.push('Labels')
+  if (patch.status && patch.status !== task.status) changes.push('Moves to Done')
+  return changes
+}
+
+/**
+ * The review list of a plan: every new task and every update that changes something visible.
+ * Updates that only refresh the link are left out; `selectActions` applies them anyway.
+ */
+export function previewPlan(plan: SyncPlan, tasks: Task[]): SyncPreviewEntry[] {
+  const byId = new Map(tasks.map((task) => [task.id, task]))
+  const entries: SyncPreviewEntry[] = []
+  for (const action of plan.actions) {
+    if (action.kind === 'create') {
+      entries.push({
+        itemId: action.itemId,
+        kind: 'create',
+        title: action.draft.title,
+        changes: [],
+        ...(action.draft.externalRef?.url ? { url: action.draft.externalRef.url } : {})
+      })
+    } else if (action.kind === 'update') {
+      const task = byId.get(action.taskId)
+      if (!task) continue
+      const changes = visibleChanges(task, action.patch)
+      if (changes.length === 0) continue
+      entries.push({
+        itemId: action.itemId,
+        kind: 'update',
+        title: action.patch.title ?? task.title,
+        taskId: task.id,
+        changes,
+        ...(task.externalRef?.url ? { url: task.externalRef.url } : {})
+      })
+    }
+  }
+  return entries
+}
+
+/**
+ * The actions a reviewed sync applies: the items the user ticked, plus updates with nothing
+ * visible to confirm, so a link does not keep showing as changed.
+ */
+export function selectActions(plan: SyncPlan, tasks: Task[], selected: string[]): SyncPlan {
+  const chosen = new Set(selected)
+  const asked = new Set(previewPlan(plan, tasks).map((entry) => entry.itemId))
+  const actions = plan.actions.filter(
+    (action) => chosen.has(action.itemId) || (action.kind !== 'create' && !asked.has(action.itemId))
+  )
+  return {
+    actions,
+    created: actions.filter((action) => action.kind === 'create').length,
+    updated: actions.filter(
+      (action) => action.kind === 'update' && asked.has(action.itemId) && chosen.has(action.itemId)
+    ).length,
+    unchanged: plan.unchanged
+  }
 }
 
 export type PushAction =

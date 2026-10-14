@@ -14,10 +14,19 @@ import {
   linkedTask,
   planBlockers,
   planPush,
-  planSync
+  planSync,
+  previewPlan,
+  selectActions
 } from '@core/sources/sync.js'
 import { addNote, createTask, getTask, listTasks, updateTask } from '@core/taskStore.js'
-import type { RemoteItem, SourceConfig, SourceSyncState, SourceTarget, Task } from '@core/types.js'
+import type {
+  RemoteItem,
+  SourceConfig,
+  SourceSyncState,
+  SourceTarget,
+  SyncPreview,
+  Task
+} from '@core/types.js'
 
 interface Hooks {
   onTasksChanged: () => void
@@ -65,6 +74,8 @@ export const NO_REPOSITORIES =
 
 /** The repositories of the active workspace's tasks, as this provider sees them. */
 export function targetsOf(adapter: SourceAdapter): SourceTarget[] {
+  if (adapter.fixedTarget)
+    return [{ target: adapter.fixedTarget, repoPath: loadSettings().defaultRepoPath }]
   return sourceTargets(adapter, [
     ...listTasks().map((task) => task.repoPath ?? ''),
     loadSettings().defaultRepoPath
@@ -118,7 +129,9 @@ async function addUnlistedLinked(
   source: SourceConfig,
   adapter: SourceAdapter,
   target: string,
-  items: RemoteItem[]
+  items: RemoteItem[],
+  /** Off for a preview, which must not write to the board. */
+  report = true
 ): Promise<void> {
   const seen = new Set(items.map((item) => item.id))
   for (const task of listTasks()) {
@@ -127,12 +140,12 @@ async function addUnlistedLinked(
     if (task.archivedAt) continue
     const key = `${task.id}:${ref.id}`
     try {
-      items.push(await adapter.get(runCommand, target, ref.id))
+      items.push(await adapter.get(source, runCommand, target, ref.id))
       staleReported.delete(key)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (!/not found|could not resolve|404|deleted|transferred/i.test(message)) continue
-      if (staleReported.has(key)) continue
+      if (!report || staleReported.has(key)) continue
       staleReported.add(key)
       addNote(
         task.id,
@@ -167,8 +180,47 @@ async function retryPushes(
   hooks?.onTasksChanged()
 }
 
-/** Pulls one source into the board. Never throws; the outcome is the source's state. */
-export async function syncSource(sourceId: string): Promise<SourceSyncState> {
+function planFor(
+  source: SourceConfig,
+  adapter: SourceAdapter,
+  where: SourceTarget,
+  items: RemoteItem[]
+): ReturnType<typeof planSync> {
+  const { taskDefaults } = loadSettings()
+  return planSync(listTasks(), items, source, adapter.tagPrefix, where, {
+    useWorktree: taskDefaults.useWorktree,
+    orchestrate: taskDefaults.orchestrate
+  })
+}
+
+/**
+ * What a sync of the source would do, without doing it: reads the source and writes nothing, so
+ * the user can pick what to apply. Never throws.
+ */
+export async function previewSource(sourceId: string): Promise<SyncPreview> {
+  try {
+    const { source, adapter } = find(sourceId)
+    const problem = cliProblem(await adapter.status(runCommand))
+    if (problem) throw new Error(problem)
+    const targets = targetsOf(adapter)
+    if (targets.length === 0) throw new Error(NO_REPOSITORIES)
+    const entries: SyncPreview['entries'] = []
+    for (const where of targets) {
+      const items = await adapter.list(source, runCommand, where.target, { limit: IMPORT_LIMIT })
+      await addUnlistedLinked(source, adapter, where.target, items, false)
+      entries.push(...previewPlan(planFor(source, adapter, where, items), listTasks()))
+    }
+    return { entries }
+  } catch (error) {
+    return { entries: [], error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/**
+ * Pulls one source into the board. Never throws; the outcome is the source's state. With
+ * `selected` (a reviewed sync) only those items' changes apply; see `selectActions`.
+ */
+export async function syncSource(sourceId: string, selected?: string[]): Promise<SourceSyncState> {
   const previous = states.get(sourceId)
   if (previous?.syncing) return previous
   setState(sourceId, { ...(previous ?? { created: 0, updated: 0 }), syncing: true })
@@ -187,10 +239,8 @@ export async function syncSource(sourceId: string): Promise<SourceSyncState> {
       try {
         const items = await adapter.list(source, runCommand, where.target, { limit: IMPORT_LIMIT })
         await addUnlistedLinked(source, adapter, where.target, items)
-        const plan = planSync(listTasks(), items, source, adapter.tagPrefix, where, {
-          useWorktree: loadSettings().taskDefaults.useWorktree,
-          orchestrate: loadSettings().taskDefaults.orchestrate
-        })
+        const planned = planFor(source, adapter, where, items)
+        const plan = selected ? selectActions(planned, listTasks(), selected) : planned
         applyPlan(plan.actions)
         const blocked = applyBlockers(source, where.target, items)
         created += plan.created
@@ -230,7 +280,7 @@ export async function linkTask(taskId: string, text: string, sourceId = 'github'
   if (!source.enabled) throw new Error('Turn the integration on in Settings first.')
   const task = getTask(taskId)
   if (!task) throw new Error(`Task ${taskId} not found`)
-  const own = task.repoPath ? adapter.detectTarget(task.repoPath) : null
+  const own = adapter.fixedTarget ?? (task.repoPath ? adapter.detectTarget(task.repoPath) : null)
   const ref = adapter.parseRef(text, own)
   if (!ref) {
     throw new Error(
@@ -247,7 +297,7 @@ export async function linkTask(taskId: string, text: string, sourceId = 'github'
       other.externalRef.id === ref.id
   )
   if (duplicate) throw new Error(`${ref.target}#${ref.id} is already linked to ${duplicate.id}.`)
-  const item = await adapter.get(runCommand, ref.target, ref.id)
+  const item = await adapter.get(source, runCommand, ref.target, ref.id)
   const updated = updateTask(taskId, {
     externalRef: {
       provider: source.provider,
@@ -276,7 +326,7 @@ export async function refreshTask(taskId: string): Promise<Task> {
   if (!task || !ref?.sourceId || !ref.target)
     throw new Error('This task is not linked to a source.')
   const { source, adapter } = find(ref.sourceId)
-  const item = await adapter.get(runCommand, ref.target, ref.id)
+  const item = await adapter.get(source, runCommand, ref.target, ref.id)
   const repoPath = task.repoPath ?? ''
   applyPlan(
     planSync([task], [item], source, adapter.tagPrefix, { target: ref.target, repoPath }).actions
@@ -345,6 +395,8 @@ export function restartSourcePolling(): void {
   timers.clear()
   for (const source of currentSources()) {
     if (!source.enabled || source.pollMinutes <= 0) continue
+    // a reviewed source applies only what the user picked, so it never syncs on its own
+    if (adapterFor(source.provider)?.reviewImports) continue
     timers.set(
       source.id,
       setInterval(() => void syncSource(source.id), source.pollMinutes * 60_000)

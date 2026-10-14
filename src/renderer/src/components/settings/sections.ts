@@ -46,8 +46,21 @@ export const SECTIONS = [
     scope: 'workspace',
     blurb: 'Link GitHub issues to tasks. Read-only sources are never written to.',
     keys: ['sources'],
+    provider: 'github',
     flag: 'externalSources',
     words: 'github issues sync gh external source integrations'
+  },
+  {
+    id: 'source-rest',
+    label: 'REST API',
+    group: 'integrations',
+    scope: 'workspace',
+    blurb: 'Import the items a REST endpoint returns as tasks. Styr only reads from it.',
+    // `sources` is claimed by the GitHub page; this one is judged by its own entry in it
+    keys: [],
+    provider: 'rest',
+    flag: 'externalSources',
+    words: 'rest api http endpoint request headers body json sync external source integrations'
   },
   {
     id: 'presets',
@@ -135,6 +148,8 @@ export const SECTIONS = [
   label: string
   /** The nav heading it sits under; defaults to its scope. */
   group?: 'integrations'
+  /** An Integrations page edits only this provider's entry of `sources`. */
+  provider?: string
   /** Hidden unless this experimental feature is switched on. */
   flag?: keyof ExperimentalSettings
   scope: 'workspace' | 'app'
@@ -176,8 +191,14 @@ export function unsavedChanges(
 ): { sections: ReadonlySet<SectionId>; count: number } {
   const isChanged = (key: keyof Settings): boolean =>
     JSON.stringify(draft[key]) !== JSON.stringify(baseline[key])
+  const sourceOf = (settings: Settings, provider: string): string =>
+    JSON.stringify(settings.sources.find((source) => source.provider === provider))
+  const sectionChanged = (item: Section): boolean =>
+    'provider' in item
+      ? sourceOf(draft, item.provider) !== sourceOf(baseline, item.provider)
+      : item.keys.some(isChanged)
   return {
-    sections: new Set(SECTIONS.filter((item) => item.keys.some(isChanged)).map((item) => item.id)),
+    sections: new Set(SECTIONS.filter(sectionChanged).map((item) => item.id)),
     count: SECTIONS.reduce((count, item) => count + item.keys.filter(isChanged).length, 0)
   }
 }

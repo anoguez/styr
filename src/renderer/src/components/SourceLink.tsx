@@ -24,8 +24,10 @@ export function SourceLink({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const ref = task.externalRef
+  // the Issue row links GitHub issues; a REST source's items only arrive by sync
   const enabled =
-    settings.experimental.externalSources && settings.sources.some((source) => source.enabled)
+    settings.experimental.externalSources &&
+    settings.sources.some((source) => source.id === 'github' && source.enabled)
 
   async function run(action: () => Promise<Task>): Promise<void> {
     setBusy(true)

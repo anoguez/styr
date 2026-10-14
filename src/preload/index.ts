@@ -12,10 +12,13 @@ import type {
   BrokenSettingsFile,
   CliStatus,
   OrchestrationSummary,
+  RestSourceSettings,
+  RestTestResult,
   Settings,
   SettingsChange,
   SourceSyncState,
   SourceTarget,
+  SyncPreview,
   Task,
   TaskDraft,
   TaskFilter,
@@ -163,10 +166,16 @@ const api = {
       ipcRenderer.invoke('sources:providers'),
     ghStatus: (): Promise<CliStatus> => ipcRenderer.invoke('sources:ghStatus'),
     state: (): Promise<Record<string, SourceSyncState>> => ipcRenderer.invoke('sources:state'),
+    restTest: (settings: RestSourceSettings): Promise<RestTestResult> =>
+      ipcRenderer.invoke('sources:restTest', settings),
     targets: (sourceId: string): Promise<SourceTarget[]> =>
       ipcRenderer.invoke('sources:targets', sourceId),
     sync: (sourceId: string): Promise<SourceSyncState> =>
       ipcRenderer.invoke('sources:sync', sourceId),
+    preview: (sourceId: string): Promise<SyncPreview> =>
+      ipcRenderer.invoke('sources:preview', sourceId),
+    apply: (sourceId: string, itemIds: string[]): Promise<SourceSyncState> =>
+      ipcRenderer.invoke('sources:apply', sourceId, itemIds),
     link: (taskId: string, text: string): Promise<Task> =>
       ipcRenderer.invoke('sources:link', taskId, text),
     unlink: (taskId: string): Promise<Task> => ipcRenderer.invoke('sources:unlink', taskId),
