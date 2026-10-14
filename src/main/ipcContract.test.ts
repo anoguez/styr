@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const PRELOAD = join(ROOT, 'src/preload/index.ts')
 /** Where main-process code that registers handlers or sends to the renderer may live. */
-const MAIN_DIRS = ['src/main', 'src/core'].map((dir) => join(ROOT, dir))
+const MAIN_DIRS = ['src/main', 'src/host', 'src/core'].map((dir) => join(ROOT, dir))
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

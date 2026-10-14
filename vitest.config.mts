@@ -2,8 +2,14 @@ import { fileURLToPath } from 'node:url'
 import { configDefaults, defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  // The renderer imports core values through this alias (electron-vite defines the same one).
-  resolve: { alias: { '@core': fileURLToPath(new URL('./src/core', import.meta.url)) } },
+  // The renderer imports core values through `@core`, and main the host layer through `@host`
+  // (electron-vite defines the same aliases).
+  resolve: {
+    alias: {
+      '@core': fileURLToPath(new URL('./src/core', import.meta.url)),
+      '@host': fileURLToPath(new URL('./src/host', import.meta.url))
+    }
+  },
   test: {
     // The Claude Code mod's own tests run under `claude plugin test`, against the engine's kit.
     // `.styr/` holds Styr's task worktrees: other checkouts of this repo, not tests of this one.

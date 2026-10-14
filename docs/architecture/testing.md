@@ -6,7 +6,7 @@ renamed channel, a main process that throws at start-up.
 ## IPC contract (`src/main/ipcContract.test.ts`)
 
 A plain vitest test, run by `yarn test`. It reads the source of `src/preload/index.ts` and of
-everything under `src/main/` and `src/core/`. It then checks that:
+everything under `src/main/`, `src/host/` and `src/core/`. It then checks that:
 
 - every `ipcRenderer.invoke('…')` has exactly one `ipcMain.handle('…')`, and every handler has a
   caller;

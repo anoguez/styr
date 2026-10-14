@@ -144,7 +144,7 @@ The hook command is deliberately plain POSIX shell: it wraps the hook's stdin pa
 new payload fields need no hook changes. It writes to a temp file then renames, so the watcher never
 reads a partial file, and falls back to `null` when stdin is empty.
 
-`src/main/watcher.ts` runs two independent watchers (tasks, agents). Its `close` helper clears the
+`src/host/watcher.ts` runs two independent watchers (tasks, agents). Its `close` helper clears the
 handle **synchronously** before awaiting the close — an async teardown that nulls its handle after
 the await will tear down a replacement watcher started in between, which silently killed the agents
 watcher while leaving the tasks watcher running.

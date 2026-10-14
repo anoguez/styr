@@ -18,7 +18,7 @@ a local preference, and `loadSettings` falls back to Default when it dangles.
 background workspace use `pathsInWorkspace(settings, id)` — a settings copy that resolves paths
 there — rather than a new parameter on every function. `pinWorkspace` is a process-wide override used only
 by the MCP server (from `STYR_WORKSPACE_ID`, set on every launched agent) and by `inOtherWorkspace`
-in `ipc.ts`, which wraps a _synchronous_ write; never leave it set across an `await`. The main
+in `src/host/workspacesService.ts`, which wraps a _synchronous_ write; never leave it set across an `await`. The main
 process must not read `STYR_WORKSPACE_ID` from its own environment: `yarn dev` inside an agent
 terminal would inherit it.
 

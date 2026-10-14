@@ -10,7 +10,7 @@ import {
 /**
  * Task mutations from the renderer, free of Electron: each operation validates its input, writes
  * through the task store and then re-indexes, so no caller can forget the notify that keeps the
- * board in step. `ipc.ts` supplies the real ports and maps its channels onto the operations.
+ * board in step. The tasks service (`tasksService.ts`) supplies the ports and exposes the operations.
  */
 export interface TaskWritePorts {
   /** Index lookup in the active workspace. */
