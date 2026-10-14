@@ -135,6 +135,8 @@ export function describeNativeStatus(status: NativeEngineStatus | null): string 
       return 'Not available on this platform'
     case 'missing-package':
       return 'Not included in this build'
+    case 'load-failed':
+      return `Could not be loaded: ${status.detail}`
     case 'incompatible-version':
       return `Incompatible engine: ${status.detail}`
     default:

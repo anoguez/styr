@@ -8,6 +8,7 @@ import { clipboardKey, isAppShortcut, multilineSequence } from '../lib/terminalK
 import { BlockTracker, type BlockLayout } from '../lib/blockTracker.js'
 import { syntaxFor, type ShellDialect } from '@core/shell.js'
 import { TerminalOutputSynchronizer } from '../lib/terminalOutput.js'
+import { benchTimer } from '../lib/terminalBench.js'
 
 export interface TerminalSelection {
   text: string
@@ -128,6 +129,7 @@ export function TerminalView({
       window.api.terminal.resize(sessionId, terminal.cols, terminal.rows)
     }
 
+    const bench = benchTimer('xterm', sessionId)
     const tracker = new BlockTracker(terminal, element, (layout) => onBlocksRef.current?.(layout))
     const output = new TerminalOutputSynchronizer({
       write: (data) => {
@@ -135,7 +137,11 @@ export function TerminalView({
       },
       // An empty write is queued behind the data before it, so its callback runs exactly when the
       // cursor is where the shell was when it sent the mark.
-      mark: (mark) => terminal.write('', () => tracker.mark(mark))
+      mark: (mark) =>
+        terminal.write('', () => {
+          tracker.mark(mark)
+          bench.drawn(mark)
+        })
     })
     const offData = window.api.terminal.onData(({ id, ...event }) => {
       if (id === sessionId) output.writeLive(event)

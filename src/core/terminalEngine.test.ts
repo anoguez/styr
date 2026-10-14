@@ -41,6 +41,7 @@ describe('selectTerminalEngine', () => {
   it.each([
     ['unsupported-platform', 'linux-x64'],
     ['missing-package', 'not bundled'],
+    ['load-failed', "version `GLIBC_2.35' not found"],
     ['incompatible-version', 'API 2, Styr needs 1'],
     ['init-failed', 'probe failed']
   ] as const)('falls back to xterm.js when the engine is %s', (reason, detail) => {
@@ -136,6 +137,9 @@ describe('describeNativeStatus', () => {
     ).toBe('Not available on this platform')
     expect(describeNativeStatus({ available: false, reason: 'missing-package', detail: '' })).toBe(
       'Not included in this build'
+    )
+    expect(describeNativeStatus({ available: false, reason: 'load-failed', detail: 'x' })).toBe(
+      'Could not be loaded: x'
     )
     expect(
       describeNativeStatus({ available: false, reason: 'incompatible-version', detail: 'API 2' })

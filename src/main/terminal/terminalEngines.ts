@@ -3,8 +3,16 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { app, ipcMain } from 'electron'
 import { describeNativeStatus, experimentalTerminalOverride } from '@core/terminalEngine.js'
+import {
+  CommandTimer,
+  formatBenchRecord,
+  isBenchRecord,
+  type BenchProcesses,
+  type TerminalBenchRecord
+} from '@core/terminalBench.js'
 import type {
   NativeUnavailableReason,
+  TerminalMark,
   TerminalEngineAvailability,
   TerminalEngineEnvironment,
   TerminalEngineDiagnostic,
@@ -93,14 +101,59 @@ const REASONS: readonly NativeUnavailableReason[] = [
   'disabled',
   'unsupported-platform',
   'missing-package',
+  'load-failed',
   'incompatible-version',
   'init-failed',
   'runtime-error'
 ]
 
+/** `STYR_TERMINAL_BENCH=1` times commands in each engine; ignored when packaged, like the path. */
+const benchmarking = (): boolean => !app.isPackaged && process.env.STYR_TERMINAL_BENCH === '1'
+
+/**
+ * Each process's CPU since the previous call (Electron measures it that way) and its working set.
+ * Called at every command start too, so a record's CPU covers that command alone — provided the
+ * Performance panel, which calls it as well, stays closed while benchmarking.
+ */
+function benchProcesses(): BenchProcesses {
+  const processes: BenchProcesses = {}
+  for (const metric of app.getAppMetrics()) {
+    const entry = (processes[metric.type] ??= { cpuPercent: 0, memoryMb: 0 })
+    entry.cpuPercent += metric.cpu.percentCPUUsage
+    // workingSetSize is in KB
+    entry.memoryMb += metric.memory.workingSetSize / 1024
+  }
+  return processes
+}
+
+function logBench(record: TerminalBenchRecord): void {
+  process.stdout.write(`${formatBenchRecord(record, benchProcesses())}\n`)
+}
+
+/** Times native sessions from the marks the host has drawn (`NativeHostPorts.drawn`). */
+function nativeBenchTimer(): {
+  drawn: (id: string, marks: TerminalMark[]) => void
+  forget: (id: string) => void
+} {
+  const timers = new Map<string, CommandTimer>()
+  return {
+    drawn: (id, marks) => {
+      let timer = timers.get(id)
+      if (!timer) timers.set(id, (timer = new CommandTimer('native', id)))
+      for (const mark of marks) {
+        const end = timer.observe(mark)
+        const record = end && timer.finish(end, Date.now())
+        if (record) logBench(record)
+      }
+    },
+    forget: (id) => timers.delete(id)
+  }
+}
+
 export function registerTerminalEngines(
   broadcast: (channel: string, payload: unknown) => void
 ): NativeTerminalHost {
+  const bench = benchmarking() ? nativeBenchTimer() : undefined
   const host = new NativeTerminalHost({
     factory: () => nativeEngine().factory,
     status: () => nativeEngine().status,
@@ -118,10 +171,23 @@ export function registerTerminalEngines(
       })
       broadcast('terminal:nativeFailed', failure)
     },
-    defer: (task) => setImmediate(task)
+    defer: (task) => setImmediate(task),
+    ...(bench ? { drawn: bench.drawn } : {})
   })
-  onTerminalData((id, output) => host.write(id, output))
-  onTerminalExit((id) => host.detach(id))
+  onTerminalData((id, output) => {
+    host.write(id, output)
+    // Starts the CPU window of the command, whichever engine shows it.
+    if (bench && output.marks.some((mark) => mark.kind === 'start')) benchProcesses()
+  })
+  onTerminalExit((id) => {
+    host.detach(id)
+    bench?.forget(id)
+  })
+
+  ipcMain.handle('terminal:benchEnabled', () => bench !== undefined)
+  ipcMain.on('terminal:bench', (_event, record: unknown) => {
+    if (bench && isBenchRecord(record)) logBench(record)
+  })
 
   ipcMain.handle('terminal:engineAvailability', (): TerminalEngineAvailability => ({
     ...findNativePackage(loaderEnvironment()),

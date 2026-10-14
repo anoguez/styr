@@ -76,6 +76,23 @@ describe('loadNativeEngine', () => {
     expect(result.status.available || result.status.detail).not.toContain('/Users/someone')
   })
 
+  it('reports a package that is present but will not load as load-failed', () => {
+    const result = loadNativeEngine(
+      env({
+        exists: () => true,
+        load: () => {
+          throw new Error(
+            "/lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.35' not found (required by /home/someone/styr-terminal.linux-x64-gnu.node)"
+          )
+        }
+      })
+    )
+    expect(result.status).toMatchObject({ available: false, reason: 'load-failed' })
+    const detail = result.status.available ? '' : result.status.detail
+    expect(detail).toContain('GLIBC_2.35')
+    expect(detail).not.toContain('/home/someone')
+  })
+
   it('falls back to resolving the package by name when no bundled copy exists', () => {
     const asked: string[] = []
     loadNativeEngine(

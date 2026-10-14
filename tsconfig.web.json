@@ -28,6 +28,7 @@
     "src/core/taskPreset.ts",
     "src/core/diagnostics.ts",
     "src/core/terminalEngine.ts",
+    "src/core/terminalBench.ts",
     "src/core/blocks.ts",
     "src/core/agentConversation.ts",
     "src/core/providers/types.ts",

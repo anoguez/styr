@@ -12,6 +12,7 @@ const FALLBACK_LABEL: Record<NativeUnavailableReason, string> = {
   disabled: 'turned off',
   'unsupported-platform': 'not available on this platform',
   'missing-package': 'not included in this build',
+  'load-failed': 'could not be loaded',
   'incompatible-version': 'an incompatible version',
   'init-failed': 'failed to start',
   'runtime-error': 'stopped unexpectedly'

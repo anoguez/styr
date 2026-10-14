@@ -63,6 +63,8 @@ export type NativeUnavailableReason =
   | 'disabled'
   | 'unsupported-platform'
   | 'missing-package'
+  /** The package is there but its binary would not load (e.g. glibc older than the build's). */
+  | 'load-failed'
   | 'incompatible-version'
   | 'init-failed'
   | 'runtime-error'

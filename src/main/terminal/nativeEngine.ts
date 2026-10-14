@@ -118,9 +118,9 @@ export function loadNativeEngine(env: LoaderEnvironment): LoadResult {
   try {
     module = env.load(path ?? PACKAGE_NAME)
   } catch (error) {
-    return {
-      status: { available: false, reason: 'missing-package', detail: diagnosticDetail(error) }
-    }
+    // Found but unloadable is not "missing": on Linux it is usually a glibc older than the build's.
+    const reason = path ? 'load-failed' : 'missing-package'
+    return { status: { available: false, reason, detail: diagnosticDetail(error) } }
   }
   let check: ReturnType<typeof checkNativeModule>
   try {
