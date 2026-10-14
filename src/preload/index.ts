@@ -4,6 +4,7 @@ import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
 import type { ContextUsage, ProviderUsage } from '../core/usage.js'
 import type { AgentConversation } from '../core/agentConversation.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
+import type { TerminalBenchRecord } from '../core/terminalBench.js'
 import type {
   AgentCliReport,
   AppInfo,
@@ -271,6 +272,11 @@ const api = {
         'sessionId' | 'requested' | 'selected' | 'fallbackReason' | 'detail'
       >
     ): void => ipcRenderer.send('terminal:engineSelected', entry),
+    /** `STYR_TERMINAL_BENCH` timing, dev builds only (`core/terminalBench.ts`). */
+    bench: {
+      enabled: (): Promise<boolean> => ipcRenderer.invoke('terminal:benchEnabled'),
+      report: (record: TerminalBenchRecord): void => ipcRenderer.send('terminal:bench', record)
+    },
     native: {
       attach: (id: string, cols: number, rows: number): Promise<NativeAttachResult> =>
         ipcRenderer.invoke('terminal:nativeAttach', id, cols, rows),

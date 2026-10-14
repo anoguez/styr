@@ -336,6 +336,24 @@ describe('NativeTerminalHost command blocks', () => {
     ])
   })
 
+  it('reports the marks it has drawn after the frame that shows them, when asked to', () => {
+    const drawn: { id: string; kinds: string[]; afterFrames: number }[] = []
+    let frameCount = 0
+    const { host, flush } = setup({
+      sendFrame: () => (frameCount += 1),
+      drawn: (id, marks) =>
+        drawn.push({ id, kinds: marks.map((mark) => mark.kind), afterFrames: frameCount })
+    })
+    host.attach('s1', 80, 24)
+    host.write('s1', output('$ ls\r\n', [start(6)]))
+    host.write('s1', output('a\r\n$ ', [end(3)], 2))
+    expect(drawn).toEqual([])
+    flush()
+    expect(drawn).toEqual([{ id: 's1', kinds: ['start', 'end'], afterFrames: 1 }])
+    flush()
+    expect(drawn).toHaveLength(1)
+  })
+
   it('lets a running command follow the cursor, and sends blocks only when they change', () => {
     const { host, frames, flush } = setup()
     host.attach('s1', 80, 24)

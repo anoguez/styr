@@ -6,6 +6,7 @@ import type {
   NativeEngineFailure,
   NativeEngineStatus,
   NativeFrameEvent,
+  TerminalMark,
   TerminalOutput
 } from '@core/types.js'
 import type { NativeEngineFactory, NativeTerminalEngine } from './nativeEngine.js'
@@ -42,6 +43,11 @@ export interface NativeHostPorts {
   sendFailure: (failure: NativeEngineFailure) => void
   /** Runs `task` once the current burst of PTY events has been handled (`setImmediate`). */
   defer: (task: () => void) => void
+  /**
+   * `STYR_TERMINAL_BENCH` only: the marks whose output has just been sent to the renderer, so a
+   * command's end can be timed when it was drawn. Unset, the host keeps no marks for it.
+   */
+  drawn?: (id: string, marks: TerminalMark[]) => void
 }
 
 interface Attached {
@@ -58,6 +64,8 @@ interface Attached {
   blockList?: BlockSession
   size: { cols: number; rows: number }
   create: NativeEngineFactory['create']
+  /** Marks written since the last flush, kept only for `drawn`. */
+  drawnMarks: TerminalMark[]
 }
 
 export class NativeTerminalHost {
@@ -98,6 +106,7 @@ export class NativeTerminalHost {
         flushQueued: false,
         commandBlocks: CommandBlockTracker.create(engine),
         sentBlocks: '',
+        drawnMarks: [],
         canList: supportsBlockList(engine),
         size: { cols, rows },
         create: (options) => factory.create(options)
@@ -134,6 +143,7 @@ export class NativeTerminalHost {
     const entry = this.attached.get(id)
     if (!entry || (!output.data && output.marks.length === 0)) return
     this.guard(id, () => writeMarked(entry, output))
+    if (this.ports.drawn) entry.drawnMarks.push(...output.marks)
     this.scheduleFlush(id)
   }
 
@@ -255,6 +265,10 @@ export class NativeTerminalHost {
         })
       }
     })
+    if (entry.drawnMarks.length > 0 && this.attached.get(id) === entry) {
+      const marks = entry.drawnMarks.splice(0)
+      this.ports.drawn?.(id, marks)
+    }
   }
 
   /**

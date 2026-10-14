@@ -39,9 +39,10 @@ install on an unreachable optional dependency, so a public clone would break. It
 Loading happens once per run and only via `terminal:engineEnvironment`, which the renderer calls
 only when a view wants the native engine. `terminal:engineAvailability` (for Settings) checks the
 platform and the directory without loading. Every way it can fail is a `NativeEngineStatus`:
-`unsupported-platform`, `missing-package`, `incompatible-version` (wrong `API_VERSION`, wrong shape,
-or `engineInfo()` disagreeing), `init-failed` (the probe engine could not be created, written, read
-or freed). None of them is fatal; the app runs on xterm.js.
+`unsupported-platform`, `missing-package` (no copy found), `load-failed` (a copy was found but its
+binary would not load — on Linux usually a glibc older than the build's), `incompatible-version`
+(wrong `API_VERSION`, wrong shape, or `engineInfo()` disagreeing), `init-failed` (the probe engine
+could not be created, written, read or freed). None of them is fatal; the app runs on xterm.js.
 
 ## Fallback without losing output
 
@@ -309,6 +310,12 @@ only once their artifacts load in Styr's Electron.
 fallback reason, a path-stripped one-line detail, engine and core version, platform/arch) in memory.
 They appear in the Performance panel's report, and a fallback logs one `[terminal-engine]` warning.
 No terminal contents, environment or tokens are ever recorded.
+
+For the engine comparison, a dev build started with `STYR_TERMINAL_BENCH=1` also logs one
+`[terminal-bench]` line per shell command: how long its output took to be drawn in this engine, and
+CPU and memory per process over it (`core/terminalBench.ts`; xterm.js reports from `TerminalView`,
+the native host through its `drawn` port). It adds no timers and records no contents, and a
+packaged app ignores it. The procedure is in `scripts/terminal-bench/README.md`.
 
 ## Blocks
 
