@@ -68,6 +68,18 @@ src/core/  (types, schemas, taskStore, pure rules)
   store (`diskAgentStore`), git (`diskGit`), the index and task files, the terminals, the monitor,
   `publishConversation` (main's `usage.ts`), the CLI checks, `updateTray` (main's `tray.ts`, which
   owns the Electron `Tray` and the "needs you" `Notification`) and the Auto-run request.
+- `dispatchService.ts`: Dispatch and Auto-run. `plan()` (`orchestrate:plan`, the summary without
+  task objects), `run(taskIds?)` (`orchestrate:run`: the bounded merged-work check, then the plan,
+  then each launch), `autoState` / `autoSet` (`orchestrate:autoState`, `orchestrate:autoSet`), and
+  the Auto-run runner (`core/autoDispatchRunner.ts`) wired to its ports: the flag written to the
+  active workspace's file with a `settings:changed` broadcast, `orchestrate:autoStarted` for each
+  session it starts, the failure and rework notes, and the breaker's pause and rework-cap messages
+  through `notify`. `requestAutoRun`, `startAutoRun` (the startup grace) and `autoRunFlagChanged`
+  are what the tasks and agents services, `index.ts` and `settings:save` call. Its ports are the
+  settings (`diskDispatchSettings`), the index and `addNote`, the live sessions, the agent rows,
+  the agents service's `launch`, main's `checkForMergedWork` and the clock (`realClock`). The rules
+  stay pure in `core/orchestrate.ts` and `core/autoDispatch.ts`. `ipc.ts` creates it after the
+  agents service.
 - `codexMonitor.ts`: the Codex app-server client (`CodexMonitor`, `prepareCodex`).
 - `taskIndex.ts`: the derived SQLite index (see CLAUDE.md for its rules).
 - `watcher.ts`: the tasks and agents chokidar watchers (see `agents.md` for the close race).

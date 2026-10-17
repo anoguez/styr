@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { app, ipcMain, shell } from 'electron'
 import { opensTextFiles, type AppInfo } from '@core/appFilter.js'
 import { workspaceDir } from '@core/config.js'
-import { loadSettings, persistSettings, saveWorkspaceSettings } from '@core/settingsStore.js'
+import { loadSettings, persistSettings } from '@core/settingsStore.js'
 import type { AgentStatus } from '@core/agentState.js'
 import { planLaunch, renderPrompt } from '@core/launch.js'
 import { providerFor } from '@core/providers/index.js'
@@ -15,15 +15,6 @@ import { terminalEngineDiagnostics } from './terminal/terminalEngines.js'
 import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
 import { findGitRoot, listBranches, readGitBranch } from '@core/worktree.js'
 import { taskCheckout, type CheckoutTask, type TaskCheckout } from '@core/taskCheckout.js'
-import { createAutoDispatch } from '@core/autoDispatchRunner.js'
-import { AUTO_REWORK_LIMIT } from '@core/autoDispatch.js'
-import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
-import type {
-  AutoDispatchPause,
-  OrchestrationLane,
-  OrchestrationSummary,
-  TerminalSessionInfo
-} from '@core/types.js'
 import {
   addNote,
   brokenTaskFiles,
@@ -58,6 +49,7 @@ import {
 import type { Task, TaskStatus, WorklogData, WorklogTask } from '@core/types.js'
 import { collectWorklog, diskWorklogSources } from '@core/worklogSources.js'
 import { createAgentsService, diskAgentStore, diskGit } from '@host/agentsService.js'
+import { createDispatchService, diskDispatchSettings, realClock } from '@host/dispatchService.js'
 import { createTasksService } from '@host/tasksService.js'
 import {
   createWorkspacesService,
@@ -107,7 +99,7 @@ const tasksService = createTasksService({
   settleLandedTasks,
   observeTasks,
   recordNotifyDuration,
-  requestAutoRun: () => autoDispatch.request(),
+  requestAutoRun: () => dispatchService.requestAutoRun(),
   notifyAgents: notifyAgentsChanged
 })
 
@@ -171,7 +163,7 @@ const agentsService = createAgentsService({
   prepareCodex,
   planLaunch,
   updateTray,
-  requestAutoRun: () => autoDispatch.request()
+  requestAutoRun: () => dispatchService.requestAutoRun()
 })
 
 export function agentStatuses(): AgentStatus[] {
@@ -254,112 +246,25 @@ export async function checkForMergedWork(): Promise<void> {
   }
 }
 
-/** How long a Dispatch run or Auto-run pass waits for that check before going ahead without it. */
-const MERGED_WORK_WAIT_MS = 5_000
-
-/** The check, awaited for at most `MERGED_WORK_WAIT_MS`: a slow remote never holds up a dispatch. */
-function checkForMergedWorkBriefly(): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const deadline = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, MERGED_WORK_WAIT_MS)
-  })
-  return Promise.race([checkForMergedWork(), deadline]).finally(() => clearTimeout(timer))
-}
-
-const launchSessionForTask = agentsService.launch
-
-function buildPlan(skip?: ReadonlySet<string>): OrchestrationPlan {
-  const active = loadSettings().activeWorkspaceId
-  const liveTaskIds = new Set(
-    listSessions()
-      .filter((session) => session.workspaceId === active)
-      .map((session) => session.taskId)
-      .filter(Boolean) as string[]
-  )
-  const agents = new Map(agentStatuses().map((status) => [status.taskId, status.state]))
-  return planOrchestration(loadSettings(), queryTasks(), { liveTaskIds, agents, skip })
-}
-
-/** Starts one planned task the way Dispatch does, whether a person or Auto-run asked. */
-function dispatchTask(task: Task, lane: OrchestrationLane): Promise<TerminalSessionInfo> {
-  return launchSessionForTask(task.id, {
-    withPrompt: true,
-    fresh: lane === 'review',
-    provider: providerForLane(loadSettings(), lane)
-  })
-}
-
-const PAUSE_MESSAGES: Record<AutoDispatchPause, string> = {
-  limit: 'Auto-run started too many tasks in an hour and has switched itself off.',
-  failures: 'Auto-run switched itself off after three launches in a row failed.'
-}
-
-/** The flag is a workspace setting, so it is written to the active workspace's own file. */
-function writeAutoDispatchFlag(on: boolean): void {
-  const settings = loadSettings()
-  if (settings.autoDispatch === on) return
-  saveWorkspaceSettings({ ...settings, autoDispatch: on }, settings.activeWorkspaceId)
-  broadcast('settings:changed', loadSettings())
-}
-
-const autoDispatch = createAutoDispatch({
-  enabled: () => loadSettings().autoDispatch,
-  setEnabled: writeAutoDispatchFlag,
-  workspaceId: () => loadSettings().activeWorkspaceId,
-  beforePass: checkForMergedWorkBriefly,
-  snapshot: (skip) => ({ plan: buildPlan(skip), tasks: queryTasks() }),
-  launch: async (task, lane) => {
-    // The renderer only learns of sessions it asked for, so tell it about this one.
-    broadcast('orchestrate:autoStarted', await dispatchTask(task, lane))
-  },
-  noteFailure: (task, error) => {
-    const message = error instanceof Error ? error.message : String(error)
-    try {
-      addNote(task.id, 'styr', `Auto-run could not start this task: ${message}`)
-    } catch {
-      // The task may have been deleted meanwhile; there is nothing to note it on.
-    }
-  },
-  reworkCapped: (task) => {
-    const message = `${task.id} failed review ${AUTO_REWORK_LIMIT} times; it needs you.`
-    try {
-      addNote(task.id, 'styr', `${message} Auto-run no longer starts it; Dispatch now still does.`)
-    } catch {
-      // The task may have been deleted meanwhile; the notification still says so.
-    }
-    electronHost.notify('Styr', message)
-  },
-  paused: (reason) => electronHost.notify('Styr', PAUSE_MESSAGES[reason]),
-  stateChanged: (state) => broadcast('orchestrate:autoState', state),
-  now: () => Date.now(),
-  setTimer: (run, ms) => setTimeout(run, ms),
-  clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+/**
+ * Dispatch and Auto-run, created after the agents service, whose launch and agent rows it plans
+ * and starts with. The tasks and agents services request Auto-run through it lazily.
+ */
+const dispatchService = createDispatchService({
+  broadcast,
+  notify: electronHost.notify,
+  settings: diskDispatchSettings,
+  tasks: { query: () => queryTasks(), addNote },
+  liveSessions: () => listSessions(),
+  agentStatuses,
+  launch: agentsService.launch,
+  checkForMergedWork,
+  clock: realClock
 })
 
 /** Called once the window is up: after the startup grace Auto-run evaluates the board. */
 export function startAutoDispatch(): void {
-  autoDispatch.start()
-}
-
-/** The plan without the task objects, which the renderer does not need. */
-function summarisePlan(): OrchestrationSummary {
-  const plan = buildPlan()
-  return {
-    dispatch: plan.dispatch.map(({ task, lane }) => ({
-      taskId: task.id,
-      title: task.title,
-      lane,
-      provider: providerForLane(loadSettings(), lane)
-    })),
-    occupied: plan.occupied,
-    capacity: plan.capacity,
-    eligible: plan.eligible,
-    optedOut: plan.optedOut,
-    blocked: plan.blocked,
-    missingWorkingDir: plan.missingWorkingDir,
-    idleSessions: plan.idleSessions,
-    reworkHeld: plan.dispatch.map(({ task }) => task.id).filter((id) => autoDispatch.held().has(id))
-  }
+  dispatchService.startAutoRun()
 }
 
 export function registerIpcHandlers(): void {
@@ -479,31 +384,12 @@ export function registerIpcHandlers(): void {
     }).mcpInstallCommand(entry, resolveShell(loadSettings().shell).syntax)
   })
 
-  ipcMain.handle('orchestrate:plan', () => summarisePlan())
+  ipcMain.handle('orchestrate:plan', () => dispatchService.plan())
   ipcMain.handle('tasks:checkMerged', () => checkForMergedWork())
 
-  ipcMain.handle('orchestrate:run', async (_event, taskIds?: string[]) => {
-    const wanted = taskIds ? new Set(taskIds) : null
-    // A review whose PR was merged since the dialog opened is Done now, and drops out of the plan.
-    await checkForMergedWorkBriefly()
-    const plan = buildPlan()
-    return Promise.all(
-      plan.dispatch
-        .filter(({ task }) => !wanted || wanted.has(task.id))
-        .map(async ({ task, lane }) => ({
-          lane,
-          taskId: task.id,
-          session: await dispatchTask(task, lane)
-        }))
-    )
-  })
-
-  ipcMain.handle('orchestrate:autoState', () => autoDispatch.state())
-  ipcMain.handle('orchestrate:autoSet', (_event, on: unknown) => {
-    writeAutoDispatchFlag(z.boolean().parse(on))
-    autoDispatch.enabledChanged()
-    return autoDispatch.state()
-  })
+  ipcMain.handle('orchestrate:run', (_event, taskIds?: string[]) => dispatchService.run(taskIds))
+  ipcMain.handle('orchestrate:autoState', () => dispatchService.autoState())
+  ipcMain.handle('orchestrate:autoSet', (_event, on: unknown) => dispatchService.autoSet(on))
 
   ipcMain.handle('settings:get', (_event, workspaceId: unknown) =>
     loadSettings(workspaceIdSchema.optional().parse(workspaceId))
@@ -515,7 +401,7 @@ export function registerIpcHandlers(): void {
       persistSettings(parsed)
     } finally {
       workspacesService.afterSettingsSave(folderBefore, parsed.workspaceId)
-      autoDispatch.enabledChanged()
+      dispatchService.autoRunFlagChanged()
     }
     return loadSettings()
   })
@@ -584,7 +470,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'terminal:launchAgent',
     async (_event, taskId: string, templateId?: string, provider?: 'claude' | 'codex') =>
-      launchSessionForTask(taskId, { templateId, provider })
+      agentsService.launch(taskId, { templateId, provider })
   )
 
   ipcMain.handle('terminal:resumeSession', (_event, taskId: string, sessionId: string) =>

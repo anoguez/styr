@@ -212,7 +212,7 @@ open.
 
 `src/core/orchestrate.ts` is a pure planner: given settings, tasks and the set of task ids holding a
 live session, it returns what to start. All the selection rules live there so they can be tested
-without launching anything; `ipc.ts` only performs the launches.
+without launching anything; `src/host/dispatchService.ts` only performs the launches.
 
 `laneFor` mirrors `resolveTemplateFor` — readiness outranks status — so a task's lane always matches
 the template it will actually run. Change one and change the other.
@@ -249,7 +249,7 @@ The shipped review template's id is `code-review`, not `review`, because an earl
 user-owned `review` template; an id collision silently shadows the shipped one and a reviewer then
 gets no instruction on how to record its verdict.
 
-`launchSessionForTask` in `ipc.ts` is shared by the per-task launch and the orchestrator, so both
+The agents service's `launch` is shared by the per-task launch and the orchestrator, so both
 advance the board and record the session identically.
 
 ## Task dependencies
@@ -275,11 +275,11 @@ asks. This follows the shortcut rule: warn, do not force the user to undo someth
 
 Dispatch's **Auto-run** (`Settings.autoDispatch`, a workspace setting, default off) keeps starting what
 "Dispatch now" would start. It is **event-driven, never a timer**: `notifyTasksChanged` and
-`notifyAgentsChanged` call `autoDispatch.request()`, which only marks work and arms one ~750ms
+`notifyAgentsChanged` call `requestAutoRun()`, which only marks work and arms one ~750ms
 trailing timer, so a burst of writes is one pass and an idle app does nothing. Nothing in the plan
 depends on elapsed time, so do not add an interval; a future time-based rule would arm a timer for a
 known instant. The runner is `core/autoDispatchRunner.ts` behind injected ports (tested with fakes,
-wired in `ipc.ts`); the rules are pure in `core/autoDispatch.ts`.
+wired in `src/host/dispatchService.ts`); the rules are pure in `core/autoDispatch.ts`.
 
 - **Stop is the flag going off.** The flag is read before every launch, so a pass under way starts
   nothing further; running agents are never touched. The limit and failure pauses use the same path
