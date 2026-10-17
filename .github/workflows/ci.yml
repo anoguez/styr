@@ -43,7 +43,7 @@ jobs:
       - run: yarn build
       - run: yarn test
 
-  # Starts the built app under Electron and drives it through the core flows (e2e/smoke.e2e.ts,
+  # Starts the built app under Electron and drives it through the core flows (e2e/*.e2e.ts,
   # docs/architecture/testing.md). Unlike the jobs above it runs the app, so the install keeps its
   # scripts: Electron downloads its binary and postinstall builds the native modules for its ABI.
   smoke:

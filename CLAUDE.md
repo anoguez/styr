@@ -39,7 +39,7 @@ notes are in `docs/architecture/` — read the one for the area you are changing
 | External sources (GitHub Issues, experimental)                                                                    | `docs/architecture/sources.md`         |
 | Updater and release pipeline                                                                                      | `docs/architecture/releases.md`        |
 | Terminal engines: xterm.js and experimental Styr Terminal, fallback, native package, release access               | `docs/architecture/terminal-engine.md` |
-| IPC contract test, Electron smoke test (`yarn test:smoke`), adding a smoke step                                   | `docs/architecture/testing.md`         |
+| IPC contract test, Electron smoke and feature tests (`yarn test:smoke`), adding a step                            | `docs/architecture/testing.md`         |
 
 Keep this file under 300 lines. A new subsystem note goes in the matching file above, not here;
 add a line here only for a rule that must hold in every change.
