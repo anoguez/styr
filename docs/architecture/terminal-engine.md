@@ -189,7 +189,7 @@ while the agent waits, and Styr's `❯` input. It is provider-agnostic end to en
   pane's word emphasis. An MCP tool shows as `server · tool` with its arguments.
 - `core/agentConversation.ts` is the neutral shape — `{ at, working, messages }`, each message's
   tool calls with their results — and the mapping to `StyrBlock`s. It names no provider.
-- Each terminal gets `STYR_CONVERSATION_FILE` (`main/usage.ts`), watched like the context files and
+- Each terminal gets `STYR_CONVERSATION_FILE` (`host/usage.ts`), watched like the context files and
   sent as `agent:conversation`. Whatever a provider's source is, it lands there in that shape. Claude
   Code's mod (`resources/claude/usage-mod`) writes it from `$.session.messages()` on session start,
   prompt submit, each tool call and turn end, and on each streamed step and permission request. Codex has no source yet, so it keeps its TUI.

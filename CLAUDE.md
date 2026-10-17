@@ -11,7 +11,7 @@ Electron + React kanban board. See README.md for what it does and how to run it.
   (`broadcast`, `notify`, `appPaths`, window operations) that `src/main/electronHost.ts`
   implements. **Never import `electron` or `src/main/` from `src/host/`**; ESLint enforces both
   layers. A service there has a fake-port test, and `ipc.ts` keeps only the `ipcMain.handle` lines
-  for its channels. The move happens in slices; `docs/architecture/host.md` says what has moved.
+  for its channels, plus the desktop-only handlers `docs/architecture/host.md` lists.
 - Markdown files under `<workspace folder>/tasks/` are the only source of truth. All writes go through
   `src/core/taskStore.ts`.
 - `src/host/taskIndex.ts` is a derived SQLite cache, written only by the main process. It must stay

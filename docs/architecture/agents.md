@@ -354,7 +354,7 @@ or host — `gh` only when there is a GitHub remote.
 
 Styr does not rely on the agent. The rules are `settleTasks` in `core/landing.ts` — pure over the
 `CheckoutGit` adapter (`checkoutGit` from `core/taskCheckout.ts`, faked in `landing.test.ts`) and a `LandingCache`, returning the task-file writes (and any per-task errors, which
-`main/landing.ts` logs rather than swallows); `main/landing.ts` only performs them. It runs from
+`host/landing.ts` logs rather than swallows); `host/landing.ts` only performs them. It runs from
 `notifyTasksChanged` (so the watcher covers external merges), and after a fetch (below): an `in_review` worktree task whose branch has landed moves to `done`, and a
 `done` task with a `worktreePath` is cleaned up through `cleanupLandedTask` in `core/worktreeLanding.ts`.
 `branchLanding` checks the local base and `origin/<base>` — the task's `baseBranch` when set and still present, else the automatic base; "landed" is either zero commits ahead, or
@@ -366,7 +366,7 @@ the note write retriggers the watcher). `worktreePath` is cleared via `taskStore
 is gone. Tasks with `useWorktree: false` are skipped entirely.
 
 **Merged on the host.** `branchLanding` reads only local refs, so a PR merged on GitHub is invisible
-until `origin` is fetched. `checkForMergedWork` (`ipc.ts`) → `fetchAndSettle` (`main/landing.ts`)
+until `origin` is fetched. `checkForMergedWork` (`mergedWorkCheck`, wired in `ipc.ts`) → `fetchAndSettle` (`host/landing.ts`)
 fetches every repository with an In Review worktree task (`reposAwaitingLanding`), then settles the
 tasks in the repositories it fetched and, if that wrote, runs `notifyTasksChanged`. Triggers, all
 events and never an interval: a Styr window gaining focus (`browser-window-focus`), each Dispatch run
