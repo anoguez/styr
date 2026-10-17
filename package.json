@@ -20,6 +20,7 @@
     "format:check": "prettier --check .",
     "start": "electron-vite preview",
     "mcp": "node ./out/main/mcp/index.mjs",
+    "serve": "node ./out/server/index.mjs serve",
     "package": "yarn build && node --env-file-if-exists=.env node_modules/electron-builder/cli.js",
     "package:adhoc": "yarn build && electron-builder -c.mac.identity=-",
     "package:win": "yarn build && electron-builder --win --x64 -c.npmRebuild=false",

@@ -1,7 +1,7 @@
 # Host layer (`src/host/`)
 
-The logic the main process runs for a workspace, free of Electron, so a headless `styr serve`
-(TASK-0131) can host the same services that the desktop app hosts. It also makes the main process
+The logic the main process runs for a workspace, free of Electron, so the headless `styr serve`
+(`src/server/`, see `remote.md`) hosts the same services that the desktop app hosts. It also makes the main process
 testable without Electron: each service takes injected ports, and its test fakes them.
 
 `src/core/` is still the lowest layer (types, schemas, the task store, pure rules). `src/host/` sits
@@ -123,6 +123,9 @@ src/core/  (types, schemas, taskStore, pure rules)
 - `codexMonitor.ts`: the Codex app-server client (`CodexMonitor`, `prepareCodex`).
 - `taskIndex.ts`: the derived SQLite index (see CLAUDE.md for its rules).
 - `watcher.ts`: the tasks and agents chokidar watchers (see `agents.md` for the close race).
+- `directories.ts`: `listDirectories`, the folders under a path for the terminal's directory picker.
+- `rpc/jsonRpc.ts`: the newline-delimited JSON-RPC framing and peer that `styr serve` and its
+  clients speak (see `remote.md`).
 - `terminals/terminalsService.ts`: the terminal sessions (`createTerminalsService`), what main
   calls `ptyManager`. One PTY per session, its transcript (backlog, command marks, runtime state),
   `findSessionByTask` (workspace and task id), and the data, runtime-state and exit listeners. Its
@@ -174,7 +177,8 @@ nature and a headless host has no desktop to act on:
 - listing the installed apps that open text (`settings:listApps`, which reads macOS bundles);
 - Reveal in Finder and opening a folder or link (`tasks:reveal`, `terminal:revealDirectory`,
   `terminal:openLink`);
-- directory picking: the native pickers (`settings:pickDirectory`, `settings:pickApp`,
-  `settings:pickFiles`) and the terminal's directory picker (`terminal:listDirectories`);
+- the native pickers (`settings:pickDirectory`, `settings:pickApp`, `settings:pickFiles`). The
+  terminal's directory picker (`terminal:listDirectories`) reads the folders through
+  `src/host/directories.ts`, so `styr serve` answers it with the remote machine's folders;
 - the title-bar overlay (`app:titleBarColors`) and `app:info`;
 - the updater (`updater.ts`), the tray (`tray.ts`) and the window and app lifecycle in `index.ts`.

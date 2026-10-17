@@ -1,11 +1,13 @@
 {
   "include": [
     "electron.vite.config.ts",
+    "vite.server.config.mts",
     "src/main/**/*",
     "src/preload/**/*",
     "src/core/**/*",
     "src/host/**/*",
     "src/mcp/**/*",
+    "src/server/**/*",
     "src/renderer/src/lib/terminalOutput.ts"
   ],
   "compilerOptions": {

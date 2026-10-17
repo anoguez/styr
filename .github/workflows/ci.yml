@@ -62,6 +62,12 @@ jobs:
       # Builds, then runs the smoke test against `out/` on a virtual display.
       - run: xvfb-run --auto-servernum yarn test:smoke
 
+      # `styr serve` under plain Node, driven over its socket. The check job installs without
+      # scripts, so node-pty is not built there and the test skips; here a skip is a failure.
+      - run: yarn vitest run src/server/serve.integration.test.ts
+        env:
+          STYR_SERVER_INTEGRATION: '1'
+
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
