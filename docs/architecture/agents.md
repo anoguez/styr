@@ -32,7 +32,7 @@ untagged history, on read — before validation, in `parseTaskMarkdown` and the 
 Codex's TUI runs against the shared app-server daemon (`codex --remote unix:// --cd <cwd>`; `--cd`
 is mandatory there, the daemon picks a new thread's directory), so its thread is observable. The
 daemon broadcasts `thread/started` and `thread/status/changed` for every thread to every connected
-client. `main/codexMonitor.ts` is one read-only listener that turns those into the hook-style
+client. `host/codexMonitor.ts` is one read-only listener that turns those into the hook-style
 events `EVENT_STATE` already knows (active → working, active + `waitingOn*` flag → waiting, idle →
 finished, started → ready). The pure half — version policy, mapping, `ThreadBindings`, WebSocket
 framing — is in `core/providers/codexProtocol.ts` and is what the tests cover.
@@ -99,7 +99,8 @@ task. The renderer dedupes by session id in `adoptSession`, so the same handler 
 `src/core/sessionLifecycle.ts` owns the launch lifecycle behind injected `SessionPorts` (the task
 store, index lookups, pty manager, Codex monitor, `pinWorkspace`): start for a task, the Codex thread
 handoff (`pendingTemplates`), the workspace-changed-during-await guard, the ask PR / review / fork
-and hand-off guards. `ipc.ts` builds the real ports and forwards its handlers. A launch's metadata is
+and hand-off guards. `host/agentsService.ts` builds its ports from the agents service's (see
+`host.md`), and `ipc.ts` forwards its handlers. A launch's metadata is
 written by one function for the active and for a background workspace (`recordCodexUpdate`); keep it
 that way. Add new launch behaviour there with a fake-port test, not in `ipc.ts`.
 

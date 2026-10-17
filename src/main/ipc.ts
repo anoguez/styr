@@ -1,36 +1,20 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { execFile, spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { app, ipcMain, shell } from 'electron'
 import { opensTextFiles, type AppInfo } from '@core/appFilter.js'
-import { pathsInWorkspace, workspaceDir } from '@core/config.js'
+import { workspaceDir } from '@core/config.js'
 import { loadSettings, persistSettings, saveWorkspaceSettings } from '@core/settingsStore.js'
-import {
-  clearAgentStatus,
-  readAllAgentStatuses,
-  recordAgentEvent,
-  recordSubagentEvent
-} from '@core/agentStore.js'
 import type { AgentStatus } from '@core/agentState.js'
-import { planLaunch, renderPrompt, workingDirFor } from '@core/launch.js'
-import { isPlanRun } from '@core/planning.js'
+import { planLaunch, renderPrompt } from '@core/launch.js'
 import { providerFor } from '@core/providers/index.js'
 import { z } from 'zod'
 import { recordNotifyDuration, stopSampling, takeSnapshot } from './diagnostics.js'
 import { terminalEngineDiagnostics } from './terminal/terminalEngines.js'
 import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
-import {
-  findGitRoot,
-  baseBranchFor,
-  listBranches,
-  readGitBranch,
-  workingTreeSummary
-} from '@core/worktree.js'
+import { findGitRoot, listBranches, readGitBranch } from '@core/worktree.js'
 import { taskCheckout, type CheckoutTask, type TaskCheckout } from '@core/taskCheckout.js'
-import { createSessionLifecycle, monitorKey, splitMonitorKey } from '@core/sessionLifecycle.js'
-import { buildTrayModel, workspaceActivity } from '@core/workspaceSession.js'
-import { listWorkspaces, readBackgroundAgents } from '@core/workspaces.js'
 import { createAutoDispatch } from '@core/autoDispatchRunner.js'
 import { AUTO_REWORK_LIMIT } from '@core/autoDispatch.js'
 import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
@@ -38,8 +22,7 @@ import type {
   AutoDispatchPause,
   OrchestrationLane,
   OrchestrationSummary,
-  TerminalSessionInfo,
-  WorkspacesActivity
+  TerminalSessionInfo
 } from '@core/types.js'
 import {
   addNote,
@@ -74,6 +57,7 @@ import {
 } from '@core/taskSchema.js'
 import type { Task, TaskStatus, WorklogData, WorklogTask } from '@core/types.js'
 import { collectWorklog, diskWorklogSources } from '@core/worklogSources.js'
+import { createAgentsService, diskAgentStore, diskGit } from '@host/agentsService.js'
 import { createTasksService } from '@host/tasksService.js'
 import {
   createWorkspacesService,
@@ -105,7 +89,7 @@ const { broadcast } = electronHost
 
 /**
  * The tasks and workspaces services, wired to main's index, watchers and the services not yet in
- * `src/host/`. Created before the session lifecycle below, which takes their functions as ports.
+ * `src/host/`. Created before the agents service below, which takes their functions as ports.
  */
 const tasksService = createTasksService({
   broadcast,
@@ -133,7 +117,7 @@ const workspacesService = createWorkspacesService({
   store: diskWorkspaceStore,
   activeTasks: () => queryTasks(),
   liveSessions: () => listSessions(),
-  activity: () => currentActivity(),
+  activity: () => agentsService.activity(),
   resetSources: resetSourceObserver,
   restartSourcePolling,
   closeIndex,
@@ -154,70 +138,49 @@ export function switchWorkspace(id: string): void {
 }
 
 /**
- * Agent records from disk, each tagged with the branch its working directory is on so the UI can
- * show where the work is actually landing.
+ * The agents service, created here so the Codex monitor it makes comes up when `ipc.ts` loads, as
+ * it always has: after the tasks and workspaces services, before Auto-run.
  */
+const agentsService = createAgentsService({
+  broadcast,
+  store: diskAgentStore,
+  git: diskGit,
+  tasks: {
+    query: () => queryTasks(),
+    findTask,
+    getTask,
+    updateTask,
+    addNote,
+    createTask,
+    setArchived,
+    removeAgent: (taskId) => tasksService.removeAgent(taskId)
+  },
+  notifyTasks: notifyTasksChanged,
+  pinWorkspace: inOtherWorkspace,
+  terminals: {
+    createSession,
+    findSessionByTask,
+    listSessions,
+    killSession,
+    writeToSession,
+    runtimeState: terminalRuntimeState
+  },
+  createMonitor: (onUpdate, onConversation) => new CodexMonitor(onUpdate, onConversation),
+  publishConversation: publishAgentConversation,
+  ensureAgentCli,
+  prepareCodex,
+  planLaunch,
+  updateTray,
+  requestAutoRun: () => autoDispatch.request()
+})
+
 export function agentStatuses(): AgentStatus[] {
-  const settings = loadSettings()
-  const tasks = new Map(queryTasks().map((task) => [task.id, task]))
-  return readAllAgentStatuses(settings).map((status) => {
-    const task = tasks.get(status.taskId)
-    const dir = task ? (task.worktreePath ?? workingDirFor(settings, task)) : undefined
-    const branch = dir ? readGitBranch(dir) : undefined
-    return branch ? { ...status, branch } : status
-  })
+  return agentsService.agentStatuses()
 }
 
-/**
- * Turns the Codex daemon's lifecycle broadcasts into the same agent records a Claude hook writes,
- * so the sidebar, tray and terminal dots need no Codex-specific code. The lifecycle is created
- * below; updates only arrive after the module has loaded.
- */
-const codexMonitor = new CodexMonitor(
-  (update) => lifecycle.recordCodexUpdate(update),
-  (key, conversation) => {
-    const { workspaceId, taskId } = splitMonitorKey(key)
-    const session = findSessionByTask(taskId, workspaceId)
-    if (session)
-      publishAgentConversation(
-        session.id,
-        conversation,
-        (text) => codexMonitor.submitPrompt(key, text),
-        (approvalId, option) => codexMonitor.answerApproval(key, approvalId, option === 'allow')
-      )
-  }
-)
-
-/** Agents the user removed while live: their terminal's exit must not write a status back. */
-const removedWhileLive = new Set<string>()
-
-export function markAgentExited(
-  taskId: string,
-  workspaceId = loadSettings().activeWorkspaceId
-): void {
-  codexMonitor.release(monitorKey(workspaceId, taskId))
-  if (removedWhileLive.delete(monitorKey(workspaceId, taskId))) {
-    notifyAgentsChanged()
-    return
-  }
-  recordAgentEvent(pathsInWorkspace(loadSettings(), workspaceId), taskId, 'TerminalExit')
-  archivePlanRun(taskId, workspaceId)
-  notifyAgentsChanged()
-}
-
-/** A ⌘↵ planning run leaves no card behind: its throwaway task is archived when the session ends. */
-function archivePlanRun(taskId: string, workspaceId: string): void {
-  try {
-    const archived = inOtherWorkspace(workspaceId, () => {
-      const task = getTask(taskId)
-      if (!task || !isPlanRun(task) || task.archivedAt) return false
-      setArchived(taskId, true)
-      return true
-    })
-    if (archived) notifyTasksChanged()
-  } catch (error) {
-    console.error('Could not archive the planning run:', error)
-  }
+/** Without a workspace, the exit is the active workspace's. */
+export function markAgentExited(taskId: string, workspaceId?: string): void {
+  agentsService.markAgentExited(taskId, workspaceId)
 }
 
 export /** Resolves the task a diff request names; errors come back as data, not as a thrown IPC failure. */
@@ -231,34 +194,7 @@ function diffTask(taskId: unknown): (Task & { repoPath: string }) | { error: str
 }
 
 export function notifyAgentsChanged(): void {
-  const statuses = agentStatuses()
-  broadcast('agents:changed', statuses)
-
-  const settings = loadSettings()
-  const model = buildTrayModel(
-    settings,
-    listWorkspaces(settings),
-    statuses,
-    queryTasks(),
-    readBackgroundAgents(settings, settings.activeWorkspaceId)
-  )
-  updateTray(model.statuses, model.titles)
-  latestActivity = {
-    activeId: settings.activeWorkspaceId,
-    byWorkspace: workspaceActivity(model)
-  }
-  broadcast('workspaces:activity', latestActivity)
-  autoDispatch.request()
-}
-
-/**
- * The last rollup `notifyAgentsChanged` pushed, so a window's first paint needs no hook event.
- * Startup runs it before the first window opens; the fallback only covers a call before that.
- */
-let latestActivity: WorkspacesActivity | undefined
-
-function currentActivity(): WorkspacesActivity {
-  return latestActivity ?? { activeId: loadSettings().activeWorkspaceId, byWorkspace: {} }
+  agentsService.notifyAgentsChanged()
 }
 
 /** A task's checkout in the active workspace, placed by that workspace's `worktreeLocation`. */
@@ -330,51 +266,7 @@ function checkForMergedWorkBriefly(): Promise<void> {
   return Promise.race([checkForMergedWork(), deadline]).finally(() => clearTimeout(timer))
 }
 
-const lifecycle = createSessionLifecycle({
-  settings: loadSettings,
-  findTask,
-  getTask,
-  updateTask,
-  addNote,
-  createTask,
-  notifyTasks: notifyTasksChanged,
-  notifyAgents: notifyAgentsChanged,
-  recordAgentEvent: (workspaceId, taskId, event) =>
-    recordAgentEvent(pathsInWorkspace(loadSettings(), workspaceId), taskId, event),
-  recordSubagentEvent: (workspaceId, taskId, event, subagent) =>
-    recordSubagentEvent(
-      pathsInWorkspace(loadSettings(), workspaceId),
-      taskId,
-      event,
-      subagent ? { agent_id: subagent.id, label: subagent.label } : null
-    ),
-  pinWorkspace: inOtherWorkspace,
-  createSession,
-  findSessionByTask,
-  listSessions,
-  killSession,
-  writeToSession,
-  runtimeState: terminalRuntimeState,
-  agentStatuses,
-  monitor: codexMonitor,
-  ensureAgentCli,
-  prepareCodex,
-  planLaunch,
-  git: {
-    branch: readGitBranch,
-    baseBranch: baseBranchFor,
-    workingTree: workingTreeSummary
-  },
-  writeHandoff: (fileName, content) => {
-    const folder = join(workspaceDir(loadSettings()), 'handoffs')
-    const path = join(folder, fileName)
-    mkdirSync(folder, { recursive: true })
-    writeFileSync(path, content, 'utf8')
-    return path
-  }
-})
-
-const launchSessionForTask = lifecycle.startForTask
+const launchSessionForTask = agentsService.launch
 
 function buildPlan(skip?: ReadonlySet<string>): OrchestrationPlan {
   const active = loadSettings().activeWorkspaceId
@@ -695,50 +587,17 @@ export function registerIpcHandlers(): void {
       launchSessionForTask(taskId, { templateId, provider })
   )
 
-  ipcMain.handle('terminal:resumeSession', async (_event, taskId: string, sessionId: string) => {
-    const task = findTask(taskId)
-    if (!task) throw new Error(`Task ${taskId} not found`)
-    const settings = loadSettings()
-    const entry = task.sessions.find((item) => item.id === sessionId)
-    const plan = planLaunch(settings, task, { resume: sessionId, provider: entry?.provider })
-    await ensureAgentCli(plan.provider, settings)
-    if (plan.provider === 'codex') await prepareCodex(settings.codexCommand, settings.shell)
-    return createSession({
-      cwd: plan.cwd,
-      shell: settings.shell,
-      title: task.title,
-      taskId: task.id,
-      workspaceId: settings.activeWorkspaceId,
-      provider: plan.provider,
-      replay: true,
-      command: plan.command,
-      env: {
-        STYR_TASK_ID: task.id,
-        STYR_WORKSPACE_ID: settings.activeWorkspaceId,
-        STYR_SESSION_ID: plan.sessionId
-      }
-    })
-  })
+  ipcMain.handle('terminal:resumeSession', (_event, taskId: string, sessionId: string) =>
+    agentsService.resume(taskId, sessionId)
+  )
 
   ipcMain.handle('tasks:forgetSession', (_event, taskId: string) =>
     tasksService.forgetSession(taskId)
   )
 
-  // Removes the agent from the board: ends its live terminal, drops its status and forgets the
-  // current chat. The chat history on the task stays.
-  ipcMain.handle('agents:remove', (_event, taskId: unknown) => {
-    const id = z.string().min(1).parse(taskId)
-    const settings = loadSettings()
-    const workspaceId = settings.activeWorkspaceId
-    const live = findSessionByTask(id, workspaceId)
-    if (live) {
-      removedWhileLive.add(monitorKey(workspaceId, id))
-      killSession(live.id)
-    }
-    codexMonitor.release(monitorKey(workspaceId, id))
-    clearAgentStatus(settings, id)
-    tasksService.removeAgent(id)
-  })
+  ipcMain.handle('agents:remove', (_event, taskId: unknown) =>
+    agentsService.remove(z.string().min(1).parse(taskId))
+  )
 
   ipcMain.handle('terminal:previewPrompt', (_event, taskId: string, templateId?: string) => {
     const task = findTask(taskId)
@@ -755,14 +614,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:backlog', (_event, id: string) => sessionBacklog(id))
   ipcMain.handle('terminal:runtimeState', (_event, id: string) => terminalRuntimeState(id))
   ipcMain.handle('terminal:createPr', (_event, taskId: string) =>
-    lifecycle.askForPullRequest(taskId)
+    agentsService.askForPullRequest(taskId)
   )
-  ipcMain.handle('terminal:askReview', (_event, taskId: string) => lifecycle.askReview(taskId))
+  ipcMain.handle('terminal:askReview', (_event, taskId: string) => agentsService.askReview(taskId))
   ipcMain.handle('terminal:askFork', (_event, sessionId: string, question: string) =>
-    lifecycle.askFork(sessionId, String(question ?? ''))
+    agentsService.askFork(sessionId, String(question ?? ''))
   )
   ipcMain.handle('terminal:handOff', (_event, sessionId: string, output: string) =>
-    lifecycle.handOff(sessionId, String(output ?? ''))
+    agentsService.handOff(sessionId, String(output ?? ''))
   )
   ipcMain.handle('terminal:gitContext', (_event, path: string) => {
     const root = findGitRoot(path)

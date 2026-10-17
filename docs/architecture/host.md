@@ -57,6 +57,18 @@ src/core/  (types, schemas, taskStore, pure rules)
   board summaries, activity), broken settings files and `afterSettingsSave`. Switching and
   repointing are `core/workspaceSession.ts`; the service wires its ports. `inOtherWorkspace` is
   exported from here.
+- `agentsService.ts`: the agents. `agentStatuses` (each record tagged with its branch),
+  `notifyAgentsChanged` (broadcast `agents:changed`, hand the tray model to `updateTray`, broadcast
+  the `workspaces:activity` rollup and keep it for `activity()`, request Auto-run),
+  `markAgentExited` with `removedWhileLive` and the plan-run archive, `agents:remove`,
+  `terminal:resumeSession`, and the session lifecycle (`core/sessionLifecycle.ts`: launch, ask PR /
+  review / fork, hand-off) wired to its ports. It creates the Codex monitor through the
+  `createMonitor` port before the lifecycle; `ipc.ts` creates the service at load, after the tasks
+  and workspaces services, so the monitor comes up when it always has. Its ports are the agent
+  store (`diskAgentStore`), git (`diskGit`), the index and task files, the terminals, the monitor,
+  `publishConversation` (main's `usage.ts`), the CLI checks, `updateTray` (main's `tray.ts`, which
+  owns the Electron `Tray` and the "needs you" `Notification`) and the Auto-run request.
+- `codexMonitor.ts`: the Codex app-server client (`CodexMonitor`, `prepareCodex`).
 - `taskIndex.ts`: the derived SQLite index (see CLAUDE.md for its rules).
 - `watcher.ts`: the tasks and agents chokidar watchers (see `agents.md` for the close race).
 - `terminals/terminalsService.ts`: the terminal sessions (`createTerminalsService`), what main
@@ -73,10 +85,9 @@ src/core/  (types, schemas, taskStore, pure rules)
   the native engine's IPC; `core/terminalEngine.ts` is still the one place that branches on the
   engine.
 
-`src/main/taskIndex.ts` and `src/main/watcher.ts` re-export the host modules, and
-`src/main/terminal/ptyManager.ts` binds the terminals service to node-pty and the usage mod and
-re-exports its functions. `ipc.ts` and
-`index.ts` import through them, so the main-process characterisation tests (TASK-0135) can mock
+`src/main/taskIndex.ts`, `src/main/watcher.ts` and `src/main/codexMonitor.ts` re-export the host
+modules, and `src/main/terminal/ptyManager.ts` binds the terminals service to node-pty and the
+usage mod and re-exports its functions. `ipc.ts` and `index.ts` import through them, so the main-process characterisation tests (TASK-0135) can mock
 them by their main paths. Main passes the index and watchers to the services as ports.
 
 ## The slices
