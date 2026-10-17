@@ -59,8 +59,23 @@ src/core/  (types, schemas, taskStore, pure rules)
   exported from here.
 - `taskIndex.ts`: the derived SQLite index (see CLAUDE.md for its rules).
 - `watcher.ts`: the tasks and agents chokidar watchers (see `agents.md` for the close race).
+- `terminals/terminalsService.ts`: the terminal sessions (`createTerminalsService`), what main
+  calls `ptyManager`. One PTY per session, its transcript (backlog, command marks, runtime state),
+  `findSessionByTask` (workspace and task id), and the data, runtime-state and exit listeners. Its
+  ports are `spawn` (`terminals/nodePty.ts` is the real one, kept apart so tests never load
+  node-pty) and `usageEnv` (main's `usage.ts`, which needs the app's paths).
+  `terminalBroadcasts(broadcast)` sends `terminal:data`, `terminal:runtimeState` and
+  `terminal:exit`; `index.ts` subscribes it, beside the agent work it runs on an exit.
+- `terminals/`: the rest of the terminal plumbing, all Electron-free: the shell integration, the
+  protocol parser, `TerminalRuntime`, `TerminalTranscript`, and the Styr Terminal native host
+  (`nativeHost`, `nativeEngine`, `blockSession`, `commandBlockTracker`). Electron stays in
+  `src/main/terminal/terminalEngines.ts`, which loads the package from the app's paths and holds
+  the native engine's IPC; `core/terminalEngine.ts` is still the one place that branches on the
+  engine.
 
-`src/main/taskIndex.ts` and `src/main/watcher.ts` re-export the host modules. `ipc.ts` and
+`src/main/taskIndex.ts` and `src/main/watcher.ts` re-export the host modules, and
+`src/main/terminal/ptyManager.ts` binds the terminals service to node-pty and the usage mod and
+re-exports its functions. `ipc.ts` and
 `index.ts` import through them, so the main-process characterisation tests (TASK-0135) can mock
 them by their main paths. Main passes the index and watchers to the services as ports.
 
@@ -68,8 +83,8 @@ them by their main paths. Main passes the index and watchers to the services as 
 
 The extraction lands in five PRs, each with no user-visible change:
 
-1. Scaffold, ports, tasks and workspaces (this note).
-2. Terminals: `ptyManager`, transcripts, the plain `terminal:*` handlers.
+1. Scaffold, ports, tasks and workspaces.
+2. Terminals: `ptyManager`, transcripts, the plain `terminal:*` handlers, the native host.
 3. Agents: agent statuses, `markAgentExited`, `CodexMonitor`, the session lifecycle wiring, the tray
    model inputs.
 4. Dispatch and Auto-run wiring.

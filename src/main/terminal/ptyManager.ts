@@ -1,179 +1,31 @@
-import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { spawn, type IPty } from 'node-pty'
-import { nanoid } from 'nanoid'
+import { createTerminalsService } from '@host/terminals/terminalsService.js'
+import { nodePtySpawn } from '@host/terminals/nodePty.js'
 import { usageEnv } from '../usage.js'
-import { resolveShell } from '@core/platformShell.js'
-import { withoutSessionMarkers } from '@core/providers/index.js'
-import type { TerminalOutput, TerminalRuntimeState, TerminalSessionInfo } from '@core/types.js'
-import { shellIntegrationLaunch } from './shellIntegration.js'
-import { TerminalTranscript } from './terminalTranscript.js'
 
-export interface SpawnOptions {
-  cwd?: string
-  shell?: string
-  title?: string
-  taskId?: string
-  workspaceId?: string
-  provider?: 'claude' | 'codex'
-  replay?: boolean
-  command?: string
-  env?: Record<string, string>
-}
-
-interface Session {
-  info: TerminalSessionInfo
-  pty: IPty
-  transcript: TerminalTranscript
-}
-
-type DataListener = (id: string, output: TerminalOutput) => void
-type ExitListener = (id: string, exitCode: number) => void
-type RuntimeListener = (state: TerminalRuntimeState) => void
-
-const sessions = new Map<string, Session>()
-const exitedTaskIds = new Map<string, { taskId: string; workspaceId?: string }>()
-const dataListeners = new Set<DataListener>()
-const exitListeners = new Set<ExitListener>()
-const runtimeListeners = new Set<RuntimeListener>()
-const exitedRuntimeStates = new Map<string, TerminalRuntimeState>()
-
-function resolveCwd(cwd?: string): string {
-  return cwd && existsSync(cwd) ? cwd : homedir()
-}
+export type { SpawnOptions } from '@host/terminals/terminalsService.js'
 
 /**
- * The app's environment for a new terminal, minus agent session markers it may have inherited (see
- * `withoutSessionMarkers`), plus `extra`, which is applied last so it is never stripped.
+ * The host's terminals service (`src/host/terminals/`), bound to node-pty and the usage mod. Main
+ * imports it through this path, which is the one the main-process ordering tests mock.
  */
-function sanitisedEnv(terminalId: string, extra?: Record<string, string>): Record<string, string> {
-  const env: Record<string, string> = {}
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) env[key] = value
-  }
-  // xterm.js renders 24-bit colour, but programs only use it when COLORTERM says so. Without it,
-  // TUIs such as Codex quantise their colours to the 256-colour palette, which turns a background
-  // blended from the theme into flat grey.
-  return {
-    ...withoutSessionMarkers(env),
-    ...usageEnv(env.CLAUDE_CODE_PLUGIN_DIRS, terminalId),
-    ...extra,
-    TERM: 'xterm-256color',
-    COLORTERM: 'truecolor'
-  }
-}
+const terminals = createTerminalsService({
+  spawn: nodePtySpawn,
+  // A lambda: `usage.ts` imports this module back, so its binding is read at call time.
+  usageEnv: (existing, terminalId) => usageEnv(existing, terminalId)
+})
 
-export function onTerminalData(listener: DataListener): void {
-  dataListeners.add(listener)
-}
-
-export function onTerminalExit(listener: ExitListener): void {
-  exitListeners.add(listener)
-}
-
-export function onTerminalRuntimeState(listener: RuntimeListener): void {
-  runtimeListeners.add(listener)
-}
-
-export function createSession(options: SpawnOptions): TerminalSessionInfo {
-  const id = nanoid(10)
-  const cwd = resolveCwd(options.cwd)
-  const shell = resolveShell(options.shell)
-  const environment = { ...shell.environment, ...sanitisedEnv(id, options.env) }
-  const launch = shellIntegrationLaunch(shell, environment)
-  const child = spawn(shell.path, launch.args, {
-    name: 'xterm-256color',
-    cols: 100,
-    rows: 30,
-    cwd,
-    env: { ...environment, ...launch.env }
-  })
-
-  const info: TerminalSessionInfo = {
-    id,
-    title: options.title ?? 'Terminal',
-    cwd,
-    dialect: shell.syntax.dialect,
-    ...(options.taskId ? { taskId: options.taskId } : {}),
-    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
-    ...(options.provider ? { provider: options.provider } : {}),
-    ...(options.replay ? { replay: true } : {})
-  }
-  const session: Session = {
-    info,
-    pty: child,
-    transcript: new TerminalTranscript(id, cwd)
-  }
-  sessions.set(id, session)
-
-  child.onData((data) => {
-    const update = session.transcript.append(data)
-    for (const state of update.runtimeStates) emitRuntimeState(state)
-    for (const listener of dataListeners) listener(id, update.output)
-  })
-  child.onExit(({ exitCode }) => {
-    const runtimeState = session.transcript.terminate(exitCode)
-    exitedRuntimeStates.set(id, runtimeState)
-    emitRuntimeState(runtimeState)
-    if (info.taskId) exitedTaskIds.set(id, { taskId: info.taskId, workspaceId: info.workspaceId })
-    sessions.delete(id)
-    for (const listener of exitListeners) listener(id, exitCode)
-  })
-
-  if (options.command) child.write(`${options.command}\r`)
-  return info
-}
-
-export function writeToSession(id: string, data: string): void {
-  sessions.get(id)?.pty.write(data)
-}
-
-export function resizeSession(id: string, cols: number, rows: number): void {
-  sessions.get(id)?.pty.resize(Math.max(cols, 1), Math.max(rows, 1))
-}
-
-export function killSession(id: string): void {
-  const session = sessions.get(id)
-  if (!session) return
-  session.pty.kill()
-  sessions.delete(id)
-}
-
-export function sessionBacklog(id: string): TerminalOutput {
-  const session = sessions.get(id)
-  if (!session) return { data: '', sequence: 0, marks: [] }
-  return session.transcript.backlog()
-}
-
-export function terminalRuntimeState(id: string): TerminalRuntimeState | undefined {
-  return sessions.get(id)?.transcript.runtimeState() ?? exitedRuntimeStates.get(id)
-}
-
-/** The task a session belongs to, with its workspace — ids repeat across workspaces. */
-export function sessionTask(id: string): { taskId: string; workspaceId?: string } | undefined {
-  const info = sessions.get(id)?.info
-  return info?.taskId
-    ? { taskId: info.taskId, workspaceId: info.workspaceId }
-    : exitedTaskIds.get(id)
-}
-
-export function findSessionByTask(
-  taskId: string,
-  workspaceId?: string
-): TerminalSessionInfo | undefined {
-  return [...sessions.values()].find(
-    (session) => session.info.taskId === taskId && session.info.workspaceId === workspaceId
-  )?.info
-}
-
-export function listSessions(): TerminalSessionInfo[] {
-  return [...sessions.values()].map((session) => session.info)
-}
-
-export function killAllSessions(): void {
-  for (const id of [...sessions.keys()]) killSession(id)
-}
-
-function emitRuntimeState(state: TerminalRuntimeState): void {
-  for (const listener of runtimeListeners) listener(state)
-}
+export const {
+  onTerminalData,
+  onTerminalExit,
+  onTerminalRuntimeState,
+  createSession,
+  writeToSession,
+  resizeSession,
+  killSession,
+  sessionBacklog,
+  terminalRuntimeState,
+  sessionTask,
+  findSessionByTask,
+  listSessions,
+  killAllSessions
+} = terminals

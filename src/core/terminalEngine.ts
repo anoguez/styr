@@ -8,7 +8,7 @@ import {
 
 /**
  * Engine selection, kept pure so every case is testable without the private package. The main
- * process works out `NativeEngineStatus` (see `main/terminal/nativeEngine.ts`); the renderer asks
+ * process works out `NativeEngineStatus` (see `host/terminals/nativeEngine.ts`); the renderer asks
  * `selectTerminalEngine` which engine a new terminal view gets.
  */
 

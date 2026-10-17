@@ -14,6 +14,7 @@ import {
 } from './ipc.js'
 import { closeIndex, syncIndex } from './taskIndex.js'
 import { registerTerminalEngines } from './terminal/terminalEngines.js'
+import { terminalBroadcasts } from '@host/terminals/terminalsService.js'
 import {
   killAllSessions,
   onTerminalData,
@@ -159,14 +160,15 @@ app.whenReady().then(() => {
   startAutoDispatch()
   installAppMenu()
 
-  onTerminalData((id, output) => broadcast('terminal:data', { id, ...output }))
+  const terminalEvents = terminalBroadcasts(broadcast)
+  onTerminalData(terminalEvents.data)
   const nativeTerminals = registerTerminalEngines(broadcast)
   app.on('before-quit', () => nativeTerminals.detachAll())
-  onTerminalRuntimeState((state) => broadcast('terminal:runtimeState', state))
+  onTerminalRuntimeState(terminalEvents.runtimeState)
   onTerminalExit((id, exitCode) => {
     forgetContext(id)
     const task = sessionTask(id)
-    broadcast('terminal:exit', { id, exitCode })
+    terminalEvents.exit(id, exitCode)
     if (task) markAgentExited(task.taskId, task.workspaceId)
   })
   createTray({

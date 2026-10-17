@@ -23,8 +23,8 @@ import {
   loadNativeEngine,
   type LoaderEnvironment,
   type LoadResult
-} from './nativeEngine.js'
-import { NativeTerminalHost } from './nativeHost.js'
+} from '@host/terminals/nativeEngine.js'
+import { NativeTerminalHost } from '@host/terminals/nativeHost.js'
 import { onTerminalData, onTerminalExit, sessionBacklog, writeToSession } from './ptyManager.js'
 
 /**
