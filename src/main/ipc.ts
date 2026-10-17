@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { execFile, spawn } from 'node:child_process'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, join } from 'node:path'
 import { app, ipcMain, shell } from 'electron'
 import { opensTextFiles, type AppInfo } from '@core/appFilter.js'
 import { loadSettings } from '@core/settingsStore.js'
@@ -47,6 +47,7 @@ import { mergedWorkCheck } from '@host/landing.js'
 import { createSettingsService, diskSettingsStore } from '@host/settingsService.js'
 import { createTasksService } from '@host/tasksService.js'
 import { createWorklogService } from '@host/worklogService.js'
+import { listDirectories } from '@host/directories.js'
 import {
   createWorkspacesService,
   diskWorkspaceStore,
@@ -541,22 +542,6 @@ async function openPathWith(path: string): Promise<string> {
         .then((fallback) => resolve(fallback || `Could not open with ${appName}`))
     })
   })
-}
-
-/** Sub-directories of `path` for the terminal's directory picker; unreadable paths list nothing. */
-function listDirectories(path: string): { path: string; parent: string | null; names: string[] } {
-  const resolved = resolve(path === '~' ? homedir() : path)
-  const parent = dirname(resolved)
-  let names: string[] = []
-  try {
-    names = readdirSync(resolved, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-      .map((entry) => entry.name)
-      .sort((a, b) => a.localeCompare(b))
-  } catch {
-    // Permission denied or the folder vanished: show an empty list rather than failing the picker.
-  }
-  return { path: resolved, parent: parent === resolved ? null : parent, names }
 }
 
 export { broadcast }
