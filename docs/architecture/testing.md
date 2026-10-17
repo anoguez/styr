@@ -1,6 +1,6 @@
-# Safety nets: IPC contract and smoke test
+# Safety nets: IPC contract, smoke and feature tests
 
-Two tests that catch the wiring breaking. Unit tests miss this kind of break: a dropped handler, a
+Tests that catch the wiring breaking. Unit tests miss this kind of break: a dropped handler, a
 renamed channel, a main process that throws at start-up.
 
 ## IPC contract (`src/main/ipcContract.test.ts`)
@@ -67,6 +67,32 @@ Add a `test.step` to the one `smoke` test, before the quit step, and end it with
 - Leave the app usable for the next step. Close the dialogs you open.
 - Keep it under the CI budget (about 2 minutes). A step that needs a real agent CLI or the network
   does not belong here.
+
+## Feature tests (`e2e/features.e2e.ts`)
+
+Playwright tests of the features behind the host layer, run by `yarn test:smoke` with the smoke
+test and in the same CI job. They launch their own app through `e2e/harness.ts` (`launchStyr`: the
+same throwaway HOME, error capture and failure attachments as the smoke test) and run in order on
+it:
+
+1. A worktree task with a commit shows `View changes: 2 files, +2 −0` on its card; the Changes
+   dialog lists both files and shows a file's patch.
+2. With the branch pushed to a bare `origin`'s `main` (a PR merged on the host), the palette's
+   "Check for merged work" moves the task to Done, notes it in the file, and removes the worktree
+   and the local branch.
+3. "Show performance" opens the panel with the processes, the task-change timings and the counts.
+4. With the Worklog on, a task file with a session (and no transcript) shows in the Worklog.
+5. A REST source served by the test itself: the test request is refused with External sources off;
+   with them on it reads the items, the preview writes nothing, and applying one item creates only
+   that task.
+
+Nothing here needs an agent CLI, a GitHub login or the network: git runs with a fixed identity and
+no user config (`git` in the harness), and the REST source is a local HTTP server. Keep it that
+way — a feature that needs a provider belongs in a unit test with a fake port.
+
+To add a test, add a `test(…)` to the file (they share one app, `mode: 'serial'`), or a new
+`*.e2e.ts` file that calls `launchStyr` in `beforeAll`. End each test with `styr.expectNoErrors()`,
+passing a pattern for a handler that is meant to fail. The rules under "Adding a step" apply.
 
 Retries are off (`playwright.config.ts`). A flaky step is a bug in the step or in the app, so fix
 it rather than retrying it.

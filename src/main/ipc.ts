@@ -4,17 +4,12 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { app, ipcMain, shell } from 'electron'
 import { opensTextFiles, type AppInfo } from '@core/appFilter.js'
-import { workspaceDir } from '@core/config.js'
-import { loadSettings, persistSettings } from '@core/settingsStore.js'
+import { loadSettings } from '@core/settingsStore.js'
 import type { AgentStatus } from '@core/agentState.js'
-import { planLaunch, renderPrompt } from '@core/launch.js'
-import { providerFor } from '@core/providers/index.js'
+import { planLaunch } from '@core/launch.js'
 import { z } from 'zod'
 import { recordNotifyDuration, stopSampling, takeSnapshot } from './diagnostics.js'
 import { terminalEngineDiagnostics } from './terminal/terminalEngines.js'
-import type { DiffResult, DiffStat, PatchResult } from '@core/diff.js'
-import { findGitRoot, listBranches, readGitBranch } from '@core/worktree.js'
-import { taskCheckout, type CheckoutTask, type TaskCheckout } from '@core/taskCheckout.js'
 import {
   addNote,
   brokenTaskFiles,
@@ -27,6 +22,8 @@ import {
 } from '@core/taskStore.js'
 import { fetchAndSettle, settleLandedTasks } from './landing.js'
 import {
+  applySource,
+  ghStatus,
   initSourceSync,
   linkTask,
   listSourceTargets,
@@ -37,20 +34,19 @@ import {
   restartSourcePolling,
   sourceStates,
   syncSource,
+  testRestSource,
   unlinkTask
 } from './sourceSync.js'
-import { adapterFor, runCommand, sourceProviders } from '@core/sources/index.js'
-import { testRestRequest } from '@core/sources/rest.js'
-import {
-  restSourceSettingsSchema,
-  settingsChangeSchema,
-  workspaceIdSchema
-} from '@core/taskSchema.js'
-import type { Task, TaskStatus, WorklogData, WorklogTask } from '@core/types.js'
-import { collectWorklog, diskWorklogSources } from '@core/worklogSources.js'
+import { sourceProviders } from '@core/sources/index.js'
+import type { TaskStatus } from '@core/types.js'
+import { diskWorklogSources } from '@core/worklogSources.js'
 import { createAgentsService, diskAgentStore, diskGit } from '@host/agentsService.js'
 import { createDispatchService, diskDispatchSettings, realClock } from '@host/dispatchService.js'
+import { createGitService, diskRepoGit, nextTurn } from '@host/gitService.js'
+import { mergedWorkCheck } from '@host/landing.js'
+import { createSettingsService, diskSettingsStore } from '@host/settingsService.js'
 import { createTasksService } from '@host/tasksService.js'
+import { createWorklogService } from '@host/worklogService.js'
 import {
   createWorkspacesService,
   diskWorkspaceStore,
@@ -75,13 +71,12 @@ import { CodexMonitor, prepareCodex } from './codexMonitor.js'
 import { publishAgentConversation } from './usage.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
-import { resolveShell } from '@core/platformShell.js'
 
 const { broadcast } = electronHost
 
 /**
- * The tasks and workspaces services, wired to main's index, watchers and the services not yet in
- * `src/host/`. Created before the agents service below, which takes their functions as ports.
+ * The tasks and workspaces services, wired to main's index, watchers and the other services.
+ * Created before the agents service below, which takes their functions as ports.
  */
 const tasksService = createTasksService({
   broadcast,
@@ -93,7 +88,7 @@ const tasksService = createTasksService({
     reorderTasks,
     setArchived,
     deleteTask,
-    removeWorktree: (task) => activeTaskCheckout(task).removeWorktree(),
+    removeWorktree: (task) => gitService.checkout(task).removeWorktree(),
     brokenTaskFiles
   },
   settleLandedTasks,
@@ -175,76 +170,32 @@ export function markAgentExited(taskId: string, workspaceId?: string): void {
   agentsService.markAgentExited(taskId, workspaceId)
 }
 
-export /** Resolves the task a diff request names; errors come back as data, not as a thrown IPC failure. */
-function diffTask(taskId: unknown): (Task & { repoPath: string }) | { error: string } {
-  const id = z.string().min(1).safeParse(taskId)
-  if (!id.success) return { error: 'Invalid task id' }
-  const task = findTask(id.data)
-  if (!task) return { error: 'Task not found' }
-  if (!task.repoPath) return { error: 'This task has no repository' }
-  return { ...task, repoPath: task.repoPath }
-}
-
 export function notifyAgentsChanged(): void {
   agentsService.notifyAgentsChanged()
 }
 
-/** A task's checkout in the active workspace, placed by that workspace's `worktreeLocation`. */
-function activeTaskCheckout(task: CheckoutTask): TaskCheckout {
-  const { activeWorkspaceId, worktreeLocation } = loadSettings()
-  return taskCheckout(activeWorkspaceId, task, worktreeLocation)
-}
+/** Diffs, diff stats and the git views, over the active board's checkouts. */
+const gitService = createGitService({
+  loadSettings: () => loadSettings(),
+  index: { query: () => queryTasks(), find: (id) => findTask(id) },
+  git: diskRepoGit,
+  yieldTurn: nextTurn
+})
 
-let diffStatsRun: Promise<Record<string, DiffStat>> | undefined
-
-/**
- * Per-task change totals for the cards. The git work is synchronous, so the loop yields between
- * tasks (~0.2s each): IPC, the watcher and the terminals keep being served in the gaps.
- */
-async function computeDiffStats(): Promise<Record<string, DiffStat>> {
-  const { activeWorkspaceId: workspaceId, worktreeLocation } = loadSettings()
-  const stats: Record<string, DiffStat> = {}
-  for (const task of queryTasks()) {
-    // Done work has landed (or is being cleaned up); a count there is noise.
-    const { repoPath } = task
-    if (!task.worktreePath || !repoPath || task.status === 'done' || task.archivedAt) continue
-    await new Promise((resolve) => setImmediate(resolve))
-    const diff = taskCheckout(workspaceId, { ...task, repoPath }, worktreeLocation).diff()
-    if ('error' in diff || diff.kind !== 'changes') continue
-    stats[task.id] = {
-      added: diff.totalAdditions,
-      removed: diff.totalDeletions,
-      files: diff.totalFiles
-    }
-  }
-  return stats
-}
+const worklogService = createWorklogService({
+  query: () => queryTasks(),
+  sources: diskWorklogSources,
+  yieldTurn: nextTurn
+})
 
 /**
- * The Worklog for `[from, to)`: each task's sessions and the tokens their transcripts record. On
- * demand only, never from `notifyTasksChanged`; the loop yields between tasks like the diff stats.
+ * Fetches `origin` where In Review work waits to land, then settles what landed (`landing.ts`).
+ * Event-driven only: window focus, a Dispatch run, an Auto-run pass, the palette.
  */
-async function loadWorklog(from: number, to: number): Promise<WorklogData> {
-  const tasks: WorklogTask[] = []
-  for (const task of queryTasks()) {
-    await new Promise((resolve) => setImmediate(resolve))
-    tasks.push(...collectWorklog([task], from, to, diskWorklogSources))
-  }
-  return { tasks }
-}
-
-/**
- * Fetches `origin` where In Review work waits to land, then settles what landed — how a PR merged
- * on the host is noticed. Event-driven only (window focus, a Dispatch run, an Auto-run pass, the
- * palette), throttled and coalesced per repository, and never part of `notifyTasksChanged`.
- */
-export async function checkForMergedWork(): Promise<void> {
-  try {
-    if (await fetchAndSettle()) notifyTasksChanged()
-  } catch (error) {
-    console.warn('landing: checking for merged work failed:', error)
-  }
-}
+export const checkForMergedWork = mergedWorkCheck({
+  fetchAndSettle: () => fetchAndSettle(),
+  notifyTasks: notifyTasksChanged
+})
 
 /**
  * Dispatch and Auto-run, created after the agents service, whose launch and agent rows it plans
@@ -262,6 +213,14 @@ const dispatchService = createDispatchService({
   clock: realClock
 })
 
+const settingsService = createSettingsService({
+  store: diskSettingsStore,
+  afterSave: (folderBefore, workspaceId) =>
+    workspacesService.afterSettingsSave(folderBefore, workspaceId),
+  autoRunFlagChanged: () => dispatchService.autoRunFlagChanged(),
+  mcpEntry: () => mcpEntry()
+})
+
 /** Called once the window is up: after the startup grace Auto-run evaluates the board. */
 export function startAutoDispatch(): void {
   dispatchService.startAutoRun()
@@ -274,21 +233,16 @@ export function registerIpcHandlers(): void {
   })
   restartSourcePolling()
   ipcMain.handle('sources:providers', () => sourceProviders())
-  ipcMain.handle('sources:ghStatus', () => adapterFor('github')!.status(runCommand))
+  ipcMain.handle('sources:ghStatus', () => ghStatus())
   ipcMain.handle('sources:state', () => sourceStates())
-  // sends the request as edited, unsaved; external sources are experimental, so only with the flag on
-  ipcMain.handle('sources:restTest', (_event, settings: unknown) => {
-    if (!loadSettings().experimental.externalSources)
-      throw new Error('Turn on External sources in Settings → Experimental first.')
-    return testRestRequest(restSourceSettingsSchema.parse(settings))
-  })
+  ipcMain.handle('sources:restTest', (_event, settings: unknown) => testRestSource(settings))
   ipcMain.handle('sources:targets', (_event, sourceId: string) =>
     listSourceTargets(String(sourceId))
   )
   ipcMain.handle('sources:sync', (_event, sourceId: string) => syncSource(String(sourceId)))
   ipcMain.handle('sources:preview', (_event, sourceId: string) => previewSource(String(sourceId)))
   ipcMain.handle('sources:apply', (_event, sourceId: string, itemIds: unknown) =>
-    syncSource(String(sourceId), z.array(z.string()).parse(itemIds))
+    applySource(String(sourceId), itemIds)
   )
   ipcMain.handle('sources:link', (_event, taskId: string, text: string) =>
     linkTask(String(taskId), String(text))
@@ -302,36 +256,16 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('tasks:removeWorktree', (_event, taskId: string) =>
     tasksService.removeWorktree(taskId)
   )
-  ipcMain.handle('git:branches', (_event, repoPath: string) => listBranches(repoPath))
-  ipcMain.handle('git:taskDiff', (_event, taskId: unknown): DiffResult => {
-    const task = diffTask(taskId)
-    if ('error' in task) return task
-    return activeTaskCheckout(task).diff()
-  })
-  ipcMain.handle(
-    'git:filePatch',
-    (_event, taskId: unknown, path: unknown, full?: unknown): PatchResult => {
-      const task = diffTask(taskId)
-      if ('error' in task) return task
-      const file = z.string().min(1).safeParse(path)
-      if (!file.success) return { error: 'Invalid path' }
-      return activeTaskCheckout(task).filePatch(file.data, full === true)
-    }
+  ipcMain.handle('git:branches', (_event, repoPath: string) => gitService.branches(repoPath))
+  ipcMain.handle('git:taskDiff', (_event, taskId: unknown) => gitService.taskDiff(taskId))
+  ipcMain.handle('git:filePatch', (_event, taskId: unknown, path: unknown, full?: unknown) =>
+    gitService.filePatch(taskId, path, full)
   )
-  ipcMain.handle('git:diffStats', () => {
-    // One run at a time: a burst of task changes must not stack up a queue of full git passes.
-    diffStatsRun ??= computeDiffStats().finally(() => {
-      diffStatsRun = undefined
-    })
-    return diffStatsRun
-  })
+  ipcMain.handle('git:diffStats', () => gitService.diffStats())
   ipcMain.handle('agents:list', () => agentStatuses())
-  ipcMain.handle('worklog:load', (_event, from: unknown, to: unknown) => {
-    const span = z
-      .object({ from: z.number().finite(), to: z.number().finite() })
-      .parse({ from, to })
-    return loadWorklog(span.from, span.to)
-  })
+  ipcMain.handle('worklog:load', (_event, from: unknown, to: unknown) =>
+    worklogService.load(from, to)
+  )
 
   ipcMain.handle('tasks:create', (_event, draft: unknown) => tasksService.create(draft))
   ipcMain.handle('tasks:update', (_event, id: string, patch: unknown) =>
@@ -376,13 +310,9 @@ export function registerIpcHandlers(): void {
     })
   })
 
-  ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') => {
-    const entry = mcpEntry()
-    return providerFor({
-      ...loadSettings(),
-      defaultProvider: provider ?? 'claude'
-    }).mcpInstallCommand(entry, resolveShell(loadSettings().shell).syntax)
-  })
+  ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') =>
+    settingsService.mcpCommand(provider)
+  )
 
   ipcMain.handle('orchestrate:plan', () => dispatchService.plan())
   ipcMain.handle('tasks:checkMerged', () => checkForMergedWork())
@@ -391,20 +321,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('orchestrate:autoState', () => dispatchService.autoState())
   ipcMain.handle('orchestrate:autoSet', (_event, on: unknown) => dispatchService.autoSet(on))
 
-  ipcMain.handle('settings:get', (_event, workspaceId: unknown) =>
-    loadSettings(workspaceIdSchema.optional().parse(workspaceId))
-  )
-  ipcMain.handle('settings:save', (_event, change: unknown) => {
-    const parsed = settingsChangeSchema.parse(change)
-    const folderBefore = workspaceDir(loadSettings())
-    try {
-      persistSettings(parsed)
-    } finally {
-      workspacesService.afterSettingsSave(folderBefore, parsed.workspaceId)
-      dispatchService.autoRunFlagChanged()
-    }
-    return loadSettings()
-  })
+  ipcMain.handle('settings:get', (_event, workspaceId: unknown) => settingsService.get(workspaceId))
+  ipcMain.handle('settings:save', (_event, change: unknown) => settingsService.save(change))
   ipcMain.handle('settings:brokenFiles', () => workspacesService.brokenSettingsFiles())
 
   ipcMain.handle('workspaces:list', () => workspacesService.overview())
@@ -485,11 +403,9 @@ export function registerIpcHandlers(): void {
     agentsService.remove(z.string().min(1).parse(taskId))
   )
 
-  ipcMain.handle('terminal:previewPrompt', (_event, taskId: string, templateId?: string) => {
-    const task = findTask(taskId)
-    if (!task) throw new Error(`Task ${taskId} not found`)
-    return renderPrompt(loadSettings(), task, templateId)
-  })
+  ipcMain.handle('terminal:previewPrompt', (_event, taskId: string, templateId?: string) =>
+    agentsService.previewPrompt(taskId, templateId)
+  )
 
   ipcMain.on('terminal:write', (_event, id: string, data: string) => writeToSession(id, data))
   ipcMain.on('terminal:resize', (_event, id: string, cols: number, rows: number) =>
@@ -509,10 +425,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:handOff', (_event, sessionId: string, output: string) =>
     agentsService.handOff(sessionId, String(output ?? ''))
   )
-  ipcMain.handle('terminal:gitContext', (_event, path: string) => {
-    const root = findGitRoot(path)
-    return { root: root ?? null, branch: (root && readGitBranch(root)) ?? null }
-  })
+  ipcMain.handle('terminal:gitContext', (_event, path: string) => gitService.gitContext(path))
   ipcMain.handle('terminal:openInCode', async (_event, path: string) => {
     const opened =
       process.platform === 'win32'

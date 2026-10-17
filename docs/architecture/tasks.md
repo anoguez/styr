@@ -35,7 +35,7 @@ asks. This follows the shortcut rule: warn, do not force the user to undo someth
 
 Command palette → "Show performance" opens `PerformanceDialog`: per-process CPU and memory
 (`app.getAppMetrics`), main event-loop delay, recent `notifyTasksChanged` durations, renderer heap,
-DOM nodes and long tasks, with a "Copy report" button. Sampling lives in `main/diagnostics.ts`; the
+DOM nodes and long tasks, with a "Copy report" button. Sampling lives in `host/diagnostics.ts` (main supplies the process metrics); the
 shapes, buffer and text formatter are pure in `core/diagnostics.ts`. Everything is memory-only —
 never written to a task file, config or the index — and costs nothing while the panel is closed:
 the timer, the long-task observer and the event-loop histogram all stop on close. Dev builds read
@@ -43,7 +43,7 @@ higher than a packaged app, so judge speed on a packaged one.
 
 The main process is single-threaded and git calls there are synchronous (`execFileSync`), so each
 costs the whole UI. Anything that runs on every task write (`notifyTasksChanged`) must be cheap in
-the steady state: `main/landing.ts` skips a task whose status, worktree and branch/base ref tips
+the steady state: `host/landing.ts` skips a task whose status, worktree and branch/base ref tips
 are unchanged (`LandingCache`, 5-minute expiry), and `git:diffStats` yields between tasks and runs
 one pass at a time. Check the panel's "Task change handling" line after touching either.
 

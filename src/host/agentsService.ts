@@ -9,7 +9,7 @@ import {
 } from '@core/agentStore.js'
 import type { AgentConversation } from '@core/agentConversation.js'
 import type { AgentStatus } from '@core/agentState.js'
-import { workingDirFor } from '@core/launch.js'
+import { renderPrompt, workingDirFor } from '@core/launch.js'
 import { isPlanRun } from '@core/planning.js'
 import type { ThreadUpdate } from '@core/providers/codexProtocol.js'
 import {
@@ -289,6 +289,13 @@ export function createAgentsService(ports: AgentsServicePorts) {
     })
   }
 
+  /** The prompt a launch with `templateId` would send, for the launch menu's preview. */
+  function previewPrompt(taskId: string, templateId?: string): string {
+    const task = ports.tasks.findTask(taskId)
+    if (!task) throw new Error(`Task ${taskId} not found`)
+    return renderPrompt(store.loadSettings(), task, templateId)
+  }
+
   return {
     agentStatuses,
     notifyAgentsChanged,
@@ -296,6 +303,7 @@ export function createAgentsService(ports: AgentsServicePorts) {
     markAgentExited,
     remove,
     resume,
+    previewPrompt,
     launch: lifecycle.startForTask,
     askForPullRequest: lifecycle.askForPullRequest,
     askReview: lifecycle.askReview,

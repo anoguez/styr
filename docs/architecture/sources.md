@@ -33,7 +33,8 @@ on every call and throws `SourceReadOnlyError` unless it is `read_write` and ena
 `adapter.writer` anywhere else, and never add a write method to the read half. Sync, linking and
 refreshing only read. `mirrorStatus` / `commentOnReview` do nothing without `read_write`.
 
-`main/sourceSync.ts` owns the main-process side: poll timers for the active workspace's enabled
+`host/sourceSync.ts` (`createSourceSync`, over the task files and the sources as ports) owns the
+main-process side: poll timers for the active workspace's enabled
 sources, `syncSource`, link/unlink/refresh, and `observeTasks`, called from `notifyTasksChanged`,
 which pushes a linked task's status change (so an MCP or hand edit mirrors too). The first call only
 records a baseline, and a status a sync itself set is not pushed back (`fromSync`). A push that
