@@ -6,6 +6,8 @@ directories:
 afterAllArtifactBuild: scripts/notarize-dmg.mjs
 files:
   - out/**
+  # `styr serve` ships as its own bundle for the remote machine (docs/architecture/remote.md).
+  - '!out/server/**'
   - package.json
 # The OFL requires the licence to travel with the bundled wordmark font.
 extraResources:

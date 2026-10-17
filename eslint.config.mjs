@@ -36,8 +36,8 @@ export default tseslint.config(
     }
   },
 
-  // `src/core/` and `src/host/` run outside Electron (the MCP server, and later `styr serve`), so
-  // neither may import `electron` or reach into the Electron main process. Core is the lower layer
+  // `src/core/`, `src/host/` and `src/server/` run outside Electron (the MCP server, `styr serve`),
+  // so none may import `electron` or reach into the Electron main process. Core is the lower layer
   // and never imports the host.
   {
     files: ['src/core/**/*.ts'],
@@ -67,6 +67,23 @@ export default tseslint.config(
             }
           ],
           patterns: [{ group: ['**/main/*'], message: 'src/host/ must not import src/main/.' }]
+        }
+      ]
+    }
+  },
+  {
+    files: ['src/server/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'electron',
+              message: 'src/server/ runs on plain Node: it must never import electron.'
+            }
+          ],
+          patterns: [{ group: ['**/main/*'], message: 'src/server/ must not import src/main/.' }]
         }
       ]
     }

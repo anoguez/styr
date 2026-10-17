@@ -12,6 +12,11 @@ Electron + React kanban board. See README.md for what it does and how to run it.
   implements. **Never import `electron` or `src/main/` from `src/host/`**; ESLint enforces both
   layers. A service there has a fake-port test, and `ipc.ts` keeps only the `ipcMain.handle` lines
   for its channels, plus the desktop-only handlers `docs/architecture/host.md` lists.
+- `src/server/` is `styr serve`, the headless host for remote workspaces, run by plain Node.
+  **`src/host/` and `src/server/` never import `electron`** (nor `src/main/`); ESLint and the
+  server build enforce it. The server answers the IPC channels under the same names, so a new
+  channel goes in `serverHost.ts` too, or in the desktop-only list in `src/server/channels.test.ts`
+  (see `docs/architecture/remote.md`).
 - Markdown files under `<workspace folder>/tasks/` are the only source of truth. All writes go through
   `src/core/taskStore.ts`.
 - `src/host/taskIndex.ts` is a derived SQLite cache, written only by the main process. It must stay
@@ -40,6 +45,7 @@ notes are in `docs/architecture/` — read the one for the area you are changing
 | Updater and release pipeline                                                                                      | `docs/architecture/releases.md`        |
 | Terminal engines: xterm.js and experimental Styr Terminal, fallback, native package, release access               | `docs/architecture/terminal-engine.md` |
 | IPC contract test, Electron smoke and feature tests (`yarn test:smoke`), adding a step                            | `docs/architecture/testing.md`         |
+| Remote: headless `styr serve`, its JSON-RPC protocol, socket, terminals attach and size, many clients             | `docs/architecture/remote.md`          |
 
 Keep this file under 300 lines. A new subsystem note goes in the matching file above, not here;
 add a line here only for a rule that must hold in every change.

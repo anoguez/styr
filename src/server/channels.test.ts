@@ -1,0 +1,90 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+
+// The server answers the IPC channels under the same names. This reads the desktop's handlers
+// and the server's table from source, as the IPC contract test does, so a channel added to one
+// and not the other fails here instead of failing for remote workspaces only.
+
+const ROOT = fileURLToPath(new URL('../..', import.meta.url))
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) return sourceFiles(path)
+    return /\.ts$/.test(entry.name) && !/\.test\.ts$/.test(entry.name) ? [path] : []
+  })
+}
+
+function matches(text: string, pattern: RegExp): string[] {
+  return [...text.matchAll(pattern)].map((match) => match[1] ?? '')
+}
+
+const main = sourceFiles(join(ROOT, 'src/main'))
+  .map((file) => readFileSync(file, 'utf8'))
+  .join('\n')
+const desktop = new Set(matches(main, /ipcMain\.(?:handle|on)\(\s*'([^']+)'/g))
+const hostSource = readFileSync(join(ROOT, 'src/server/serverHost.ts'), 'utf8')
+const server = new Set(matches(hostSource, /^\s+'([a-z]+:[A-Za-z]+)': channel\(/gm))
+/** Channels the hub answers itself (`hub.ts`), because the PTY size follows focus. */
+const HUB = new Set(['terminal:resize'])
+
+/**
+ * The desktop-only handlers (`docs/architecture/host.md`, What stays in `src/main/`): they act on
+ * the machine the window is on, so a remote workspace's client keeps answering them locally.
+ */
+const DESKTOP_ONLY = new Set([
+  'tasks:openInEditor',
+  'tasks:reveal',
+  'terminal:openInCode',
+  'terminal:revealDirectory',
+  'terminal:openLink',
+  'settings:listApps',
+  'settings:pickDirectory',
+  'settings:pickApp',
+  'settings:pickFiles',
+  'app:titleBarColors',
+  'app:info',
+  'updates:state',
+  'updates:check',
+  'updates:install',
+  // The Styr Terminal engine runs where it draws, on the client, over the terminal data stream.
+  'terminal:engineAvailability',
+  'terminal:engineEnvironment',
+  'terminal:engineSelected',
+  'terminal:benchEnabled',
+  'terminal:bench',
+  'terminal:nativeAttach',
+  'terminal:nativeResize',
+  'terminal:nativeScroll',
+  'terminal:nativeText',
+  'terminal:nativeLines',
+  'terminal:nativeStyledLines',
+  'terminal:nativeDetach',
+  'terminal:nativeClearBlocks',
+  'terminal:nativeReceived'
+])
+
+describe('the server channel table', () => {
+  it('finds channels on both sides (the scan itself works)', () => {
+    expect(desktop.size).toBeGreaterThan(80)
+    expect(server.size).toBeGreaterThan(60)
+  })
+
+  it('answers every desktop channel that is not desktop-only', () => {
+    const missing = [...desktop].filter(
+      (channel) => !server.has(channel) && !HUB.has(channel) && !DESKTOP_ONLY.has(channel)
+    )
+    expect(missing).toEqual([])
+  })
+
+  it('answers no desktop-only channel, and nothing the desktop does not have', () => {
+    expect([...server].filter((channel) => DESKTOP_ONLY.has(channel))).toEqual([])
+    expect([...server].filter((channel) => !desktop.has(channel))).toEqual([])
+  })
+
+  it('lists only desktop-only channels that still exist', () => {
+    expect([...DESKTOP_ONLY].filter((channel) => !desktop.has(channel))).toEqual([])
+  })
+})
