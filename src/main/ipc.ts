@@ -258,6 +258,19 @@ export function startRemoteWorkspaces(): void {
   )
 }
 
+/**
+ * Window focus is when to look for a PR merged in the browser. For a remote board the server
+ * looks, against the remote repos; while it is not live there is nothing to do.
+ */
+export function checkMergedOnFocus(): void {
+  try {
+    const result = remoteRouter.invoke('tasks:checkMerged', [], () => checkForMergedWork())
+    if (result instanceof Promise) result.catch(() => undefined)
+  } catch {
+    // The remote board is read-only right now.
+  }
+}
+
 /** Quitting ends every ssh child; the servers keep running, and so do their agents. */
 export function stopRemoteWorkspaces(): void {
   remoteRouter.stopAll()

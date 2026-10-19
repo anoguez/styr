@@ -47,7 +47,7 @@ vi.mock('@core/settingsStore.js', () => ({ tasksDir: record('tasksDir') }))
 vi.mock('@core/settingsMigration.js', () => ({ migrateLegacySettings: record('migrateSettings') }))
 vi.mock('./ipc.js', () => ({
   broadcast: record('broadcast'),
-  checkForMergedWork: record('checkForMergedWork'),
+  checkMergedOnFocus: record('checkMergedOnFocus'),
   markAgentExited: record('markAgentExited'),
   notifyAgentsChanged: record('notifyAgentsChanged'),
   notifyTasksChanged: record('notifyTasksChanged'),
