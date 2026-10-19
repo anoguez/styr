@@ -319,4 +319,8 @@ process passes a remote path on as text: it never `path.resolve`s or `existsSync
   child per host, routing by workspace and by session, id mapping, snapshots and refused writes,
   another client moving the server, terminal reattach with a reset, the merged tray and
   notifications, settings, the VS Code link, and every server channel having a route.
+- `host/remote/client.integration.test.ts`: the router and `RemoteConnection` against a real
+  `styr serve` built from the checkout, the transport running `serve attach` without ssh: the
+  board through the router, a launch and attach, a drop while the terminal keeps printing, and the
+  reattach with its backlog. Gated and run in the smoke job like `serve.integration.test.ts`.
 - `renderer/lib/remoteStatus.test.ts`: the read-only reasons, switcher notes and file actions.
