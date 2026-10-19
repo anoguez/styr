@@ -41,4 +41,18 @@ child.on('exit', (code) => {
     process.exit(1)
   }
   console.log('\nrenderer bundle is free of node builtins')
+  buildServer()
 })
+
+/** `styr serve`, for plain Node (vite.server.config.mts), into out/server/. */
+function buildServer() {
+  const server = spawn(
+    process.execPath,
+    ['node_modules/vite/bin/vite.js', 'build', '-c', 'vite.server.config.mts'],
+    { shell: false, stdio: 'inherit' }
+  )
+  server.on('exit', (code) => {
+    if (code !== 0) process.exit(code ?? 1)
+    console.log('server bundle built in out/server')
+  })
+}
