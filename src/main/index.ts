@@ -10,6 +10,8 @@ import {
   notifyTasksChanged,
   registerIpcHandlers,
   startAutoDispatch,
+  startRemoteWorkspaces,
+  stopRemoteWorkspaces,
   switchWorkspace
 } from './ipc.js'
 import { closeIndex, syncIndex } from './taskIndex.js'
@@ -157,6 +159,7 @@ app.whenReady().then(() => {
   tasksDir()
   syncIndex()
   registerIpcHandlers()
+  startRemoteWorkspaces()
   startAutoDispatch()
   installAppMenu()
 
@@ -211,6 +214,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   destroyTray()
+  stopRemoteWorkspaces()
   killAllSessions()
   void stopWatching()
   closeIndex()

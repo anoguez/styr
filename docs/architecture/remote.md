@@ -60,6 +60,7 @@ desktop main ──ssh -T host styr serve attach──▶ attach (stdio ↔ sock
 | --------------- | ------------ | ---------------------------------------------- | --------------------------------------- |
 | server → client | notification | `server:hello`, on connect                     | `[ServerInfo]`                          |
 | client → server | request      | `server:info`                                  | `[]` → `ServerInfo`                     |
+| client → server | request      | `server:tray`, the last tray model             | `[]` → `{ statuses, titles }`           |
 | client → server | request      | any invoke channel (`tasks:list` …)            | the IPC arguments → the IPC result      |
 | client → server | notification | `terminal:write`                               | `[id, data]`                            |
 | client → server | request      | `terminal:attach`                              | `[id, cols?, rows?]` → `TerminalOutput` |

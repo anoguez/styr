@@ -17,6 +17,8 @@ export interface TerminalSessionInfo {
   provider?: 'claude' | 'codex'
   /** A read-back of a past chat rather than the task's live session. */
   replay?: boolean
+  /** The remote host the session runs on; unset for a session on this machine. */
+  host?: string
 }
 
 /**

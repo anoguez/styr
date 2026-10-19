@@ -264,9 +264,15 @@ export const settingsSchema = z.object({
     .object({
       externalSources: z.boolean().default(false),
       nativeTerminal: z.boolean().default(false),
-      worklog: z.boolean().default(false)
+      worklog: z.boolean().default(false),
+      remoteWorkspaces: z.boolean().default(false)
     })
-    .default({ externalSources: false, nativeTerminal: false, worklog: false }),
+    .default({
+      externalSources: false,
+      nativeTerminal: false,
+      worklog: false,
+      remoteWorkspaces: false
+    }),
   taskDefaults: z
     .object({ orchestrate: z.boolean().default(true), useWorktree: z.boolean().default(false) })
     .default({ orchestrate: true, useWorktree: false }),

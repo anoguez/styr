@@ -53,6 +53,8 @@ vi.mock('./ipc.js', () => ({
   notifyTasksChanged: record('notifyTasksChanged'),
   registerIpcHandlers: record('registerIpcHandlers'),
   startAutoDispatch: record('startAutoDispatch'),
+  startRemoteWorkspaces: record('startRemoteWorkspaces'),
+  stopRemoteWorkspaces: record('stopRemoteWorkspaces'),
   switchWorkspace: record('switchWorkspace')
 }))
 vi.mock('./taskIndex.js', () => ({
@@ -103,6 +105,7 @@ describe('start-up order', () => {
       'tasksDir',
       'syncIndex',
       'registerIpcHandlers',
+      'startRemoteWorkspaces',
       'startAutoDispatch',
       'installAppMenu',
       'onTerminalData',

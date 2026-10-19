@@ -40,6 +40,7 @@ function setup(overrides: Partial<HubPorts> = {}) {
       }
     },
     info: () => INFO,
+    tray: () => ({ statuses: [], titles: { 'TASK-0001': 'Tray' } }),
     terminals: {
       backlog: (id) => ({ data: `backlog of ${id}`, sequence: 3, marks: [] }),
       resize: (id, cols, rows) => calls.push(`resize ${id} ${cols}x${rows}`)
@@ -88,6 +89,10 @@ describe('hub', () => {
     const { client } = setup()
     const { peer } = client()
     await expect(peer.request('server:info')).resolves.toEqual(INFO)
+    await expect(peer.request('server:tray')).resolves.toEqual({
+      statuses: [],
+      titles: { 'TASK-0001': 'Tray' }
+    })
     await expect(peer.request('echo', ['a'])).resolves.toEqual(['a'])
     await expect(peer.request('later')).resolves.toBe('done')
     await expect(peer.request('echo', [1])).rejects.toMatchObject({

@@ -1,5 +1,6 @@
 import type { AgentState } from '../agentState.js'
 import type { InboxGroup } from '../inbox.js'
+import type { RemoteWorkspaceLink } from './remote.js'
 
 export const WORKTREE_BRANCH_PREFIX = 'styr/'
 
@@ -11,6 +12,8 @@ export const DEFAULT_WORKSPACE_NAME = 'Default'
 export interface WorkspaceInfo {
   id: string
   name: string
+  /** Set for a remote workspace: the local folder is only a stub pointing at this. */
+  remote?: RemoteWorkspaceLink
 }
 
 /** The workspaces as the UI lists them, with what it needs to warn before a delete. */
