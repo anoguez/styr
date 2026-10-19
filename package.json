@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.e2e.json && node scripts/build.mjs",
+    "build:server": "vite build -c vite.server.config.mts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:smoke": "yarn build && playwright test",
@@ -21,6 +22,7 @@
     "start": "electron-vite preview",
     "mcp": "node ./out/main/mcp/index.mjs",
     "serve": "node ./out/server/index.mjs serve",
+    "server:bundle": "node scripts/server-bundle.mjs",
     "package": "yarn build && node --env-file-if-exists=.env node_modules/electron-builder/cli.js",
     "package:adhoc": "yarn build && electron-builder -c.mac.identity=-",
     "package:win": "yarn build && electron-builder --win --x64 -c.npmRebuild=false",

@@ -1,9 +1,20 @@
-import { ipcMain, powerMonitor, shell, type IpcMain } from 'electron'
+import { join } from 'node:path'
+import { app, ipcMain, powerMonitor, shell, type IpcMain } from 'electron'
+import { configDir } from '@core/config.js'
+import { unsupportedHost } from '@core/remoteSetup.js'
 import { loadSettings } from '@core/settingsStore.js'
-import { createRemoteWorkspace, listWorkspaces } from '@core/workspaces.js'
-import type { GlobalSettings, RemoteWorkspaceDraft } from '@core/types.js'
+import { createRemoteWorkspace, listWorkspaces, validateWorkspaceName } from '@core/workspaces.js'
+import type {
+  GlobalSettings,
+  RemoteSetupDraft,
+  RemoteWorkspaceDraft,
+  WorkspaceOverview
+} from '@core/types.js'
 import { RemoteConnection } from '@host/remote/connection.js'
+import { createHostSetup, runRemoteSetup, type HostSetup } from '@host/remote/hostSetup.js'
 import { createRemoteRouter } from '@host/remote/router.js'
+import { openServerSession } from '@host/remote/session.js'
+import { createHostSetupPorts } from '@host/remote/sshRunner.js'
 import { sshTransport } from '@host/remote/sshTransport.js'
 import { electronHost } from './electronHost.js'
 import { listSessions, terminalRuntimeState } from './terminal/ptyManager.js'
@@ -41,9 +52,48 @@ export const remoteRouter = createRemoteRouter({
   openExternal: (url) => void shell.openExternal(url),
   isLocalSession: (id) =>
     listSessions().some((session) => session.id === id) || terminalRuntimeState(id) !== undefined,
-  saveGlobalSettings: (global) => saveGlobal(global)
+  saveGlobalSettings: (global) => saveGlobal(global),
+  get clientVersion() {
+    return app.getVersion()
+  }
 })
 remoteRouter.bindSettings(() => loadSettings())
+
+/**
+ * The host steps (`src/host/remote/hostSetup.ts`) over the real ssh, scp and download. The
+ * install script and the bundles' hashes ship inside the app: `install.sh` beside the asar,
+ * `serverBundles.json` in `out/main/`, written by the release workflow before packaging.
+ */
+let setupInstance: HostSetup | undefined
+function hostSetup(): HostSetup {
+  setupInstance ??= createHostSetup(
+    createHostSetupPorts({
+      version: app.getVersion(),
+      cacheDir: join(configDir(), 'server-bundles'),
+      installScriptPath: app.isPackaged
+        ? join(process.resourcesPath, 'server', 'install.sh')
+        : join(app.getAppPath(), 'resources', 'server', 'install.sh'),
+      hashesPath: join(app.getAppPath(), 'out', 'main', 'serverBundles.json')
+    })
+  )
+  return setupInstance
+}
+
+/** Creates a workspace on a host's server: over the shared connection, or a one-off session. */
+async function createServerWorkspace(host: string, name: string): Promise<string> {
+  const shared = remoteRouter.requestOnHost(host, 'workspaces:create', [name])
+  if (shared) return ((await shared) as WorkspaceOverview).activeId
+  const session = await openServerSession(host, {
+    spawn: () => sshTransport({ host, workspaceId: 'default' }),
+    setTimer: (run, ms) => setTimeout(run, ms),
+    clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout)
+  })
+  try {
+    return ((await session.request('workspaces:create', [name])) as WorkspaceOverview).activeId
+  } finally {
+    session.close()
+  }
+}
 
 /** How `ipc.ts` saves the app-level settings alone (a Save aimed at a remote workspace). */
 export function bindGlobalSettingsSave(save: (global: GlobalSettings) => void): void {
@@ -83,19 +133,85 @@ export function startRemote(switchWorkspace: (id: string) => unknown): void {
     remoteRouter.retry(typeof host === 'string' ? host : undefined)
   )
   ipcMain.handle('remote:switchBack', (_event, id: unknown) => remoteRouter.switchBack(String(id)))
-  ipcMain.handle('remote:addWorkspace', (_event, draft: RemoteWorkspaceDraft) => {
-    const settings = loadSettings()
-    if (!settings.experimental.remoteWorkspaces) {
+  const requireFlag = (): void => {
+    if (!loadSettings().experimental.remoteWorkspaces) {
       throw new Error('Turn on remote workspaces in Settings → Experimental first.')
     }
-    const created = createRemoteWorkspace(settings, {
+  }
+  /** Writes a local stub; the caller switches to it. */
+  const addStub = (draft: RemoteWorkspaceDraft): string => {
+    const created = createRemoteWorkspace(loadSettings(), draft)
+    remoteRouter.refresh()
+    return created.id
+  }
+  ipcMain.handle('remote:addWorkspace', (_event, draft: RemoteWorkspaceDraft) => {
+    requireFlag()
+    const id = addStub({
       name: String(draft?.name ?? ''),
       host: String(draft?.host ?? ''),
       workspaceId: String(draft?.workspaceId ?? ''),
       ...(typeof draft?.server === 'string' ? { server: draft.server } : {})
     })
-    remoteRouter.refresh()
-    return switchWorkspace(created.id)
+    return switchWorkspace(id)
+  })
+  ipcMain.handle('remote:setup', async (_event, draft: RemoteSetupDraft) => {
+    requireFlag()
+    const name = String(draft?.name ?? '')
+    // Checked before anything runs on the host, so a clash never leaves a workspace there.
+    validateWorkspaceName(loadSettings(), name)
+    return runRemoteSetup(
+      {
+        setup: hostSetup(),
+        version: app.getVersion(),
+        createServerWorkspace,
+        addStub: async (stub) => {
+          const id = addStub(stub)
+          await switchWorkspace(id)
+          return id
+        },
+        progress: (update) => electronHost.broadcast('remote:setupProgress', update)
+      },
+      {
+        name,
+        host: String(draft?.host ?? ''),
+        provider: draft?.provider === 'codex' ? 'codex' : 'claude'
+      }
+    )
+  })
+  ipcMain.handle('remote:runningAgents', (_event, host: unknown) =>
+    remoteRouter.runningAgents(String(host))
+  )
+  // Upgrade server: the renderer has asked first, listing the agents a restart ends. The matching
+  // version is installed beside the running one, then the restart makes it take over.
+  ipcMain.handle('remote:upgrade', async (_event, value: unknown) => {
+    requireFlag()
+    const host = String(value)
+    const probe = await hostSetup().probe(host)
+    const refused = unsupportedHost(host, probe)
+    if (refused) throw new Error(refused)
+    await hostSetup().install(host, probe.arch!)
+    await hostSetup().restart(host, remoteRouter.serverPid(host))
+    remoteRouter.connect(host)
+  })
+  // Stop server: asked first in the renderer, with the running agents listed.
+  ipcMain.handle('remote:stopServer', async (_event, value: unknown) => {
+    const host = String(value)
+    await hostSetup().stop(host, remoteRouter.serverPid(host))
+    remoteRouter.disconnect(host)
+  })
+  ipcMain.handle('remote:disconnect', (_event, host: unknown) =>
+    remoteRouter.disconnect(String(host))
+  )
+  // Connect: starts the installed server if it is not running (after Stop, or a reboot without
+  // lingering), then connects. A host set up by hand may have no installed server to start; the
+  // connection then says what went wrong.
+  ipcMain.handle('remote:connect', async (_event, value: unknown) => {
+    requireFlag()
+    const host = String(value)
+    await hostSetup()
+      .start(host)
+      .catch(() => undefined)
+    remoteRouter.connect(host)
   })
   powerMonitor.on('suspend', () => remoteRouter.suspend())
   powerMonitor.on('resume', () => remoteRouter.wake())

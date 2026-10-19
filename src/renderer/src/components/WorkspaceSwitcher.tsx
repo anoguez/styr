@@ -17,9 +17,10 @@ import {
   elsewhereNotice,
   type BoardCountGroup
 } from '../lib/workspaceStatus.js'
-import { Button, Field, Modal, inputClass } from './ui.js'
+import { Button, Field, Modal, Segmented, inputClass } from './ui.js'
+import { RemoteSetupDialog } from './RemoteSetupDialog.js'
 import { IS_MAC } from '../lib/platform.js'
-import { remoteNote } from '../lib/remoteStatus.js'
+import { remoteNote, useRemoteState } from '../lib/remoteStatus.js'
 
 const COUNT_TONE: Record<BoardCountGroup, string> = {
   needs: AGENT_TONE.waiting,
@@ -254,11 +255,16 @@ export function WorkspaceSwitcher({
 
 export function NewWorkspaceDialog({
   onCreate,
+  onApply,
   onClose
 }: {
   onCreate: (name: string) => Promise<void>
+  /** A remote setup's result: the workspaces after it opened the new board. */
+  onApply: (overview: WorkspaceOverview) => void
   onClose: () => void
 }): ReactNode {
+  const remote = useRemoteState()
+  const [mode, setMode] = useState<'local' | 'remote'>('local')
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -274,6 +280,22 @@ export function NewWorkspaceDialog({
       setError(ipcMessage(failure))
       setBusy(false)
     }
+  }
+
+  // Remote shows only with the experimental flag on (`docs/architecture/remote.md`).
+  const switcher = remote.enabled ? (
+    <Segmented
+      label="Where the workspace lives"
+      value={mode}
+      options={[
+        { value: 'local', label: 'This computer' },
+        { value: 'remote', label: 'Remote host' }
+      ]}
+      onChange={setMode}
+    />
+  ) : null
+  if (mode === 'remote' && remote.enabled) {
+    return <RemoteSetupDialog switcher={switcher} onApply={onApply} onClose={onClose} />
   }
 
   return (
@@ -299,6 +321,7 @@ export function NewWorkspaceDialog({
           void submit()
         }}
       >
+        {switcher ? <div className="mb-4">{switcher}</div> : null}
         <Field
           label="Name"
           hint="You switch to it straight away. The same repo can be used in any workspace."

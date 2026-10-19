@@ -4,6 +4,7 @@ import type {
   BrokenSettingsFile,
   GlobalSettings,
   RemoteHostState,
+  RemoteRunningAgents,
   RemoteState,
   RemoteWorkspaceLink,
   RemoteWorkspaceState,
@@ -71,6 +72,8 @@ export interface RouterPorts extends RegistryPorts {
   isLocalSession(id: string): boolean
   /** Saves the app-level settings only, as a Save from the dialog would, minus the workspace file. */
   saveGlobalSettings(global: GlobalSettings): void
+  /** This app's version: a server on another one is offered the upgrade (the version lock). */
+  clientVersion: string
 }
 
 export function createRemoteRouter(ports: RouterPorts) {
@@ -426,10 +429,42 @@ export function createRemoteRouter(ports: RouterPorts) {
   }
 
   function hostState(entry: HostEntry): RemoteHostState {
+    const base = entry.conn.state()
+    const state: RemoteHostState = {
+      ...base,
+      ...(base.serverVersion && base.serverVersion !== ports.clientVersion
+        ? { upgradeTo: ports.clientVersion }
+        : {}),
+      ...(entry.userDisconnected ? { userDisconnected: true } : {})
+    }
     const id = entry.serverActiveId
-    if (!entry.conn.connected || !id) return entry.conn.state()
+    if (!entry.conn.connected || !id) return state
     const name = entry.overview?.workspaces.find((w) => w.id === id)?.name ?? id
-    return { ...entry.conn.state(), serverWorkspace: { id, name } }
+    return { ...state, serverWorkspace: { id, name } }
+  }
+
+  /**
+   * The agents running on a host's server, across all its workspaces: what a restart or Stop
+   * would end, listed before asking. Unknown while the host is not connected.
+   */
+  async function runningAgents(host: string): Promise<RemoteRunningAgents> {
+    const entry = registry.hosts.get(host)
+    if (!entry?.conn.connected) return { known: false, agents: [] }
+    try {
+      const sessions = (await entry.conn.request('terminal:list')) as TerminalSessionInfo[]
+      const names = new Map(entry.overview?.workspaces.map((w) => [w.id, w.name]) ?? [])
+      return {
+        known: true,
+        agents: sessions
+          .filter((session) => session.taskId && !session.replay)
+          .map((session) => {
+            const workspace = session.workspaceId ? names.get(session.workspaceId) : undefined
+            return { title: session.title, ...(workspace ? { workspace } : {}) }
+          })
+      }
+    } catch {
+      return { known: false, agents: [] }
+    }
   }
 
   function emitState(): void {
@@ -457,6 +492,37 @@ export function createRemoteRouter(ports: RouterPorts) {
       for (const entry of registry.hosts.values()) {
         if (!host || entry.host === host) entry.conn.retryNow()
       }
+    },
+    runningAgents,
+    /** The server's pid from its last hello, to stop one that no systemd unit runs. */
+    serverPid(host: string): number | undefined {
+      const pid = registry.hosts.get(host)?.conn.server?.pid
+      return typeof pid === 'number' ? pid : undefined
+    },
+    /**
+     * A request on a host's shared connection when it is connected (setup's second workspace on a
+     * host), or undefined, so the caller opens a one-off session instead.
+     */
+    requestOnHost(host: string, method: string, params: unknown[]): Promise<unknown> | undefined {
+      const entry = registry.hosts.get(host)
+      return entry?.conn.connected ? entry.conn.request(method, params) : undefined
+    },
+    /** Disconnect (Settings → Remote hosts): offline until Connect, whatever the backoff. */
+    disconnect(host: string): void {
+      const entry = registry.hosts.get(host)
+      if (!entry) return
+      entry.userDisconnected = true
+      entry.conn.stop()
+      emitState()
+    },
+    /** Connect again after Disconnect or Stop, or retry at once. */
+    connect(host: string): void {
+      const entry = registry.hosts.get(host)
+      if (!entry) return
+      entry.userDisconnected = false
+      entry.conn.start()
+      entry.conn.retryNow()
+      emitState()
     },
     /** "Switch back": the server shows this workspace again. */
     switchBack(stubId: string): void {

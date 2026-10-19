@@ -2,7 +2,9 @@ import { createContext, useContext } from 'react'
 import { remoteEditorFor } from '@core/remote.js'
 import type {
   RemoteHostState,
+  RemoteRunningAgents,
   RemoteState,
+  RemoteTransfer,
   RemoteWorkspaceState,
   TerminalSessionInfo,
   WorkspaceInfo
@@ -43,6 +45,12 @@ export function boardAccess(state: RemoteState, activeId: string): BoardAccess {
 
 function notLiveReason(remote: RemoteWorkspaceState, host?: RemoteHostState): string {
   if (remote.error) return `This workspace cannot be shown: ${remote.error}`
+  if (host?.status === 'incompatible') {
+    return `Read-only: ${remote.host} runs a server this app cannot talk to. Upgrade the server to make changes.`
+  }
+  if (host?.userDisconnected) {
+    return `Read-only: you disconnected ${remote.host}. Connect it again in Settings → Remote hosts.`
+  }
   if (!host || host.status !== 'connected') {
     return `Read-only while ${remote.host} is disconnected. Nothing is queued.`
   }
@@ -62,10 +70,66 @@ export function connectionLabel(host?: RemoteHostState): string {
     case 'reconnecting':
       return 'Reconnecting…'
     case 'offline':
-      return `${host.host} offline`
+      return host.userDisconnected ? `${host.host} disconnected` : `${host.host} offline`
+    case 'incompatible':
+      return `${host.host} needs a server upgrade`
     default:
       return 'Not connected'
   }
+}
+
+/** How long a server has run, from its `startedAt`: "3d 4h", "2h 5m", "12m", "under a minute". */
+export function uptime(startedAt: string | undefined, now: number): string | undefined {
+  const start = startedAt ? Date.parse(startedAt) : NaN
+  if (Number.isNaN(start)) return undefined
+  const minutes = Math.max(0, Math.floor((now - start) / 60_000))
+  if (minutes < 1) return 'under a minute'
+  const days = Math.floor(minutes / 1440)
+  const hours = Math.floor((minutes % 1440) / 60)
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes % 60}m`
+  return `${minutes}m`
+}
+
+/** How the server reached the host, as setup reports it. */
+export function transferLabel(transfer: RemoteTransfer): string {
+  switch (transfer) {
+    case 'download':
+      return 'The host downloaded the server from the GitHub release.'
+    case 'upload':
+      return 'The host could not download the server, so this computer uploaded it over ssh.'
+    case 'installed':
+      return 'This server version was already installed on the host.'
+    case 'running':
+      return 'A server of this version was already running on the host; it is shared.'
+  }
+}
+
+/**
+ * The confirmation before a server restart or stop, listing the agents it would end: proceed only
+ * on confirm (warn, don't refuse).
+ */
+export function serverStopQuestion(
+  host: string,
+  action: 'restart' | 'stop',
+  running: RemoteRunningAgents
+): string {
+  const verb = action === 'restart' ? 'Restart' : 'Stop'
+  const head =
+    action === 'restart'
+      ? `Upgrade the server on ${host}? It restarts to take over.`
+      : `Stop the Styr server on ${host}? Auto-run stops with it until you connect again.`
+  if (!running.known) {
+    return `${head}\n\n${host} is not connected, so Styr cannot tell which agents are running. Any that are stop too.`
+  }
+  if (running.agents.length === 0) return `${head}\n\nNo agents are running there.`
+  const list = running.agents
+    .map((agent) => `• ${agent.title}${agent.workspace ? ` (${agent.workspace})` : ''}`)
+    .join('\n')
+  return (
+    `${head}\n\n${verb === 'Restart' ? 'Restarting' : 'Stopping'} it ends ${running.agents.length === 1 ? 'this agent' : `these ${running.agents.length} agents`}:\n${list}\n\n` +
+    'Their cards show them stopped; resume each from its card.'
+  )
 }
 
 /** Seconds until the next attempt, for "retrying in 8s", or undefined when none is planned. */

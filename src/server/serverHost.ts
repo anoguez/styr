@@ -1,11 +1,13 @@
 import { z } from 'zod'
-import { pinWorkspace, pinnedWorkspaceId } from '@core/config.js'
+import { pathsInWorkspace, pinWorkspace, pinnedWorkspaceId } from '@core/config.js'
+import { readAllAgentStatuses } from '@core/agentStore.js'
 import { planLaunch } from '@core/launch.js'
 import { codexTranscript } from '@core/providers/codex.js'
 import { migrateLegacySettings } from '@core/settingsMigration.js'
 import { loadSettings, tasksDir } from '@core/settingsStore.js'
 import { sourceProviders } from '@core/sources/index.js'
 import { taskStatusSchema } from '@core/taskSchema.js'
+import { listWorkspaces } from '@core/workspaces.js'
 import {
   addNote,
   brokenTaskFiles,
@@ -46,6 +48,7 @@ import {
   inOtherWorkspace
 } from '@host/workspacesService.js'
 import type { Channel, ChannelTable } from './hub.js'
+import { exitOrphanedAgents } from './orphans.js'
 
 export interface ServerHostPorts extends HostPorts {
   /** `terminal:data`, which goes only to the clients attached to that terminal. */
@@ -394,6 +397,14 @@ export function createServerHost(ports: ServerHostPorts) {
       ports.terminalExited(id)
       // The exit's timestamp and the comparisons behind it are made here, on the server's clock.
       if (task) agentsService.markAgentExited(task.taskId, task.workspaceId)
+    })
+
+    // Nothing runs yet: an agent still `working` was left by a server that died (a reboot).
+    const settings = loadSettings()
+    exitOrphanedAgents({
+      workspaceIds: () => listWorkspaces(settings).map((workspace) => workspace.id),
+      statuses: (id) => readAllAgentStatuses(pathsInWorkspace(settings, id)),
+      markExited: (taskId, workspaceId) => agentsService.markAgentExited(taskId, workspaceId)
     })
 
     startWatching(notifyTasksChanged)

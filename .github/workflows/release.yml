@@ -63,10 +63,84 @@ jobs:
           git pull --rebase origin main
           git push origin HEAD:main
 
-  build-macos:
+  # The Styr server bundles for remote workspaces (docs/architecture/remote.md): one per Linux arch,
+  # each with its own Node runtime and node-pty / better-sqlite3 built for that Node's ABI. Built on
+  # a native runner of each arch, inside Debian bullseye so the bundles need only glibc 2.31.
+  # They are built before the desktop app, which carries their SHA-256s (build-macos).
+  build-server:
     needs: release-please
-    # always() lets a manual run proceed although release-please was skipped.
     if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container: node:24-bullseye
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+
+      # No scripts: the server never loads the Electron-ABI native builds, and needs no Electron.
+      # scripts/server-bundle.mjs installs node-pty and better-sqlite3 for its own Node.
+      - run: yarn install --frozen-lockfile --ignore-scripts
+      - run: yarn build:server
+      - run: node scripts/server-bundle.mjs
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: styr-server-linux-${{ matrix.arch }}
+          path: dist/styr-server-*-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  # The bundles' release files: SHA256SUMS, install.sh with the version filled in, and a build
+  # provenance attestation for each (`gh attestation verify`). Attached to the draft release; the
+  # publish job waits for this, so a release is never public without them.
+  server-release:
+    needs: [release-please, build-server]
+    if: ${{ always() && needs.build-server.result == 'success' && (needs.release-please.outputs.tag_name || inputs.tag) != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: styr-server-linux-*
+          path: dist-server
+          merge-multiple: true
+
+      - run: node scripts/server-checksums.mjs release dist-server
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist-server/styr-server-*.tar.gz
+            dist-server/install.sh
+
+      - name: Upload to release
+        run: gh release upload "$TAG" dist-server/styr-server-*.tar.gz dist-server/styr-server-*-SHA256SUMS dist-server/install.sh --clobber --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-macos:
+    needs: [release-please, build-server]
+    # always() lets a manual run proceed although release-please was skipped.
+    if: ${{ always() && needs.build-server.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
     # macos-latest is Apple silicon, matching the arm64-only target.
     runs-on: macos-latest
     # The `release` environment holds STYR_TERMINAL_PACKAGES_TOKEN. Protect it (Settings →
@@ -101,6 +175,15 @@ jobs:
           STYR_TERMINAL_TOKEN: ${{ secrets.STYR_TERMINAL_PACKAGES_TOKEN }}
 
       - run: yarn build
+
+      # The server bundles' SHA-256s go inside the app (out/main/serverBundles.json), so the hash a
+      # remote host checks its download against comes from the signed app, not from the release.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: styr-server-linux-*
+          path: dist-server
+          merge-multiple: true
+      - run: node scripts/server-checksums.mjs app dist-server
 
       # The keychain is set up here rather than by handing CSC_LINK to electron-builder: its own
       # temporary keychain fails `set-key-partition-list` on the macOS runners ("passphrase not
@@ -298,11 +381,12 @@ jobs:
   #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # release-please creates the release as a draft (see release-please-config.json), so nothing is
-  # public — and installed copies see no new version — until every platform's files are attached.
+  # public — and installed copies see no new version — until every platform's files are attached,
+  # the server bundles, their SHA256SUMS and install.sh included.
   # A failed build leaves the draft unpublished rather than a release with files missing.
   publish:
-    needs: [release-please, build-macos]
-    if: ${{ always() && needs.build-macos.result == 'success' && (needs.release-please.outputs.tag_name || inputs.tag) != '' }}
+    needs: [release-please, build-macos, server-release]
+    if: ${{ always() && needs.build-macos.result == 'success' && needs.server-release.result == 'success' && (needs.release-please.outputs.tag_name || inputs.tag) != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

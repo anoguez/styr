@@ -26,7 +26,7 @@ export interface ServerInfo {
   platform: string
 }
 
-export const PROTOCOL_VERSION = 1
+export { PROTOCOL_VERSION } from '@host/rpc/jsonRpc.js'
 
 export interface HubPorts {
   /** Invoke channels (request/response) and one-way channels (notifications). */

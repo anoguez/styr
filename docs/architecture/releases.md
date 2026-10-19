@@ -31,6 +31,26 @@ changelog. `scripts/setup-signing-secrets.sh <p12>` sets the five signing secret
 `.p12` exported in Keychain Access — never from `security export`, which cannot reach the
 data-protection keychain where the Developer ID key lives and silently exports other identities.
 
+### Server bundles
+
+Remote workspaces' server (`remote.md`, Server bundles) ships with every release, before the
+release is published:
+
+1. `build-server` (a matrix: `x64` on `ubuntu-latest`, `arm64` on `ubuntu-24.04-arm`, both inside
+   `node:24-bullseye` for an old glibc) installs without scripts, runs `yarn build:server` and
+   `scripts/server-bundle.mjs`, and keeps `styr-server-<version>-linux-<arch>.tar.gz` as a
+   workflow artifact.
+2. `build-macos` needs it: after `yarn build` it writes both bundles' SHA-256s into the app
+   (`scripts/server-checksums.mjs app` → `out/main/serverBundles.json`) before signing, so the
+   hash a host checks its download against ships inside the signed, notarised app.
+3. `server-release` writes `styr-server-<version>-SHA256SUMS` and `install.sh` with the version
+   filled in (`scripts/server-checksums.mjs release`), generates a build provenance attestation
+   for the bundles and the script (`actions/attest-build-provenance`), and attaches all four to
+   the draft release.
+4. `publish` needs both `build-macos` and `server-release`, so a release is never public without
+   the bundles, their checksums and the installer. A failed bundle build blocks the app build too,
+   since the app would carry no hashes.
+
 The release job imports the certificate into its own keychain together with Apple's Developer ID
 intermediates (fingerprint-pinned), passes the Developer ID identity by name as `CSC_NAME`, and fails
 at import if there is none. Each of those fixed a real failure: electron-builder's own temporary

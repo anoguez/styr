@@ -8,7 +8,8 @@ import type {
   WorkspaceOverview
 } from '@core/types.js'
 import { RemoteConnection } from './connection.js'
-import { fakeClock, fakeServer, settle } from './remoteFixture.js'
+import { PROTOCOL_VERSION } from '../rpc/jsonRpc.js'
+import { HELLO, fakeClock, fakeServer, settle } from './remoteFixture.js'
 import { createRemoteRouter } from './router.js'
 import { TERMINAL_RESET } from './terminals.js'
 
@@ -134,7 +135,8 @@ function setup(options: { enabled?: boolean; active?: string } = {}) {
     updateTray: (statuses, _titles, quiet) => void trays.push({ statuses, quiet: [...quiet] }),
     openExternal: (url) => void opened.push(url),
     isLocalSession: (id) => localSessions.has(id),
-    saveGlobalSettings: (global) => void savedGlobal.push(global)
+    saveGlobalSettings: (global) => void savedGlobal.push(global),
+    clientVersion: HELLO.version
   })
   router.bindSettings(() => ({ ...LOCAL_SETTINGS, activeWorkspaceId: active }))
 
@@ -803,5 +805,92 @@ describe('remote router: edge cases', () => {
     expect(t.router.state().hosts.map((h) => h.status)).toEqual(['connecting', 'connecting'])
     t.router.stopAll()
     expect(t.router.state().hosts).toEqual([])
+  })
+})
+
+describe('remote router: the version lock and Settings → Remote hosts', () => {
+  it('offers the upgrade when the server runs another version, with its uptime', async () => {
+    const t = setup()
+    t.router.refresh()
+    t.devbox.server.hello({ ...HELLO, version: '9.8.0' })
+    t.vm.server.hello()
+    await settle()
+    const hosts = t.router.state().hosts
+    expect(hosts.find((h) => h.host === 'devbox')).toMatchObject({
+      status: 'connected',
+      serverVersion: '9.8.0',
+      serverStartedAt: HELLO.startedAt,
+      upgradeTo: HELLO.version
+    })
+    expect(hosts.find((h) => h.host === 'vm')?.upgradeTo).toBeUndefined()
+    // A version mismatch alone still works: the board is live.
+    await t.switchTo('remote-main')
+    expect(t.router.state().workspaces['remote-main']?.live).toBe(true)
+  })
+
+  it('forwards no channel to a server on another protocol, and says to upgrade it', async () => {
+    const t = setup()
+    t.router.refresh()
+    t.devbox.server.hello({ ...HELLO, protocol: PROTOCOL_VERSION + 1, version: '0.1.0' })
+    await settle()
+    await t.switchTo('remote-main')
+    expect(t.router.state().hosts.find((h) => h.host === 'devbox')).toMatchObject({
+      status: 'incompatible',
+      upgradeTo: HELLO.version
+    })
+    expect(t.router.state().workspaces['remote-main']?.live).toBe(false)
+    await expect(t.call('tasks:create', { title: 'x' })).rejects.toThrow(
+      /server protocol.*Upgrade it from Settings → Remote hosts/
+    )
+    expect(t.devbox.server.calls).toEqual([])
+  })
+
+  it('Disconnect keeps a host offline until Connect, whatever wakes the computer', async () => {
+    const t = setup()
+    t.router.refresh()
+    await t.connectAll()
+    t.router.disconnect('devbox')
+    const host = () => t.router.state().hosts.find((h) => h.host === 'devbox')
+    expect(host()).toMatchObject({ status: 'offline', userDisconnected: true })
+    t.router.wake()
+    t.router.retry()
+    expect(host()?.status).toBe('offline')
+    const children = t.devbox.server.children.length
+    t.router.connect('devbox')
+    expect(t.devbox.server.children).toHaveLength(children + 1)
+    t.devbox.server.hello()
+    await settle()
+    expect(host()).toMatchObject({ status: 'connected' })
+    expect(host()?.userDisconnected).toBeUndefined()
+  })
+
+  it('lists the agents a restart or stop would end, across the server’s workspaces', async () => {
+    const t = setup()
+    t.router.refresh()
+    await t.connectAll()
+    t.devbox.state.sessions.push(
+      { id: 's1', title: 'Fix login', cwd: '/r', taskId: 'TASK-0001', workspaceId: 'client' },
+      { id: 's2', title: 'Shell', cwd: '/r' },
+      { id: 's3', title: 'Old chat', cwd: '/r', taskId: 'TASK-0002', replay: true }
+    )
+    expect(await t.router.runningAgents('devbox')).toEqual({
+      known: true,
+      agents: [{ title: 'Fix login', workspace: 'Client work' }]
+    })
+    expect(t.router.serverPid('devbox')).toBe(HELLO.pid)
+    t.router.disconnect('vm')
+    expect(await t.router.runningAgents('vm')).toEqual({ known: false, agents: [] })
+  })
+
+  it('sends a request on a connected host’s shared connection, and nothing otherwise', async () => {
+    const t = setup()
+    t.router.refresh()
+    t.devbox.server.hello()
+    await settle()
+    expect(await t.router.requestOnHost('devbox', 'workspaces:list', [])).toMatchObject({
+      activeId: 'default'
+    })
+    expect(t.router.requestOnHost('vm', 'workspaces:list', [])).toBeUndefined()
+    expect(t.router.requestOnHost('elsewhere', 'workspaces:list', [])).toBeUndefined()
   })
 })

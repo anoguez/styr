@@ -61,6 +61,10 @@ export function createForwarder(
     const { workspace, link, host } = target
     const error = host.errors.get(link.workspaceId)
     if (error) return `${workspace.name} cannot be shown: ${error}`
+    const state = host.conn.state()
+    if (state.status === 'incompatible') {
+      return `${state.lastError ?? `${link.host} runs an incompatible server.`} Upgrade it from Settings → Remote hosts.`
+    }
     if (!host.conn.connected) {
       return `${workspace.name} is offline while Styr reconnects to ${link.host}. Nothing was changed or queued.`
     }

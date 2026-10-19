@@ -13,6 +13,10 @@ import type {
   CliStatus,
   OrchestrationSummary,
   RemoteState,
+  RemoteRunningAgents,
+  RemoteSetupDraft,
+  RemoteSetupProgress,
+  RemoteSetupResult,
   RemoteWorkspaceDraft,
   RestSourceSettings,
   RestTestResult,
@@ -213,7 +217,22 @@ const api = {
     switchBack: (workspaceId: string): Promise<void> =>
       ipcRenderer.invoke('remote:switchBack', workspaceId),
     addWorkspace: (draft: RemoteWorkspaceDraft): Promise<WorkspaceOverview> =>
-      ipcRenderer.invoke('remote:addWorkspace', draft)
+      ipcRenderer.invoke('remote:addWorkspace', draft),
+    /** New workspace → Remote: check, install or reuse the server, create, open. */
+    setup: (draft: RemoteSetupDraft): Promise<RemoteSetupResult> =>
+      ipcRenderer.invoke('remote:setup', draft),
+    onSetupProgress: (handler: (update: RemoteSetupProgress) => void): (() => void) =>
+      subscribe('remote:setupProgress', handler as (...args: never[]) => void),
+    /** What a restart or Stop would end, listed before asking. */
+    runningAgents: (host: string): Promise<RemoteRunningAgents> =>
+      ipcRenderer.invoke('remote:runningAgents', host),
+    /** Installs this app's server version and restarts into it. Ask first. */
+    upgrade: (host: string): Promise<void> => ipcRenderer.invoke('remote:upgrade', host),
+    /** Stops the host's server. Ask first. */
+    stopServer: (host: string): Promise<void> => ipcRenderer.invoke('remote:stopServer', host),
+    disconnect: (host: string): Promise<void> => ipcRenderer.invoke('remote:disconnect', host),
+    /** Starts the server if needed, then connects. */
+    connect: (host: string): Promise<void> => ipcRenderer.invoke('remote:connect', host)
   },
   settings: {
     get: (workspaceId?: string): Promise<Settings> =>

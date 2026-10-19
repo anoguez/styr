@@ -1,7 +1,7 @@
 # Styr
 
 [![Latest release](https://img.shields.io/github/v/release/anoguez/styr)](https://github.com/anoguez/styr/releases/latest)
-![Test coverage](https://img.shields.io/badge/coverage-93.54%25-brightgreen)
+![Test coverage](https://img.shields.io/badge/coverage-93.78%25-brightgreen)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/noguez)
 
 **An agentic IDE built around a kanban board.** Write tasks, and Styr launches a coding agent (Claude Code
@@ -102,6 +102,37 @@ To install it as an app instead, download the signed DMG (macOS) from
 [Releases](https://github.com/anoguez/styr/releases), or build one yourself (see
 [Building and packaging](docs/building.md); `yarn package:win` on Windows, `yarn package:linux` on
 Linux or WSL2).
+
+## Remote workspaces (experimental)
+
+A workspace can live on a Linux machine you reach over ssh, such as a cloud VM on Tailscale, where a
+headless Styr server keeps its agents and Auto-run going while your laptop is closed. Turn it on in
+**Settings → Experimental**, then use **New workspace → Remote host**: give a host (anything `ssh`
+accepts) and a name. Styr checks the host over ssh, has the host download the server from this
+release and check it against the hash built into the app, installs it as a `systemd --user`
+service, and opens the new board. The host needs Linux, ssh, git and the agent CLI, logged in.
+Styr never asks for a password and never accepts a host key for you: set up a key or Tailscale SSH
+first, and run `ssh <host>` once to accept its key.
+
+To set a host up by hand, or from cloud-init, run the same installer on it:
+
+```sh
+curl -fsSL https://github.com/anoguez/styr/releases/latest/download/install.sh | sh
+```
+
+It downloads the server, checks it against the release's `SHA256SUMS`, installs it under
+`~/.styr/server/<version>/`, starts the service, and prints the one command that needs sudo
+(`sudo loginctl enable-linger $USER`, which keeps it running while you are logged out). To check
+that a bundle was built by this repo's release workflow, verify its attestation with the GitHub
+CLI before installing it:
+
+```sh
+gh attestation verify styr-server-<version>-linux-x64.tar.gz --repo anoguez/styr
+sh install.sh --tarball styr-server-<version>-linux-x64.tar.gz \
+  --sha256 "$(sha256sum styr-server-<version>-linux-x64.tar.gz | cut -d ' ' -f 1)"
+```
+
+Details: [`docs/architecture/remote.md`](docs/architecture/remote.md).
 
 ## How it fits together
 

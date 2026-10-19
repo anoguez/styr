@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { ipcMessage } from '../lib/ipcMessage.js'
+import { upgradeServer } from '../lib/remoteActions.js'
 import { connectionLabel, retryIn, type BoardAccess } from '../lib/remoteStatus.js'
 
 const ACTION =
@@ -6,8 +8,9 @@ const ACTION =
 
 /**
  * The status bar's connection badge for a remote workspace: connected, or reconnecting with the
- * last error and Retry now, or the server showing another workspace with Switch back. Nothing for
- * a local workspace.
+ * last error and Retry now, or the server showing another workspace with Switch back, or a server
+ * on another version or protocol with Upgrade server (asked first; never done unasked). Nothing
+ * for a local workspace.
  */
 export function ConnectionBadge({
   access,
@@ -17,7 +20,51 @@ export function ConnectionBadge({
   workspaceId: string
 }): ReactNode {
   const { remote, host } = access
+  const [upgrading, setUpgrading] = useState(false)
   if (!remote) return null
+
+  const upgrade = (): void => {
+    if (upgrading || !host) return
+    setUpgrading(true)
+    upgradeServer(host.host)
+      .catch((failure: unknown) => window.alert(ipcMessage(failure)))
+      .finally(() => setUpgrading(false))
+  }
+  const upgradeButton = (
+    <button type="button" className={ACTION} disabled={upgrading} onClick={upgrade}>
+      {upgrading ? 'Upgrading…' : 'Upgrade server'}
+    </button>
+  )
+
+  if (host?.status === 'incompatible') {
+    return (
+      <span
+        className="flex min-w-0 items-center gap-1.5 px-2.5 text-[11px] text-danger"
+        title={host.lastError}
+      >
+        <span aria-hidden className="size-[6px] shrink-0 rounded-full bg-current" />
+        <span className="truncate">
+          {remote.host} runs Styr {host.serverVersion ?? '?'}, which this app cannot talk to
+        </span>
+        {upgradeButton}
+      </span>
+    )
+  }
+
+  if (!access.reason && host?.status === 'connected' && host.upgradeTo) {
+    return (
+      <span
+        className="flex min-w-0 items-center gap-1.5 px-2.5 text-[11px] text-[var(--color-col-review)]"
+        title={`${remote.host} runs Styr ${host.serverVersion}; this app is Styr ${host.upgradeTo}. Upgrading installs the matching server beside it and restarts into it, which stops its agents (you are asked first).`}
+      >
+        <span aria-hidden className="size-[6px] shrink-0 rounded-full bg-current" />
+        <span className="truncate">
+          {remote.host} · server {host.serverVersion}, app {host.upgradeTo}
+        </span>
+        {upgradeButton}
+      </span>
+    )
+  }
 
   if (!access.reason && host?.status === 'connected') {
     return (

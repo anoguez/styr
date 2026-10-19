@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -104,7 +104,9 @@ describe.skipIf(!enabled)(
       updateTray: () => undefined,
       openExternal: () => undefined,
       isLocalSession: () => false,
-      saveGlobalSettings: () => undefined
+      saveGlobalSettings: () => undefined,
+      clientVersion: (JSON.parse(readFileSync('package.json', 'utf8')) as { version: string })
+        .version
     })
     const localSettings = (): Settings =>
       ({

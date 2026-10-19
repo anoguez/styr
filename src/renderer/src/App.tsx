@@ -375,6 +375,7 @@ export default function App(): ReactNode {
             {shell.newWorkspace ? (
               <NewWorkspaceDialog
                 onCreate={async (name) => applyWorkspaces(await window.api.workspaces.create(name))}
+                onApply={applyWorkspaces}
                 onClose={() => toggle('newWorkspace', false)}
               />
             ) : null}
