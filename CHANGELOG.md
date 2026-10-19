@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.2](https://github.com/anoguez/styr/compare/v0.35.1...v0.35.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* remote workspaces behave like local ones: Remote host from every New workspace entry, no agent checks in setup, Browse on the host ([#178](https://github.com/anoguez/styr/issues/178)) ([bc04a04](https://github.com/anoguez/styr/commit/bc04a04445c134597625c067adea99a8595c8259))
+
 ## [0.35.1](https://github.com/anoguez/styr/compare/v0.35.0...v0.35.1) (2026-10-19)
 
 
