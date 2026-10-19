@@ -587,6 +587,196 @@ describe('remote router: settings and local-only actions', () => {
   })
 })
 
+describe('remote router: merged workspace views', () => {
+  it('takes stubs’ counts and summaries from their servers, and drops them from the local ones', async () => {
+    const t = setup()
+    t.devbox.state.tasks.client = [{ id: 'TASK-0001', title: 'x', filePath: '/x' }]
+    t.devbox.server.handlers['workspaces:boardSummary'] = () => ({ client: { needs: 1 } })
+    t.router.refresh()
+    await t.connectAll()
+    const overview = (await Promise.resolve(
+      t.router.invoke('workspaces:list', [], () => ({
+        activeId: 'default',
+        workspaces: [
+          { id: 'default', name: 'Default', taskCount: 3, liveSessions: 0 },
+          { id: 'remote-client', name: 'Devbox client', taskCount: 0, liveSessions: 0 }
+        ]
+      }))
+    )) as WorkspaceOverview
+    expect(overview.workspaces[1]).toMatchObject({
+      taskCount: 1,
+      remote: { host: 'devbox', workspaceId: 'client' }
+    })
+    const summaries = await Promise.resolve(
+      t.router.invoke('workspaces:boardSummary', [], () => ({
+        default: { needs: 2 },
+        'remote-client': { needs: 0 }
+      }))
+    )
+    expect(summaries).toEqual({ default: { needs: 2 }, 'remote-client': { needs: 1 } })
+    expect(await t.call('workspaces:activity')).toMatchObject({ byWorkspace: {} })
+  })
+
+  it('re-reads the stubs after a workspace is created or removed', async () => {
+    const t = setup()
+    t.router.refresh()
+    t.setWorkspaces([{ id: 'default', name: 'Default' }])
+    await Promise.resolve(
+      t.router.invoke('workspaces:delete', ['remote-vm'], () => ({
+        activeId: 'default',
+        workspaces: []
+      }))
+    )
+    expect(t.router.state().hosts).toEqual([])
+    expect(t.vm.server.children[0]!.killed).toBe(true)
+  })
+
+  it('merges broken settings files under the stubs’ ids', async () => {
+    const t = setup()
+    t.devbox.server.handlers['settings:brokenFiles'] = () => [
+      { workspaceId: 'client', path: '/home/me/Styr/workspaces/client/settings.json' },
+      { workspaceId: 'gone', path: '/x' }
+    ]
+    t.router.refresh()
+    await t.connectAll()
+    const files = await Promise.resolve(
+      t.router.invoke('settings:brokenFiles', [], () => [
+        { workspaceId: 'default', path: '/Users/me/Styr/settings.json' },
+        { workspaceId: 'remote-main', path: '/stub' }
+      ])
+    )
+    expect(files).toEqual([
+      { workspaceId: 'default', path: '/Users/me/Styr/settings.json' },
+      { workspaceId: 'remote-client', path: '/home/me/Styr/workspaces/client/settings.json' }
+    ])
+  })
+
+  it('reports the server’s diagnostics with this machine’s terminal engine', async () => {
+    const t = setup({ active: 'remote-main' })
+    t.devbox.server.handlers['diagnostics:snapshot'] = () => ({
+      taskCount: 7,
+      terminalEngine: 'server'
+    })
+    t.router.refresh()
+    await t.connectAll()
+    const snapshot = await Promise.resolve(
+      t.router.invoke('diagnostics:snapshot', [], () => ({ taskCount: 0, terminalEngine: 'mine' }))
+    )
+    expect(snapshot).toEqual({ taskCount: 7, terminalEngine: 'mine' })
+  })
+
+  it('opens a remote folder in VS Code over ssh', async () => {
+    const t = setup({ active: 'remote-main' })
+    t.router.refresh()
+    expect(await t.call('terminal:openInCode', '/home/me/repo')).toBe('code')
+    expect(t.opened).toEqual(['vscode://vscode-remote/ssh-remote+devbox/home/me/repo'])
+  })
+})
+
+describe('remote router: edge cases', () => {
+  it('with the flag off and a stub open, shows an empty board and refuses writes', async () => {
+    const t = setup({ enabled: false, active: 'remote-main' })
+    t.router.refresh()
+    expect(await t.call('tasks:list', {})).toEqual([])
+    expect(await t.call('sources:providers')).toBe('local sources:providers')
+    await expect(t.call('tasks:create', { title: 'x' })).rejects.toThrow(
+      /remote workspaces are off/
+    )
+    await expect(
+      t.call('settings:save', { workspaceId: 'remote-main', workspace: {}, global: {} })
+    ).rejects.toThrow(/remote workspaces are off/)
+  })
+
+  it('says why a workspace the server does not have cannot be shown', async () => {
+    const t = setup()
+    t.setWorkspaces([
+      { id: 'default', name: 'Default' },
+      { id: 'missing', name: 'Missing', remote: { host: 'devbox', workspaceId: 'nope' } }
+    ])
+    t.router.refresh()
+    await t.connectAll()
+    await t.switchTo('missing')
+    expect(t.router.state().workspaces.missing!.error).toMatch(/no longer exists/)
+    await expect(t.call('tasks:create', { title: 'x' })).rejects.toThrow(/cannot be shown/)
+    await expect(t.call('orchestrate:plan')).rejects.toThrow(/cannot be shown/)
+  })
+
+  it('refuses a terminal write call to a disconnected host, and answers its reads with nothing', async () => {
+    const t = setup({ active: 'remote-main' })
+    t.router.refresh()
+    await t.connectAll()
+    await t.call('terminal:launchAgent', 'TASK-0001')
+    t.devbox.server.drop()
+    await settle()
+    await expect(t.call('terminal:kill', 's-TASK-0001')).rejects.toThrow(/not connected/)
+    expect(await t.call('terminal:runtimeState', 's-TASK-0001')).toBeUndefined()
+    expect(await t.call('usage:context', 's-TASK-0001')).toBeNull()
+    // A view opened while disconnected gets the mirror (empty here) and is reattached later.
+    expect(await t.call('terminal:backlog', 's-TASK-0001')).toEqual({
+      data: '',
+      sequence: 0,
+      marks: []
+    })
+    const settings = (await t.call('settings:get')) as Settings
+    expect(settings.shell).toBe('/bin/bash')
+    await expect(
+      t.call('settings:save', { workspaceId: 'remote-main', workspace: {}, global: {} })
+    ).rejects.toThrow(/were not/)
+    expect(t.savedGlobal).toHaveLength(1)
+  })
+
+  it('attaches a remote session for the Styr Terminal engine and keeps its mirror', async () => {
+    const t = setup({ active: 'remote-main' })
+    t.router.refresh()
+    await t.connectAll()
+    await t.call('terminal:launchAgent', 'TASK-0006')
+    t.devbox.state.backlog['s-TASK-0006'] = { data: 'abc', sequence: 2, marks: [] }
+    expect(t.router.isRemoteSession('s-TASK-0006')).toBe(true)
+    expect(t.router.isRemoteSession('local-1')).toBe(false)
+    await t.router.ensureAttached('s-TASK-0006')
+    expect(t.router.mirrorBacklog('s-TASK-0006')?.data).toBe('abc')
+    const exits: string[] = []
+    t.router.onTerminalExit((id) => exits.push(id))
+    t.devbox.server.push('terminal:exit', { id: 's-TASK-0006', exitCode: 0 })
+    expect(exits).toEqual(['s-TASK-0006'])
+    expect(t.router.mirrorBacklog('s-TASK-0006')).toBeUndefined()
+  })
+
+  it('forwards session events and the live board’s broadcasts, mapped', async () => {
+    const t = setup({ active: 'remote-main' })
+    t.router.refresh()
+    await t.connectAll()
+    t.broadcasts.length = 0
+    t.devbox.server.push('terminal:runtimeState', { sessionId: 's1', cwd: '/' })
+    t.devbox.server.push('orchestrate:autoStarted', {
+      id: 's2',
+      title: 'x',
+      cwd: '/',
+      workspaceId: 'default'
+    })
+    t.devbox.server.push('settings:changed', { activeWorkspaceId: 'default' })
+    await settle()
+    expect(t.broadcasts[0]).toEqual(['terminal:runtimeState', { sessionId: 's1', cwd: '/' }])
+    expect(t.broadcasts[1]).toEqual([
+      'orchestrate:autoStarted',
+      { id: 's2', title: 'x', cwd: '/', workspaceId: 'remote-main', host: 'devbox' }
+    ])
+    expect(t.channels()).toContain('settings:changed')
+  })
+
+  it('suspends every host while asleep and reconnects on wake', async () => {
+    const t = setup()
+    t.router.refresh()
+    await t.connectAll()
+    t.router.suspend()
+    expect(t.router.state().hosts.map((h) => h.status)).toEqual(['offline', 'offline'])
+    t.router.wake()
+    expect(t.router.state().hosts.map((h) => h.status)).toEqual(['connecting', 'connecting'])
+    t.router.stopAll()
+    expect(t.router.state().hosts).toEqual([])
+  })
+})
+
 describe('channel coverage', () => {
   it('routes every channel the server answers somewhere other than locally', () => {
     const source = readFileSync(

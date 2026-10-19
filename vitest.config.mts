@@ -19,8 +19,14 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
       // The Electron entry points are loaded only by the ordering tests, which pin call order, not
       // every handler. Counting them would measure the handler table; they were never counted before.
-      // `electronHost.ts` is the Electron half of the host ports, moved out of `ipc.ts`.
-      exclude: ['src/main/ipc.ts', 'src/main/index.ts', 'src/main/electronHost.ts'],
+      // `electronHost.ts` is the Electron half of the host ports, moved out of `ipc.ts`, and
+      // `remote.ts` binds the remote router (tested in `src/host/remote/`) to Electron the same way.
+      exclude: [
+        'src/main/ipc.ts',
+        'src/main/index.ts',
+        'src/main/electronHost.ts',
+        'src/main/remote.ts'
+      ],
       // A floor just under today's numbers: new code without tests that pulls coverage down fails CI.
       // Raise these as coverage grows; never lower them to make a PR pass.
       thresholds: { lines: 85, statements: 82, functions: 82, branches: 73 }
