@@ -122,9 +122,11 @@ preload, IPC layer and MCP server all share them. A new domain file goes in `typ
 
 ## Build specifics
 
-- electron-vite v5 emits ESM (`.mjs`). `package.json#main`, the preload path in
-  `src/main/index.ts` and the MCP path in `src/main/ipc.ts` all reference `.mjs` — keep them in sync
-  if entry points move.
+- electron-vite v5 emits ESM (`.mjs`) for main. `package.json#main` and the MCP path in
+  `src/main/ipc.ts` reference `.mjs` — keep them in sync if entry points move. The preload is the
+  exception: the renderer is sandboxed, and a sandboxed preload must be one CommonJS file that
+  requires only `electron`, so it is built as `out/preload/index.cjs` (`electron.vite.config.ts`),
+  loaded by that name in `src/main/index.ts`, and `scripts/build.mjs` fails a build that breaks it.
 - `electron`, `better-sqlite3` and `node-pty` are externalised in `electron.vite.config.ts`. Both
   native modules are compiled against Electron's ABI by `electron-builder install-app-deps`, so the
   MCP server (plain `node`) must never import them.
