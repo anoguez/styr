@@ -1,7 +1,8 @@
-import { ipcMain } from 'electron'
+import { ipcMain as electronIpcMain } from 'electron'
 import { codexTranscript } from '@core/providers/codex.js'
 import { createUsage, watchFiles } from '@host/usage.js'
 import { electronHost } from './electronHost.js'
+import { remoteRouter, routedIpcMain } from './remote.js'
 import { findTask } from './taskIndex.js'
 import { sessionTask } from './terminal/ptyManager.js'
 
@@ -12,8 +13,11 @@ export { MAX_PROMPT_CHARS, sendApprovalAnswer, sendPrompt } from '@host/usage.js
  * index and the terminals. Main imports it through this path, which is the one the main-process
  * ordering tests mock.
  */
+/** Routed like `ipc.ts`'s handlers: a remote terminal's usage comes from its server. */
+const ipcMain = routedIpcMain(electronIpcMain)
+
 const usage = createUsage({
-  broadcast: electronHost.broadcast,
+  broadcast: (channel, payload) => remoteRouter.fromLocal(channel, payload),
   appPaths: electronHost.appPaths,
   // A lambda: `ptyManager.ts` imports this module back, so its binding is read at call time.
   sessionTask: (terminalId) => sessionTask(terminalId),

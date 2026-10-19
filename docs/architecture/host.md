@@ -126,6 +126,10 @@ src/core/  (types, schemas, taskStore, pure rules)
 - `directories.ts`: `listDirectories`, the folders under a path for the terminal's directory picker.
 - `rpc/jsonRpc.ts`: the newline-delimited JSON-RPC framing and peer that `styr serve` and its
   clients speak (see `remote.md`).
+- `remote/`: the desktop's client side of remote workspaces (see `remote.md`): `RemoteConnection`
+  (one `ssh` child per host, its state machine and backoff), the router that decides per IPC call
+  between the in-process host and a server, and the terminal mirror. Electron-free like the rest;
+  `src/main/remote.ts` binds it.
 - `terminals/terminalsService.ts`: the terminal sessions (`createTerminalsService`), what main
   calls `ptyManager`. One PTY per session, its transcript (backlog, command marks, runtime state),
   `findSessionByTask` (workspace and task id), and the data, runtime-state and exit listeners. Its

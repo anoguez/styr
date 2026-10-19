@@ -2,7 +2,7 @@ import type { TerminalMark, TerminalOutput, TerminalRuntimeState } from '@core/t
 import { TerminalProtocolParser } from './terminalProtocol.js'
 import { TerminalRuntime, type TerminalRuntimeEvent } from './terminalRuntime.js'
 
-const BACKLOG_LIMIT = 200_000
+export const BACKLOG_LIMIT = 200_000
 
 export interface TerminalTranscriptUpdate {
   output: TerminalOutput

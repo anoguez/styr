@@ -236,3 +236,72 @@ describe('readWorkspaceTasks', () => {
     expect(workspaces.readWorkspaceTasks(settingsFor(join(home, 'Empty')), 'default')).toEqual([])
   })
 })
+
+describe('remote workspace stubs', () => {
+  it('writes a stub that holds only the link, and lists it with its link', async () => {
+    const { workspaces } = await modules()
+    const settings = settingsFor(join(home, 'storage'))
+    const created = workspaces.createRemoteWorkspace(settings, {
+      name: 'Devbox',
+      host: 'me@100.64.0.2',
+      workspaceId: 'default'
+    })
+    expect(created).toEqual({
+      id: 'devbox',
+      name: 'Devbox',
+      remote: { host: 'me@100.64.0.2', workspaceId: 'default' }
+    })
+    const folder = join(home, 'storage', 'workspaces', 'devbox')
+    expect(readdirSync(folder)).toEqual(['workspace.json'])
+    expect(JSON.parse(readFileSync(join(folder, 'workspace.json'), 'utf8'))).toEqual({
+      name: 'Devbox',
+      remote: { host: 'me@100.64.0.2', workspaceId: 'default' }
+    })
+    expect(workspaces.listWorkspaces(settings)[1]).toEqual(created)
+  })
+
+  it('refuses a host ssh would read as an option, and a malformed remote id', async () => {
+    const { workspaces } = await modules()
+    const settings = settingsFor(join(home, 'storage'))
+    expect(() =>
+      workspaces.createRemoteWorkspace(settings, {
+        name: 'A',
+        host: '-oProxyCommand=evil',
+        workspaceId: 'default'
+      })
+    ).toThrow(/host ssh can reach/)
+    expect(() =>
+      workspaces.createRemoteWorkspace(settings, {
+        name: 'B',
+        host: 'devbox',
+        workspaceId: 'Bad Id'
+      })
+    ).toThrow(/remote workspace id/)
+  })
+
+  it('keeps the link when the stub is renamed', async () => {
+    const { workspaces } = await modules()
+    const settings = settingsFor(join(home, 'storage'))
+    workspaces.createRemoteWorkspace(settings, {
+      name: 'Devbox',
+      host: 'devbox',
+      workspaceId: 'client',
+      server: '~/.styr/server/current/bin/styr'
+    })
+    expect(workspaces.renameWorkspace(settings, 'devbox', 'Cloud')).toEqual({
+      id: 'devbox',
+      name: 'Cloud',
+      remote: { host: 'devbox', workspaceId: 'client', server: '~/.styr/server/current/bin/styr' }
+    })
+  })
+
+  it('reads a folder whose link is broken as a local workspace', async () => {
+    const { workspaces } = await modules()
+    expect(workspaces.parseRemoteLink({ host: 'devbox' })).toBeUndefined()
+    expect(workspaces.parseRemoteLink({ host: 'a b', workspaceId: 'default' })).toBeUndefined()
+    expect(workspaces.parseRemoteLink({ host: ' devbox ', workspaceId: 'default' })).toEqual({
+      host: 'devbox',
+      workspaceId: 'default'
+    })
+  })
+})

@@ -8,6 +8,7 @@
     "src/core/taskSchema.ts",
     "src/core/prompt.ts",
     "src/core/shell.ts",
+    "src/core/remote.ts",
     "src/core/agentState.ts",
     "src/core/agentModel.ts",
     "src/core/shortcuts.ts",

@@ -26,6 +26,7 @@ import {
 } from '@host/terminals/nativeEngine.js'
 import { NativeTerminalHost } from '@host/terminals/nativeHost.js'
 import { onTerminalData, onTerminalExit, sessionBacklog, writeToSession } from './ptyManager.js'
+import { remoteRouter } from '../remote.js'
 
 /**
  * The main-process side of terminal engines: the IPC the renderer's engine views call, the native
@@ -157,8 +158,10 @@ export function registerTerminalEngines(
   const host = new NativeTerminalHost({
     factory: () => nativeEngine().factory,
     status: () => nativeEngine().status,
-    backlog: sessionBacklog,
-    writeToPty: writeToSession,
+    // A remote session's backlog is the client's mirror of it; its keys go to its server.
+    backlog: (id) => remoteRouter.mirrorBacklog(id) ?? sessionBacklog(id),
+    writeToPty: (id, data) =>
+      remoteRouter.send('terminal:write', [id, data], () => writeToSession(id, data)),
     sendFrame: (event) => broadcast('terminal:nativeFrame', event),
     sendBlocks: (event) => broadcast('terminal:nativeBlocks', event),
     sendFailure: (failure) => {
@@ -183,6 +186,9 @@ export function registerTerminalEngines(
     host.detach(id)
     bench?.forget(id)
   })
+  // Remote terminals' output, which the engine draws here on the client.
+  remoteRouter.onTerminalData((id, output) => host.write(id, output))
+  remoteRouter.onTerminalExit((id) => host.detach(id))
 
   ipcMain.handle('terminal:benchEnabled', () => bench !== undefined)
   ipcMain.on('terminal:bench', (_event, record: unknown) => {
@@ -194,19 +200,24 @@ export function registerTerminalEngines(
     override: override()
   }))
   ipcMain.handle('terminal:engineEnvironment', () => environment())
-  ipcMain.handle('terminal:nativeAttach', (_event, id: string, cols: number, rows: number) => {
-    const result = host.attach(String(id), Number(cols), Number(rows))
-    if (!result.ok) {
-      record({
-        sessionId: String(id),
-        requested: 'native',
-        selected: 'xterm',
-        fallbackReason: result.reason,
-        detail: result.detail
-      })
+  ipcMain.handle(
+    'terminal:nativeAttach',
+    async (_event, id: string, cols: number, rows: number) => {
+      // A remote session is attached and mirrored first, so the engine has its backlog to draw.
+      if (remoteRouter.isRemoteSession(String(id))) await remoteRouter.ensureAttached(String(id))
+      const result = host.attach(String(id), Number(cols), Number(rows))
+      if (!result.ok) {
+        record({
+          sessionId: String(id),
+          requested: 'native',
+          selected: 'xterm',
+          fallbackReason: result.reason,
+          detail: result.detail
+        })
+      }
+      return result
     }
-    return result
-  })
+  )
   ipcMain.on('terminal:nativeResize', (_event, id: string, cols: number, rows: number) =>
     host.resize(String(id), Number(cols), Number(rows))
   )

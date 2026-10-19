@@ -16,6 +16,7 @@ import { AgentsSidebar } from './components/AgentsSidebar.js'
 import { ArchiveDialog } from './components/ArchiveDialog.js'
 import { Board } from './components/Board.js'
 import { ChangesDialog } from './components/ChangesDialog.js'
+import { ConnectionBadge } from './components/ConnectionBadge.js'
 import { CommandPalette } from './components/CommandPalette.js'
 import { DoneFooter, hasDoneFooter } from './components/DoneFooter.js'
 import { AppHeader, BrandMark } from './components/header/AppHeader.js'
@@ -46,9 +47,10 @@ import { usePendingActivation } from './hooks/usePendingActivation.js'
 import { useSettings } from './hooks/useSettings.js'
 import { useTasks } from './hooks/useTasks.js'
 import { useTerminalHeight } from './hooks/useTerminalHeight.js'
-import { useTerminalSessions } from './hooks/useTerminalSessions.js'
+import { useRemoteSessions, useTerminalSessions } from './hooks/useTerminalSessions.js'
 import { useTheme } from './hooks/useTheme.js'
 import { useUpdates } from './hooks/useUpdates.js'
+import { useRemote } from './hooks/useRemote.js'
 import { useWorkspaces } from './hooks/useWorkspaces.js'
 import { agentRowsFor, boardSummary, selectedAgentTaskId } from './lib/agentRows.js'
 import type { Toggle } from './lib/appShell.js'
@@ -56,6 +58,7 @@ import { TaskLookupContext } from './lib/blockerContext.js'
 import { DispatchingContext } from './lib/dispatchRun.js'
 import { ipcMessage } from './lib/ipcMessage.js'
 import { engineChoice } from './lib/nativeTerminal/engineChoice.js'
+import { RemoteContext, boardAccess } from './lib/remoteStatus.js'
 
 /**
  * The window: header, board or inbox, terminal panel, agents sidebar, status bar and dialogs. State
@@ -77,6 +80,9 @@ export default function App(): ReactNode {
   const workspaces = useWorkspaces()
   const { overview, names: workspaceNames, apply: applyWorkspaces } = workspaces
   const activeWorkspaceId = settings?.activeWorkspaceId ?? overview.activeId
+  const remote = useRemote()
+  const access = useMemo(() => boardAccess(remote, activeWorkspaceId), [remote, activeWorkspaceId])
+  const remoteContext = useMemo(() => ({ state: remote, access }), [remote, access])
   const diffStats = useDiffStats(activeWorkspaceId)
   const bindings = settings?.shortcuts ?? DEFAULT_SHORTCUTS
   const [previewTheme, setPreviewTheme] = useState<ThemeSettings | null>(null)
@@ -98,6 +104,7 @@ export default function App(): ReactNode {
   const taskOpen = taskDialog.mode !== 'closed'
   const terminals = useTerminalSessions()
   const { sessions, activeSession, terminalOpen, adopt: adoptSession } = terminals
+  useRemoteSessions(remote, terminals.merge)
   const [terminalExpanded, setTerminalExpanded] = useState(false)
   const { height: terminalHeight, startResize } = useTerminalHeight(terminalOpen)
   const agentRows = useMemo(
@@ -184,292 +191,304 @@ export default function App(): ReactNode {
 
   return (
     <TaskLookupContext.Provider value={lookup}>
-      <DispatchingContext.Provider value={dispatchRun.dispatching}>
-        <div className="flex h-full flex-col">
-          <AppHeader
-            live={dispatchRun.live}
-            start={
-              <>
-                <BrandMark
-                  appInfo={appInfo}
-                  update={update}
-                  onOpenUpdates={() => openSettings('updates')}
-                />
-                <WorkspaceSwitcher
-                  overview={overview}
-                  activity={workspaces.activity}
-                  open={shell.switcher}
-                  onOpenChange={(open) => toggle('switcher', open)}
-                  onSwitch={(id) => void switchWorkspace(id)}
-                  onNew={() => toggle('newWorkspace', true)}
-                  onManage={() => openSettings('workspaces')}
-                />
-              </>
-            }
-            center={null}
-            end={
-              <>
-                <ViewTabs
-                  view={view}
-                  needsYou={needsYou}
-                  worklog={worklogOn}
-                  bindings={bindings}
-                  onChange={(next) => dispatch({ type: 'setView', view: next })}
-                />
-                <span aria-hidden className="h-[18px] w-px bg-edge" />
-                <DispatchButton
-                  state={dispatchRun.button}
-                  disabled={orchestration === null}
-                  onClick={() => toggle('confirmDispatch', true)}
-                />
-                <Button variant="primary" onClick={() => dispatch({ type: 'newTask' })}>
-                  New task
-                </Button>
-              </>
-            }
-          />
-
-          <ProblemsBanner problems={problems} />
-
-          <div className="flex min-h-0 flex-1">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <main
-                className="flex min-h-0 flex-1 flex-col"
-                hidden={terminalOpen && terminalExpanded}
-              >
-                {loading ? (
-                  <p className="p-6 text-dim">Loading board…</p>
-                ) : view === 'worklog' ? (
-                  <Worklog tasks={allTasks} />
-                ) : view === 'inbox' ? (
-                  <Inbox
-                    tasks={tasks}
-                    allTasks={allTasks}
-                    agents={agents}
-                    queued={dispatchRun.queuedPositions}
-                    diffStats={diffStats}
-                    onOpen={editTask}
-                    onLaunch={(task) => void launchAgent(task.id)}
-                    onActivate={(task) => activateTask(task.id)}
-                    onShowChanges={showChanges}
-                    onMove={(task, status) => void window.api.tasks.update(task.id, { status })}
-                    onArchive={toggleArchived}
-                  />
-                ) : (
-                  <Board
-                    board={board}
-                    agents={shown}
-                    queued={dispatchRun.queued}
-                    onOpen={editTask}
-                    onLaunch={(task) => void launchAgent(task.id)}
-                    onArchive={toggleArchived}
-                    onShowChanges={showChanges}
-                    onOpenTerminal={launcher.openTerminalFor}
-                    diffStats={diffStats}
-                    onQuickAdd={() => toggle('quickAdd', true)}
-                    doneFooter={
-                      hasDoneFooter(hiddenDone, showAllDone, archived.length) ? (
-                        <DoneFooter
-                          hiddenDone={hiddenDone}
-                          showAll={showAllDone}
-                          archivedCount={archived.length}
-                          onToggleShowAll={() => setShowAllDone((open) => !open)}
-                          onOpenArchive={() => toggle('archive', true)}
-                        />
-                      ) : undefined
-                    }
-                    templateNameFor={(task) => resolveTemplateFor(settings, task).name}
-                  />
-                )}
-              </main>
-
-              {terminalOpen ? (
+      <RemoteContext.Provider value={remoteContext}>
+        <DispatchingContext.Provider value={dispatchRun.dispatching}>
+          <div className="flex h-full flex-col">
+            <AppHeader
+              live={dispatchRun.live}
+              start={
                 <>
-                  {terminalExpanded ? null : (
-                    <div
-                      className="h-1 shrink-0 cursor-row-resize bg-edge/60 hover:bg-accent/60"
-                      onMouseDown={startResize}
+                  <BrandMark
+                    appInfo={appInfo}
+                    update={update}
+                    onOpenUpdates={() => openSettings('updates')}
+                  />
+                  <WorkspaceSwitcher
+                    overview={overview}
+                    activity={workspaces.activity}
+                    remote={remote}
+                    open={shell.switcher}
+                    onOpenChange={(open) => toggle('switcher', open)}
+                    onSwitch={(id) => void switchWorkspace(id)}
+                    onNew={() => toggle('newWorkspace', true)}
+                    onManage={() => openSettings('workspaces')}
+                  />
+                </>
+              }
+              center={null}
+              end={
+                <>
+                  <ViewTabs
+                    view={view}
+                    needsYou={needsYou}
+                    worklog={worklogOn}
+                    bindings={bindings}
+                    onChange={(next) => dispatch({ type: 'setView', view: next })}
+                  />
+                  <span aria-hidden className="h-[18px] w-px bg-edge" />
+                  <DispatchButton
+                    state={dispatchRun.button}
+                    disabled={orchestration === null || access.readOnly}
+                    onClick={() => toggle('confirmDispatch', true)}
+                  />
+                  {/* A disabled button takes no hover, so the reason sits on its wrapper. */}
+                  <span title={access.reason} className="inline-flex">
+                    <Button
+                      variant="primary"
+                      disabled={access.readOnly}
+                      onClick={() => dispatch({ type: 'newTask' })}
+                    >
+                      New task
+                    </Button>
+                  </span>
+                </>
+              }
+            />
+
+            <ProblemsBanner problems={problems} />
+
+            <div className="flex min-h-0 flex-1">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <main
+                  className="flex min-h-0 flex-1 flex-col"
+                  hidden={terminalOpen && terminalExpanded}
+                >
+                  {loading ? (
+                    <p className="p-6 text-dim">Loading board…</p>
+                  ) : view === 'worklog' ? (
+                    <Worklog tasks={allTasks} />
+                  ) : view === 'inbox' ? (
+                    <Inbox
+                      tasks={tasks}
+                      allTasks={allTasks}
+                      agents={agents}
+                      queued={dispatchRun.queuedPositions}
+                      diffStats={diffStats}
+                      onOpen={editTask}
+                      onLaunch={(task) => void launchAgent(task.id)}
+                      onActivate={(task) => activateTask(task.id)}
+                      onShowChanges={showChanges}
+                      onMove={(task, status) => void window.api.tasks.update(task.id, { status })}
+                      onArchive={toggleArchived}
+                    />
+                  ) : (
+                    <Board
+                      board={board}
+                      agents={shown}
+                      queued={dispatchRun.queued}
+                      onOpen={editTask}
+                      onLaunch={(task) => void launchAgent(task.id)}
+                      onArchive={toggleArchived}
+                      onShowChanges={showChanges}
+                      onOpenTerminal={launcher.openTerminalFor}
+                      diffStats={diffStats}
+                      onQuickAdd={() => toggle('quickAdd', true)}
+                      doneFooter={
+                        hasDoneFooter(hiddenDone, showAllDone, archived.length) ? (
+                          <DoneFooter
+                            hiddenDone={hiddenDone}
+                            showAll={showAllDone}
+                            archivedCount={archived.length}
+                            onToggleShowAll={() => setShowAllDone((open) => !open)}
+                            onOpenArchive={() => toggle('archive', true)}
+                          />
+                        ) : undefined
+                      }
+                      templateNameFor={(task) => resolveTemplateFor(settings, task).name}
                     />
                   )}
-                  <div
-                    className={terminalExpanded ? 'min-h-0 flex-1' : 'shrink-0'}
-                    style={terminalExpanded ? undefined : { height: terminalHeight }}
-                  >
-                    <TerminalPanel
-                      sessions={sessions}
-                      agents={agents}
-                      shownAgents={shown}
-                      activeId={activeSession}
-                      expanded={terminalExpanded}
-                      theme={activeTheme}
-                      bindings={bindings}
-                      nativeTerminal={settings?.experimental.nativeTerminal ?? false}
-                      taskTitles={taskTitles}
-                      taskStates={taskStates}
-                      diffStats={diffStats}
-                      onShowChanges={(taskId) => {
-                        const task = allTasks.find((candidate) => candidate.id === taskId)
-                        if (task) showChanges(task)
-                      }}
-                      onAskReview={launcher.askReview}
-                      onAskFork={launcher.askFork}
-                      workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
-                      onToggleExpand={() => setTerminalExpanded((open) => !open)}
-                      onSelect={selectSession}
-                      onReorder={terminals.reorder}
-                      onNewSession={(cwd) => void newShell(cwd)}
-                      onCreateTask={launcher.createTaskFromTerminal}
-                      onCloseSession={(id) => void closeSession(id)}
-                    />
-                  </div>
-                </>
+                </main>
+
+                {terminalOpen ? (
+                  <>
+                    {terminalExpanded ? null : (
+                      <div
+                        className="h-1 shrink-0 cursor-row-resize bg-edge/60 hover:bg-accent/60"
+                        onMouseDown={startResize}
+                      />
+                    )}
+                    <div
+                      className={terminalExpanded ? 'min-h-0 flex-1' : 'shrink-0'}
+                      style={terminalExpanded ? undefined : { height: terminalHeight }}
+                    >
+                      <TerminalPanel
+                        sessions={sessions}
+                        agents={agents}
+                        shownAgents={shown}
+                        activeId={activeSession}
+                        expanded={terminalExpanded}
+                        theme={activeTheme}
+                        bindings={bindings}
+                        nativeTerminal={settings?.experimental.nativeTerminal ?? false}
+                        taskTitles={taskTitles}
+                        taskStates={taskStates}
+                        diffStats={diffStats}
+                        onShowChanges={(taskId) => {
+                          const task = allTasks.find((candidate) => candidate.id === taskId)
+                          if (task) showChanges(task)
+                        }}
+                        onAskReview={launcher.askReview}
+                        onAskFork={launcher.askFork}
+                        workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
+                        onToggleExpand={() => setTerminalExpanded((open) => !open)}
+                        onSelect={selectSession}
+                        onReorder={terminals.reorder}
+                        onNewSession={(cwd) => void newShell(cwd)}
+                        onCreateTask={launcher.createTaskFromTerminal}
+                        onCloseSession={(id) => void closeSession(id)}
+                      />
+                    </div>
+                  </>
+                ) : null}
+              </div>
+
+              {agentsOpen ? (
+                <AgentsSidebar
+                  rows={agentRows}
+                  selectedTaskId={selectedAgentTaskId(agentRows, activeSession, terminalOpen)}
+                  diffStats={diffStats}
+                  onShowChanges={showChanges}
+                  onOpenTask={editTask}
+                  onRemove={(row) => dispatch({ type: 'confirmRemoveAgent', row })}
+                  onClose={() => dispatch({ type: 'closeAgents' })}
+                  onActivate={(row) => activateTask(row.task.id)}
+                />
               ) : null}
             </div>
 
-            {agentsOpen ? (
-              <AgentsSidebar
-                rows={agentRows}
-                selectedTaskId={selectedAgentTaskId(agentRows, activeSession, terminalOpen)}
-                diffStats={diffStats}
+            <StatusBar
+              agentsOpen={agentsOpen}
+              terminalOpen={terminalOpen}
+              agentCount={agentRows.length}
+              waitingCount={agentRows.filter((row) => row.agent?.state === 'waiting').length}
+              sessionCount={sessions.length}
+              summary={boardSummary(board, agentRows)}
+              connection={<ConnectionBadge access={access} workspaceId={activeWorkspaceId} />}
+              bindings={bindings}
+              readyUpdate={update?.kind === 'ready' ? update.version : undefined}
+              onToggleAgents={() => runCommand('toggleAgents')}
+              onToggleTerminal={() => runCommand('toggleTerminal')}
+              onOpenSettings={() => openSettings()}
+              onInstallUpdate={() => void window.api.updates.install()}
+            />
+
+            {shell.newWorkspace ? (
+              <NewWorkspaceDialog
+                onCreate={async (name) => applyWorkspaces(await window.api.workspaces.create(name))}
+                onClose={() => toggle('newWorkspace', false)}
+              />
+            ) : null}
+
+            {shell.palette ? (
+              <CommandPalette
+                // a different mode is a fresh palette, so the query starts empty
+                key={shell.palette}
+                entries={commandEntries}
+                initialMode={shell.palette}
+                onClose={() => dispatch({ type: 'closePalette' })}
+              />
+            ) : null}
+
+            {shell.performance ? (
+              <PerformanceDialog onClose={() => toggle('performance', false)} />
+            ) : null}
+
+            {shell.archive ? (
+              <ArchiveDialog
+                tasks={archived}
+                onOpen={(task) => dispatch({ type: 'openArchived', task })}
+                onClose={() => toggle('archive', false)}
+              />
+            ) : null}
+
+            {shell.confirmDispatch && orchestration ? (
+              <OrchestrateDialog
+                summary={orchestration}
+                auto={dispatchRun.auto}
+                remoteHost={access.remote?.host}
+                onAutoStop={() => setAutoOn(false)}
+                onClose={() => toggle('confirmDispatch', false)}
+                onConfirm={(autoOn) => {
+                  toggle('confirmDispatch', false)
+                  void dispatchRun.confirm(orchestration, autoOn)
+                }}
+              />
+            ) : null}
+
+            {shell.confirmAutoStop ? (
+              <StopAutoRunDialog
+                onClose={() => toggle('confirmAutoStop', false)}
+                onConfirm={() => {
+                  toggle('confirmAutoStop', false)
+                  setAutoOn(false)
+                }}
+              />
+            ) : null}
+
+            {removingAgent ? (
+              <RemoveAgentDialog
+                row={removingAgent}
+                onClose={() => dispatch({ type: 'confirmRemoveAgent', row: null })}
+                onConfirm={() => {
+                  dispatch({ type: 'confirmRemoveAgent', row: null })
+                  void window.api.agents.remove(removingAgent.task.id)
+                }}
+              />
+            ) : null}
+
+            {shell.quickAdd ? (
+              <QuickTaskDialog
+                settings={settings}
+                onPlan={launcher.planTasks}
+                onClose={() => toggle('quickAdd', false)}
+              />
+            ) : null}
+
+            {taskOpen ? (
+              <TaskDialog
+                task={taskDialog.mode === 'edit' ? taskDialog.task : null}
+                allTasks={allTasks}
+                settings={settings}
+                presetId={taskDialog.mode === 'new' ? taskDialog.presetId : undefined}
+                onSavePresets={(taskPresets) =>
+                  save({
+                    workspaceId: settings.activeWorkspaceId,
+                    workspace: { ...workspaceSettingsFor(settings), taskPresets },
+                    global: globalSettingsFor(settings)
+                  })
+                }
+                onClose={() => dispatch({ type: 'closeTask' })}
+                onLaunch={(taskId, templateId, provider) =>
+                  void launchAgent(taskId, templateId, provider)
+                }
+                onResumeSession={launcher.resumeSession}
                 onShowChanges={showChanges}
-                onOpenTask={editTask}
-                onRemove={(row) => dispatch({ type: 'confirmRemoveAgent', row })}
-                onClose={() => dispatch({ type: 'closeAgents' })}
-                onActivate={(row) => activateTask(row.task.id)}
+              />
+            ) : null}
+
+            {changesTask ? (
+              <ChangesDialog
+                task={changesTask}
+                onClose={() => dispatch({ type: 'showChanges', task: null })}
+              />
+            ) : null}
+
+            {shell.settings ? (
+              <SettingsDialog
+                settings={settings}
+                workspaces={workspaces}
+                initialSection={shell.settings.section}
+                onSave={save}
+                onPreviewTheme={setPreviewTheme}
+                onClose={() => {
+                  setPreviewTheme(null)
+                  dispatch({ type: 'closeSettings' })
+                }}
               />
             ) : null}
           </div>
-
-          <StatusBar
-            agentsOpen={agentsOpen}
-            terminalOpen={terminalOpen}
-            agentCount={agentRows.length}
-            waitingCount={agentRows.filter((row) => row.agent?.state === 'waiting').length}
-            sessionCount={sessions.length}
-            summary={boardSummary(board, agentRows)}
-            bindings={bindings}
-            readyUpdate={update?.kind === 'ready' ? update.version : undefined}
-            onToggleAgents={() => runCommand('toggleAgents')}
-            onToggleTerminal={() => runCommand('toggleTerminal')}
-            onOpenSettings={() => openSettings()}
-            onInstallUpdate={() => void window.api.updates.install()}
-          />
-
-          {shell.newWorkspace ? (
-            <NewWorkspaceDialog
-              onCreate={async (name) => applyWorkspaces(await window.api.workspaces.create(name))}
-              onClose={() => toggle('newWorkspace', false)}
-            />
-          ) : null}
-
-          {shell.palette ? (
-            <CommandPalette
-              // a different mode is a fresh palette, so the query starts empty
-              key={shell.palette}
-              entries={commandEntries}
-              initialMode={shell.palette}
-              onClose={() => dispatch({ type: 'closePalette' })}
-            />
-          ) : null}
-
-          {shell.performance ? (
-            <PerformanceDialog onClose={() => toggle('performance', false)} />
-          ) : null}
-
-          {shell.archive ? (
-            <ArchiveDialog
-              tasks={archived}
-              onOpen={(task) => dispatch({ type: 'openArchived', task })}
-              onClose={() => toggle('archive', false)}
-            />
-          ) : null}
-
-          {shell.confirmDispatch && orchestration ? (
-            <OrchestrateDialog
-              summary={orchestration}
-              auto={dispatchRun.auto}
-              onAutoStop={() => setAutoOn(false)}
-              onClose={() => toggle('confirmDispatch', false)}
-              onConfirm={(autoOn) => {
-                toggle('confirmDispatch', false)
-                void dispatchRun.confirm(orchestration, autoOn)
-              }}
-            />
-          ) : null}
-
-          {shell.confirmAutoStop ? (
-            <StopAutoRunDialog
-              onClose={() => toggle('confirmAutoStop', false)}
-              onConfirm={() => {
-                toggle('confirmAutoStop', false)
-                setAutoOn(false)
-              }}
-            />
-          ) : null}
-
-          {removingAgent ? (
-            <RemoveAgentDialog
-              row={removingAgent}
-              onClose={() => dispatch({ type: 'confirmRemoveAgent', row: null })}
-              onConfirm={() => {
-                dispatch({ type: 'confirmRemoveAgent', row: null })
-                void window.api.agents.remove(removingAgent.task.id)
-              }}
-            />
-          ) : null}
-
-          {shell.quickAdd ? (
-            <QuickTaskDialog
-              settings={settings}
-              onPlan={launcher.planTasks}
-              onClose={() => toggle('quickAdd', false)}
-            />
-          ) : null}
-
-          {taskOpen ? (
-            <TaskDialog
-              task={taskDialog.mode === 'edit' ? taskDialog.task : null}
-              allTasks={allTasks}
-              settings={settings}
-              presetId={taskDialog.mode === 'new' ? taskDialog.presetId : undefined}
-              onSavePresets={(taskPresets) =>
-                save({
-                  workspaceId: settings.activeWorkspaceId,
-                  workspace: { ...workspaceSettingsFor(settings), taskPresets },
-                  global: globalSettingsFor(settings)
-                })
-              }
-              onClose={() => dispatch({ type: 'closeTask' })}
-              onLaunch={(taskId, templateId, provider) =>
-                void launchAgent(taskId, templateId, provider)
-              }
-              onResumeSession={launcher.resumeSession}
-              onShowChanges={showChanges}
-            />
-          ) : null}
-
-          {changesTask ? (
-            <ChangesDialog
-              task={changesTask}
-              onClose={() => dispatch({ type: 'showChanges', task: null })}
-            />
-          ) : null}
-
-          {shell.settings ? (
-            <SettingsDialog
-              settings={settings}
-              workspaces={workspaces}
-              initialSection={shell.settings.section}
-              onSave={save}
-              onPreviewTheme={setPreviewTheme}
-              onClose={() => {
-                setPreviewTheme(null)
-                dispatch({ type: 'closeSettings' })
-              }}
-            />
-          ) : null}
-        </div>
-      </DispatchingContext.Provider>
+        </DispatchingContext.Provider>
+      </RemoteContext.Provider>
     </TaskLookupContext.Provider>
   )
 }

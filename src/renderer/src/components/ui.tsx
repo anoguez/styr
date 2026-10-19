@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { useSubmitShortcut } from '../hooks/useSubmitShortcut.js'
 import { hexToHsl, hslToHex } from '../lib/palette.js'
+import { PickerGuard } from './PickerGuard.js'
 import { fileName } from '../lib/terminalPath.js'
 
 type Variant = 'primary' | 'ghost' | 'subtle' | 'danger'
@@ -300,11 +301,14 @@ export function Modal({
 export function DirectoryInput({
   value,
   onChange,
-  placeholder
+  placeholder,
+  local
 }: {
   value: string
   onChange: (path: string) => void
   placeholder?: string
+  /** A path on this computer even for a remote workspace (`PickerGuard`), such as the storage folder. */
+  local?: boolean
 }): ReactNode {
   async function browse(): Promise<void> {
     const picked = await window.api.settings.pickDirectory(value || undefined)
@@ -320,26 +324,30 @@ export function DirectoryInput({
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
       />
-      <button
-        type="button"
-        aria-label="Browse"
-        title="Browse"
-        onClick={() => void browse()}
-        className="grid size-6 shrink-0 place-items-center rounded-[5px] text-dim transition-colors hover:bg-raised hover:text-ink"
-      >
-        <svg
-          aria-hidden
-          viewBox="0 0 16 16"
-          width="13"
-          height="13"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinejoin="round"
-        >
-          <path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" />
-        </svg>
-      </button>
+      <PickerGuard title="Browse" local={local}>
+        {(disabled) => (
+          <button
+            type="button"
+            aria-label="Browse"
+            disabled={disabled}
+            onClick={() => void browse()}
+            className="grid size-6 shrink-0 place-items-center rounded-[5px] text-dim transition-colors hover:bg-raised hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+          >
+            <svg
+              aria-hidden
+              viewBox="0 0 16 16"
+              width="13"
+              height="13"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            >
+              <path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" />
+            </svg>
+          </button>
+        )}
+      </PickerGuard>
     </span>
   )
 }
@@ -347,11 +355,14 @@ export function DirectoryInput({
 export function FileListInput({
   files,
   onChange,
-  startIn
+  startIn,
+  local
 }: {
   files: string[]
   onChange: (files: string[]) => void
   startIn?: string
+  /** Files on this computer even for a remote workspace (`PickerGuard`). */
+  local?: boolean
 }): ReactNode {
   async function browse(): Promise<void> {
     const picked = await window.api.settings.pickFiles(startIn)
@@ -388,7 +399,13 @@ export function FileListInput({
         </ul>
       ) : null}
       <div className="flex items-center gap-2.5">
-        <Button onClick={() => void browse()}>Add files…</Button>
+        <PickerGuard local={local}>
+          {(disabled) => (
+            <Button disabled={disabled} onClick={() => void browse()}>
+              Add files…
+            </Button>
+          )}
+        </PickerGuard>
         {files.length === 0 ? (
           <span className="text-[11.5px] text-faint">No files attached yet</span>
         ) : null}

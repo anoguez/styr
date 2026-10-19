@@ -8,6 +8,8 @@ export interface TerminalSessionsState {
 
 export type TerminalSessionsAction =
   | { type: 'load'; sessions: TerminalSessionInfo[] }
+  /** Sessions found later (a remote host connected): added after the open tabs, none replaced. */
+  | { type: 'merge'; sessions: TerminalSessionInfo[] }
   | { type: 'adopt'; session: TerminalSessionInfo }
   | { type: 'remove'; id: string }
   | { type: 'select'; id: string }
@@ -42,6 +44,11 @@ export function terminalSessionsReducer(
         sessions: action.sessions,
         activeSession: state.activeSession ?? action.sessions[0]?.id ?? null
       }
+    case 'merge': {
+      const open = new Set(state.sessions.map((session) => session.id))
+      const added = action.sessions.filter((session) => !open.has(session.id))
+      return added.length === 0 ? state : { ...state, sessions: [...state.sessions, ...added] }
+    }
     case 'adopt':
       // The same session can arrive twice (a second launch returns the open one): one tab.
       return {

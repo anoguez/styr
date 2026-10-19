@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { AGENT_PROVIDER_LABELS, type Settings, type Task } from '@core/types.js'
 import { useBranches } from '../../hooks/useBranches.js'
+import { PickerGuard } from '../PickerGuard.js'
 import {
   inheritedModel,
   modelOptions,
@@ -153,19 +154,25 @@ export function WorkspaceFields({
             onChange={(event) => patch({ repoPath: event.target.value })}
             className="min-w-0 flex-1 bg-transparent font-mono text-[11.5px] text-ink outline-none placeholder:text-faint"
           />
-          <button
-            type="button"
-            aria-label="Browse"
-            title="Choose a folder"
-            onClick={() => {
-              void window.api.settings.pickDirectory(form.repoPath || undefined).then((picked) => {
-                if (picked) patch({ repoPath: picked })
-              })
-            }}
-            className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-[5px] text-dim hover:bg-raised hover:text-ink"
-          >
-            <FolderIcon />
-          </button>
+          <PickerGuard title="Choose a folder">
+            {(disabled) => (
+              <button
+                type="button"
+                aria-label="Browse"
+                disabled={disabled}
+                onClick={() => {
+                  void window.api.settings
+                    .pickDirectory(form.repoPath || undefined)
+                    .then((picked) => {
+                      if (picked) patch({ repoPath: picked })
+                    })
+                }}
+                className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-[5px] text-dim hover:bg-raised hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+              >
+                <FolderIcon />
+              </button>
+            )}
+          </PickerGuard>
         </div>
       </div>
       <RowToggle

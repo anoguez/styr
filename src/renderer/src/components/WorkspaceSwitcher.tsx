@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ipcMessage } from '../lib/ipcMessage.js'
 import type {
+  RemoteState,
   WorkspaceAgentActivity,
   WorkspaceBoardSummary,
   WorkspaceOverview,
@@ -18,6 +19,7 @@ import {
 } from '../lib/workspaceStatus.js'
 import { Button, Field, Modal, inputClass } from './ui.js'
 import { IS_MAC } from '../lib/platform.js'
+import { remoteNote } from '../lib/remoteStatus.js'
 
 const COUNT_TONE: Record<BoardCountGroup, string> = {
   needs: AGENT_TONE.waiting,
@@ -76,6 +78,7 @@ function rowTitle(activity?: WorkspaceAgentActivity, summary?: WorkspaceBoardSum
 export function WorkspaceSwitcher({
   overview,
   activity,
+  remote,
   open,
   onOpenChange,
   onSwitch,
@@ -84,6 +87,8 @@ export function WorkspaceSwitcher({
 }: {
   overview: WorkspaceOverview
   activity: WorkspacesActivity
+  /** Remote workspaces' connections, for each row's note (offline, reconnecting, off). */
+  remote: RemoteState
   open: boolean
   onOpenChange: (open: boolean) => void
   onSwitch: (id: string) => void
@@ -174,38 +179,50 @@ export function WorkspaceSwitcher({
           // so the menu opens toward the middle of the window either way.
           className={`absolute ${IS_MAC ? 'left-0' : 'right-0'} top-full z-40 mt-1.5 flex w-72 flex-col gap-0.5 rounded-xl border border-edge-strong bg-panel p-1.5 shadow-[0_16px_40px_-8px_rgba(0,0,0,0.7)] [-webkit-app-region:no-drag]`}
         >
-          {overview.workspaces.map((workspace) => (
-            <button
-              key={workspace.id}
-              type="button"
-              role="menuitemradio"
-              aria-checked={workspace.id === overview.activeId}
-              title={
-                rowTitle(activity.byWorkspace[workspace.id], summaries[workspace.id]) || undefined
-              }
-              className={item}
-              onClick={() => {
-                onOpenChange(false)
-                if (workspace.id !== overview.activeId) onSwitch(workspace.id)
-              }}
-            >
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="truncate">{workspace.name}</span>
-                <WorkspaceStatusLine
-                  activity={activity.byWorkspace[workspace.id]}
-                  summary={summaries[workspace.id]}
-                />
-              </span>
-              <span className="flex shrink-0 items-center gap-2 text-[11px] text-faint">
-                {workspace.taskCount}
-                {workspace.id === overview.activeId ? (
-                  <span aria-hidden className="text-[var(--color-accent-text)]">
-                    ✓
-                  </span>
-                ) : null}
-              </span>
-            </button>
-          ))}
+          {overview.workspaces.map((workspace) => {
+            const note = remoteNote(remote, workspace)
+            // With the flag off a remote workspace stays listed, but there is nothing to open.
+            const off = Boolean(workspace.remote) && !remote.enabled
+            return (
+              <button
+                key={workspace.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={workspace.id === overview.activeId}
+                aria-disabled={off}
+                title={
+                  [note, rowTitle(activity.byWorkspace[workspace.id], summaries[workspace.id])]
+                    .filter(Boolean)
+                    .join(' — ') || undefined
+                }
+                className={`${item} ${off ? 'opacity-60' : ''}`}
+                onClick={() => {
+                  onOpenChange(false)
+                  if (off) return
+                  if (workspace.id !== overview.activeId) onSwitch(workspace.id)
+                }}
+              >
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate">{workspace.name}</span>
+                  {note ? (
+                    <span className="truncate font-mono text-[10.5px] text-faint">{note}</span>
+                  ) : null}
+                  <WorkspaceStatusLine
+                    activity={activity.byWorkspace[workspace.id]}
+                    summary={summaries[workspace.id]}
+                  />
+                </span>
+                <span className="flex shrink-0 items-center gap-2 text-[11px] text-faint">
+                  {workspace.taskCount}
+                  {workspace.id === overview.activeId ? (
+                    <span aria-hidden className="text-[var(--color-accent-text)]">
+                      ✓
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+            )
+          })}
           <div className="my-1 border-t border-edge" />
           <button
             type="button"

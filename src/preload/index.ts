@@ -12,6 +12,8 @@ import type {
   BrokenSettingsFile,
   CliStatus,
   OrchestrationSummary,
+  RemoteState,
+  RemoteWorkspaceDraft,
   RestSourceSettings,
   RestTestResult,
   Settings,
@@ -199,6 +201,19 @@ const api = {
       subscribe('workspaces:activity', handler as (...args: never[]) => void),
     boardSummary: (): Promise<Record<string, WorkspaceBoardSummary>> =>
       ipcRenderer.invoke('workspaces:boardSummary')
+  },
+  remote: {
+    /** The flag, every host's connection and every remote workspace (`docs/architecture/remote.md`). */
+    state: (): Promise<RemoteState> => ipcRenderer.invoke('remote:state'),
+    onState: (handler: (state: RemoteState) => void): (() => void) =>
+      subscribe('remote:state', handler as (...args: never[]) => void),
+    /** Retry now: one host, or every host when the network comes back. */
+    retry: (host?: string): Promise<void> => ipcRenderer.invoke('remote:retry', host),
+    /** Points the server back at this workspace after another client moved it. */
+    switchBack: (workspaceId: string): Promise<void> =>
+      ipcRenderer.invoke('remote:switchBack', workspaceId),
+    addWorkspace: (draft: RemoteWorkspaceDraft): Promise<WorkspaceOverview> =>
+      ipcRenderer.invoke('remote:addWorkspace', draft)
   },
   settings: {
     get: (workspaceId?: string): Promise<Settings> =>

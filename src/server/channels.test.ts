@@ -63,7 +63,12 @@ const DESKTOP_ONLY = new Set([
   'terminal:nativeStyledLines',
   'terminal:nativeDetach',
   'terminal:nativeClearBlocks',
-  'terminal:nativeReceived'
+  'terminal:nativeReceived',
+  // The client's own connections to remote hosts (`src/main/remote.ts`).
+  'remote:state',
+  'remote:retry',
+  'remote:switchBack',
+  'remote:addWorkspace'
 ])
 
 describe('the server channel table', () => {

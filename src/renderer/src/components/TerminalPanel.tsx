@@ -35,6 +35,7 @@ import { useTerminalRuntimes } from '../lib/useTerminalRuntimes.js'
 import { sessionLabel, type SessionLabel } from '../lib/sessionLabel.js'
 import { FILE_MANAGER } from '../lib/platform.js'
 import { fileName } from '../lib/terminalPath.js'
+import { sessionDisconnected, useRemoteState } from '../lib/remoteStatus.js'
 
 const basename = fileName
 
@@ -197,8 +198,13 @@ export function TerminalPanel({
   const activeRuntime = activeId ? runtimes.get(activeId) : undefined
   // While a full-screen program owns the panel the context bar is gone, so the folder it is in
   // moves up here instead of disappearing.
+  const remote = useRemoteState()
+  const activeHost = sessions.find((session) => session.id === activeId)?.host
+  // A remote folder cannot be revealed in this computer's file manager.
   const folder =
-    activeId && fullscreen.has(activeId) && activeRuntime ? activeRuntime.cwd : undefined
+    activeId && fullscreen.has(activeId) && activeRuntime && !activeHost
+      ? activeRuntime.cwd
+      : undefined
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
@@ -360,10 +366,36 @@ export function TerminalPanel({
                 onAskReview={onAskReview}
                 onAskFork={onAskFork}
               />
+              {sessionDisconnected(remote, session) ? (
+                <DisconnectedOverlay host={session.host!} />
+              ) : null}
             </div>
           ))
         )}
       </div>
     </section>
+  )
+}
+
+/**
+ * Over a remote terminal whose host is down: the last output stays visible underneath, nothing
+ * typed is sent (or queued), and the tab picks up with its backlog when the host is back.
+ */
+function DisconnectedOverlay({ host }: { host: string }): ReactNode {
+  return (
+    <div
+      role="status"
+      // Catches clicks and keys, so nothing reaches the terminal underneath.
+      tabIndex={-1}
+      onKeyDownCapture={(event) => event.stopPropagation()}
+      className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-md bg-chrome/80 backdrop-blur-[1px]"
+    >
+      <p className="text-[12.5px] font-medium text-ink">Disconnected from {host}</p>
+      <p className="max-w-[340px] text-center text-[11.5px] text-dim">
+        The terminal keeps running there. It reattaches with its scrollback once Styr reconnects;
+        nothing typed meanwhile is sent.
+      </p>
+      <Button onClick={() => void window.api.remote.retry(host)}>Retry now</Button>
+    </div>
   )
 }

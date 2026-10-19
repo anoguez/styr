@@ -224,6 +224,7 @@ export function TaskDialog({
 
           <TaskFooter
             task={task}
+            openFilesWith={settings.openFilesWith}
             saving={saving}
             canStart={form.status !== 'done'}
             onSave={() => void saveAndClose()}

@@ -106,7 +106,12 @@ describe('where Control is the primary modifier (Windows)', () => {
 })
 
 describe('commandEnabled', () => {
-  const off = { externalSources: false, nativeTerminal: false, worklog: false }
+  const off = {
+    externalSources: false,
+    nativeTerminal: false,
+    worklog: false,
+    remoteWorkspaces: false
+  }
   it('turns a feature’s commands off with its experimental flag', () => {
     expect(commandEnabled('viewWorklog', off)).toBe(false)
     expect(commandEnabled('viewWorklog', { ...off, worklog: true })).toBe(true)

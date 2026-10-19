@@ -25,6 +25,7 @@ describe.skipIf(process.platform === 'win32')('server socket', () => {
         storageDir: '',
         platform: ''
       }),
+      tray: () => ({ statuses: [], titles: {} }),
       terminals: { backlog: () => ({ data: '', sequence: 0, marks: [] }), resize: () => {} },
       pin: { current: () => undefined, clear: () => {} }
     })

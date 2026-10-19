@@ -47,12 +47,14 @@ vi.mock('@core/settingsStore.js', () => ({ tasksDir: record('tasksDir') }))
 vi.mock('@core/settingsMigration.js', () => ({ migrateLegacySettings: record('migrateSettings') }))
 vi.mock('./ipc.js', () => ({
   broadcast: record('broadcast'),
-  checkForMergedWork: record('checkForMergedWork'),
+  checkMergedOnFocus: record('checkMergedOnFocus'),
   markAgentExited: record('markAgentExited'),
   notifyAgentsChanged: record('notifyAgentsChanged'),
   notifyTasksChanged: record('notifyTasksChanged'),
   registerIpcHandlers: record('registerIpcHandlers'),
   startAutoDispatch: record('startAutoDispatch'),
+  startRemoteWorkspaces: record('startRemoteWorkspaces'),
+  stopRemoteWorkspaces: record('stopRemoteWorkspaces'),
   switchWorkspace: record('switchWorkspace')
 }))
 vi.mock('./taskIndex.js', () => ({
@@ -103,6 +105,7 @@ describe('start-up order', () => {
       'tasksDir',
       'syncIndex',
       'registerIpcHandlers',
+      'startRemoteWorkspaces',
       'startAutoDispatch',
       'installAppMenu',
       'onTerminalData',

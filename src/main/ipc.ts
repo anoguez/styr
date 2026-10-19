@@ -2,9 +2,10 @@ import { existsSync, readdirSync } from 'node:fs'
 import { execFile, spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { app, ipcMain, shell } from 'electron'
+import { app, ipcMain as electronIpcMain, shell } from 'electron'
 import { opensTextFiles, type AppInfo } from '@core/appFilter.js'
-import { loadSettings } from '@core/settingsStore.js'
+import { loadSettings, saveGlobalSettings } from '@core/settingsStore.js'
+import { workspaceDir } from '@core/config.js'
 import type { AgentStatus } from '@core/agentState.js'
 import { planLaunch } from '@core/launch.js'
 import { z } from 'zod'
@@ -56,7 +57,6 @@ import {
 import { electronHost, electronWindows } from './electronHost.js'
 import { closeIndex, findTask, queryTasks, syncIndex } from './taskIndex.js'
 import { startWatching, startWatchingAgents } from './watcher.js'
-import { updateTray } from './tray.js'
 import {
   createSession,
   findSessionByTask,
@@ -72,8 +72,21 @@ import { CodexMonitor, prepareCodex } from './codexMonitor.js'
 import { publishAgentConversation } from './usage.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
+import { bindGlobalSettingsSave, remoteRouter, routedIpcMain, startRemote } from './remote.js'
 
-const { broadcast } = electronHost
+/**
+ * Every handler below is routed (`remote.ts`): a remote workspace's calls go to its server, a
+ * local one's run here. With no remote workspace the router is a pass-through.
+ */
+const ipcMain = routedIpcMain(electronIpcMain)
+
+/**
+ * What the services broadcast passes through the router, which drops the local board's events
+ * while a remote board is active and merges the switcher's rollup with the servers'.
+ */
+function broadcast(channel: string, payload?: unknown): void {
+  remoteRouter.fromLocal(channel, payload)
+}
 
 /**
  * The tasks and workspaces services, wired to main's index, watchers and the other services.
@@ -121,8 +134,12 @@ export function notifyTasksChanged(): void {
   tasksService.notifyTasksChanged()
 }
 
+/** A switch from outside the renderer (the tray): routed, so a remote workspace's server follows. */
 export function switchWorkspace(id: string): void {
-  workspacesService.switchWorkspace(id)
+  const result = remoteRouter.invoke('workspaces:switch', [id], () => workspacesService.switch(id))
+  if (result instanceof Promise) {
+    result.catch((error: unknown) => console.error('Styr could not switch workspace:', error))
+  }
 }
 
 /**
@@ -158,7 +175,8 @@ const agentsService = createAgentsService({
   ensureAgentCli,
   prepareCodex,
   planLaunch,
-  updateTray,
+  // The tray shows every connected remote workspace's agents too: the router merges them in.
+  updateTray: (statuses, titles) => remoteRouter.localTrayChanged(statuses, titles),
   requestAutoRun: () => dispatchService.requestAutoRun()
 })
 
@@ -221,6 +239,42 @@ const settingsService = createSettingsService({
   autoRunFlagChanged: () => dispatchService.autoRunFlagChanged(),
   mcpEntry: () => mcpEntry()
 })
+
+/**
+ * A Save aimed at a remote workspace writes the app-level part here and the workspace's own part
+ * on its server; this is the first half, followed up as a full save would be.
+ */
+bindGlobalSettingsSave((global) => {
+  const before = loadSettings()
+  saveGlobalSettings({ ...global, activeWorkspaceId: before.activeWorkspaceId })
+  workspacesService.afterSettingsSave(workspaceDir(before), before.activeWorkspaceId)
+  dispatchService.autoRunFlagChanged()
+})
+
+/** Reads which workspaces are remote and, with the flag on, connects to their hosts. */
+export function startRemoteWorkspaces(): void {
+  startRemote((id) =>
+    remoteRouter.invoke('workspaces:switch', [id], () => workspacesService.switch(id))
+  )
+}
+
+/**
+ * Window focus is when to look for a PR merged in the browser. For a remote board the server
+ * looks, against the remote repos; while it is not live there is nothing to do.
+ */
+export function checkMergedOnFocus(): void {
+  try {
+    const result = remoteRouter.invoke('tasks:checkMerged', [], () => checkForMergedWork())
+    if (result instanceof Promise) result.catch(() => undefined)
+  } catch {
+    // The remote board is read-only right now.
+  }
+}
+
+/** Quitting ends every ssh child; the servers keep running, and so do their agents. */
+export function stopRemoteWorkspaces(): void {
+  remoteRouter.stopAll()
+}
 
 /** Called once the window is up: after the startup grace Auto-run evaluates the board. */
 export function startAutoDispatch(): void {

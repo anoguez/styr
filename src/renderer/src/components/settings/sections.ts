@@ -112,6 +112,15 @@ export const SECTIONS = [
     words: 'board'
   },
   {
+    id: 'remote',
+    label: 'Remote',
+    scope: 'app',
+    blurb: 'Workspaces that live on another machine, reached over ssh.',
+    keys: [],
+    flag: 'remoteWorkspaces',
+    words: 'remote ssh host server tailscale vm cloud serve connection'
+  },
+  {
     id: 'storage',
     label: 'Storage',
     scope: 'app',

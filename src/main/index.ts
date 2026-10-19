@@ -4,12 +4,14 @@ import { tasksDir } from '@core/settingsStore.js'
 import { migrateLegacySettings } from '@core/settingsMigration.js'
 import {
   broadcast,
-  checkForMergedWork,
+  checkMergedOnFocus,
   markAgentExited,
   notifyAgentsChanged,
   notifyTasksChanged,
   registerIpcHandlers,
   startAutoDispatch,
+  startRemoteWorkspaces,
+  stopRemoteWorkspaces,
   switchWorkspace
 } from './ipc.js'
 import { closeIndex, syncIndex } from './taskIndex.js'
@@ -157,6 +159,7 @@ app.whenReady().then(() => {
   tasksDir()
   syncIndex()
   registerIpcHandlers()
+  startRemoteWorkspaces()
   startAutoDispatch()
   installAppMenu()
 
@@ -198,7 +201,7 @@ app.whenReady().then(() => {
   initUsage()
 
   // You merge a PR in the browser and come back: that is when to look for it. Throttled per repo.
-  app.on('browser-window-focus', () => void checkForMergedWork())
+  app.on('browser-window-focus', () => checkMergedOnFocus())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -211,6 +214,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   destroyTray()
+  stopRemoteWorkspaces()
   killAllSessions()
   void stopWatching()
   closeIndex()

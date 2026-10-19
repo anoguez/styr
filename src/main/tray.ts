@@ -57,8 +57,12 @@ export function newlyWaiting(
   )
 }
 
-function notifyNewlyWaiting(statuses: AgentStatus[], titles: Map<string, string>): void {
-  const fresh = newlyWaiting(lastState, statuses)
+function notifyNewlyWaiting(
+  statuses: AgentStatus[],
+  titles: Map<string, string>,
+  quiet: ReadonlySet<string>
+): void {
+  const fresh = newlyWaiting(lastState, statuses).filter((status) => !quiet.has(agentKey(status)))
   lastState.clear()
   for (const status of statuses) lastState.set(agentKey(status), status.state)
   if (!Notification.isSupported()) return
@@ -94,8 +98,17 @@ export function createTray(next: TrayHandlers): void {
   }
 }
 
-export function updateTray(statuses: AgentStatus[], titles: Map<string, string>): void {
-  notifyNewlyWaiting(statuses, titles)
+/**
+ * `quiet` holds agents that must not notify: a remote workspace's agents right after a
+ * (re)connect, whose waiting began while disconnected — notifications come from the live stream
+ * only, never as a backfill.
+ */
+export function updateTray(
+  statuses: AgentStatus[],
+  titles: Map<string, string>,
+  quiet: ReadonlySet<string> = new Set()
+): void {
+  notifyNewlyWaiting(statuses, titles, quiet)
   if (!tray) return
 
   const waiting = statuses.filter((status) => status.state === 'waiting')

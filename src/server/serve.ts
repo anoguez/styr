@@ -40,8 +40,13 @@ export async function serve(options: ServeOptions): Promise<void> {
     platform: `${process.platform} ${process.arch}`
   })
 
+  // The last tray model, so a client that (re)connects can ask for it (`server:tray`).
+  let tray: unknown = { statuses: [], titles: {} }
   const host = createServerHost({
-    broadcast: (channel, payload) => hub.broadcast(channel, payload),
+    broadcast: (channel, payload) => {
+      if (channel === 'server:tray') tray = payload
+      hub.broadcast(channel, payload)
+    },
     // A headless server has no desktop: the clients raise the notification.
     notify: (title, body) => hub.broadcast('server:notify', { title, body }),
     trashItem: async (path) => moveToTrash(path),
@@ -56,6 +61,7 @@ export async function serve(options: ServeOptions): Promise<void> {
     invoke: host.invoke,
     send: host.send,
     info,
+    tray: () => tray,
     terminals: { backlog: host.terminals.sessionBacklog, resize: host.terminals.resizeSession },
     pin: host.pin
   })

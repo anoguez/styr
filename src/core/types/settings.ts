@@ -223,6 +223,11 @@ export interface ExperimentalSettings {
   nativeTerminal: boolean
   /** The Worklog view and its header tab. */
   worklog: boolean
+  /**
+   * Workspaces that live on another machine and are reached over `ssh` (`docs/architecture/
+   * remote.md`). Off, remote workspaces stay listed but never connect.
+   */
+  remoteWorkspaces: boolean
 }
 
 export interface UpdateSettings {

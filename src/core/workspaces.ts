@@ -3,12 +3,15 @@ import { extname, join } from 'node:path'
 import { agentKey, isAgentArchived, type AgentStatus } from './agentState.js'
 import { awaitsReview } from './inbox.js'
 import { readAllAgentStatuses } from './agentStore.js'
-import { pathsInWorkspace, workspaceDir } from './config.js'
+import { isWorkspaceId, pathsInWorkspace, workspaceDir } from './config.js'
+import { isValidRemoteHost } from './remote.js'
 import { saveWorkspaceSettings } from './settingsStore.js'
 import { parseTaskMarkdown } from './markdown.js'
 import {
   DEFAULT_WORKSPACE_ID,
   DEFAULT_WORKSPACE_NAME,
+  type RemoteWorkspaceDraft,
+  type RemoteWorkspaceLink,
   type Settings,
   type Task,
   type TaskReadiness,
@@ -24,14 +27,32 @@ function workspacesRoot(settings: Settings): string {
   return join(settings.storageDir, 'workspaces')
 }
 
-function readName(settings: Settings, id: string): string {
+/** The link in a stub's `workspace.json`, or undefined when the folder is a local workspace. */
+export function parseRemoteLink(raw: unknown): RemoteWorkspaceLink | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const { host, workspaceId, server } = raw as Record<string, unknown>
+  if (typeof host !== 'string' || !isValidRemoteHost(host.trim())) return undefined
+  if (typeof workspaceId !== 'string' || !isWorkspaceId(workspaceId.trim())) return undefined
+  const command = typeof server === 'string' ? server.trim() : ''
+  return {
+    host: host.trim(),
+    workspaceId: workspaceId.trim(),
+    ...(command ? { server: command } : {})
+  }
+}
+
+/** A folder's name and, for a remote workspace's stub, its link. */
+function readMarker(settings: Settings, id: string): WorkspaceInfo {
   try {
     const raw = JSON.parse(readFileSync(join(workspaceDir(settings, id), MARKER), 'utf8')) as {
       name?: unknown
+      remote?: unknown
     }
-    return typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id
+    const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id
+    const remote = parseRemoteLink(raw.remote)
+    return remote ? { id, name, remote } : { id, name }
   } catch {
-    return id
+    return { id, name: id }
   }
 }
 
@@ -45,7 +66,7 @@ export function listWorkspaces(settings: Settings): WorkspaceInfo[] {
   const others = existsSync(root)
     ? readdirSync(root, { withFileTypes: true })
         .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-        .map((entry) => ({ id: entry.name, name: readName(settings, entry.name) }))
+        .map((entry) => readMarker(settings, entry.name))
         .sort((a, b) => a.name.localeCompare(b.name))
     : []
   return [{ id: DEFAULT_WORKSPACE_ID, name: DEFAULT_WORKSPACE_NAME }, ...others]
@@ -75,10 +96,15 @@ export function validateWorkspaceName(settings: Settings, name: string, ignoreId
   return trimmed
 }
 
-function writeMarker(settings: Settings, id: string, name: string): void {
+function writeMarker(
+  settings: Settings,
+  id: string,
+  name: string,
+  remote?: RemoteWorkspaceLink
+): void {
   writeFileSync(
     join(workspaceDir(settings, id), MARKER),
-    `${JSON.stringify({ name }, null, 2)}\n`,
+    `${JSON.stringify(remote ? { name, remote } : { name }, null, 2)}\n`,
     'utf8'
   )
 }
@@ -111,12 +137,37 @@ export function createWorkspace(
   return { id, name: validName }
 }
 
+/**
+ * A remote workspace's local stub: a folder holding only `workspace.json` with the link, so
+ * `listWorkspaces` finds it like any other. Its tasks, settings and agents stay on the host.
+ */
+export function createRemoteWorkspace(
+  settings: Settings,
+  draft: RemoteWorkspaceDraft
+): WorkspaceInfo {
+  const validName = validateWorkspaceName(settings, draft.name)
+  const remote = parseRemoteLink(draft)
+  if (!remote) {
+    throw new Error(
+      isValidRemoteHost(draft.host.trim())
+        ? 'The remote workspace id is lowercase letters, digits and dashes, such as “default”.'
+        : 'Give a host ssh can reach, such as “devbox” or “me@100.64.0.2”.'
+    )
+  }
+  const id = uniqueId(settings, validName)
+  mkdirSync(workspaceDir(settings, id), { recursive: true })
+  writeMarker(settings, id, validName, remote)
+  return { id, name: validName, remote }
+}
+
 export function renameWorkspace(settings: Settings, id: string, name: string): WorkspaceInfo {
   if (id === DEFAULT_WORKSPACE_ID) throw new Error('The Default workspace cannot be renamed.')
   if (!existsSync(workspaceDir(settings, id))) throw new Error('That workspace no longer exists.')
   const validName = validateWorkspaceName(settings, name, id)
-  writeMarker(settings, id, validName)
-  return { id, name: validName }
+  // A stub keeps its link: renaming changes the local name only.
+  const { remote } = readMarker(settings, id)
+  writeMarker(settings, id, validName, remote)
+  return remote ? { id, name: validName, remote } : { id, name: validName }
 }
 
 const TASK_FILE = new Set(['.md', '.markdown', '.json'])

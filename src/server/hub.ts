@@ -33,6 +33,8 @@ export interface HubPorts {
   invoke: ChannelTable
   send: ChannelTable
   info(): ServerInfo
+  /** The last `server:tray` model, for a client that has just attached. */
+  tray(): unknown
   terminals: {
     backlog(id: string): TerminalOutput
     resize(id: string, cols: number, rows: number): void
@@ -98,6 +100,8 @@ export function createHub(ports: HubPorts) {
     switch (method) {
       case 'server:info':
         return ports.info()
+      case 'server:tray':
+        return ports.tray()
       case 'terminal:attach': {
         const [id, cols, rows] = attachArgs.parse(params)
         client.attached.add(id)
