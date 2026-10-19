@@ -501,7 +501,9 @@ export function registerIpcHandlers(): void {
     // Only web links: a terminal can print any string, and openExternal would run other schemes.
     if (isWebLink(url)) void shell.openExternal(url)
   })
-  ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
+  ipcMain.handle('terminal:listDirectories', (_event, path: string, includeFiles?: boolean) =>
+    listDirectories(path, includeFiles === true)
+  )
 }
 
 const appInfoCache = new Map<string, boolean>()

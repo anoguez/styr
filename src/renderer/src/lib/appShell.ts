@@ -30,6 +30,8 @@ export interface AppShellState extends Record<Toggle, boolean> {
   settings: { section?: SectionId } | null
   changes: Task | null
   removingAgent: AgentRow | null
+  /** Where New workspace starts: this computer, or Remote host (Settings → Remote hosts, the palette). */
+  newWorkspaceMode: 'local' | 'remote'
 }
 
 export function initialAppShell(view: View): AppShellState {
@@ -46,6 +48,7 @@ export function initialAppShell(view: View): AppShellState {
     performance: false,
     switcher: false,
     newWorkspace: false,
+    newWorkspaceMode: 'local',
     confirmDispatch: false,
     confirmAutoStop: false
   }
@@ -64,6 +67,8 @@ export type AppShellAction =
   | { type: 'set'; toggle: Toggle; open: boolean }
   | { type: 'openSettings'; section?: SectionId }
   | { type: 'closeSettings' }
+  /** New workspace, from any entry; from inside Settings it closes Settings first. */
+  | { type: 'newWorkspace'; mode: 'local' | 'remote' }
   | { type: 'showChanges'; task: Task | null }
   | { type: 'confirmRemoveAgent'; row: AgentRow | null }
   | { type: 'openArchived'; task: Task }
@@ -99,6 +104,14 @@ export function appShellReducer(state: AppShellState, action: AppShellAction): A
       return { ...state, settings: { section: action.section } }
     case 'closeSettings':
       return { ...state, settings: null }
+    case 'newWorkspace':
+      return {
+        ...state,
+        settings: null,
+        palette: null,
+        newWorkspace: true,
+        newWorkspaceMode: action.mode
+      }
     case 'showChanges':
       return { ...state, changes: action.task }
     case 'confirmRemoveAgent':
@@ -175,7 +188,7 @@ export function runShortcutCommand(command: ShortcutCommand, port: CommandPort):
     case 'switchWorkspace':
       return dispatch({ type: 'set', toggle: 'switcher', open: true })
     case 'newWorkspace':
-      return dispatch({ type: 'set', toggle: 'newWorkspace', open: true })
+      return dispatch({ type: 'newWorkspace', mode: 'local' })
     case 'terminalTab1':
     case 'terminalTab2':
     case 'terminalTab3':

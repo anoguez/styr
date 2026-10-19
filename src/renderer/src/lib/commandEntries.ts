@@ -106,6 +106,17 @@ export function buildCommandEntries(
       run: () => actions.switchWorkspace(workspace.id)
     })
   }
+  // Opens New workspace straight on Remote host; only with remote workspaces on (Experimental).
+  if (source.experimental?.remoteWorkspaces) {
+    entries.push({
+      id: 'workspace:newRemote',
+      label: 'New remote workspace…',
+      group: 'Workspaces',
+      mode: 'command',
+      keywords: 'workspace board remote host ssh server vm set up',
+      run: () => dispatch({ type: 'newWorkspace', mode: 'remote' })
+    })
+  }
   entries.push({
     id: 'view:performance',
     label: 'Show performance',

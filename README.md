@@ -1,7 +1,7 @@
 # Styr
 
 [![Latest release](https://img.shields.io/github/v/release/anoguez/styr)](https://github.com/anoguez/styr/releases/latest)
-![Test coverage](https://img.shields.io/badge/coverage-93.93%25-brightgreen)
+![Test coverage](https://img.shields.io/badge/coverage-90.12%25-brightgreen)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/noguez)
 
 **An agentic IDE built around a kanban board.** Write tasks, and Styr launches a coding agent (Claude Code
@@ -107,11 +107,21 @@ Linux or WSL2).
 
 A workspace can live on a Linux machine you reach over ssh, such as a cloud VM on Tailscale, where a
 headless Styr server keeps its agents and Auto-run going while your laptop is closed. Turn it on in
-**Settings → Experimental**, then use **New workspace → Remote host**: give a host (anything `ssh`
-accepts) and a name. Styr checks the host over ssh, has the host download the server from this
-release and check it against the hash built into the app, installs it as a `systemd --user`
-service, and opens the new board. The host needs Linux (x86_64 or aarch64, glibc 2.36 or newer:
-Ubuntu 22.04+, Debian 12+, RHEL/Rocky 9+, Amazon Linux 2023), ssh, git and the agent CLI, logged in.
+**Settings → Experimental**, then add one from any of these, which all open the same setup:
+
+- the workspace switcher's **New workspace… → Remote host**;
+- **Settings → Workspaces → New workspace → Remote host**;
+- **Settings → Remote hosts (all workspaces) → Set up a host…**;
+- the command palette's **New remote workspace…**.
+
+Give a host (anything `ssh` accepts). Styr checks it over ssh. When a Styr server already runs
+there, you can open one of its workspaces by name, which only adds a link on this computer, or
+create a new one. Otherwise give a name: the host downloads the server from this release and checks
+it against the hash built into the app, Styr installs it as a `systemd --user` service, and opens
+the new board. The host needs Linux (x86_64 or aarch64, glibc 2.36 or newer: Ubuntu 22.04+,
+Debian 12+, RHEL/Rocky 9+, Amazon Linux 2023) and ssh. Setup checks nothing about agents: as with a
+local workspace, git and the agent CLI are checked where they are used, in Settings → Agents and
+before a launch, on the host. Browse in a remote workspace picks folders and files on the host.
 The server bundles are built and self-checked on every PR.
 Styr never asks for a password and never accepts a host key for you: set up a key or Tailscale SSH
 first, and run `ssh <host>` once to accept its key.

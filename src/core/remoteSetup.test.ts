@@ -49,9 +49,7 @@ describe('the release’s files', () => {
 
 describe('install.sh over ssh', () => {
   it('pipes the script to sh -s with each argument quoted for the POSIX host', () => {
-    expect(installCommand('probe', { version: '1.0.0', cli: 'claude' })).toBe(
-      "sh -s -- --probe --version '1.0.0' --cli 'claude'"
-    )
+    expect(installCommand('probe', { version: '1.0.0' })).toBe("sh -s -- --probe --version '1.0.0'")
     expect(installCommand('install', { version: '1.0.0', tarball: "it's.tgz", sha256: HASH })).toBe(
       `sh -s -- --install --version '1.0.0' --tarball 'it'\\''s.tgz' --sha256 '${HASH}'`
     )
@@ -66,15 +64,13 @@ describe('install.sh over ssh', () => {
 
   it('parses a probe, and refuses a host that is not Linux on x86_64 or aarch64', () => {
     const linux = parseProbe(
-      '::styr os=Linux\n::styr machine=aarch64\n::styr arch=arm64\n::styr git=yes\n::styr cli=no\n' +
+      '::styr os=Linux\n::styr machine=aarch64\n::styr arch=arm64\n' +
         '::styr systemd=yes\n::styr linger=no\n::styr installed=0.9.0\n::styr running=0.9.0\n'
     )
     expect(linux).toEqual({
       os: 'Linux',
       machine: 'aarch64',
       arch: 'arm64',
-      git: true,
-      cli: false,
       systemd: true,
       linger: false,
       installed: '0.9.0',
@@ -160,7 +156,6 @@ describe('ssh failures and host keys', () => {
           version: '1.0.0',
           sha256: HASH,
           tarball: 'x',
-          cli: 'claude',
           pid: 1
         })
       ])

@@ -176,6 +176,34 @@ describe('buildCommandEntries', () => {
     ).toBeUndefined()
   })
 
+  it('offers a new remote workspace only with remote workspaces on', () => {
+    expect(byId(buildCommandEntries(source(), actions()), 'workspace:newRemote')).toBeUndefined()
+    expect(
+      byId(
+        buildCommandEntries(source({ experimental: undefined }), actions()),
+        'workspace:newRemote'
+      )
+    ).toBeUndefined()
+    const act = actions()
+    const entry = byId(
+      buildCommandEntries(
+        source({
+          experimental: {
+            externalSources: false,
+            nativeTerminal: false,
+            worklog: false,
+            remoteWorkspaces: true
+          }
+        }),
+        act
+      ),
+      'workspace:newRemote'
+    )
+    expect(entry?.label).toBe('New remote workspace…')
+    entry?.run()
+    expect(act.dispatch).toHaveBeenCalledWith({ type: 'newWorkspace', mode: 'remote' })
+  })
+
   it('offers a check for merged work', () => {
     const act = actions()
     byId(buildCommandEntries(source(), act), 'action:checkMerged')?.run()

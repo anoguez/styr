@@ -93,6 +93,13 @@ describe('appShellReducer', () => {
     })
   })
 
+  it('New workspace from Settings closes Settings and opens on the mode asked for', () => {
+    const settings = reduce(initial, { type: 'openSettings', section: 'remote' })
+    const next = reduce(settings, { type: 'newWorkspace', mode: 'remote' })
+    expect(next).toMatchObject({ settings: null, newWorkspace: true, newWorkspaceMode: 'remote' })
+    expect(reduce(next, { type: 'newWorkspace', mode: 'local' }).newWorkspaceMode).toBe('local')
+  })
+
   it('a workspace change closes the task dialog only', () => {
     const state = reduce(reduce(initial, { type: 'editTask', task }), { type: 'openSettings' })
     const next = reduce(state, { type: 'workspaceChanged' })
@@ -131,6 +138,7 @@ describe('runShortcutCommand', () => {
     expect(after('toggleAgents').agentsOpen).toBe(false)
     expect(after('orchestrate').confirmDispatch).toBe(true)
     expect(after('switchWorkspace').switcher).toBe(true)
+    expect(after('newWorkspace')).toMatchObject({ newWorkspace: true, newWorkspaceMode: 'local' })
   })
 
   it('starts Auto-run straight away but confirms before stopping it', () => {

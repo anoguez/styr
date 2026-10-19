@@ -123,7 +123,8 @@ src/core/  (types, schemas, taskStore, pure rules)
 - `codexMonitor.ts`: the Codex app-server client (`CodexMonitor`, `prepareCodex`).
 - `taskIndex.ts`: the derived SQLite index (see CLAUDE.md for its rules).
 - `watcher.ts`: the tasks and agents chokidar watchers (see `agents.md` for the close race).
-- `directories.ts`: `listDirectories`, the folders under a path for the terminal's directory picker.
+- `directories.ts`: `listDirectories`, the folders (and with `includeFiles` the files) under a path,
+  for the terminal's directory picker and Browse on a remote workspace.
 - `rpc/jsonRpc.ts`: the newline-delimited JSON-RPC framing and peer that `styr serve` and its
   clients speak (see `remote.md`).
 - `remote/`: the desktop's client side of remote workspaces (see `remote.md`): `RemoteConnection`
@@ -182,7 +183,8 @@ nature and a headless host has no desktop to act on:
 - Reveal in Finder and opening a folder or link (`tasks:reveal`, `terminal:revealDirectory`,
   `terminal:openLink`);
 - the native pickers (`settings:pickDirectory`, `settings:pickApp`, `settings:pickFiles`). The
-  terminal's directory picker (`terminal:listDirectories`) reads the folders through
+  terminal's directory picker and Browse on a remote workspace (`terminal:listDirectories`) read
+  the folders through
   `src/host/directories.ts`, so `styr serve` answers it with the remote machine's folders;
 - the title-bar overlay (`app:titleBarColors`) and `app:info`;
 - the updater (`updater.ts`), the tray (`tray.ts`) and the window and app lifecycle in `index.ts`.

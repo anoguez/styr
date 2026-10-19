@@ -6,6 +6,7 @@ interface Listing {
   path: string
   parent: string | null
   names: string[]
+  files?: string[]
 }
 
 interface Entry {
@@ -13,6 +14,7 @@ interface Entry {
   label: string
   path: string
   parent?: boolean
+  file?: boolean
 }
 
 const icon = {
@@ -28,17 +30,26 @@ function Kbd({ children }: { children: ReactNode }): ReactNode {
 }
 
 /**
- * The terminal's "change directory" popover: browse one folder at a time and filter it by typing.
- * It only lists and chooses; the caller decides how a choice reaches the shell.
+ * Browse one folder at a time and filter it by typing, through `terminal:listDirectories`, so it
+ * lists the machine the workspace lives on (the server's, for a remote workspace). The terminal's
+ * "change directory" popover, and, `embedded` in a dialog, Browse on a remote workspace
+ * (`PathBrowse`): a folder, or with `files` a file. It only lists and chooses; the caller decides
+ * what a choice does.
  */
 export function DirectoryPicker({
   start,
   onChoose,
-  onClose
+  onClose,
+  files = false,
+  embedded = false
 }: {
   start: string
   onChoose: (path: string) => void
   onClose: () => void
+  /** List files too, and choose a file: a folder is opened rather than chosen. */
+  files?: boolean
+  /** Fill the dialog it sits in, rather than float above the terminal's prompt. */
+  embedded?: boolean
 }): ReactNode {
   const [listing, setListing] = useState<Listing>({ path: start, parent: null, names: [] })
   const [query, setQuery] = useState('')
@@ -48,29 +59,40 @@ export function DirectoryPicker({
 
   useEffect(() => {
     let current = true
-    void window.api.terminal.listDirectories(browse).then((result) => {
+    void window.api.terminal.listDirectories(browse, files || undefined).then((result) => {
       if (current) setListing(result)
     })
     return () => {
       current = false
     }
-  }, [browse])
+  }, [browse, files])
 
   useEffect(() => input.current?.focus(), [])
 
   const entries = useMemo<Entry[]>(() => {
-    const dirs = listing.names
-      .map((name) => ({ name, score: fuzzyScore(query, name) }))
-      .filter((item): item is { name: string; score: number } => item.score !== null)
-      .sort((a, b) => b.score - a.score)
-      .map<Entry>(({ name }) => ({
-        key: name,
-        label: name,
-        path: `${listing.path === '/' ? '' : listing.path}/${name}`
-      }))
-    if (query.trim() || !listing.parent) return dirs
-    return [{ key: '..', label: '..', path: listing.parent, parent: true }, ...dirs]
+    const matching = (names: string[], file: boolean): Entry[] =>
+      names
+        .map((name) => ({ name, score: fuzzyScore(query, name) }))
+        .filter((item): item is { name: string; score: number } => item.score !== null)
+        .sort((a, b) => b.score - a.score)
+        .map<Entry>(({ name }) => ({
+          key: `${file ? 'f' : 'd'}:${name}`,
+          label: name,
+          path: `${listing.path === '/' ? '' : listing.path}/${name}`,
+          ...(file ? { file } : {})
+        }))
+    const found = [...matching(listing.names, false), ...matching(listing.files ?? [], true)]
+    if (query.trim() || !listing.parent) return found
+    return [{ key: '..', label: '..', path: listing.parent, parent: true }, ...found]
   }, [listing, query])
+
+  // Picking a file, a folder is opened instead of chosen; picking a folder, it is chosen.
+  const pick = (entry: Entry): void => {
+    if (entry.parent || (files && !entry.file)) go(entry.path)
+    else onChoose(entry.path)
+  }
+  const verb = files || embedded ? 'choose' : 'cd'
+  const noun = files ? 'files or folders' : 'directories'
 
   const go = (path: string): void => {
     setBrowse(path)
@@ -86,10 +108,14 @@ export function DirectoryPicker({
       setActive((index) => (entries.length ? (index + step + entries.length) % entries.length : 0))
     } else if (event.key === 'Enter') {
       event.preventDefault()
-      if (event.metaKey || event.ctrlKey) onChoose(listing.path)
-      else if (entry?.parent) go(entry.path)
-      else if (entry) onChoose(entry.path)
-    } else if ((event.key === 'ArrowRight' || event.key === 'Tab') && entry && !entry.parent) {
+      if ((event.metaKey || event.ctrlKey) && !files) onChoose(listing.path)
+      else if (entry) pick(entry)
+    } else if (
+      (event.key === 'ArrowRight' || event.key === 'Tab') &&
+      entry &&
+      !entry.parent &&
+      !entry.file
+    ) {
       event.preventDefault()
       go(entry.path)
     } else if (event.key === 'ArrowLeft' && !query && listing.parent) {
@@ -104,9 +130,13 @@ export function DirectoryPicker({
 
   return (
     <div
-      role="dialog"
-      aria-label="Change directory"
-      className="pointer-events-auto absolute bottom-full left-1.5 z-20 mb-1 flex max-h-72 w-[360px] max-w-[calc(100%-12px)] flex-col overflow-hidden rounded-lg border border-edge-strong bg-panel shadow-2xl"
+      role={embedded ? undefined : 'dialog'}
+      aria-label={embedded ? undefined : 'Change directory'}
+      className={
+        embedded
+          ? 'flex h-[min(420px,60vh)] flex-col overflow-hidden'
+          : 'pointer-events-auto absolute bottom-full left-1.5 z-20 mb-1 flex max-h-72 w-[360px] max-w-[calc(100%-12px)] flex-col overflow-hidden rounded-lg border border-edge-strong bg-panel shadow-2xl'
+      }
     >
       <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-edge px-2.5">
         <svg aria-hidden viewBox="0 0 16 16" width="14" height="14" className="shrink-0 text-faint">
@@ -118,8 +148,8 @@ export function DirectoryPicker({
         <input
           ref={input}
           value={query}
-          aria-label="Search directories"
-          placeholder="Filter directories…"
+          aria-label={`Search ${noun}`}
+          placeholder={`Filter ${noun}…`}
           className="min-w-0 flex-1 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-faint"
           onChange={(event) => {
             setQuery(event.target.value)
@@ -132,13 +162,13 @@ export function DirectoryPicker({
         <span className="min-w-0 flex-1 truncate text-left" style={{ direction: 'rtl' }}>
           <bdi>{listing.path}</bdi>
         </span>
-        {listing.path !== start ? (
+        {!files && (embedded || listing.path !== start) ? (
           <button
             type="button"
             className="inline-flex h-[18px] shrink-0 items-center gap-1.5 rounded bg-raised px-1.5 font-sans text-[11px] font-medium text-ink"
             onClick={() => onChoose(listing.path)}
           >
-            cd here{' '}
+            {embedded ? 'Choose this folder' : 'cd here'}{' '}
             <span className="font-mono text-[10px] text-dim">{formatAccelerator('mod+enter')}</span>
           </button>
         ) : null}
@@ -153,7 +183,7 @@ export function DirectoryPicker({
               index === active ? 'bg-raised text-ink' : 'text-dim'
             }`}
             onMouseEnter={() => setActive(index)}
-            onClick={() => (entry.parent ? go(entry.path) : onChoose(entry.path))}
+            onClick={() => pick(entry)}
           >
             <svg
               aria-hidden
@@ -164,6 +194,8 @@ export function DirectoryPicker({
             >
               {entry.parent ? (
                 <path d="M8 12.5v-9M4.5 7 8 3.5 11.5 7" {...icon} />
+              ) : entry.file ? (
+                <path d="M4 2.5h5l3 3v8H4zM9 2.5v3h3" {...icon} />
               ) : (
                 <path
                   d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"
@@ -179,13 +211,17 @@ export function DirectoryPicker({
         ))}
         {entries.length === 0 ? (
           <div className="px-2 py-3.5 text-[12px] leading-normal text-faint">
-            {query.trim() ? `No directories match “${query}”.` : 'No sub-directories here.'}
+            {query.trim()
+              ? `No ${noun} match “${query}”.`
+              : files
+                ? 'Nothing here.'
+                : 'No sub-directories here.'}
           </div>
         ) : null}
       </div>
       <div className="flex min-h-[26px] shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-edge px-2.5 py-1 text-[10.5px] text-faint">
         <span>
-          <Kbd>↵</Kbd> cd
+          <Kbd>↵</Kbd> {verb}
         </span>
         <span>
           <Kbd>→</Kbd> browse

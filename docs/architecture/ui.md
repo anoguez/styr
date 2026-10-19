@@ -60,6 +60,10 @@ written the new baseline (and clears a broken-file notice), so the footer reads 
 and later edits count from there. The dialog height is fixed so switching sections does not resize
 it. This layout follows the Claude Design file; change the design first, then the dialog.
 
+A flow that needs the whole window closes Settings rather than stacking a dialog over it: New
+workspace → Remote host (from Workspaces or Remote hosts) confirms any unsaved changes, closes
+Settings and opens the app's New workspace dialog on Remote host (`remote.md`, Host setup).
+
 Reusable form pieces live in `ui.tsx`: `Card`/`CardRow`, `Eyebrow`, `Hint`, `Switch`/`SwitchRow`,
 `Stepper`, `Segmented`. Reach for these before writing a new control.
 

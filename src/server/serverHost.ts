@@ -352,7 +352,10 @@ export function createServerHost(ports: ServerHostPorts) {
       agentsService.handOff(sessionId, output ?? '')
     ),
     'terminal:gitContext': channel(z.tuple([str]), (path) => gitService.gitContext(path)),
-    'terminal:listDirectories': channel(z.tuple([str]), (path) => listDirectories(path)),
+    'terminal:listDirectories': channel(
+      z.tuple([str, z.boolean().optional()]),
+      (path, includeFiles) => listDirectories(path, includeFiles ?? false)
+    ),
 
     'usage:claude': channel(none, () => usage.claudeUsage()),
     'usage:codex': channel(z.tuple([str]), (terminalId) => usage.codexUsage(terminalId)),

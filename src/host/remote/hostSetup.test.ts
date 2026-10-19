@@ -3,6 +3,7 @@ import type { RemoteSetupDraft, RemoteSetupProgress } from '@core/types.js'
 import {
   SetupError,
   createHostSetup,
+  inspectRemoteHost,
   runRemoteSetup,
   type HostSetupPorts,
   type SshResult
@@ -16,7 +17,7 @@ const ok = (stdout = ''): SshResult => ({ code: 0, stdout, stderr: '' })
 const failed = (code: number, stderr: string): SshResult => ({ code, stdout: '', stderr })
 
 const PROBE =
-  '::styr os=Linux\n::styr machine=x86_64\n::styr arch=x64\n::styr git=yes\n::styr cli=yes\n' +
+  '::styr os=Linux\n::styr machine=x86_64\n::styr arch=x64\n' +
   '::styr systemd=yes\n::styr linger=yes\n'
 
 /**
@@ -101,8 +102,11 @@ function flow(host: ReturnType<typeof fakeHost>) {
     progress,
     created,
     stubs,
-    run: (draft: RemoteSetupDraft = { name: 'Devbox', host: 'me@devbox', provider: 'claude' }) =>
-      runRemoteSetup(ports, draft)
+    run: (draft: RemoteSetupDraft = { name: 'Devbox', host: 'me@devbox' }) =>
+      runRemoteSetup(ports, draft),
+    /** New workspace → Remote host's first step, then the setup with what it found. */
+    inspectThenRun: async (draft: RemoteSetupDraft = { name: 'Devbox', host: 'me@devbox' }) =>
+      runRemoteSetup(ports, draft, await inspectRemoteHost(ports, draft.host))
   }
 }
 
@@ -114,7 +118,7 @@ describe('the setup flow (New workspace → Remote)', () => {
 
     expect(host.commands).toEqual([
       'true',
-      "sh -s -- --probe --version '1.2.0' --cli 'claude'",
+      "sh -s -- --probe --version '1.2.0'",
       `sh -s -- --install --version '1.2.0' --sha256 '${HASH}'`
     ])
     // install.sh travels on stdin; no bundle leaves this computer.
@@ -223,19 +227,19 @@ describe('the setup flow (New workspace → Remote)', () => {
     expect(host.commands).toHaveLength(2)
   })
 
-  it('warns, without refusing, about a missing git or CLI, no systemd, and lingering off', async () => {
+  it('warns, without refusing, about no systemd and lingering off, and checks nothing about agents', async () => {
     const host = fakeHost({
       probe:
-        '::styr os=Linux\n::styr machine=x86_64\n::styr arch=x64\n::styr git=no\n::styr cli=no\n' +
+        '::styr os=Linux\n::styr machine=x86_64\n::styr arch=x64\n' +
         '::styr systemd=no\n::styr linger=no\n',
       install: ok('::styr source=download\n::styr systemd=no\n')
     })
-    const result = await flow(host).run({ name: 'Devbox', host: 'devbox', provider: 'codex' })
+    const result = await flow(host).run({ name: 'Devbox', host: 'devbox' })
     expect(result.warnings).toEqual([
-      expect.stringMatching(/^git is not installed on devbox/),
-      expect.stringMatching(/^codex is not on devbox's PATH/),
       expect.stringMatching(/no systemd user session.*nohup.*reboot/)
     ])
+    // Like a local workspace, a remote one checks git and its agent CLI where they are used.
+    expect(host.commands.join('\n')).not.toMatch(/--cli|git|claude|codex/)
     // Without systemd there is nothing to linger for.
     expect(result.lingerCommand).toBeUndefined()
 
@@ -243,6 +247,29 @@ describe('the setup flow (New workspace → Remote)', () => {
       install: ok('::styr source=download\n::styr systemd=yes\n::styr linger=no\n')
     })
     expect((await flow(lingering).run()).lingerCommand).toBe('sudo loginctl enable-linger $USER')
+  })
+
+  it('runs ssh and the probe once when the dialog inspected the host first', async () => {
+    const host = fakeHost({ probe: `${PROBE}::styr running=${VERSION}\n` })
+    const setup = flow(host)
+    const result = await setup.inspectThenRun()
+    expect(host.commands).toEqual(['true', "sh -s -- --probe --version '1.2.0'"])
+    expect(result.transfer).toBe('running')
+    expect(setup.progress.filter((p) => p.state === 'done').map((p) => p.step)).toEqual([
+      'check',
+      'probe',
+      'install',
+      'create'
+    ])
+  })
+
+  it('inspecting refuses a host that cannot run the server, and touches nothing', async () => {
+    const host = fakeHost({ probe: '::styr os=Darwin\n::styr machine=arm64\n::styr arch=arm64\n' })
+    const setup = flow(host)
+    await expect(setup.inspectThenRun()).rejects.toThrow(/runs Darwin/)
+    expect(setup.progress.at(-1)).toMatchObject({ step: 'probe', state: 'failed' })
+    expect(setup.created).toEqual([])
+    expect(setup.stubs).toEqual([])
   })
 
   it('reuses a server of this version already running, installing nothing', async () => {
@@ -269,13 +296,13 @@ describe('the setup flow (New workspace → Remote)', () => {
   })
 
   it('needs a name and a host ssh can reach', async () => {
-    await expect(
-      flow(fakeHost({})).run({ name: ' ', host: 'devbox', provider: 'claude' })
-    ).rejects.toThrow('Give the workspace a name.')
+    await expect(flow(fakeHost({})).run({ name: ' ', host: 'devbox' })).rejects.toThrow(
+      'Give the workspace a name.'
+    )
     const host = fakeHost({})
-    await expect(
-      flow(host).run({ name: 'x', host: '-oProxyCommand=x', provider: 'claude' })
-    ).rejects.toThrow(/not a host ssh can reach/)
+    await expect(flow(host).run({ name: 'x', host: '-oProxyCommand=x' })).rejects.toThrow(
+      /not a host ssh can reach/
+    )
     expect(host.commands).toEqual([])
   })
 })

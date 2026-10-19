@@ -12,6 +12,7 @@ import type {
   BrokenSettingsFile,
   CliStatus,
   OrchestrationSummary,
+  RemoteHostInspection,
   RemoteState,
   RemoteRunningAgents,
   RemoteSetupDraft,
@@ -216,6 +217,10 @@ const api = {
     /** Points the server back at this workspace after another client moved it. */
     switchBack: (workspaceId: string): Promise<void> =>
       ipcRenderer.invoke('remote:switchBack', workspaceId),
+    /** New workspace → Remote host: ssh, the system, and the boards a running server has. */
+    inspect: (host: string): Promise<RemoteHostInspection> =>
+      ipcRenderer.invoke('remote:inspect', host),
+    /** New workspace → Remote host → Open an existing workspace: the local stub only, then open it. */
     addWorkspace: (draft: RemoteWorkspaceDraft): Promise<WorkspaceOverview> =>
       ipcRenderer.invoke('remote:addWorkspace', draft),
     /** New workspace → Remote: check, install or reuse the server, create, open. */
@@ -291,10 +296,15 @@ const api = {
     openLink: (url: string): Promise<void> => ipcRenderer.invoke('terminal:openLink', url),
     pathsForFiles: (files: File[]): string[] =>
       files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
+    /**
+     * The folders under `path`, and its files with `includeFiles`, on the machine the workspace
+     * lives on: routed to the server for a remote workspace.
+     */
     listDirectories: (
-      path: string
-    ): Promise<{ path: string; parent: string | null; names: string[] }> =>
-      ipcRenderer.invoke('terminal:listDirectories', path),
+      path: string,
+      includeFiles?: boolean
+    ): Promise<{ path: string; parent: string | null; names: string[]; files?: string[] }> =>
+      ipcRenderer.invoke('terminal:listDirectories', path, includeFiles),
     write: (id: string, data: string): void => ipcRenderer.send('terminal:write', id, data),
     resize: (id: string, cols: number, rows: number): void =>
       ipcRenderer.send('terminal:resize', id, cols, rows),
