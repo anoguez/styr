@@ -96,6 +96,7 @@ export function StatusBar({
   waitingCount,
   sessionCount,
   summary,
+  connection,
   bindings,
   readyUpdate,
   onToggleAgents,
@@ -109,6 +110,8 @@ export function StatusBar({
   waitingCount: number
   sessionCount: number
   summary: string
+  /** The remote workspace's connection badge, if the open workspace is remote. */
+  connection?: ReactNode
   bindings: ShortcutBindings
   /** The version downloaded and waiting to install, if any. */
   readyUpdate?: string
@@ -132,6 +135,8 @@ export function StatusBar({
       />
 
       <span className="flex items-center px-2.5 text-[11px] text-faint">{summary}</span>
+
+      {connection}
 
       {readyUpdate ? (
         <StatusItem

@@ -12,12 +12,15 @@ import { formatAccelerator } from '@core/shortcuts.js'
 export function OrchestrateDialog({
   summary,
   auto,
+  remoteHost,
   onAutoStop,
   onConfirm,
   onClose
 }: {
   summary: OrchestrationSummary
   auto: AutoDispatchState
+  /** Set for a remote workspace: Auto-run runs on that host, for the workspace it shows. */
+  remoteHost?: string
   /** Stops a running Auto-run once the user confirms; switching it on waits for `onConfirm`. */
   onAutoStop: () => void
   /** Starts the listed tasks (if any) and applies the Auto-run choice made in the dialog. */
@@ -81,7 +84,11 @@ export function OrchestrateDialog({
               setAutoOn(on)
             }}
             label={auto.on ? `Auto-run · ${running} running` : 'Auto-run'}
-            hint="Start eligible tasks automatically as agents finish and new tasks become ready, while Styr is open. Turning it off starts nothing new; agents already running finish."
+            hint={
+              remoteHost
+                ? `Start eligible tasks automatically as agents finish and new tasks become ready. It runs on ${remoteHost}, so it keeps going while this computer is closed — but only for the workspace that server is showing. If another computer switches it to a different workspace, Auto-run follows that one. Turning it off starts nothing new; agents already running finish.`
+                : 'Start eligible tasks automatically as agents finish and new tasks become ready, while Styr is open. Turning it off starts nothing new; agents already running finish.'
+            }
           />
           {confirmingStop && auto.on ? (
             <CardRow className="flex items-center justify-end gap-2 px-3.5 py-2.5">

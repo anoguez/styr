@@ -27,6 +27,7 @@ import {
 import { AgentsSection } from './settings/AgentsSection.js'
 import { DispatchSection } from './settings/DispatchSection.js'
 import { ExperimentalSection } from './settings/ExperimentalSection.js'
+import { RemoteSection } from './settings/RemoteSection.js'
 import { PreferencesSection } from './settings/PreferencesSection.js'
 import { RoutingSection } from './settings/RoutingSection.js'
 import { ShortcutsSection } from './settings/ShortcutsSection.js'
@@ -302,6 +303,7 @@ export function SettingsDialog({
                 />
               ) : null}
 
+              {section === 'remote' ? <RemoteSection workspaces={workspaces} /> : null}
               {section === 'storage' ? <StorageSection draft={draft} patch={patch} /> : null}
 
               {section === 'routing' ? <RoutingSection draft={draft} patch={patch} /> : null}

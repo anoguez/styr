@@ -865,10 +865,15 @@ export function TerminalSurface({
         : [])
     ],
     [
-      {
-        label: `Reveal directory in ${FILE_MANAGER}`,
-        run: () => void window.api.terminal.revealDirectory(cwd)
-      },
+      // A remote session's folder is on its host, out of reach of this file manager.
+      ...(session.host
+        ? []
+        : [
+            {
+              label: `Reveal directory in ${FILE_MANAGER}`,
+              run: () => void window.api.terminal.revealDirectory(cwd)
+            }
+          ]),
       {
         label: 'Split terminal',
         kbd: shortcutHint(bindings, 'terminalSplit'),

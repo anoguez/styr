@@ -3,6 +3,7 @@ import type { TaskDiff } from '@core/diff.js'
 import { formatAccelerator } from '@core/shortcuts.js'
 import type { Task } from '@core/types.js'
 import { useTaskDiff } from '../../hooks/useTaskDiff.js'
+import { remoteFileAction, useBoardAccess } from '../../lib/remoteStatus.js'
 import { changesTitle } from '../../lib/taskForm.js'
 import { DiffIcon, ExternalIcon, FolderIcon, TrashIcon } from '../icons.js'
 import { DiffCount } from '../ui.js'
@@ -42,40 +43,63 @@ function ChangesButton({
 /** What an existing task's file can do: show changes, open, reveal, archive, delete. */
 function TaskActions({
   task,
+  openFilesWith,
   onShowChanges,
   onDelete,
   onClose
 }: {
   task: Task
+  openFilesWith: string
   onShowChanges: (task: Task) => void
   onDelete: () => void
   onClose: () => void
 }): ReactNode {
   const { changes, noGit } = useTaskDiff(task)
+  const access = useBoardAccess()
+  // A remote file opens over ssh in VS Code or Cursor, or not at all; it is never revealed here.
+  const file = remoteFileAction(access, openFilesWith, task.filePath)
+  const [copied, setCopied] = useState(false)
   return (
     <div className="flex items-center gap-0.5">
       {noGit ? null : <ChangesButton changes={changes} onShow={() => onShowChanges(task)} />}
+      <span title={file.openTitle} className="inline-flex">
+        <button
+          type="button"
+          disabled={!file.open}
+          className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap disabled:pointer-events-none disabled:opacity-40`}
+          onClick={() => void window.api.tasks.openInEditor(task.id)}
+        >
+          <ExternalIcon />
+          Open file
+        </button>
+      </span>
+      <span title={file.revealTitle} className="inline-flex">
+        <button
+          type="button"
+          disabled={!file.reveal}
+          className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap disabled:pointer-events-none disabled:opacity-40`}
+          onClick={() => void window.api.tasks.reveal(task.id)}
+        >
+          <FolderIcon />
+          Reveal
+        </button>
+      </span>
+      {access.remote ? (
+        <button
+          type="button"
+          title={task.filePath}
+          className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap`}
+          onClick={() =>
+            void navigator.clipboard.writeText(task.filePath).then(() => setCopied(true))
+          }
+        >
+          {copied ? 'Copied' : 'Copy path'}
+        </button>
+      ) : null}
       <button
         type="button"
-        title={task.filePath}
-        className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap`}
-        onClick={() => void window.api.tasks.openInEditor(task.id)}
-      >
-        <ExternalIcon />
-        Open file
-      </button>
-      <button
-        type="button"
-        title="Show the task file in its folder"
-        className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap`}
-        onClick={() => void window.api.tasks.reveal(task.id)}
-      >
-        <FolderIcon />
-        Reveal
-      </button>
-      <button
-        type="button"
-        className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap`}
+        className={`${GHOST_BTN} h-7 shrink-0 whitespace-nowrap disabled:pointer-events-none disabled:opacity-40`}
+        disabled={access.readOnly}
         title={
           task.archivedAt
             ? 'Put this task back on the board'
@@ -145,6 +169,7 @@ function SavePresetForm({ onSave }: { onSave: (name: string) => Promise<boolean>
 /** File actions for a task (or Save as preset for a new one), then Save and Save & Start. */
 export function TaskFooter({
   task,
+  openFilesWith,
   saving,
   canStart,
   onSave,
@@ -155,6 +180,8 @@ export function TaskFooter({
   onClose
 }: {
   task: Task | null
+  /** Settings → Open files with: whether a remote file can be opened over ssh. */
+  openFilesWith: string
   saving: boolean
   /** Done tasks have nothing to start. */
   canStart: boolean
@@ -166,11 +193,14 @@ export function TaskFooter({
   onDelete: () => void
   onClose: () => void
 }): ReactNode {
+  const access = useBoardAccess()
+  const blocked = saving || access.readOnly
   return (
     <footer className="relative flex shrink-0 items-center gap-2 border-t border-edge bg-chrome/40 py-3 pl-3 pr-4">
       {task ? (
         <TaskActions
           task={task}
+          openFilesWith={openFilesWith}
           onShowChanges={onShowChanges}
           onDelete={onDelete}
           onClose={onClose}
@@ -179,9 +209,14 @@ export function TaskFooter({
         <SavePresetForm onSave={onSavePreset} />
       )}
       <div className="flex-1" />
+      {access.readOnly ? (
+        <span className="max-w-[260px] truncate text-[11.5px] text-faint" title={access.reason}>
+          {access.reason}
+        </span>
+      ) : null}
       <button
         type="button"
-        disabled={saving}
+        disabled={blocked}
         onClick={onSave}
         className="inline-flex h-[30px] shrink-0 items-center gap-2 rounded-lg border border-edge-strong bg-raised/70 px-3 text-[12.5px] font-medium text-dim transition-colors hover:bg-raised hover:text-ink disabled:pointer-events-none disabled:opacity-40"
       >
@@ -191,7 +226,7 @@ export function TaskFooter({
       {canStart ? (
         <button
           type="button"
-          disabled={saving}
+          disabled={blocked}
           onClick={onSaveAndStart}
           className="inline-flex h-[30px] shrink-0 items-center gap-[7px] rounded-lg border border-accent bg-accent px-3.5 text-[12.5px] font-semibold text-[var(--color-on-accent)] shadow-[0_1px_0_rgba(255,255,255,0.12)_inset] transition-colors hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-40"
         >

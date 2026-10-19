@@ -80,3 +80,13 @@ describe('findTaskSession', () => {
     expect(findTaskSession(sessions, 'TASK-0002', 'default')).toBeUndefined()
   })
 })
+
+describe('merge', () => {
+  it('adds sessions a remote host brought, after the open tabs, replacing none', () => {
+    const state = { ...withTabs('a', 'b'), activeSession: 'b' }
+    const next = reduce(state, { type: 'merge', sessions: [session('b'), session('c')] })
+    expect(next.sessions.map((tab) => tab.id)).toEqual(['a', 'b', 'c'])
+    expect(next.activeSession).toBe('b')
+    expect(reduce(next, { type: 'merge', sessions: [session('a')] })).toBe(next)
+  })
+})

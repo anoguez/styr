@@ -1,6 +1,7 @@
 import { useContext, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useSortable } from '@dnd-kit/sortable'
+import { useBoardAccess } from '../lib/remoteStatus.js'
 import { CSS } from '@dnd-kit/utilities'
 import { AGENT_STATE_LABELS, type AgentStatus } from '@core/agentState.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
@@ -342,8 +343,11 @@ export function TaskCard({
   onArchive: (task: Task) => void
   templateNameFor: (task: Task) => string
 }): ReactNode {
+  // A remote board that is not live is a read-only snapshot: nothing to drag.
+  const { readOnly } = useBoardAccess()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: task.id
+    id: task.id,
+    disabled: readOnly
   })
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const toggleDispatch = (): void =>

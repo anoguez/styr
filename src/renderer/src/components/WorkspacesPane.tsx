@@ -4,6 +4,20 @@ import type { Workspaces } from '../hooks/useWorkspaces.js'
 import { Button, Card, CardRow, Chip, Hint, inputBase, inputClass } from './ui.js'
 import { workspaceColor } from '../lib/workspaceColor.js'
 import { ipcMessage } from '../lib/ipcMessage.js'
+import { remoteNote, useRemoteState } from '../lib/remoteStatus.js'
+
+/**
+ * What Delete asks. A remote workspace's folder here is only a link: removing it touches nothing
+ * on the host, which may be unreachable for good.
+ */
+export function deleteQuestion(
+  workspace: { name: string; remote?: { host: string } },
+  tasks: string
+): string {
+  return workspace.remote
+    ? `Remove “${workspace.name}” from this computer? Only the local link is deleted. The workspace, its tasks and its agents stay on ${workspace.remote.host}, untouched.`
+    : `Delete “${workspace.name}” and its ${tasks}? The folder moves to the Trash, so it can be put back.`
+}
 
 /**
  * Settings → Workspaces. Acts on the live workspaces rather than the settings draft: creating or
@@ -21,6 +35,7 @@ export function WorkspacesPane({
   onEdit: (id: string) => void
 }): ReactNode {
   const { overview, apply } = workspaces
+  const remote = useRemoteState()
   const [name, setName] = useState('')
   const [adding, setAdding] = useState(false)
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
@@ -45,6 +60,8 @@ export function WorkspacesPane({
           const editing = renaming?.id === workspace.id
           const open = workspace.id === overview.activeId
           const tasks = `${workspace.taskCount} task${workspace.taskCount === 1 ? '' : 's'}`
+          const note = remoteNote(remote, workspace)
+          const off = Boolean(workspace.remote) && !remote.enabled
           return (
             <CardRow key={workspace.id} className="flex items-center gap-3 px-3.5 py-2.5">
               <span
@@ -82,7 +99,9 @@ export function WorkspacesPane({
                     {open ? <Chip tone="done">Open now</Chip> : null}
                   </span>
                 )}
-                <span className="font-mono text-[10.5px] text-faint">{tasks}</span>
+                <span className="font-mono text-[10.5px] text-faint">
+                  {note ? `${note} · ${tasks}` : tasks}
+                </span>
               </span>
               {isDefault ? null : (
                 <>
@@ -99,18 +118,14 @@ export function WorkspacesPane({
                     variant="danger"
                     className="h-[26px] px-2"
                     onClick={() => {
-                      if (
-                        window.confirm(
-                          `Delete “${workspace.name}” and its ${tasks}? The folder moves to the Trash, so it can be put back.`
-                        )
-                      ) {
+                      if (window.confirm(deleteQuestion(workspace, tasks))) {
                         void run(async () =>
                           apply(await window.api.workspaces.remove(workspace.id))
                         )
                       }
                     }}
                   >
-                    Delete
+                    {workspace.remote ? 'Remove' : 'Delete'}
                   </Button>
                 </>
               )}
@@ -125,6 +140,8 @@ export function WorkspacesPane({
               {open ? null : (
                 <Button
                   className="h-[26px] px-2.5"
+                  disabled={off}
+                  title={off ? 'Remote workspaces are off (Settings → Experimental).' : undefined}
                   onClick={() =>
                     void run(async () => apply(await window.api.workspaces.switch(workspace.id)))
                   }

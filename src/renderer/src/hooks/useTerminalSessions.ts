@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useReducer } from 'react'
-import type { TerminalSessionInfo } from '@core/types.js'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
+import type { RemoteState, TerminalSessionInfo } from '@core/types.js'
 import {
   findTaskSession,
   initialTerminalSessions,
@@ -17,6 +17,10 @@ export function useTerminalSessions() {
 
   const adopt = useCallback(
     (session: TerminalSessionInfo) => dispatch({ type: 'adopt', session }),
+    []
+  )
+  const merge = useCallback(
+    (sessions: TerminalSessionInfo[]) => dispatch({ type: 'merge', sessions }),
     []
   )
   const select = useCallback((id: string) => dispatch({ type: 'select', id }), [])
@@ -39,5 +43,24 @@ export function useTerminalSessions() {
     [sessions]
   )
 
-  return { ...state, adopt, select, reorder, toggleTerminal, close, activateForTask }
+  return { ...state, adopt, merge, select, reorder, toggleTerminal, close, activateForTask }
+}
+
+/**
+ * Each time a remote host connects, its running terminals join the tabs: the ones started while
+ * this window was away (or before the app opened) included. Open tabs are kept as they are.
+ */
+export function useRemoteSessions(
+  remote: RemoteState,
+  merge: (sessions: TerminalSessionInfo[]) => void
+): void {
+  const connected = useRef(new Set<string>())
+  useEffect(() => {
+    const now = new Set(
+      remote.hosts.filter((host) => host.status === 'connected').map((host) => host.host)
+    )
+    const joined = [...now].some((host) => !connected.current.has(host))
+    connected.current = now
+    if (joined) void window.api.terminal.list().then(merge)
+  }, [remote, merge])
 }

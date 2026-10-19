@@ -32,6 +32,14 @@ export function ExperimentalSection({ draft, patch }: SectionProps): ReactNode {
           checked={draft.experimental.worklog}
           onChange={(worklog) => patch({ experimental: { ...draft.experimental, worklog } })}
         />
+        <SwitchRow
+          label="Remote workspaces"
+          hint="Boards that live on another machine running styr serve, reached over ssh, so agents and Auto-run keep going while this computer is closed. Adds a Remote page. Off, remote workspaces stay listed but never connect."
+          checked={draft.experimental.remoteWorkspaces}
+          onChange={(remoteWorkspaces) =>
+            patch({ experimental: { ...draft.experimental, remoteWorkspaces } })
+          }
+        />
         {offerTerminal ? (
           <SwitchRow
             label="Styr Terminal"
