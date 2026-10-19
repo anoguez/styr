@@ -14,8 +14,8 @@
 #   ~/.config/systemd/user/styr-server.service
 #
 # Modes (the default is --install):
-#   --probe     print what the desktop app checks: OS, arch, git, the agent CLI, systemd, linger,
-#               the installed and the running version. Changes nothing.
+#   --probe     print what the desktop app checks: OS, arch, glibc (and the floor below), git, the
+#               agent CLI, systemd, linger, the installed and the running version. Changes nothing.
 #   --install   download (or take --tarball), verify, unpack beside any other version, point
 #               `current` at it, and start the server unless one is already running. A running
 #               server is never restarted: the new version takes over on the next restart.
@@ -30,7 +30,7 @@
 # unit runs it).
 #
 # Lines starting with `::styr ` are for the desktop app; everything else is for people.
-# Exit codes: 10 not Linux, 11 unsupported arch, 20 the download failed and 22 the bundle did not
+# Exit codes: 10 not Linux, 11 unsupported arch, 12 glibc older than the bundle needs, 20 the download failed and 22 the bundle did not
 # match its SHA-256 (the desktop app then uploads a copy it checked itself), 21 the bundle is
 # broken, 30 the server did not start, 31 it did not stop, 64 bad arguments.
 
@@ -101,6 +101,29 @@ case "$machine" in
   *) arch="" ;;
 esac
 
+# The oldest glibc the bundles run on: they are built in Debian bookworm, and better-sqlite3's
+# prebuilt binary needs 2.33 or newer. The only copy of the floor: --probe reports it, and the
+# desktop app refuses a host below it with the same words (unsupportedHost in remoteSetup.ts).
+GLIBC_FLOOR=2.36
+GLIBC_HOSTS='Ubuntu 22.04+, Debian 12+, RHEL 9+'
+
+# This host's glibc, as major.minor; empty when it has none (musl) or it cannot be told.
+glibc_version() {
+  v="$(getconf GNU_LIBC_VERSION 2>/dev/null | sed -n 's/^glibc //p')"
+  [ -n "$v" ] || v="$(ldd --version 2>/dev/null | head -n 1 | grep -Ei 'glibc|gnu libc' | awk '{ print $NF }')"
+  case "$v" in '' | *[!0-9.]*) v="" ;; esac
+  printf '%s' "$v"
+}
+glibc="$([ "$os" = Linux ] && glibc_version || true)"
+
+# Whether version $1 is older than version $2, comparing major.minor numerically.
+older_than() {
+  awk -v a="$1" -v b="$2" 'BEGIN {
+    split(a, x, "."); split(b, y, ".")
+    exit !(x[1] + 0 < y[1] + 0 || (x[1] + 0 == y[1] + 0 && x[2] + 0 < y[2] + 0))
+  }'
+}
+
 # What a login shell finds, which is what an agent started by the server will find: ssh runs this
 # script without the profile, where ~/.local/bin (claude's usual home) is often missing from PATH.
 login_path() { "${SHELL:-/bin/sh}" -lc 'printf "\n%s" "$PATH"' </dev/null 2>/dev/null | tail -n 1; }
@@ -158,6 +181,9 @@ probe() {
   report os "$os"
   report machine "$machine"
   report arch "$arch"
+  report glibc "$glibc"
+  report glibc_floor "$GLIBC_FLOOR"
+  report glibc_hosts "$GLIBC_HOSTS"
   if command -v git >/dev/null 2>&1 || has_command git; then report git yes; else report git no; fi
   if [ -n "$cli" ]; then
     if has_command "$cli"; then report cli yes; else report cli no; fi
@@ -174,6 +200,9 @@ probe() {
 require_platform() {
   [ "$os" = Linux ] || fail 10 "this machine runs $os; the Styr server runs on Linux only"
   [ -n "$arch" ] || fail 11 "this machine is $machine; the Styr server is built for x86_64 and aarch64"
+  if [ -n "$glibc" ] && older_than "$glibc" "$GLIBC_FLOOR"; then
+    fail 12 "this machine has glibc $glibc; the Styr server needs $GLIBC_FLOOR or newer ($GLIBC_HOSTS)"
+  fi
 }
 
 workdir=""

@@ -12,7 +12,7 @@ import {
 } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { parseInstallReport } from '@core/remoteSetup.js'
+import { INSTALL_EXIT, parseInstallReport, parseProbe, unsupportedHost } from '@core/remoteSetup.js'
 
 /**
  * `resources/server/install.sh`, run for real in a throwaway home, with stand-ins on PATH for what
@@ -107,6 +107,7 @@ describe.skipIf(process.platform === 'win32')('install.sh', () => {
     writeFileSync(join(release, `styr-server-${VERSION}-SHA256SUMS`), `${hash}  ${NAME}\n`)
 
     tool('uname', '[ "$1" = -m ] && echo x86_64 || echo Linux')
+    tool('getconf', '[ "$1" = GNU_LIBC_VERSION ] && echo "glibc 2.39"')
     tool('loginctl', 'echo Linger=no')
     tool('systemctl', 'exit 1')
     // curl serves the release from a folder, by the URL's last part, and logs what it fetched.
@@ -135,6 +136,9 @@ cp "${release}/\${last##*/}" "$out" 2>/dev/null || { echo "curl: (22) 404" >&2; 
       os: 'Linux',
       machine: 'x86_64',
       arch: 'x64',
+      glibc: '2.39',
+      glibc_floor: '2.36',
+      glibc_hosts: 'Ubuntu 22.04+, Debian 12+, RHEL 9+',
       git: 'yes',
       cli: 'no',
       systemd: 'no',
@@ -249,6 +253,31 @@ cp "${release}/\${last##*/}" "$out" 2>/dev/null || { echo "curl: (22) 404" >&2; 
     // Stop goes through the unit.
     expect((await run('--stop')).code).toBe(0)
     expect(alive()).toBe(false)
+  })
+
+  it('refuses a host whose glibc is below the floor with exit 12, before downloading anything', async () => {
+    tool('getconf', '[ "$1" = GNU_LIBC_VERSION ] && echo "glibc 2.31"')
+    const result = await run('--install', '--version', VERSION, '--sha256', hash)
+    expect(result.code).toBe(INSTALL_EXIT.OLD_GLIBC)
+    expect(result.stderr).toBe(
+      'styr: this machine has glibc 2.31; the Styr server needs 2.36 or newer (Ubuntu 22.04+, Debian 12+, RHEL 9+)\n'
+    )
+    expect(existsSync(join(home, 'curl.log'))).toBe(false)
+    expect(existsSync(join(home, '.styr'))).toBe(false)
+    // The probe reports it, and the desktop app refuses the host with the same words.
+    const probe = parseProbe((await run('--probe')).stdout)
+    expect(unsupportedHost('devbox', probe)).toBe(
+      'devbox has glibc 2.31; the Styr server needs 2.36 or newer (Ubuntu 22.04+, Debian 12+, RHEL 9+).'
+    )
+  })
+
+  it('reads glibc from ldd when getconf cannot tell, and accepts the floor itself', async () => {
+    tool('getconf', 'exit 1')
+    tool('ldd', 'echo "ldd (Debian GLIBC 2.36-9+deb12u4) 2.36"')
+    const probe = parseInstallReport((await run('--probe')).stdout)
+    expect(probe.glibc).toBe('2.36')
+    const result = await run('--install', '--version', VERSION, '--sha256', hash)
+    expect(result.code).toBe(0)
   })
 
   it('refuses a host that is not Linux', async () => {

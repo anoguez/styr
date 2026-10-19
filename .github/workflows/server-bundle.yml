@@ -1,0 +1,55 @@
+name: Server bundle
+
+# The Styr server bundles for remote workspaces (docs/architecture/remote.md): one per Linux arch,
+# each with its own Node runtime and node-pty / better-sqlite3 built for that Node's ABI. Built on
+# a native runner of each arch, inside Debian bookworm, so the bundles need glibc 2.36 (Ubuntu
+# 22.04+, Debian 12+, RHEL 9+; better-sqlite3's prebuilt binary alone needs 2.33). The floor is
+# GLIBC_FLOOR in resources/server/install.sh: change it with the container.
+#
+# The only definition of the build: CI runs it on every PR (ci.yml) and the release builds the
+# published bundles with it (release.yml), so a bundle that does not build or does not pass its
+# self-check fails the PR, not the release.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: What to check out and build (empty for the commit that triggered the run)
+        type: string
+        default: ''
+      upload:
+        description: Keep each bundle as a workflow artifact, for the release's later jobs
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container: node:24-bookworm
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      # No scripts: the server never loads the Electron-ABI native builds, and needs no Electron.
+      # scripts/server-bundle.mjs installs node-pty and better-sqlite3 for its own Node, then runs
+      # the bundle with its own Node and native modules (its self-check), failing the job if not.
+      - run: yarn install --frozen-lockfile --ignore-scripts
+      - run: yarn build:server
+      - run: node scripts/server-bundle.mjs
+
+      - if: ${{ inputs.upload }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: styr-server-linux-${{ matrix.arch }}
+          path: dist/styr-server-*-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error

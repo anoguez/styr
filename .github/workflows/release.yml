@@ -63,42 +63,18 @@ jobs:
           git pull --rebase origin main
           git push origin HEAD:main
 
-  # The Styr server bundles for remote workspaces (docs/architecture/remote.md): one per Linux arch,
-  # each with its own Node runtime and node-pty / better-sqlite3 built for that Node's ABI. Built on
-  # a native runner of each arch, inside Debian bullseye so the bundles need only glibc 2.31.
-  # They are built before the desktop app, which carries their SHA-256s (build-macos).
+  # The Styr server bundles for remote workspaces, one per Linux arch, built inside Debian bookworm
+  # (glibc 2.36) by server-bundle.yml, the same workflow CI runs on every PR. They are built before
+  # the desktop app, which carries their SHA-256s (build-macos).
   build-server:
     needs: release-please
     if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
-    strategy:
-      matrix:
-        include:
-          - arch: x64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    container: node:24-bullseye
     permissions:
       contents: read
-    env:
-      TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ env.TAG }}
-
-      # No scripts: the server never loads the Electron-ABI native builds, and needs no Electron.
-      # scripts/server-bundle.mjs installs node-pty and better-sqlite3 for its own Node.
-      - run: yarn install --frozen-lockfile --ignore-scripts
-      - run: yarn build:server
-      - run: node scripts/server-bundle.mjs
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: styr-server-linux-${{ matrix.arch }}
-          path: dist/styr-server-*-linux-${{ matrix.arch }}.tar.gz
-          if-no-files-found: error
+    uses: ./.github/workflows/server-bundle.yml
+    with:
+      ref: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
+      upload: true
 
   # The bundles' release files: SHA256SUMS, install.sh with the version filled in, and a build
   # provenance attestation for each (`gh attestation verify`). Attached to the draft release; the
