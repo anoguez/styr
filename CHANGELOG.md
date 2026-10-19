@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.1](https://github.com/anoguez/styr/compare/v0.35.0...v0.35.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* build the server bundles in Debian bookworm and on every PR; refuse a host below glibc 2.36 ([#176](https://github.com/anoguez/styr/issues/176)) ([2687d01](https://github.com/anoguez/styr/commit/2687d01b68b31c0eb4ed666a0af10611d2619ef9))
+
 ## [0.35.0](https://github.com/anoguez/styr/compare/v0.34.0...v0.35.0) (2026-10-19)
 
 
