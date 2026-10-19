@@ -268,6 +268,15 @@ export function findTask(id: string): Task | null {
 }
 
 export function closeIndex(): void {
-  db?.close()
+  try {
+    db?.close()
+  } catch (error) {
+    // Quitting while a statement is mid-step (a test harness can quit from inside one): the
+    // process is exiting, and the index is a cache rebuilt from the task files on the next start.
+    console.warn(
+      'Styr: the task index was busy at quit and is left to close with the process:',
+      error
+    )
+  }
   db = null
 }

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 
 // Vite swaps node builtins for a stub that only throws once the renderer runs, so a stray
 // `import … from 'node:fs'` in renderer-facing code reaches the user as a blank window.
@@ -41,8 +42,28 @@ child.on('exit', (code) => {
     process.exit(1)
   }
   console.log('\nrenderer bundle is free of node builtins')
+  checkSandboxedPreload()
   buildServer()
 })
+
+/**
+ * The renderer is sandboxed, where the preload is one script that may require `electron` alone: a
+ * chunk, a Node builtin or a bundled package would fail only when the window opens.
+ */
+function checkSandboxedPreload() {
+  const preload = readFileSync('out/preload/index.cjs', 'utf8')
+  const required = [...preload.matchAll(/\brequire\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1])
+  const others = required.filter((name) => name !== 'electron')
+  if (others.length > 0 || /\bimport\s*\(/.test(preload)) {
+    console.error(
+      `\nBuild failed: the sandboxed preload loads ${others.join(', ') || 'a module dynamically'}. ` +
+        'Only electron (contextBridge, ipcRenderer, webUtils) is available to it; move the rest ' +
+        'behind IPC.\n'
+    )
+    process.exit(1)
+  }
+  console.log('preload requires electron alone (sandbox-safe)')
+}
 
 /** `styr serve`, for plain Node (vite.server.config.mts), into out/server/. */
 function buildServer() {

@@ -21,10 +21,15 @@ export default defineConfig({
       }
     }
   },
+  // The renderer is sandboxed (`sandbox: true`), and a sandboxed preload is a single CommonJS
+  // script that may require only `electron`: everything else is bundled in, nothing externalised.
   preload: {
     build: {
-      externalizeDeps: true,
-      rollupOptions: { external: nodeExternals, input: resolve('src/preload/index.ts') }
+      rollupOptions: {
+        external: ['electron'],
+        input: resolve('src/preload/index.ts'),
+        output: { format: 'cjs', entryFileNames: '[name].cjs', inlineDynamicImports: true }
+      }
     }
   },
   renderer: {
