@@ -441,7 +441,7 @@ host and a name, with the agent CLI to look for.
 
 ```
 check    ssh -T -o BatchMode=yes <host> true      ssh's own error verbatim on failure
-probe    sh -s -- --probe …   (install.sh on stdin) OS, arch, git, CLI, systemd, linger, versions
+probe    sh -s -- --probe …   (install.sh on stdin) OS, arch, glibc, git, CLI, systemd, linger, versions
 install  sh -s -- --install --version V --sha256 H the host downloads, checks, unpacks, starts
          └ exit 20 or 22: this computer downloads, checks H, uploads (scp, or ssh … cat), --tarball
 create   workspaces:create on the server           shared connection, or a one-off session
@@ -455,7 +455,7 @@ create   workspaces:create on the server           shared connection, or a one-o
   layout and unit, so either can upgrade what the other installed. Modes: `--probe`, `--install`,
   `--start`, `--restart`, `--stop`; its `::styr key=value` lines are for the app
   (`parseInstallReport`), everything else is for people. Exit 10 is not Linux, 11 an unsupported
-  arch, 20 a failed download, 22 a bundle that did not match its SHA-256 (told apart, since it may
+  arch, 12 a glibc older than the bundles' floor (below), 20 a failed download, 22 a bundle that did not match its SHA-256 (told apart, since it may
   mean the download was tampered with), 30 and 31 a start or stop that did not happen.
 - **Layout.** `~/.styr/server/<version>/` holds one unpacked bundle per version, side by side;
   `~/.styr/server/current` is a symlink to the one that starts next; `bin/styr` resolves the
@@ -536,25 +536,39 @@ agent not already `exited` as exited (`src/server/orphans.ts`). Each resumes fro
 `dist/styr-server-<version>-<platform>-<arch>.tar.gz` for the machine it runs on: `out/server/`,
 `resources/claude/`, the Node runtime of the Node running it (checked against nodejs.org's
 `SHASUMS256.txt`), and `node-pty` and `better-sqlite3` installed by that Node's npm, so both match
-its ABI. It checks the result runs (`bin/styr serve --version`, both modules load). Releases build
-`linux-x64` and `linux-arm64` on native runners inside `node:24-bullseye`, so the bundles need only
-glibc 2.31 (`releases.md`). On a Mac it builds a darwin bundle, useful only to try the layout.
+its ABI. It checks the result runs (`bin/styr serve --version`, both modules load). On a Mac it
+builds a darwin bundle, useful only to try the layout.
+
+`linux-x64` and `linux-arm64` are built on native runners inside `node:24-bookworm` by
+`.github/workflows/server-bundle.yml`, the only definition of the build: CI runs it, self-check
+included, on every PR, and the release builds the published bundles with it (`releases.md`). Until
+0.35.1 the bundles were built only at release time, inside bullseye, and v0.35.0's arm64 build
+failed its self-check: `better-sqlite3`'s prebuilt binary needs glibc 2.33.
+
+**The glibc floor is 2.36** (Debian bookworm's): Ubuntu 22.04+, Debian 12+, RHEL/Rocky 9+, Amazon
+Linux 2023. Ubuntu 20.04 and Debian 11 are not supported. The floor and that list live only in
+`install.sh` (`GLIBC_FLOOR`, `GLIBC_HOSTS`, beside its arch list): `--probe` reports them with the
+host's glibc (`getconf GNU_LIBC_VERSION`, else `ldd --version`), `unsupportedHost` refuses a host
+below the floor ("devbox has glibc 2.31; the Styr server needs 2.36 or newer (…)"), and the script
+run by hand exits 12 with the same words before downloading anything. A host whose glibc cannot be
+told (musl) is not refused for it. Raising the container means raising `GLIBC_FLOOR` with it.
 
 In development, a version has no release: build the Linux bundles (for example in a
-`node:24-bullseye` container), put them in a folder, and start the app with
+`node:24-bookworm` container), put them in a folder, and start the app with
 `STYR_SERVER_BUNDLE_DIR` pointing at it. The host's own download then fails (exit 20) and this
 computer uploads the local bundle.
 
 ### Setup tests
 
 - `core/remoteSetup.test.ts`: the release names, the `install.sh` lines, probe parsing, the
-  refusals, the ssh messages, and that no ssh or scp line weakens host-key checking.
+  refusals (the glibc floor included), the ssh messages, and that no ssh or scp line weakens host-key checking.
 - `host/remote/hostSetup.test.ts`: the flow over fake ports: a fresh VM that downloads (nothing
   but ssh commands leaves the laptop), the upload fallback and what the UI is told, a tampered
   bundle refused on both sides, an unknown host key, a non-Linux host, the warnings, reusing a
   running server, an older one left running, restart and stop.
 - `host/remote/installScript.test.ts`: `install.sh` run for real in a throwaway home with stand-in
-  `uname`, `curl`, `systemctl` and `loginctl` and a fake bundle: probe, download and checksum,
+  `uname`, `getconf`, `ldd`, `curl`, `systemctl` and `loginctl` and a fake bundle: probe, download
+  and checksum, an old glibc refused with exit 12 before any download,
   the upload path, reuse without restart, stop and restart, the unit and the linger line.
 - `host/remote/sshRunner.test.ts`: the bundle download checked against the app's hash, the
   embedded hashes, ssh in batch mode, and the scp → `ssh … cat` fallback.

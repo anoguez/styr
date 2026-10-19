@@ -110,7 +110,9 @@ headless Styr server keeps its agents and Auto-run going while your laptop is cl
 **Settings → Experimental**, then use **New workspace → Remote host**: give a host (anything `ssh`
 accepts) and a name. Styr checks the host over ssh, has the host download the server from this
 release and check it against the hash built into the app, installs it as a `systemd --user`
-service, and opens the new board. The host needs Linux, ssh, git and the agent CLI, logged in.
+service, and opens the new board. The host needs Linux (x86_64 or aarch64, glibc 2.36 or newer:
+Ubuntu 22.04+, Debian 12+, RHEL/Rocky 9+, Amazon Linux 2023), ssh, git and the agent CLI, logged in.
+The server bundles are built and self-checked on every PR.
 Styr never asks for a password and never accepts a host key for you: set up a key or Tailscale SSH
 first, and run `ssh <host>` once to accept its key.
 

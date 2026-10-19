@@ -36,10 +36,14 @@ data-protection keychain where the Developer ID key lives and silently exports o
 Remote workspaces' server (`remote.md`, Server bundles) ships with every release, before the
 release is published:
 
-1. `build-server` (a matrix: `x64` on `ubuntu-latest`, `arm64` on `ubuntu-24.04-arm`, both inside
-   `node:24-bullseye` for an old glibc) installs without scripts, runs `yarn build:server` and
-   `scripts/server-bundle.mjs`, and keeps `styr-server-<version>-linux-<arch>.tar.gz` as a
-   workflow artifact.
+1. `build-server` calls `.github/workflows/server-bundle.yml` (a matrix: `x64` on
+   `ubuntu-latest`, `arm64` on `ubuntu-24.04-arm`, both inside `node:24-bookworm`, so the bundles
+   need glibc 2.36: Ubuntu 22.04+, Debian 12+, RHEL 9+, Amazon Linux 2023). It installs without
+   scripts, runs `yarn build:server` and `scripts/server-bundle.mjs` with its self-check, and keeps
+   `styr-server-<version>-linux-<arch>.tar.gz` as a workflow artifact. CI's `server-bundle` job
+   runs the same workflow on every PR, so a bundle that does not build or run fails the PR, not the
+   release. A different container means a different floor: change `GLIBC_FLOOR` in `install.sh`
+   with it (`remote.md`, Server bundles).
 2. `build-macos` needs it: after `yarn build` it writes both bundles' SHA-256s into the app
    (`scripts/server-checksums.mjs app` → `out/main/serverBundles.json`) before signing, so the
    hash a host checks its download against ships inside the signed, notarised app.

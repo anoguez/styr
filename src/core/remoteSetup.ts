@@ -46,6 +46,8 @@ export function uploadPath(version: string, arch: ServerArch): string {
 export const INSTALL_EXIT = {
   NOT_LINUX: 10,
   UNSUPPORTED_ARCH: 11,
+  /** The host's glibc is older than the bundle's floor (`install.sh`'s `GLIBC_FLOOR`). */
+  OLD_GLIBC: 12,
   /** The VM could not download the bundle: the desktop app uploads it instead. */
   DOWNLOAD_FAILED: 20,
   /**
@@ -106,6 +108,13 @@ export interface HostProbe {
   os: string
   machine: string
   arch?: ServerArch
+  /** The host's glibc, as major.minor; unset when it has none or the script could not tell. */
+  glibc?: string
+  /**
+   * The oldest glibc the bundle runs on, and the distributions that have it. The floor lives only
+   * in `install.sh`, which ships inside the app, so the script and the app always agree.
+   */
+  glibcFloor?: { version: string; hosts: string }
   git: boolean
   /** Unset when no CLI was asked about. */
   cli?: boolean
@@ -122,10 +131,14 @@ export interface HostProbe {
 export function parseProbe(stdout: string): HostProbe {
   const report = parseInstallReport(stdout)
   const arch = report.arch === 'x64' || report.arch === 'arm64' ? report.arch : undefined
+  const glibc = glibcVersion(report.glibc)
+  const floor = glibcVersion(report.glibc_floor)
   return {
     os: report.os ?? '',
     machine: report.machine ?? '',
     ...(arch ? { arch } : {}),
+    ...(glibc ? { glibc } : {}),
+    ...(floor ? { glibcFloor: { version: floor, hosts: report.glibc_hosts ?? '' } } : {}),
     git: report.git === 'yes',
     ...(report.cli !== undefined ? { cli: report.cli === 'yes' } : {}),
     systemd: report.systemd === 'yes',
@@ -144,7 +157,23 @@ export function unsupportedHost(host: string, probe: HostProbe): string | undefi
   if (!probe.arch) {
     return `${host} is ${probe.machine || 'an unknown machine'}. The Styr server is built for x86_64 and aarch64 only.`
   }
+  const floor = probe.glibcFloor
+  if (probe.glibc && floor && olderThan(probe.glibc, floor.version)) {
+    const hosts = floor.hosts ? ` (${floor.hosts})` : ''
+    return `${host} has glibc ${probe.glibc}; the Styr server needs ${floor.version} or newer${hosts}.`
+  }
   return undefined
+}
+
+/** A dotted glibc version from the probe, or undefined for anything else. */
+function glibcVersion(value: string | undefined): string | undefined {
+  return value && /^\d+(\.\d+)+$/.test(value) ? value : undefined
+}
+
+function olderThan(version: string, floor: string): boolean {
+  const [major = 0, minor = 0] = version.split('.').map(Number)
+  const [floorMajor = 0, floorMinor = 0] = floor.split('.').map(Number)
+  return major < floorMajor || (major === floorMajor && minor < floorMinor)
 }
 
 /**

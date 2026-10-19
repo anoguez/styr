@@ -88,8 +88,42 @@ describe('install.sh over ssh', () => {
     expect(
       unsupportedHost('pi', parseProbe('::styr os=Linux\n::styr machine=armv7l\n::styr arch=\n'))
     ).toMatch(/armv7l.*x86_64 and aarch64/)
+    // The probe without the glibc lines (a host with no glibc to report) is not refused for it.
+    expect(linux.glibc).toBeUndefined()
     // A server that answered without saying its version is still running.
     expect(parseProbe('::styr running=\n').running).toBe('unknown')
+  })
+})
+
+describe('the glibc floor', () => {
+  const probe = (glibc: string): string =>
+    '::styr os=Linux\n::styr machine=x86_64\n::styr arch=x64\n' +
+    `::styr glibc=${glibc}\n::styr glibc_floor=2.36\n` +
+    '::styr glibc_hosts=Ubuntu 22.04+, Debian 12+, RHEL 9+\n'
+
+  it('reads the host’s glibc and the floor the script reports', () => {
+    expect(parseProbe(probe('2.39'))).toMatchObject({
+      glibc: '2.39',
+      glibcFloor: { version: '2.36', hosts: 'Ubuntu 22.04+, Debian 12+, RHEL 9+' }
+    })
+    expect(parseProbe(probe('not-a-version')).glibc).toBeUndefined()
+  })
+
+  it('refuses a host below the floor, naming the distributions that have it', () => {
+    expect(unsupportedHost('devbox', parseProbe(probe('2.31')))).toBe(
+      'devbox has glibc 2.31; the Styr server needs 2.36 or newer (Ubuntu 22.04+, Debian 12+, RHEL 9+).'
+    )
+    expect(unsupportedHost('devbox', parseProbe(probe('1.40')))).toMatch(/glibc 1.40/)
+  })
+
+  it('accepts the floor itself and anything newer, comparing numerically', () => {
+    for (const glibc of ['2.36', '2.39', '2.100', '3.0']) {
+      expect(unsupportedHost('devbox', parseProbe(probe(glibc)))).toBeUndefined()
+    }
+  })
+
+  it('does not refuse a host whose glibc it could not tell', () => {
+    expect(unsupportedHost('devbox', parseProbe(probe('')))).toBeUndefined()
   })
 })
 

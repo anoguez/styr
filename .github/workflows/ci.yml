@@ -75,3 +75,10 @@ jobs:
           name: smoke-test-results
           path: test-results/
           retention-days: 7
+
+  # The server bundles, x64 and arm64, built and self-checked exactly as the release builds them
+  # (server-bundle.yml), so a bundle that will not build or run fails here rather than at release.
+  server-bundle:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/server-bundle.yml
