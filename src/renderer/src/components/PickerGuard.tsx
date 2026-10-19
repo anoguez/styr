@@ -10,14 +10,18 @@ import { localPickerBlocked, useBoardAccess } from '../lib/remoteStatus.js'
 export function PickerGuard({
   title,
   className = 'inline-flex',
+  local = false,
   children
 }: {
   /** The button's own tooltip, while it works. */
   title?: string
   className?: string
+  /** The path belongs to this computer whatever the workspace (the storage folder): never off. */
+  local?: boolean
   children: (disabled: boolean) => ReactNode
 }): ReactNode {
-  const blocked = localPickerBlocked(useBoardAccess())
+  const access = useBoardAccess()
+  const blocked = local ? undefined : localPickerBlocked(access)
   return (
     <span title={blocked ?? title} className={className}>
       {children(blocked !== undefined)}

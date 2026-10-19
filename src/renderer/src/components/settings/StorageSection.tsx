@@ -6,7 +6,13 @@ export function StorageSection({ draft, patch }: SectionProps): ReactNode {
   return (
     <>
       <Field label="Storage folder">
-        <DirectoryInput value={draft.storageDir} onChange={(storageDir) => patch({ storageDir })} />
+        {/* The folder on this computer that holds the workspaces: local even while a remote
+            workspace is being edited. */}
+        <DirectoryInput
+          local
+          value={draft.storageDir}
+          onChange={(storageDir) => patch({ storageDir })}
+        />
       </Field>
       <Card className="gap-2 px-3.5 py-3 font-mono text-[11.5px] text-dim">
         <span>{draft.storageDir}/</span>

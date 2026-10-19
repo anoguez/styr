@@ -301,7 +301,7 @@ The Browse buttons (a task's working directory and context files, the Settings p
 this computer's file dialog, so they are disabled for a remote workspace, with a tooltip saying to
 type the path; dropping files on a task's brief is off too. A local path stored for the host
 would not fail there: the server would start the agent in its home folder. In Settings this
-follows the workspace being edited, elsewhere the open one.
+follows the workspace being edited, elsewhere the open one. The storage folder is this computer's whatever the workspace, so its Browse stays on (`local`).
 
 "Open file" on a remote task opens `vscode://vscode-remote/ssh-remote+<host><path>` when Settings
 → Open files with is VS Code or Cursor; otherwise it is disabled, with the remote path in the

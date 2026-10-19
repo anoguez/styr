@@ -14,13 +14,14 @@ const state: RemoteState = {
   workspaces: { cloud: { host: 'devbox', remoteWorkspaceId: 'default', live: true } }
 }
 
-function render(workspaceId: string): string {
+function render(workspaceId: string, local = false): string {
   return renderToStaticMarkup(
     createElement(
       RemoteContext.Provider,
       { value: { state, access: boardAccess(state, workspaceId) } },
       createElement(PickerGuard, {
         title: 'Choose a folder',
+        local,
         children: (disabled: boolean) => createElement('button', { disabled }, 'Browse')
       })
     )
@@ -36,6 +37,12 @@ describe('PickerGuard', () => {
 
   it('leaves Browse working on a local workspace', () => {
     expect(render('default')).toBe(
+      '<span title="Choose a folder" class="inline-flex"><button>Browse</button></span>'
+    )
+  })
+
+  it('leaves a local-only path such as the storage folder working on a remote workspace', () => {
+    expect(render('cloud', true)).toBe(
       '<span title="Choose a folder" class="inline-flex"><button>Browse</button></span>'
     )
   })

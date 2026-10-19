@@ -301,11 +301,14 @@ export function Modal({
 export function DirectoryInput({
   value,
   onChange,
-  placeholder
+  placeholder,
+  local
 }: {
   value: string
   onChange: (path: string) => void
   placeholder?: string
+  /** A path on this computer even for a remote workspace (`PickerGuard`), such as the storage folder. */
+  local?: boolean
 }): ReactNode {
   async function browse(): Promise<void> {
     const picked = await window.api.settings.pickDirectory(value || undefined)
@@ -321,7 +324,7 @@ export function DirectoryInput({
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
       />
-      <PickerGuard title="Browse">
+      <PickerGuard title="Browse" local={local}>
         {(disabled) => (
           <button
             type="button"
@@ -352,11 +355,14 @@ export function DirectoryInput({
 export function FileListInput({
   files,
   onChange,
-  startIn
+  startIn,
+  local
 }: {
   files: string[]
   onChange: (files: string[]) => void
   startIn?: string
+  /** Files on this computer even for a remote workspace (`PickerGuard`). */
+  local?: boolean
 }): ReactNode {
   async function browse(): Promise<void> {
     const picked = await window.api.settings.pickFiles(startIn)
@@ -393,7 +399,7 @@ export function FileListInput({
         </ul>
       ) : null}
       <div className="flex items-center gap-2.5">
-        <PickerGuard>
+        <PickerGuard local={local}>
           {(disabled) => (
             <Button disabled={disabled} onClick={() => void browse()}>
               Add files…
