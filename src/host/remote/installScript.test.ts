@@ -163,7 +163,7 @@ cp "${release}/\${last##*/}" "$out" 2>/dev/null || { echo "curl: (22) 404" >&2; 
 
   it('refuses a bundle whose hash differs from the one it was given, unpacking nothing', async () => {
     const result = await run('--install', '--version', VERSION, '--sha256', 'f'.repeat(64))
-    expect(result.code).toBe(20)
+    expect(result.code).toBe(22)
     expect(result.stderr).toMatch(/does not match the expected SHA-256 \(refused to unpack it\)/)
     expect(existsSync(join(home, '.styr', 'server', VERSION))).toBe(false)
     expect(alive()).toBe(false)

@@ -46,8 +46,13 @@ export function uploadPath(version: string, arch: ServerArch): string {
 export const INSTALL_EXIT = {
   NOT_LINUX: 10,
   UNSUPPORTED_ARCH: 11,
-  /** The VM could not download the bundle or check it: the desktop app uploads it instead. */
+  /** The VM could not download the bundle: the desktop app uploads it instead. */
   DOWNLOAD_FAILED: 20,
+  /**
+   * The VM's download did not match the expected SHA-256, which may mean it was tampered with on
+   * the way: refused, and the desktop app uploads a copy it checked itself.
+   */
+  CHECKSUM_MISMATCH: 22,
   BROKEN_BUNDLE: 21,
   START_FAILED: 30,
   STOP_FAILED: 31

@@ -371,7 +371,7 @@ host and a name, with the agent CLI to look for.
 check    ssh -T -o BatchMode=yes <host> true      ssh's own error verbatim on failure
 probe    sh -s -- --probe …   (install.sh on stdin) OS, arch, git, CLI, systemd, linger, versions
 install  sh -s -- --install --version V --sha256 H the host downloads, checks, unpacks, starts
-         └ exit 20: this computer downloads, checks H, uploads (scp, or ssh … cat), --tarball
+         └ exit 20 or 22: this computer downloads, checks H, uploads (scp, or ssh … cat), --tarball
 create   workspaces:create on the server           shared connection, or a one-off session
          then the local stub, and the app switches to it: the board opens empty and connected
 ```
@@ -383,7 +383,8 @@ create   workspaces:create on the server           shared connection, or a one-o
   layout and unit, so either can upgrade what the other installed. Modes: `--probe`, `--install`,
   `--start`, `--restart`, `--stop`; its `::styr key=value` lines are for the app
   (`parseInstallReport`), everything else is for people. Exit 10 is not Linux, 11 an unsupported
-  arch, 20 a failed download or checksum, 30 and 31 a start or stop that did not happen.
+  arch, 20 a failed download, 22 a bundle that did not match its SHA-256 (told apart, since it may
+  mean the download was tampered with), 30 and 31 a start or stop that did not happen.
 - **Layout.** `~/.styr/server/<version>/` holds one unpacked bundle per version, side by side;
   `~/.styr/server/current` is a symlink to the one that starts next; `bin/styr` resolves the
   symlink when it starts, so a running server keeps its version. The unit is

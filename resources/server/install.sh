@@ -30,9 +30,9 @@
 # unit runs it).
 #
 # Lines starting with `::styr ` are for the desktop app; everything else is for people.
-# Exit codes: 10 not Linux, 11 unsupported arch, 20 the download or checksum failed (the desktop
-# app then uploads the bundle itself), 21 the bundle is broken, 30 the server did not start,
-# 31 it did not stop, 64 bad arguments.
+# Exit codes: 10 not Linux, 11 unsupported arch, 20 the download failed and 22 the bundle did not
+# match its SHA-256 (the desktop app then uploads a copy it checked itself), 21 the bundle is
+# broken, 30 the server did not start, 31 it did not stop, 64 bad arguments.
 
 set -eu
 
@@ -211,7 +211,7 @@ install_bundle() {
     source=download
   fi
   actual="$(sha256_of "$file")" || fail 20 "neither sha256sum nor shasum is installed, so the bundle cannot be checked"
-  [ "$actual" = "$sha256" ] || fail 20 "$name does not match the expected SHA-256 (refused to unpack it)"
+  [ "$actual" = "$sha256" ] || fail 22 "$name does not match the expected SHA-256 (refused to unpack it)"
   mkdir "$workdir/unpack"
   tar -xzf "$file" -C "$workdir/unpack" || fail 21 "could not unpack $name"
   got="$("$workdir/unpack/bin/styr" serve --version 2>/dev/null || true)"

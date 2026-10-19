@@ -843,6 +843,11 @@ describe('remote router: the version lock and Settings → Remote hosts', () => 
       /server protocol.*Upgrade it from Settings → Remote hosts/
     )
     expect(t.devbox.server.calls).toEqual([])
+    expect(await t.router.runningAgents('devbox')).toEqual({
+      known: false,
+      incompatible: true,
+      agents: []
+    })
   })
 
   it('Disconnect keeps a host offline until Connect, whatever wakes the computer', async () => {

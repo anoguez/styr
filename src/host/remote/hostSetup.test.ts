@@ -162,7 +162,7 @@ describe('the setup flow (New workspace → Remote)', () => {
   it('refuses a tampered bundle, on the host and on this computer, and says why', async () => {
     const host = fakeHost({
       install: failed(
-        20,
+        22,
         'styr: styr-server-1.2.0-linux-x64.tar.gz does not match the expected SHA-256'
       )
     })
@@ -171,11 +171,27 @@ describe('the setup flow (New workspace → Remote)', () => {
     )
     const setup = flow(host)
     await expect(setup.run()).rejects.toThrow(
-      /does not match the expected SHA-256.*neither could this computer: .*built into this app, so it was refused/s
+      /The download on me@devbox did not match this app's checksum and was refused, and neither could this computer: .*built into this app, so it was refused/s
     )
     expect(host.uploads).toEqual([])
     expect(setup.created).toEqual([])
     expect(setup.progress.at(-1)).toMatchObject({ step: 'install', state: 'failed' })
+  })
+
+  it('tells a checksum mismatch on the host apart from a network failure, and uploads a verified copy', async () => {
+    const host = fakeHost({
+      install: failed(
+        22,
+        'styr: styr-server-1.2.0-linux-x64.tar.gz does not match the expected SHA-256'
+      )
+    })
+    const setup = flow(host)
+    const result = await setup.run()
+    expect(result.transfer).toBe('upload')
+    expect(host.fetched).toEqual([`${VERSION}/x64/${HASH}`])
+    expect(setup.progress.find((p) => p.step === 'install' && p.state === 'done')?.detail).toBe(
+      "The download on me@devbox did not match this app's checksum; uploaded a verified copy from this computer over scp."
+    )
   })
 
   it('will not install from a build that carries no hashes', async () => {

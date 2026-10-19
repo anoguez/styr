@@ -134,6 +134,9 @@ describe('Settings → Remote hosts', () => {
     expect(serverStopQuestion('devbox', 'stop', { known: false, agents: [] })).toMatch(
       /not connected, so Styr cannot tell which agents are running/
     )
+    expect(
+      serverStopQuestion('devbox', 'restart', { known: false, incompatible: true, agents: [] })
+    ).toMatch(/devbox runs an incompatible server, so Styr cannot tell which agents are running/)
   })
 
   it('says how the server reached the host, upload fallback included', () => {

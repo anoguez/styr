@@ -120,7 +120,10 @@ export function serverStopQuestion(
       ? `Upgrade the server on ${host}? It restarts to take over.`
       : `Stop the Styr server on ${host}? Auto-run stops with it until you connect again.`
   if (!running.known) {
-    return `${head}\n\n${host} is not connected, so Styr cannot tell which agents are running. Any that are stop too.`
+    const why = running.incompatible
+      ? `${host} runs an incompatible server`
+      : `${host} is not connected`
+    return `${head}\n\n${why}, so Styr cannot tell which agents are running. Any that are stop too.`
   }
   if (running.agents.length === 0) return `${head}\n\nNo agents are running there.`
   const list = running.agents

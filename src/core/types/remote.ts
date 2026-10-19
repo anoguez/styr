@@ -121,5 +121,7 @@ export interface RemoteRunningAgent {
 export interface RemoteRunningAgents {
   /** False when the host is not connected, so the list could not be read. */
   known: boolean
+  /** The host answered, but its server speaks another protocol (why the list is unknown). */
+  incompatible?: boolean
   agents: RemoteRunningAgent[]
 }

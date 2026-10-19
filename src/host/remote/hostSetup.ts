@@ -76,6 +76,8 @@ export interface InstallOutcome {
   report: Record<string, string>
   /** Why the host could not download the bundle, when this computer uploaded it. */
   downloadError?: string
+  /** The host's download did not match this app's checksum (not a network problem). */
+  mismatch?: boolean
   /** How the upload went, when there was one. */
   uploadedWith?: 'scp' | 'ssh'
 }
@@ -135,16 +137,20 @@ export function createHostSetup(ports: HostSetupPorts) {
         const report = parseInstallReport(first.stdout)
         return { transfer: report.source === 'installed' ? 'installed' : 'download', report }
       }
-      if (first.code !== INSTALL_EXIT.DOWNLOAD_FAILED) {
+      const mismatch = first.code === INSTALL_EXIT.CHECKSUM_MISMATCH
+      if (first.code !== INSTALL_EXIT.DOWNLOAD_FAILED && !mismatch) {
         throw scriptFailure(`Installing the server on ${host} failed`, first)
       }
-      const downloadError = first.stderr.trim().split('\n').at(-1) ?? 'the download failed'
+      // A mismatch is told apart from a network problem: the download may have been tampered with.
+      const downloadError = mismatch
+        ? `the download on ${host} did not match this app's checksum`
+        : (first.stderr.trim().split('\n').at(-1) ?? 'the download failed')
       let file: string
       try {
         file = await ports.bundle(version, arch, sha256)
       } catch (error) {
         throw new SetupError(
-          `${host} could not download the Styr server (${downloadError}), and neither could ` +
+          `${mismatch ? `The download on ${host} did not match this app's checksum and was refused` : `${host} could not download the Styr server (${downloadError})`}, and neither could ` +
             `this computer: ${error instanceof Error ? error.message : String(error)}`
         )
       }
@@ -154,7 +160,7 @@ export function createHostSetup(ports: HostSetupPorts) {
         uploadedWith = await ports.upload(host, file, remotePath)
       } catch (error) {
         throw new SetupError(
-          `${host} could not download the Styr server (${downloadError}), and uploading it ` +
+          `${mismatch ? `The download on ${host} did not match this app's checksum and was refused` : `${host} could not download the Styr server (${downloadError})`}, and uploading it ` +
             `failed: ${error instanceof Error ? error.message : String(error)}`
         )
       }
@@ -170,6 +176,7 @@ export function createHostSetup(ports: HostSetupPorts) {
         transfer: 'upload',
         report: parseInstallReport(second.stdout),
         downloadError,
+        ...(mismatch ? { mismatch } : {}),
         uploadedWith
       }
     },
@@ -274,7 +281,9 @@ export async function runRemoteSetup(
     done(
       'install',
       outcome.transfer === 'upload'
-        ? `${host} could not download it (${outcome.downloadError}); uploaded from this computer over ${outcome.uploadedWith}.`
+        ? outcome.mismatch
+          ? `The download on ${host} did not match this app's checksum; uploaded a verified copy from this computer over ${outcome.uploadedWith}.`
+          : `${host} could not download it (${outcome.downloadError}); uploaded from this computer over ${outcome.uploadedWith}.`
         : outcome.transfer === 'installed'
           ? `Styr ${ports.version} was already installed.`
           : `${host} downloaded Styr ${ports.version} from the release and checked it.`

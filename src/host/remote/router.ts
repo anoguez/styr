@@ -449,6 +449,9 @@ export function createRemoteRouter(ports: RouterPorts) {
    */
   async function runningAgents(host: string): Promise<RemoteRunningAgents> {
     const entry = registry.hosts.get(host)
+    if (entry?.conn.state().status === 'incompatible') {
+      return { known: false, incompatible: true, agents: [] }
+    }
     if (!entry?.conn.connected) return { known: false, agents: [] }
     try {
       const sessions = (await entry.conn.request('terminal:list')) as TerminalSessionInfo[]
