@@ -1,8 +1,9 @@
 import { agentKey, type AgentStatus } from '@core/agentState.js'
 import { remoteEditorFor, remoteEditorUri } from '@core/remote.js'
-import { settingsChangeSchema } from '@core/taskSchema.js'
+import { z } from 'zod'
 import {
   globalSettingsFor,
+  type BrokenSettingsFile,
   type GlobalSettings,
   type RemoteHostState,
   type RemoteState,
@@ -143,6 +144,7 @@ const SPECIAL_CHANNELS = new Set([
   'workspaces:delete',
   'settings:get',
   'settings:save',
+  'settings:brokenFiles',
   'terminal:list',
   'diagnostics:snapshot',
   'tasks:reveal',
@@ -217,6 +219,12 @@ const BOARD_BROADCASTS = new Set([
 
 /** Broadcasts addressed to one terminal session: forwarded from every host. */
 const SESSION_BROADCASTS = new Set(['terminal:runtimeState', 'usage:context', 'agent:conversation'])
+
+const SETTINGS_CHANGE = z.object({
+  workspaceId: z.string().min(1),
+  workspace: z.record(z.string(), z.unknown()),
+  global: z.record(z.string(), z.unknown())
+})
 
 /** Sent before a reattach's backlog, so the view starts again rather than repeating itself. */
 export const TERMINAL_RESET = '\x1bc'
@@ -416,6 +424,8 @@ export function createRemoteRouter(ports: RouterPorts) {
         return settingsFor(typeof args[0] === 'string' ? args[0] : undefined, local)
       case 'settings:save':
         return saveSettings(args[0], local)
+      case 'settings:brokenFiles':
+        return brokenSettingsFiles((await local()) as BrokenSettingsFile[])
       case 'terminal:list':
         return listTerminals((await local()) as TerminalSessionInfo[])
       case 'diagnostics:snapshot': {
@@ -840,7 +850,12 @@ export function createRemoteRouter(ports: RouterPorts) {
    * with the server's own app-level settings sent back unchanged.
    */
   async function saveSettings(change: unknown, local: () => unknown): Promise<Settings> {
-    const parsed = settingsChangeSchema.parse(change)
+    // Only its shape: each side validates its own part (`saveGlobalSettings`, the server's save).
+    const parsed = SETTINGS_CHANGE.parse(change) as {
+      workspaceId: string
+      workspace: Partial<Settings>
+      global: GlobalSettings
+    }
     const t = target(parsed.workspaceId)
     if (t.kind === 'disabled') throw new Error(disabledMessage(t.workspace))
     if (t.kind === 'local') {
@@ -867,6 +882,25 @@ export function createRemoteRouter(ports: RouterPorts) {
   /** Set by the caller (`bindSettings`), so the router reads settings the way main does. */
   let loadedSettings: () => Settings = () => {
     throw new Error('Remote router: settings are not bound.')
+  }
+
+  /** Settings files that do not parse, here and on each connected server (its paths are shown only). */
+  async function brokenSettingsFiles(local: BrokenSettingsFile[]): Promise<BrokenSettingsFile[]> {
+    const merged = local.filter((file) => !links.has(file.workspaceId))
+    if (!enabled) return merged
+    for (const entry of hosts.values()) {
+      if (!entry.conn.connected) continue
+      try {
+        const files = (await entry.conn.request('settings:brokenFiles')) as BrokenSettingsFile[]
+        for (const file of files) {
+          const stub = stubFor(entry.host, file.workspaceId)
+          if (stub) merged.push({ ...file, workspaceId: stub.id })
+        }
+      } catch {
+        // Settings shows the local files alone.
+      }
+    }
+    return merged
   }
 
   // ── Opening files ───────────────────────────────────────────────────────────────────────
