@@ -103,6 +103,9 @@ add a line here only for a rule that must hold in every change.
   are `Select` from `ui.tsx`; `Field` is a `div`, never a `label`. Prefer the `ui.tsx` pieces
   (`Card`, `Switch`, `Segmented`, …) over new controls. `DEFAULT_THEME` lives in `core/types.ts`.
   The window is deliberately opaque. `-webkit-app-region: no-drag` goes on controls, not wrappers.
+- **Trust boundary.** A remote server's answers are hostile until `host/remote/validation.ts`
+  has parsed them; give a new channel its schema there. The renderer is sandboxed: the preload
+  requires `electron` alone, and the CSP in `index.html` stays strict (`remote.md`, Trust boundary).
 - **Updater.** Never install or relaunch on its own; a relaunch kills running agents.
 - **Releases.** Conventional commits (`feat:`, `fix:` …) or the changelog omits them. Never publish
   a release before its files are attached.

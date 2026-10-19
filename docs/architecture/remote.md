@@ -24,7 +24,9 @@ desktop main ──ssh -T host styr serve attach──▶ attach (stdio ↔ sock
   to `serverHost.ts` too, or to that list if it acts on the desktop, and give it a route in the
   client router (`src/host/remote/router.ts`: the active workspace's, a session's, or one the
   router answers itself; the tables are `src/host/remote/channels.ts`). `channels.test.ts` fails
-  for a server channel with no route.
+  for a server channel with no route. Its answer (and any new broadcast the router acts on) also
+  needs a schema in `src/host/remote/validation.ts`; `validation.test.ts` fails without one (see
+  Trust boundary).
 - **Arguments are checked with zod at the boundary.** Each entry in `serverHost.ts` has a
   `z.tuple` of its arguments, and the services parse their payloads with the existing schemas
   (`taskDraftSchema`, `settingsChangeSchema` …), as they do for IPC. A bad argument is an
@@ -227,6 +229,8 @@ defaults to `~/.styr/server/current/bin/styr`, where setup and `install.sh` put 
   - `workspaces.ts`: the servers' active workspace, switching it, the merged list and summaries.
   - `settings.ts`: the server's workspace keys with this machine's app-level ones, and saving.
   - `rollup.ts`: the merged tray (with the baseline after a connect) and switcher rollup.
+  - `validation.ts`: the trust boundary: every answer and notification checked before the rest
+    of the router sees it (Trust boundary, below).
 - `host/remote/terminalMirror.ts`: the client's copy of an attached remote terminal (backlog, then
   the live stream, bounded like `TerminalTranscript`), for the Styr Terminal engine, whose
   `backlog` port is synchronous.
@@ -355,11 +359,79 @@ process passes a remote path on as text: it never `path.resolve`s or `existsSync
   another client moving the server, terminal reattach with a reset, the merged tray and
   notifications, settings and the VS Code link.
 - `host/remote/channels.test.ts`: every server channel has a route, and every write is routed.
+- `host/remote/router.hostile.test.ts`: a compromised server (malformed, oversized and hostile
+  answers and notifications on every channel kind, a bad hello, session ids it does not own,
+  hostile task paths); `validation.test.ts`: every routed channel and handled notification has a
+  schema, and the bounds.
 - `host/remote/client.integration.test.ts`: the router and `RemoteConnection` against a real
   `styr serve` built from the checkout, the transport running `serve attach` without ssh: the
   board through the router, a launch and attach, a drop while the terminal keeps printing, and the
   reattach with its backlog. Gated and run in the smoke job like `serve.integration.test.ts`.
 - `renderer/lib/remoteStatus.test.ts`: the read-only reasons, switcher notes and file actions.
+
+## Trust boundary
+
+A remote workspace shows on the laptop what was written on another machine: tasks and their
+activity (agents write them), agent status records, source items, terminal output, settings and
+notifications. If that machine is compromised, all of it is hostile. A compromised VM must not
+become a compromised laptop, so each side checks what it is given.
+
+**The server validates calls.** `styr serve` parses every request's arguments with zod
+(`serverHost.ts`, the `taskSchema.ts` schemas): a bad one is `Invalid params`, never a throw in a
+service. This protects the host's files from a confused client.
+
+**The client validates answers** (`host/remote/validation.ts`). `router.refresh` wraps each host's
+connection in `validatingConnection`, so every answer passes its schema in `RESPONSE_SCHEMAS`
+before `forwarding.ts`, `terminals.ts`, `workspaces.ts`, `settings.ts`, `rollup.ts` or a caller
+sees it; the one-off setup session (`session.ts`) does the same, and the hello is parsed in
+`connection.ts`. Notifications pass `NotificationGuard` (`NOTIFICATION_SCHEMAS`) before
+`onNotification`.
+
+- **The schemas** are the `remote*` ones at the end of `core/taskSchema.ts`, bounded copies of the
+  shapes in `types/`, next to the schemas the server checks with. The unbounded ones that read local
+  task files are untouched: local workspaces behave as before. Unknown keys are dropped.
+- **Bounds** (`REMOTE_LIMITS`): every answer is first walked by `remoteBoundsProblem` (depth 24,
+  strings 1 MiB, 20,000 entries per list or object, no `__proto__`/`constructor`/`prototype`
+  keys), then each field has its own cap: a task body 1 MiB, 10,000 activity bullets, 500
+  sessions, a terminal backlog or chunk `TerminalTranscript`'s 200,000 units (and marks inside
+  it). Lines over 64 MiB are dropped by `LineDecoder` without being held, on the client as on the
+  server, and it counts bytes as they arrive, so a long line costs linear time.
+- **Failure.** An answer that fails is a `RemoteInvalidResponse` (a `RemoteUnavailable`) for that
+  call: the renderer shows its message, and the router's own reads fall back as when the host does
+  not answer. A notification that fails is dropped and logged once per channel per connection. A
+  method with no schema is refused or dropped. A hello that fails leaves the host `incompatible`.
+  Nothing throws in the main process and nothing invalid reaches `broadcast`, `notify`,
+  `updateTray` or `openExternal`.
+- **Local actions.** Session ids must look like ids, and a server may not claim one that runs on
+  this machine or was seen on another host (`terminals.ts`, `mayClaim`): an answer that does fails,
+  a broadcast that does is dropped, and `terminal:data` is taken only for terminals this client
+  attached on that host. Notification text loses control and bidi characters and is cut
+  (`notificationText`). A task's `filePath` must be one line without control characters, and
+  `remoteEditorUri` normalises it lexically and escapes each segment, so whatever the server sends
+  the link is `vscode://vscode-remote/ssh-remote+<host>/…` (or `cursor://…`), never another scheme,
+  a query or a fragment.
+
+**The renderer is sandboxed** (`sandbox: true`, with `contextIsolation` and no `nodeIntegration`).
+React escapes the text, but should any script ever get into the renderer, it could call
+`window.api` (`terminal.create`, `terminal.write`) and so run commands on the laptop; the sandbox
+at least keeps it inside Chromium's process sandbox with nothing but that API, and the API is the
+one thing to keep narrow. The preload is one CommonJS script (`electron.vite.config.ts`) that
+requires `electron` alone, using only `contextBridge`, `ipcRenderer` and `webUtils` (plus the
+sandbox's `process.platform`); `scripts/build.mjs` fails a build whose preload requires anything
+else, `src/preload/sandbox.test.ts` checks the source, and the smoke test checks the running
+renderer is sandboxed (on macOS and Windows; CI's Linux runs Chromium with `--no-sandbox`).
+
+**The window stays on the app** (`main/windowSecurity.ts`): navigation away from the app's page is
+refused for every web contents (`web-contents-created`), no window or `<webview>` is ever created,
+and only `http(s)` links reach `shell.openExternal`. A `prUrl` or source link from a server with
+another scheme (`file:`, `smb:`, an app's own) opens nothing.
+
+**Content Security Policy** (`src/renderer/index.html`): `default-src 'none'`; scripts only from
+the app's files (`script-src 'self'`: no inline script, no `eval`); `connect-src 'self'` (the dev
+server's HMR socket; the built app makes no requests); images and fonts from the app or `data:`;
+no objects, frames, workers, forms or `<base>`. `style-src` keeps `'unsafe-inline'` for React's
+style props and xterm.js. A new need (a worker, a fetch) is added here deliberately, never with a
+wildcard.
 
 ## Host setup
 
