@@ -626,12 +626,27 @@ export function createRemoteRouter(ports: RouterPorts) {
     try {
       const backlog = (await entry.conn.request('terminal:attach', [id])) as TerminalOutput
       entry.attached.add(id)
-      const mirror = new TerminalMirror(backlog)
-      for (const early of entry.attaching.get(id) ?? []) mirror.append(early)
-      entry.mirrors.set(id, mirror)
+      entry.mirrors.set(id, new TerminalMirror(backlog))
+      flushEarly(entry, id)
       return backlog
     } finally {
       entry.attaching.delete(id)
+    }
+  }
+
+  /**
+   * Output that arrived while an attach was on its way, held back by `terminalData`: a line read
+   * in the same chunk as the attach's reply is dispatched before the `await` resumes. Sent now,
+   * after the backlog, skipping what the backlog already held.
+   */
+  function flushEarly(entry: HostEntry, id: string): void {
+    const early = entry.attaching.get(id) ?? []
+    entry.attaching.delete(id)
+    const mirror = entry.mirrors.get(id)
+    for (const output of early.sort((a, b) => a.sequence - b.sequence)) {
+      if (mirror && !mirror.append(output)) continue
+      for (const listener of dataListeners) listener(id, output)
+      ports.broadcast('terminal:data', { id, ...output })
     }
   }
 
@@ -651,8 +666,9 @@ export function createRemoteRouter(ports: RouterPorts) {
     const { id, ...output } = payload
     sessionHosts.set(id, entry.host)
     const early = entry.attaching.get(id)
-    if (early) early.push(output)
-    else entry.mirrors.get(id)?.append(output)
+    // Held until the attach's backlog is in place (`flushEarly`), so a reset cannot wipe it.
+    if (early) return void early.push(output)
+    entry.mirrors.get(id)?.append(output)
     for (const listener of dataListeners) listener(id, output)
     ports.broadcast('terminal:data', payload)
   }
@@ -689,10 +705,14 @@ export function createRemoteRouter(ports: RouterPorts) {
         terminalExit(entry, { id, exitCode: -1 })
         continue
       }
+      entry.attaching.set(id, [])
       try {
         const backlog = (await entry.conn.request('terminal:attach', [id])) as TerminalOutput
         const mirror = entry.mirrors.get(id)
-        if (mirror && backlog.sequence <= mirror.lastSequence) continue
+        if (mirror && backlog.sequence <= mirror.lastSequence) {
+          flushEarly(entry, id)
+          continue
+        }
         if (mirror) mirror.reset(backlog)
         else entry.mirrors.set(id, new TerminalMirror(backlog))
         const output: TerminalOutput = {
@@ -705,8 +725,11 @@ export function createRemoteRouter(ports: RouterPorts) {
         }
         for (const listener of dataListeners) listener(id, output)
         ports.broadcast('terminal:data', { id, ...output })
+        flushEarly(entry, id)
       } catch {
         // Left detached; the next reconnect tries again.
+      } finally {
+        entry.attaching.delete(id)
       }
     }
   }

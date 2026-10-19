@@ -123,6 +123,17 @@ export function remoteFileAction(
   }
 }
 
+/**
+ * Why a Browse button is off, or undefined when it works. The native pickers browse this computer,
+ * and a path picked there means nothing on a remote host: the server would quietly start the agent
+ * in its home folder instead. A remote path is typed.
+ */
+export function localPickerBlocked(access: BoardAccess): string | undefined {
+  return access.remote
+    ? `This path is on ${access.remote.host}; type it. Browse picks from this computer.`
+    : undefined
+}
+
 /** The open board's access and the remote state, for components deep in the tree. */
 export const RemoteContext = createContext<{ state: RemoteState; access: BoardAccess }>({
   state: NO_REMOTE,

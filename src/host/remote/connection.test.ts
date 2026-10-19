@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { RemoteHostState } from '@core/types.js'
-import { RemoteConnection, exitReason, type ConnectionEvents } from './connection.js'
+import {
+  HELLO_TIMEOUT_MS,
+  RemoteConnection,
+  exitReason,
+  type ConnectionEvents
+} from './connection.js'
 import { HELLO, fakeClock, fakeServer, settle } from './remoteFixture.js'
 
 function setup(handlers = {}) {
@@ -79,7 +84,8 @@ describe('RemoteConnection', () => {
     expect(clock.pending()).toEqual([2000])
     connection.retryNow()
     expect(status()).toBe('connecting')
-    expect(clock.pending()).toEqual([])
+    // The backoff timer is gone; only the new attempt's hello deadline is armed.
+    expect(clock.pending()).toEqual([HELLO_TIMEOUT_MS])
   })
 
   it('queues nothing: a request while disconnected rejects at once, and a dropped link rejects what waited', async () => {
@@ -133,6 +139,23 @@ describe('RemoteConnection', () => {
     connection.retryNow()
     connection.wake(true)
     expect(server.children).toHaveLength(1)
+  })
+
+  it('gives up on a link that connects but never says hello, and backs off as usual', () => {
+    const { server, clock, connection, status } = setup()
+    connection.start()
+    server.children[0]!.stderr('Welcome to devbox\n')
+    expect(clock.pending()).toEqual([HELLO_TIMEOUT_MS])
+    clock.advance(HELLO_TIMEOUT_MS)
+    expect(server.children[0]!.killed).toBe(true)
+    expect(status()).toBe('reconnecting')
+    expect(connection.state().lastError).toBe('devbox did not answer within 15s: Welcome to devbox')
+    expect(clock.pending()).toEqual([1000])
+    clock.advance(1000)
+    server.hello()
+    expect(status()).toBe('connected')
+    // Once connected, no deadline is left armed.
+    expect(clock.pending()).toEqual([])
   })
 
   it('passes the server’s notifications on', () => {

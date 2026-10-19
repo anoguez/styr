@@ -199,7 +199,9 @@ workspace id and server command; the guided setup is TASK-0133.
   (child started), `connected` (the server said `server:hello`), `reconnecting` (with ssh's last
   stderr line as `lastError`, and `retryAt`), `offline` (stopped, or the machine asleep). A child
   that exits is retried after the backoff: one timer armed for a known instant, reset once
-  connected, so nothing polls. `retryNow` skips the wait; `wake(true)` (power resume) replaces even
+  connected, so nothing polls. An attempt that connects but brings no hello within 15s
+  (`HELLO_TIMEOUT_MS`: a hung server, a remote shell that blocks) is killed and backs off the
+  same way. `retryNow` skips the wait; `wake(true)` (power resume) replaces even
   a link that looks alive; `wake(false)` (network back) retries one that is down; `suspend` drops
   the link and waits for wake. A request while disconnected rejects at once: **nothing is queued**.
   The child and the clock are ports (`ConnectionPorts`); `sshTransport.ts` is the real child,
@@ -280,7 +282,9 @@ is a later change to the host services.
 On every `server:hello` the router fetches the server's workspace list, switches it if the user
 asked for this workspace (at start, or by switching to it while disconnected), and then:
 
-- reattaches each terminal this client had attached. When the server's sequence moved past the
+- reattaches each terminal this client had attached. Output that arrives while an attach is on
+  its way (even in the same read as its reply) is held, then sent after the backlog, so the reset
+  cannot wipe it. When the server's sequence moved past the
   mirror's, the backlog is sent to the views after a terminal reset (`ESC c`), so a view starts
   again from the server's scrollback rather than repeating itself; a session the server no
   longer has (it restarted) is reported exited. The renderer also lists the host's sessions again,
@@ -292,6 +296,12 @@ asked for this workspace (at start, or by switching to it while disconnected), a
 - refetches the board (`tasks:changed`, `agents:changed`, `settings:changed`, Auto-run's state).
 
 ### Local-only actions
+
+The Browse buttons (a task's working directory and context files, the Settings path fields) open
+this computer's file dialog, so they are disabled for a remote workspace, with a tooltip saying to
+type the path; dropping files on a task's brief is off too. A local path stored for the host
+would not fail there: the server would start the agent in its home folder. In Settings this
+follows the workspace being edited, elsewhere the open one.
 
 "Open file" on a remote task opens `vscode://vscode-remote/ssh-remote+<host><path>` when Settings
 → Open files with is VS Code or Cursor; otherwise it is disabled, with the remote path in the

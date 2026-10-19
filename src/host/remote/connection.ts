@@ -56,6 +56,13 @@ export interface ConnectionEvents {
   notification(method: string, params: unknown[]): void
 }
 
+/**
+ * How long a started `ssh` may take to bring the server's hello. ssh's own `ConnectTimeout` covers
+ * an unreachable host; this covers a link that connects but whose `serve attach` never answers (a
+ * hung server, a remote shell that blocks). One timer for a known instant, not a poll.
+ */
+export const HELLO_TIMEOUT_MS = 15_000
+
 /** The last bytes of ssh's stderr kept for the error shown: its own words, not a guess. */
 const STDERR_LIMIT = 2_000
 
@@ -67,6 +74,7 @@ export class RemoteConnection {
   private child: TransportChild | undefined
   private peer: RpcPeer | undefined
   private timer: unknown
+  private helloTimer: unknown
   private failures = 0
   private everConnected = false
   /** False once stopped: nothing reconnects until `start`. */
@@ -170,6 +178,22 @@ export class RemoteConnection {
       return
     }
     this.child = child
+    this.helloTimer = this.ports.setTimer(() => {
+      this.helloTimer = undefined
+      if (this.child !== child || this.status !== 'connecting') return
+      this.child = undefined
+      this.peer?.close(`The connection to ${this.host} closed.`)
+      this.peer = undefined
+      try {
+        child.kill()
+      } catch {
+        // Already gone.
+      }
+      const said = exitReason(stderr, null)
+      this.failed(
+        `${this.host} did not answer within ${HELLO_TIMEOUT_MS / 1000}s${said === 'ssh was stopped.' ? '.' : `: ${said}`}`
+      )
+    }, HELLO_TIMEOUT_MS)
     const peer = new RpcPeer(
       (line) => {
         try {
@@ -189,6 +213,7 @@ export class RemoteConnection {
     })
     child.onExit((code, error) => {
       if (this.child !== child) return
+      this.clearHelloTimer()
       this.child = undefined
       this.peer = undefined
       peer.close(`The connection to ${this.host} closed.`)
@@ -201,6 +226,7 @@ export class RemoteConnection {
   private received(child: TransportChild, method: string, params: unknown[]): void {
     if (this.child !== child) return
     if (method === 'server:hello') {
+      this.clearHelloTimer()
       const hello = params[0] as ServerHello
       const reconnect = this.everConnected
       this.everConnected = true
@@ -231,8 +257,14 @@ export class RemoteConnection {
     this.setStatus('reconnecting')
   }
 
+  private clearHelloTimer(): void {
+    if (this.helloTimer !== undefined) this.ports.clearTimer(this.helloTimer)
+    this.helloTimer = undefined
+  }
+
   /** Ends the current child without treating its exit as a failure. */
   private drop(): void {
+    this.clearHelloTimer()
     const child = this.child
     const peer = this.peer
     const wasConnected = this.status === 'connected'

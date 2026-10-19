@@ -435,6 +435,36 @@ describe('remote router: terminals', () => {
     })
   })
 
+  it('keeps output that arrives in the same chunk as the reattach’s backlog', async () => {
+    const t = setup({ active: 'remote-main' })
+    t.router.refresh()
+    await t.connectAll()
+    await t.call('terminal:launchAgent', 'TASK-0007')
+    t.devbox.state.backlog['s-TASK-0007'] = { data: 'start', sequence: 1, marks: [] }
+    await t.call('terminal:backlog', 's-TASK-0007')
+    t.devbox.server.drop()
+    await settle()
+    t.devbox.state.backlog['s-TASK-0007'] = { data: 'start, reattached', sequence: 5, marks: [] }
+    t.clock.advance(1000)
+    // The server's next output rides in the same read as the attach reply.
+    const child = t.devbox.server.children.at(-1)!
+    const deliver = child.stdout
+    const live = `${JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'terminal:data',
+      params: [{ id: 's-TASK-0007', data: ' live', sequence: 6, marks: [] }]
+    })}\n`
+    child.stdout = (text) => deliver(text.includes('start, reattached') ? text + live : text)
+    t.broadcasts.length = 0
+    t.devbox.server.hello()
+    await settle()
+    const shown = t.broadcasts
+      .filter(([channel]) => channel === 'terminal:data')
+      .map(([, payload]) => (payload as TerminalOutput).data)
+    expect(shown).toEqual([`${TERMINAL_RESET}start, reattached`, ' live'])
+    expect(t.router.mirrorBacklog('s-TASK-0007')?.data).toBe('start, reattached live')
+  })
+
   it('reports a session the restarted server no longer has as exited', async () => {
     const t = setup({ active: 'remote-main' })
     t.router.refresh()
