@@ -113,12 +113,13 @@ export const SECTIONS = [
   },
   {
     id: 'remote',
-    label: 'Remote',
+    label: 'Remote hosts',
     scope: 'app',
-    blurb: 'Workspaces that live on another machine, reached over ssh.',
+    blurb: 'Machines that run your remote workspaces over ssh: their servers and connections.',
     keys: [],
     flag: 'remoteWorkspaces',
-    words: 'remote ssh host server tailscale vm cloud serve connection'
+    words:
+      'remote ssh host server tailscale vm cloud serve connection upgrade stop disconnect uptime version'
   },
   {
     id: 'storage',

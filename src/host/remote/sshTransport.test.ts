@@ -37,7 +37,7 @@ describe.skipIf(process.platform === 'win32')('sshTransport', () => {
     child.write('hello\n')
     expect(await exit).toBe(255)
     expect(out).toContain('args: -T -o BatchMode=yes')
-    expect(out).toContain('devbox styr serve attach')
+    expect(out).toContain('devbox ~/.styr/server/current/bin/styr serve attach')
     expect(out).toContain('got: hello')
     expect(err).toContain('Permission denied')
     // Writing after the exit is harmless.

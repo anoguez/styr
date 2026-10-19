@@ -54,6 +54,13 @@ export const RPC_ERRORS = {
 } as const
 
 /** The longest line a peer accepts: far above any backlog `TerminalTranscript` keeps. */
+/**
+ * The JSON-RPC surface's own version, sent in `server:hello`. Bumped when a client must change with
+ * the server; a client that speaks another one forwards nothing to that server and offers the
+ * upgrade (`docs/architecture/remote.md`, Version lock).
+ */
+export const PROTOCOL_VERSION = 1
+
 export const MAX_LINE_BYTES = 64 * 1024 * 1024
 
 const idSchema = z.union([z.number(), z.string()])

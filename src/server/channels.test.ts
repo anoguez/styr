@@ -68,7 +68,14 @@ const DESKTOP_ONLY = new Set([
   'remote:state',
   'remote:retry',
   'remote:switchBack',
-  'remote:addWorkspace'
+  'remote:addWorkspace',
+  // Setting up and running a host's server, over ssh from this computer (`hostSetup.ts`).
+  'remote:setup',
+  'remote:runningAgents',
+  'remote:upgrade',
+  'remote:stopServer',
+  'remote:disconnect',
+  'remote:connect'
 ])
 
 describe('the server channel table', () => {

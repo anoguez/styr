@@ -6,6 +6,7 @@ import {
   exitReason,
   type ConnectionEvents
 } from './connection.js'
+import { PROTOCOL_VERSION } from '../rpc/jsonRpc.js'
 import { HELLO, fakeClock, fakeServer, settle } from './remoteFixture.js'
 
 function setup(handlers = {}) {
@@ -165,6 +166,42 @@ describe('RemoteConnection', () => {
     server.push('tasks:changed')
     expect(log).toEqual(['connected', 'notification tasks:changed'])
   })
+
+  it('forwards nothing to a server on another protocol, keeps the link (no retry loop), and reconnects on Retry', async () => {
+    const { server, clock, connection, log, status } = setup({ 'tasks:list': () => [] })
+    connection.start()
+    server.hello({ ...HELLO, protocol: PROTOCOL_VERSION + 1, version: '0.1.0' })
+    expect(status()).toBe('incompatible')
+    expect(connection.connected).toBe(false)
+    expect(connection.state()).toMatchObject({
+      serverVersion: '0.1.0',
+      lastError: expect.stringMatching(/devbox runs Styr 0\.1\.0.*not this app's.*upgraded/)
+    })
+    // No connected event, no notifications, requests refused, nothing armed.
+    server.push('tasks:changed')
+    expect(log).toEqual([])
+    await expect(connection.request('tasks:list')).rejects.toThrow(/Not connected/)
+    expect(server.calls).toEqual([])
+    expect(clock.pending()).toEqual([])
+    expect(server.children[0]!.killed).toBe(false)
+    // The network coming back does not replace it; Retry (after the upgrade) does.
+    connection.wake(false)
+    expect(server.children).toHaveLength(1)
+    connection.retryNow()
+    expect(server.children[0]!.killed).toBe(true)
+    expect(server.children).toHaveLength(2)
+    server.hello()
+    expect(status()).toBe('connected')
+    expect(log).toEqual(['connected'])
+  })
+
+  it('reports when the server started, for its uptime', () => {
+    const { server, connection } = setup()
+    connection.start()
+    server.hello()
+    expect(connection.state().serverStartedAt).toBe(HELLO.startedAt)
+    expect(connection.server?.pid).toBe(HELLO.pid)
+  })
 })
 
 describe('exitReason', () => {
@@ -175,5 +212,11 @@ describe('exitReason', () => {
     const missing = Object.assign(new Error('spawn ssh ENOENT'), { code: 'ENOENT' })
     expect(exitReason('', null, missing)).toBe('ssh was not found on PATH.')
     expect(exitReason('', 2)).toBe('ssh exited with code 2.')
+  })
+
+  it('tells the user to accept an unknown or changed host key themselves, then Retry', () => {
+    expect(exitReason('Host key verification failed.\n', 255, undefined, 'devbox')).toBe(
+      'Host key verification failed. Run “ssh devbox” once in a terminal to check and accept the key, then click Retry.'
+    )
   })
 })

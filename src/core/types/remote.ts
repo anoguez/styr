@@ -17,8 +17,12 @@ export interface RemoteWorkspaceLink {
   server?: string
 }
 
-/** A remote host's connection, one per host whatever the number of workspaces on it. */
-export type RemoteConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline'
+/**
+ * A remote host's connection, one per host whatever the number of workspaces on it. `incompatible`:
+ * the server answered but speaks another protocol, so nothing is forwarded until it is upgraded.
+ */
+export type RemoteConnectionStatus =
+  'connecting' | 'connected' | 'reconnecting' | 'offline' | 'incompatible'
 
 export interface RemoteHostState {
   host: string
@@ -29,6 +33,15 @@ export interface RemoteHostState {
   retryAt?: number
   /** The server's Styr version, once it has said hello. */
   serverVersion?: string
+  /** When the server started, on its clock (ISO), for its uptime. */
+  serverStartedAt?: string
+  /**
+   * This app's version, set while the server runs another one: the client offers to install the
+   * matching server (the version lock), and never restarts it unasked.
+   */
+  upgradeTo?: string
+  /** Disconnected by the user (Settings → Remote hosts): nothing reconnects until Connect. */
+  userDisconnected?: boolean
   /** The workspace the server is showing (its own id and name), once known. */
   serverWorkspace?: { id: string; name: string }
 }
@@ -62,4 +75,53 @@ export interface RemoteWorkspaceDraft {
   host: string
   workspaceId: string
   server?: string
+}
+
+/** What New workspace → Remote sends: the guided setup (`docs/architecture/remote.md`). */
+export interface RemoteSetupDraft {
+  name: string
+  host: string
+  /** The agent CLI to look for on the host; a missing one is a warning, not a refusal. */
+  provider: 'claude' | 'codex'
+}
+
+export type RemoteSetupStep = 'check' | 'probe' | 'install' | 'create'
+
+/** One step of a running setup, pushed as `remote:setupProgress`. */
+export interface RemoteSetupProgress {
+  host: string
+  step: RemoteSetupStep
+  state: 'running' | 'done' | 'failed'
+  /** What the step found or is doing, for people. */
+  detail?: string
+}
+
+/**
+ * How the server reached the host: the host downloaded the bundle from the release, this computer
+ * uploaded it (the fallback), it was unpacked already, or a server of this version was running.
+ */
+export type RemoteTransfer = 'download' | 'upload' | 'installed' | 'running'
+
+export interface RemoteSetupResult {
+  /** The local stub's id: the app has switched to it. */
+  workspaceId: string
+  transfer: RemoteTransfer
+  /** Missing git or CLI, no systemd, an older server still running … */
+  warnings: string[]
+  /** Set when systemd runs the server but lingering is off: the command to copy, never run. */
+  lingerCommand?: string
+}
+
+/** An agent that a server restart or stop would end. */
+export interface RemoteRunningAgent {
+  title: string
+  workspace?: string
+}
+
+export interface RemoteRunningAgents {
+  /** False when the host is not connected, so the list could not be read. */
+  known: boolean
+  /** The host answered, but its server speaks another protocol (why the list is unknown). */
+  incompatible?: boolean
+  agents: RemoteRunningAgent[]
 }

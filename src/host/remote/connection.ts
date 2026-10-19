@@ -1,6 +1,7 @@
 import { reconnectDelay } from '@core/remote.js'
+import { isHostKeyProblem } from '@core/remoteSetup.js'
 import type { RemoteConnectionStatus, RemoteHostState } from '@core/types.js'
-import { RPC_ERRORS, RpcError, RpcPeer } from '../rpc/jsonRpc.js'
+import { PROTOCOL_VERSION, RPC_ERRORS, RpcError, RpcPeer } from '../rpc/jsonRpc.js'
 
 /**
  * One host's connection to its `styr serve` (`docs/architecture/remote.md`): a single `ssh … serve
@@ -12,6 +13,10 @@ import { RPC_ERRORS, RpcError, RpcPeer } from '../rpc/jsonRpc.js'
  *      │                    │                                                    ▲
  *      └──child exits───────┼──────────────────────────────────▶ reconnecting ───┘
  *                     suspend / stop ──▶ offline ──wake / start──▶ connecting
+ *
+ * A server that says hello in another protocol leaves the connection `incompatible`: the link
+ * stays up (so nothing retries in a loop), but no request or notification passes until the server
+ * is upgraded and Retry reconnects.
  *
  * The backoff (1s → 30s) arms one timer for a known instant and stops once connected: there is no
  * polling interval. Nothing is queued while disconnected; a request then rejects at once.
@@ -70,7 +75,7 @@ export class RemoteConnection {
   private status: RemoteConnectionStatus = 'offline'
   private lastError: string | undefined
   private retryAt: number | undefined
-  private serverVersion: string | undefined
+  private hello: ServerHello | undefined
   private child: TransportChild | undefined
   private peer: RpcPeer | undefined
   private timer: unknown
@@ -94,8 +99,14 @@ export class RemoteConnection {
       status: this.status,
       ...(this.lastError ? { lastError: this.lastError } : {}),
       ...(this.retryAt !== undefined ? { retryAt: this.retryAt } : {}),
-      ...(this.serverVersion ? { serverVersion: this.serverVersion } : {})
+      ...(this.hello?.version ? { serverVersion: this.hello.version } : {}),
+      ...(this.hello?.startedAt ? { serverStartedAt: this.hello.startedAt } : {})
     }
+  }
+
+  /** What the server said on its last hello, connected or incompatible. */
+  get server(): ServerHello | undefined {
+    return this.hello
   }
 
   get connected(): boolean {
@@ -123,6 +134,8 @@ export class RemoteConnection {
     this.suspended = false
     this.failures = 0
     this.clearTimer()
+    // An incompatible server's link is still open: replace it, the server may be upgraded now.
+    this.drop()
     this.attempt()
   }
 
@@ -135,7 +148,7 @@ export class RemoteConnection {
     this.suspended = false
     if (!this.wanted) return
     if (this.status === 'connected' && !fresh) return
-    if (this.status === 'connecting' && !fresh) return
+    if ((this.status === 'connecting' || this.status === 'incompatible') && !fresh) return
     this.failures = 0
     this.clearTimer()
     this.drop()
@@ -189,7 +202,7 @@ export class RemoteConnection {
       } catch {
         // Already gone.
       }
-      const said = exitReason(stderr, null)
+      const said = exitReason(stderr, null, undefined, this.host)
       this.failed(
         `${this.host} did not answer within ${HELLO_TIMEOUT_MS / 1000}s${said === 'ssh was stopped.' ? '.' : `: ${said}`}`
       )
@@ -218,7 +231,7 @@ export class RemoteConnection {
       this.peer = undefined
       peer.close(`The connection to ${this.host} closed.`)
       const wasConnected = this.status === 'connected'
-      this.failed(exitReason(stderr, code, error))
+      this.failed(exitReason(stderr, code, error, this.host))
       if (wasConnected) this.events.disconnected()
     })
   }
@@ -228,16 +241,21 @@ export class RemoteConnection {
     if (method === 'server:hello') {
       this.clearHelloTimer()
       const hello = params[0] as ServerHello
+      this.hello = hello && typeof hello === 'object' ? hello : undefined
+      this.failures = 0
+      if (hello?.protocol !== PROTOCOL_VERSION) {
+        this.lastError = incompatibleMessage(this.host, hello)
+        this.setStatus('incompatible')
+        return
+      }
       const reconnect = this.everConnected
       this.everConnected = true
-      this.failures = 0
       this.lastError = undefined
-      this.serverVersion = typeof hello?.version === 'string' ? hello.version : undefined
       this.setStatus('connected')
       this.events.connected(hello, reconnect)
       return
     }
-    this.events.notification(method, params)
+    if (this.status === 'connected') this.events.notification(method, params)
   }
 
   /** An attempt or a link failed: back off, unless stopped or asleep. */
@@ -292,8 +310,22 @@ export class RemoteConnection {
   }
 }
 
+/** Why an `incompatible` server is not used, and what fixes it. */
+export function incompatibleMessage(host: string, hello: ServerHello | undefined): string {
+  const version = hello?.version ? `Styr ${hello.version}` : 'an unknown Styr'
+  return (
+    `${host} runs ${version}, whose server protocol (${String(hello?.protocol ?? '?')}) is not ` +
+    `this app's (${PROTOCOL_VERSION}). Nothing is sent to it until the server is upgraded.`
+  )
+}
+
 /** ssh's last stderr line when it said something, else how the child ended. */
-export function exitReason(stderr: string, code: number | null, error?: Error): string {
+export function exitReason(
+  stderr: string,
+  code: number | null,
+  error?: Error,
+  host = '<host>'
+): string {
   if (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT'
       ? 'ssh was not found on PATH.'
@@ -304,6 +336,10 @@ export function exitReason(stderr: string, code: number | null, error?: Error): 
     .map((line) => line.trim())
     .filter(Boolean)
   const last = lines.at(-1)
+  // Only the user may accept a host key: say how, after ssh's own words.
+  if (last && isHostKeyProblem(stderr)) {
+    return `${last} Run “ssh ${host}” once in a terminal to check and accept the key, then click Retry.`
+  }
   if (last) return last
   return code === null ? 'ssh was stopped.' : `ssh exited with code ${code}.`
 }

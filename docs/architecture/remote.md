@@ -2,9 +2,9 @@
 
 A workspace can live on another machine, such as a cloud VM, where a headless Styr keeps its agents
 and Auto-run going while the laptop is closed. The desktop app reaches it over `ssh`. This note
-covers the server (TASK-0131) and the client: the router, the connection and the reconnect UI
-(TASK-0132). The host setup flow and release bundles are TASK-0133. The full spec, decisions and
-edge cases are in TASK-0129.
+covers the server (TASK-0131), the client: the router, the connection and the reconnect UI
+(TASK-0132), and setting a host up, the version lock and the release bundles (TASK-0133). The full
+spec, decisions and edge cases are in TASK-0129.
 
 ```
 desktop main ──ssh -T host styr serve attach──▶ attach (stdio ↔ socket) ──▶ ~/.styr/server.sock
@@ -77,7 +77,8 @@ desktop main ──ssh -T host styr serve attach──▶ attach (stdio ↔ sock
 
 `ServerInfo` is `{ protocol, version, pid, startedAt, storageDir, platform }`. `version` is Styr's
 version, set at build time from package.json. The client compares it with its own (the version
-lock in TASK-0129). `protocol` is bumped only when the wire format changes.
+lock, below). `protocol` (`PROTOCOL_VERSION` in `src/host/rpc/jsonRpc.ts`, shared by both sides) is
+bumped only when the wire format changes.
 
 Errors use the JSON-RPC codes: `-32700` for a line that is not JSON, `-32600` for a message of the
 wrong shape, `-32601` for an unknown method, `-32602` for arguments that fail zod (with the issues
@@ -150,8 +151,9 @@ does.
 for plain Node (`yarn build` runs it after electron-vite). Every JavaScript dependency is bundled.
 Only `node-pty` and `better-sqlite3` stay external, and Node resolves them from the `node_modules`
 next to `out/`. In a checkout that is the repo's own, which loads under Node because both modules
-are N-API builds. A release's server bundle (TASK-0133) has its own Node runtime and its own builds
-of both, with the same layout (`out/server/`, `resources/claude/`, `node_modules/`). It never
+are N-API builds. A release's server bundle has its own Node runtime and its own builds of both,
+with the same layout (`out/server/`, `resources/claude/`, `node_modules/`, plus `node/` and
+`bin/styr`); see Server bundles below. It never
 loads the desktop app's Electron-ABI copies from `app.asar.unpacked`. electron-builder leaves
 `out/server/` out of the desktop app.
 
@@ -185,8 +187,10 @@ it like any other folder and puts the link on `WorkspaceInfo.remote` (`core/work
 no shell characters). `server` is the command that starts `styr serve` on the host, kept as typed
 and run by the host's shell (default `styr`). Removing the workspace deletes only the stub, and
 the confirmation says so; nothing on the host is touched, so it works for a host gone for good.
-For now Settings → Remote (shown with the flag) has a minimal form taking a name, host, remote
-workspace id and server command; the guided setup is TASK-0133.
+New workspace → Remote host sets a host up and creates the stub (Host setup, below). Settings →
+Remote hosts also has a form that only links a workspace a host already has (one set up from
+another computer): a name, the host, the remote workspace id and the server command, which
+defaults to `~/.styr/server/current/bin/styr`, where setup and `install.sh` put it.
 
 ### Files
 
@@ -324,13 +328,20 @@ process passes a remote path on as text: it never `path.resolve`s or `existsSync
 
 ### The connection channels
 
-| Channel               | Kind      | Payload                                                      |
-| --------------------- | --------- | ------------------------------------------------------------ |
-| `remote:state`        | invoke    | `[]` → `RemoteState`                                         |
-| `remote:state`        | broadcast | `RemoteState`: the flag, each host's state, each stub's live |
-| `remote:retry`        | invoke    | `[host?]`: Retry now, one host or all                        |
-| `remote:switchBack`   | invoke    | `[stubId]`: point the server at this workspace again         |
-| `remote:addWorkspace` | invoke    | `[RemoteWorkspaceDraft]` → `WorkspaceOverview`               |
+| Channel                | Kind      | Payload                                                      |
+| ---------------------- | --------- | ------------------------------------------------------------ |
+| `remote:state`         | invoke    | `[]` → `RemoteState`                                         |
+| `remote:state`         | broadcast | `RemoteState`: the flag, each host's state, each stub's live |
+| `remote:retry`         | invoke    | `[host?]`: Retry now, one host or all                        |
+| `remote:switchBack`    | invoke    | `[stubId]`: point the server at this workspace again         |
+| `remote:addWorkspace`  | invoke    | `[RemoteWorkspaceDraft]` → `WorkspaceOverview`               |
+| `remote:setup`         | invoke    | `[RemoteSetupDraft]` → `RemoteSetupResult` (Host setup)      |
+| `remote:setupProgress` | broadcast | `RemoteSetupProgress`: one step's state                      |
+| `remote:runningAgents` | invoke    | `[host]` → `RemoteRunningAgents`, before a restart or stop   |
+| `remote:upgrade`       | invoke    | `[host]`: install this version beside, restart into it       |
+| `remote:stopServer`    | invoke    | `[host]`: stop the server, then disconnect                   |
+| `remote:disconnect`    | invoke    | `[host]`: offline until Connect                              |
+| `remote:connect`       | invoke    | `[host]`: start the installed server if needed, connect      |
 
 ### Client tests
 
@@ -349,3 +360,131 @@ process passes a remote path on as text: it never `path.resolve`s or `existsSync
   board through the router, a launch and attach, a drop while the terminal keeps printing, and the
   reattach with its backlog. Gated and run in the smoke job like `serve.integration.test.ts`.
 - `renderer/lib/remoteStatus.test.ts`: the read-only reasons, switcher notes and file actions.
+
+## Host setup
+
+The desktop app drives the install the way VS Code Remote-SSH installs its server: every step runs
+on the host over ssh, and nothing is installed on the laptop. New workspace → Remote host takes a
+host and a name, with the agent CLI to look for.
+
+```
+check    ssh -T -o BatchMode=yes <host> true      ssh's own error verbatim on failure
+probe    sh -s -- --probe …   (install.sh on stdin) OS, arch, git, CLI, systemd, linger, versions
+install  sh -s -- --install --version V --sha256 H the host downloads, checks, unpacks, starts
+         └ exit 20 or 22: this computer downloads, checks H, uploads (scp, or ssh … cat), --tarball
+create   workspaces:create on the server           shared connection, or a one-off session
+         then the local stub, and the app switches to it: the board opens empty and connected
+```
+
+- **One installer.** `resources/server/install.sh` is the only implementation. The desktop app
+  pipes it to `sh -s` on the host (it ships beside the asar, `extraResources`), and each release
+  publishes it with its version filled in, for setting a host up by hand or from cloud-init
+  (`curl -fsSL …/releases/latest/download/install.sh | sh`, in the README). Both produce the same
+  layout and unit, so either can upgrade what the other installed. Modes: `--probe`, `--install`,
+  `--start`, `--restart`, `--stop`; its `::styr key=value` lines are for the app
+  (`parseInstallReport`), everything else is for people. Exit 10 is not Linux, 11 an unsupported
+  arch, 20 a failed download, 22 a bundle that did not match its SHA-256 (told apart, since it may
+  mean the download was tampered with), 30 and 31 a start or stop that did not happen.
+- **Layout.** `~/.styr/server/<version>/` holds one unpacked bundle per version, side by side;
+  `~/.styr/server/current` is a symlink to the one that starts next; `bin/styr` resolves the
+  symlink when it starts, so a running server keeps its version. The unit is
+  `~/.config/systemd/user/styr-server.service`: `ExecStart=%h/.styr/server/current/bin/styr serve`,
+  `Restart=on-failure`, and the PATH of a login shell, so agents find `claude` in `~/.local/bin`
+  (ssh runs the script without the profile, so `git` and the CLI are also looked for with a login
+  shell). It is written on every install, enabled, and started only when no server answers on the
+  socket (`styr serve attach` exits 0 when one does, 2 when none does).
+- **Lingering.** Without it, systemd stops the user's services when their last session ends: the
+  server would die with the ssh connection. Setup reports it and shows
+  `sudo loginctl enable-linger $USER` to copy. Styr never runs it.
+- **No systemd** (a container, WSL without it): `nohup`, with a warning that the server will not
+  come back after a reboot. Connect in Settings → Remote hosts starts it again.
+- **Reuse.** A server of this version already running is reused: nothing is installed. A second
+  remote workspace on the same host creates its workspace over the host's shared connection, and
+  its stub shares that connection (one per host, `registry.wantedHosts`). An older server keeps
+  running: this version is installed beside it and takes over on Upgrade.
+- **Refused, warned.** Only what cannot work is refused: no ssh, not Linux, not x86_64 or aarch64,
+  a bundle that fails its hash. A missing git or CLI, no systemd and an older server running are
+  warnings (warn, don't refuse).
+
+The steps are `src/host/remote/hostSetup.ts`, behind ports: the ssh runner, the uploader, the
+bundle on this computer, the embedded hashes and the script (`HostSetupPorts`), plus creating the
+server workspace and the stub (`SetupFlowPorts`). `sshRunner.ts` is the real ports;
+`session.ts` is the one-off `serve attach` session. `src/main/remote.ts` binds them.
+
+### Security
+
+- **The hash comes from the signed app.** The release workflow builds the server bundles before
+  the desktop app and writes their SHA-256s into it (`out/main/serverBundles.json`, by
+  `scripts/server-checksums.mjs app`), so they ship inside the signed, notarised app. The app
+  passes the hash to `install.sh --sha256`; the host refuses to unpack a download that does not
+  match. The upload fallback checks the same hash on this computer before sending
+  (`fetchBundle`), and the host checks it again. The release's `SHA256SUMS` is used only by
+  `install.sh` run by hand, where it catches a corrupt download; to check provenance, verify the
+  bundle's attestation (`gh attestation verify <bundle> --repo anoguez/styr`, in the README). A
+  build with no hashes (development) installs nothing unless `STYR_SERVER_BUNDLE_DIR` names a
+  folder holding the bundles, whose own hashes then stand in.
+- **Host keys are ssh's business.** Every ssh and scp Styr runs keeps `BatchMode=yes` and ssh's
+  default host-key checking (`sshCommandArgs`, `scpArgs`): never `StrictHostKeyChecking=no` or
+  `accept-new`, and Styr never writes `known_hosts`. An unknown or changed key stops setup with
+  ssh's message and the instruction to run `ssh <host>` once in a terminal, check the key, accept
+  it, and click Retry. A live connection that hits a changed key says the same in its badge
+  (`exitReason`). `core/remoteSetup.test.ts` holds every command line to this.
+
+### Version lock
+
+- **Protocol.** A server whose hello carries another `protocol` leaves the connection
+  `incompatible`: the ssh link stays open (so nothing retries in a loop), no request, notification
+  or board call passes either way, writes are refused saying to upgrade, and the badge says so with
+  Upgrade server. Retry (after the upgrade) replaces the link. The one-off setup session refuses
+  such a server too.
+- **Version.** A server on another Styr version still connects; the host's state carries
+  `upgradeTo` (this app's version), and the badge and Settings → Remote hosts offer Upgrade
+  server. **Nothing restarts the server unasked**, because a restart ends its agents.
+- **Upgrade server** lists the agents it would end (`remote:runningAgents`, the host's
+  `terminal:list`) and proceeds only on confirm, then runs `--install` (beside the old version,
+  repointing `current`) and `--restart` (the unit, or the hello's pid without one), and reconnects.
+
+### Settings → Remote hosts
+
+One row per host in use: its status, server version, uptime (from the hello's `startedAt`) and the
+workspaces on it, with Disconnect (offline until Connect, whatever wakes the computer), Connect
+(starts the installed server if it is not running, then connects), Upgrade server (enabled on a
+version mismatch) and Stop server (asks first, listing the running agents; then disconnects).
+
+### After a restart or a reboot
+
+Sessions are gone, as after a desktop app restart. A server that stopped cleanly recorded each
+agent's exit; one that died (a reboot, a crash) recorded none, so at start the server marks every
+agent not already `exited` as exited (`src/server/orphans.ts`). Each resumes from its card with
+`--resume`, as today.
+
+### Server bundles
+
+`scripts/server-bundle.mjs` (after `yarn build:server`) builds
+`dist/styr-server-<version>-<platform>-<arch>.tar.gz` for the machine it runs on: `out/server/`,
+`resources/claude/`, the Node runtime of the Node running it (checked against nodejs.org's
+`SHASUMS256.txt`), and `node-pty` and `better-sqlite3` installed by that Node's npm, so both match
+its ABI. It checks the result runs (`bin/styr serve --version`, both modules load). Releases build
+`linux-x64` and `linux-arm64` on native runners inside `node:24-bullseye`, so the bundles need only
+glibc 2.31 (`releases.md`). On a Mac it builds a darwin bundle, useful only to try the layout.
+
+In development, a version has no release: build the Linux bundles (for example in a
+`node:24-bullseye` container), put them in a folder, and start the app with
+`STYR_SERVER_BUNDLE_DIR` pointing at it. The host's own download then fails (exit 20) and this
+computer uploads the local bundle.
+
+### Setup tests
+
+- `core/remoteSetup.test.ts`: the release names, the `install.sh` lines, probe parsing, the
+  refusals, the ssh messages, and that no ssh or scp line weakens host-key checking.
+- `host/remote/hostSetup.test.ts`: the flow over fake ports: a fresh VM that downloads (nothing
+  but ssh commands leaves the laptop), the upload fallback and what the UI is told, a tampered
+  bundle refused on both sides, an unknown host key, a non-Linux host, the warnings, reusing a
+  running server, an older one left running, restart and stop.
+- `host/remote/installScript.test.ts`: `install.sh` run for real in a throwaway home with stand-in
+  `uname`, `curl`, `systemctl` and `loginctl` and a fake bundle: probe, download and checksum,
+  the upload path, reuse without restart, stop and restart, the unit and the linger line.
+- `host/remote/sshRunner.test.ts`: the bundle download checked against the app's hash, the
+  embedded hashes, ssh in batch mode, and the scp → `ssh … cat` fallback.
+- `host/remote/session.test.ts`, and the protocol cases in `connection.test.ts` and
+  `router.test.ts`; `server/orphans.test.ts`.

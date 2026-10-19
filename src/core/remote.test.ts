@@ -21,7 +21,7 @@ describe('the ssh command line', () => {
       '-o',
       'ServerAliveCountMax=3',
       'devbox',
-      'styr serve attach'
+      '~/.styr/server/current/bin/styr serve attach'
     ])
   })
 
@@ -30,7 +30,9 @@ describe('the ssh command line', () => {
     expect(remoteAttachCommand({ server: '~/.styr/server/current/bin/styr' })).toBe(
       '~/.styr/server/current/bin/styr serve attach'
     )
-    expect(remoteAttachCommand({ server: '  ' })).toBe('styr serve attach')
+    expect(remoteAttachCommand({ server: '  ' })).toBe(
+      '~/.styr/server/current/bin/styr serve attach'
+    )
   })
 
   it('accepts what ssh takes as a host and nothing it would read as an option', () => {

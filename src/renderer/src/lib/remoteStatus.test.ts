@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest'
 import type { RemoteState } from '@core/types.js'
 import {
   boardAccess,
+  connectionLabel,
   remoteFileAction,
   remoteNote,
   retryIn,
-  sessionDisconnected
+  serverStopQuestion,
+  sessionDisconnected,
+  transferLabel,
+  uptime
 } from './remoteStatus.js'
 
 const link = { host: 'devbox', workspaceId: 'default' }
@@ -102,5 +106,55 @@ describe('retryIn', () => {
   it('counts down to the next attempt while reconnecting', () => {
     expect(retryIn({ host: 'devbox', status: 'reconnecting', retryAt: 9_500 }, 1_000)).toBe(9)
     expect(retryIn({ host: 'devbox', status: 'connected' }, 1_000)).toBeUndefined()
+  })
+})
+
+describe('Settings → Remote hosts', () => {
+  it('reads a server’s uptime from when it started', () => {
+    const start = '2026-10-19T00:00:00.000Z'
+    const at = (minutes: number) => Date.parse(start) + minutes * 60_000
+    expect(uptime(start, at(0.5))).toBe('under a minute')
+    expect(uptime(start, at(12))).toBe('12m')
+    expect(uptime(start, at(125))).toBe('2h 5m')
+    expect(uptime(start, at(3 * 1440 + 4 * 60 + 7))).toBe('3d 4h')
+    expect(uptime(undefined, at(1))).toBeUndefined()
+  })
+
+  it('lists the agents a restart or stop would end before asking', () => {
+    const question = serverStopQuestion('devbox', 'stop', {
+      known: true,
+      agents: [{ title: 'Fix login', workspace: 'Client work' }, { title: 'Docs' }]
+    })
+    expect(question).toContain('Stop the Styr server on devbox?')
+    expect(question).toContain('ends these 2 agents:\n• Fix login (Client work)\n• Docs')
+    expect(question).toContain('resume each from its card')
+    expect(serverStopQuestion('devbox', 'restart', { known: true, agents: [] })).toBe(
+      'Upgrade the server on devbox? It restarts to take over.\n\nNo agents are running there.'
+    )
+    expect(serverStopQuestion('devbox', 'stop', { known: false, agents: [] })).toMatch(
+      /not connected, so Styr cannot tell which agents are running/
+    )
+    expect(
+      serverStopQuestion('devbox', 'restart', { known: false, incompatible: true, agents: [] })
+    ).toMatch(/devbox runs an incompatible server, so Styr cannot tell which agents are running/)
+  })
+
+  it('says how the server reached the host, upload fallback included', () => {
+    expect(transferLabel('download')).toMatch(/host downloaded/)
+    expect(transferLabel('upload')).toMatch(/could not download.*uploaded it over ssh/)
+  })
+
+  it('names a server this app cannot talk to, and a host the user disconnected', () => {
+    const host = { host: 'devbox', status: 'incompatible' as const }
+    expect(connectionLabel(host)).toBe('devbox needs a server upgrade')
+    expect(connectionLabel({ host: 'devbox', status: 'offline', userDisconnected: true })).toBe(
+      'devbox disconnected'
+    )
+    const state = {
+      enabled: true,
+      hosts: [host],
+      workspaces: { stub: { host: 'devbox', remoteWorkspaceId: 'default', live: false } }
+    }
+    expect(boardAccess(state, 'stub').reason).toMatch(/cannot talk to\. Upgrade the server/)
   })
 })

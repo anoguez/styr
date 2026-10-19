@@ -20,7 +20,16 @@ import type { TerminalMirror } from './terminalMirror.js'
 /** The connection as the router uses it (`RemoteConnection`). */
 export type Connection = Pick<
   RemoteConnection,
-  'state' | 'connected' | 'start' | 'stop' | 'retryNow' | 'wake' | 'suspend' | 'request' | 'notify'
+  | 'state'
+  | 'connected'
+  | 'server'
+  | 'start'
+  | 'stop'
+  | 'retryNow'
+  | 'wake'
+  | 'suspend'
+  | 'request'
+  | 'notify'
 >
 
 /** A local stub: a workspace whose folder only links to a host. */
@@ -53,6 +62,8 @@ export interface HostEntry {
   mirrors: Map<string, TerminalMirror>
   /** Output that arrived while an attach was on its way, sent after its backlog. */
   attaching: Map<string, TerminalOutput[]>
+  /** Disconnected from Settings → Remote hosts: stays offline until Connect. */
+  userDisconnected: boolean
 }
 
 export function createHostEntry(host: string, conn: Connection): HostEntry {
@@ -65,7 +76,8 @@ export function createHostEntry(host: string, conn: Connection): HostEntry {
     sessions: new Map(),
     attached: new Set(),
     mirrors: new Map(),
-    attaching: new Map()
+    attaching: new Map(),
+    userDisconnected: false
   }
 }
 
