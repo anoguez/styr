@@ -179,6 +179,21 @@ test('smoke', async () => {
     for (const label of ['Backlog', 'In Progress', 'In Review', 'Done'])
       await expect(page.getByRole('heading', { name: label, exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'New task', exact: true })).toBeVisible()
+    // The renderer is sandboxed, and its preload reached it: `window.api` is all it has. CI's
+    // Linux runs Chromium with --no-sandbox (harness), so the OS sandbox is checked elsewhere.
+    if (process.platform !== 'linux') {
+      const renderers = await app.evaluate(({ app }) =>
+        app.getAppMetrics().filter((metric) => metric.type === 'Tab')
+      )
+      expect(renderers.map((metric) => metric.sandboxed)).toEqual([true])
+    }
+    expect(
+      await page.evaluate(() => ({
+        api: typeof window.api.tasks.list,
+        require: typeof (window as { require?: unknown }).require,
+        process: typeof (window as { process?: unknown }).process
+      }))
+    ).toEqual({ api: 'function', require: 'undefined', process: 'undefined' })
     expectNoErrors()
   })
 

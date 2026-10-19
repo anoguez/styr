@@ -13,12 +13,15 @@ function open(handlers = {}) {
 describe('openServerSession', () => {
   it('waits for the hello, sends requests, and ends the child on close', async () => {
     const { server, session } = open({
-      'workspaces:create': ([name]: unknown[]) => ({ activeId: name })
+      'workspaces:create': ([name]: unknown[]) => ({ activeId: name, workspaces: [] })
     })
     server.hello()
     const opened = await session
     expect(opened.hello.version).toBe(HELLO.version)
-    expect(await opened.request('workspaces:create', ['devbox'])).toEqual({ activeId: 'devbox' })
+    expect(await opened.request('workspaces:create', ['devbox'])).toEqual({
+      activeId: 'devbox',
+      workspaces: []
+    })
     opened.close()
     expect(server.children[0]!.killed).toBe(true)
   })

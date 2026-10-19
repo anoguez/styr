@@ -40,7 +40,11 @@ export interface StyrApp {
   close(): Promise<void>
 }
 
-export async function launchStyr(name: string): Promise<StyrApp> {
+/** `extra` adds to the app's environment for this launch only (say, an experimental switch). */
+export async function launchStyr(
+  name: string,
+  extra: Record<string, string> = {}
+): Promise<StyrApp> {
   if (!existsSync(join(root, 'out', 'main', 'index.mjs')))
     throw new Error('No build in out/. Run `yarn test:smoke`, which builds first.')
   const home = mkdtempSync(join(tmpdir(), `styr-${name}-`))
@@ -54,7 +58,8 @@ export async function launchStyr(name: string): Promise<StyrApp> {
     XDG_CONFIG_HOME: join(home, '.config'),
     XDG_DATA_HOME: join(home, '.local', 'share'),
     XDG_STATE_HOME: join(home, '.local', 'state'),
-    XDG_CACHE_HOME: join(home, '.cache')
+    XDG_CACHE_HOME: join(home, '.cache'),
+    ...extra
   }
   // Set by `electron-vite dev`; the tests load the built renderer from `out/`.
   delete env.ELECTRON_RENDERER_URL

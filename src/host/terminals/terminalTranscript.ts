@@ -1,8 +1,10 @@
+import { REMOTE_LIMITS } from '@core/taskSchema.js'
 import type { TerminalMark, TerminalOutput, TerminalRuntimeState } from '@core/types.js'
 import { TerminalProtocolParser } from './terminalProtocol.js'
 import { TerminalRuntime, type TerminalRuntimeEvent } from './terminalRuntime.js'
 
-export const BACKLOG_LIMIT = 200_000
+/** A terminal's backlog, in UTF-16 units. A remote client holds a server to the same bound. */
+export const BACKLOG_LIMIT = REMOTE_LIMITS.terminalOutput
 
 export interface TerminalTranscriptUpdate {
   output: TerminalOutput

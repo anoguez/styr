@@ -28,7 +28,8 @@ Playwright's `_electron` drives the built app in `out/`. It uses a throwaway `HO
 `--user-data-dir`, `ZDOTDIR` and `XDG_*`, so it never reads or writes your boards, settings, agents
 or dotfiles. The app needs no test hook for this. One launch runs these steps in order:
 
-1. The board renders.
+1. The board renders, in a sandboxed renderer (the `Tab` process's `sandboxed` metric, on macOS
+   and Windows) whose page has `window.api` and no `require` or `process`.
 2. Create a task, edit it, then move it to In Progress (status menu) and to In Review (drag). The
    file on disk follows each change.
 3. A task file written from outside the app appears on the board.
@@ -88,6 +89,11 @@ it:
 5. A REST source served by the test itself: the test request is refused with External sources off;
    with them on it reads the items, the preview writes nothing, and applying one item creates only
    that task.
+
+`e2e/nativeTerminal.e2e.ts` runs a shell in a Styr Terminal tab in the same sandboxed window. The
+engine is private, so it is skipped unless `STYR_TERMINAL_PATH` names a build of its package
+(`terminal-engine.md`); run it locally with that set before changing the preload, the sandbox or
+the CSP. `launchStyr(name, env)` takes extra environment for one launch only.
 
 Nothing here needs an agent CLI, a GitHub login or the network: git runs with a fixed identity and
 no user config (`git` in the harness), and the REST source is a local HTTP server. Keep it that

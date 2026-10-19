@@ -1,5 +1,6 @@
 import type { AgentStatus } from '@core/agentState.js'
-import { remoteEditorFor, remoteEditorUri } from '@core/remote.js'
+import { notificationText, remoteEditorFor, remoteEditorUri } from '@core/remote.js'
+import { REMOTE_LIMITS } from '@core/taskSchema.js'
 import type {
   BrokenSettingsFile,
   GlobalSettings,
@@ -36,6 +37,7 @@ import {
 import { createRollup } from './rollup.js'
 import { createRemoteSettings } from './settings.js'
 import { createRemoteTerminals } from './terminals.js'
+import { NotificationGuard, validatingConnection } from './validation.js'
 import { createRemoteWorkspaces } from './workspaces.js'
 
 /**
@@ -74,6 +76,12 @@ export interface RouterPorts extends RegistryPorts {
   saveGlobalSettings(global: GlobalSettings): void
   /** This app's version: a server on another one is offered the upgrade (the version lock). */
   clientVersion: string
+}
+
+/** The session a session broadcast is about (`terminal:runtimeState`, `usage:context` …). */
+function sessionIdOf(payload: unknown): string {
+  const { sessionId, terminalId } = payload as { sessionId?: string; terminalId?: string }
+  return sessionId ?? terminalId ?? ''
 }
 
 export function createRemoteRouter(ports: RouterPorts) {
@@ -117,7 +125,8 @@ export function createRemoteRouter(ports: RouterPorts) {
     for (const [host, link] of wanted) {
       if (registry.hosts.has(host)) continue
       const entry = createHostEntry(host, undefined as unknown as Connection)
-      entry.conn = ports.connect(host, link, connectionEvents(entry))
+      // Every answer is checked before anything here sees it (the trust boundary).
+      entry.conn = validatingConnection(host, ports.connect(host, link, connectionEvents(entry)))
       registry.hosts.set(host, entry)
       const active = registry.links.get(registry.activeId())
       if (active?.remote.host === host) entry.wantSwitch = active.remote.workspaceId
@@ -131,11 +140,19 @@ export function createRemoteRouter(ports: RouterPorts) {
   }
 
   function connectionEvents(entry: HostEntry): ConnectionEvents {
+    const guard = new NotificationGuard(entry.host)
     return {
       state: () => emitState(),
-      connected: (_hello, reconnect) => void onConnected(entry, reconnect),
+      connected: (_hello, reconnect) => {
+        guard.reset()
+        void onConnected(entry, reconnect)
+      },
       disconnected: () => onDisconnected(entry),
-      notification: (method, params) => onNotification(entry, method, params)
+      notification: (method, params) => {
+        // A notification that fails its schema is dropped here, before it reaches anything.
+        const checked = guard.check(method, params)
+        if (checked) onNotification(entry, method, checked)
+      }
     }
   }
 
@@ -216,8 +233,11 @@ export function createRemoteRouter(ports: RouterPorts) {
         return rollup.setActivity(entry, payload as WorkspacesActivity)
       case 'server:notify': {
         // Raised from the live stream only: nothing that happened while disconnected is backfilled.
-        const { title, body } = (payload ?? {}) as { title?: unknown; body?: unknown }
-        ports.notify(String(title ?? 'Styr'), `${entry.host} · ${String(body ?? '')}`)
+        const { title, body } = payload as { title?: string; body?: string }
+        ports.notify(
+          notificationText(title || 'Styr', REMOTE_LIMITS.notifyTitle),
+          `${entry.host} · ${notificationText(body ?? '', REMOTE_LIMITS.notifyBody)}`
+        )
         return
       }
       case 'workspaces:changed':
@@ -239,13 +259,15 @@ export function createRemoteRouter(ports: RouterPorts) {
       }
     }
     if (SESSION_BROADCASTS.has(method)) {
+      // Never about a session on this machine or another host: a server speaks for its own.
+      if (terminals.foreign(entry, sessionIdOf(payload))) return
       ports.broadcast(method, registry.mapIn(entry.host, payload))
       return
     }
     if (!BOARD_BROADCASTS.has(method) || !registry.activeOnLive(entry)) return
     const mapped = registry.mapIn(entry.host, payload)
-    if (method === 'orchestrate:autoStarted' && mapped && typeof mapped === 'object') {
-      terminals.tagSession(entry, mapped as TerminalSessionInfo)
+    if (method === 'orchestrate:autoStarted') {
+      if (!terminals.tagSession(entry, mapped as TerminalSessionInfo)) return
     }
     if (params.length === 0) ports.broadcast(method)
     else ports.broadcast(method, mapped)

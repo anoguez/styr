@@ -26,6 +26,7 @@ import {
 } from './terminal/ptyManager.js'
 import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
 import { linuxIconPath } from './appIcon.js'
+import { guardNavigation, openHandler } from './windowSecurity.js'
 import { syncAppImageMcp } from './mcpEntry.js'
 import { createTray, destroyTray } from './tray.js'
 import { initUpdater } from './updater.js'
@@ -116,18 +117,18 @@ function createWindow(): BrowserWindow {
         }),
     backgroundColor: '#0b0d12',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      // A sandboxed preload is one CommonJS script (`electron.vite.config.ts`).
+      preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      // The renderer shows what remote hosts wrote: whatever got into it stays in Chromium's
+      // sandbox, with only `window.api` (`docs/architecture/remote.md`, Trust boundary).
+      sandbox: true
     }
   })
 
   window.on('ready-to-show', () => window.show())
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
-    return { action: 'deny' }
-  })
+  window.webContents.setWindowOpenHandler(openHandler((url) => void shell.openExternal(url)))
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -154,6 +155,10 @@ app.whenReady().then(() => {
   // Windows shows toast notifications only for an app with an AppUserModelID; this one matches
   // the `appId` the installer registers its shortcut under.
   if (process.platform === 'win32') app.setAppUserModelId('com.andersonnoguez.styr')
+  // Every page Styr shows stays on its own document and opens only web links outside.
+  app.on('web-contents-created', (_event, contents) =>
+    guardNavigation(contents, (url) => void shell.openExternal(url))
+  )
   migrateSettings()
   syncAppImageMcp()
   tasksDir()

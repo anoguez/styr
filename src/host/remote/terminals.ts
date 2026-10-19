@@ -2,6 +2,7 @@ import type { TerminalOutput, TerminalSessionInfo } from '@core/types.js'
 import { SESSION_RESULT_CHANNELS, SESSION_SENDS } from './channels.js'
 import { UNLINKED, type HostEntry, type RemoteRegistry } from './registry.js'
 import { TerminalMirror } from './terminalMirror.js'
+import { RemoteInvalidResponse } from './validation.js'
 
 /**
  * Remote terminal sessions on the client: which host each one runs on, attaching to its stream
@@ -37,18 +38,43 @@ export function createRemoteTerminals(registry: RemoteRegistry, ports: RemoteTer
     return registry.activeRemote()?.host
   }
 
-  function tagSession(entry: HostEntry, session: TerminalSessionInfo): void {
+  /**
+   * Whether a server may speak for this session id: never one running on this machine, nor one
+   * already seen on another host. A compromised server must not reach another host's tab or a
+   * local one by naming its id.
+   */
+  function mayClaim(entry: HostEntry, id: string): boolean {
+    if (ports.isLocalSession(id)) return false
+    const known = sessionHosts.get(id)
+    return known === undefined || known === entry.host
+  }
+
+  /** Tags a server's session with its host; false (and nothing kept) if it may not claim the id. */
+  function tagSession(entry: HostEntry, session: TerminalSessionInfo): boolean {
+    if (!mayClaim(entry, session.id)) return false
     session.host = entry.host
     sessionHosts.set(session.id, entry.host)
     entry.sessions.set(session.id, session)
+    return true
   }
 
-  /** Remembers the host of every session a call returned, and tags each with it. */
+  /**
+   * Remembers the host of every session a call returned, and tags each with it. A session whose
+   * id the server may not claim fails the call (`mayClaim`).
+   */
   function recordSessions(entry: HostEntry, channel: string, result: unknown): void {
-    if (channel === 'orchestrate:run' && Array.isArray(result)) {
-      for (const item of result) if (item?.session) tagSession(entry, item.session)
-    } else if (SESSION_RESULT_CHANNELS.has(channel) && result && typeof result === 'object') {
-      tagSession(entry, result as TerminalSessionInfo)
+    const sessions =
+      channel === 'orchestrate:run' && Array.isArray(result)
+        ? result.map((item: { session: TerminalSessionInfo }) => item.session)
+        : SESSION_RESULT_CHANNELS.has(channel) && result && typeof result === 'object'
+          ? [result as TerminalSessionInfo]
+          : []
+    for (const session of sessions) {
+      if (!tagSession(entry, session)) {
+        throw new RemoteInvalidResponse(
+          `${entry.host} answered ${channel} with a session it does not own. Nothing was shown.`
+        )
+      }
     }
   }
 
@@ -68,6 +94,7 @@ export function createRemoteTerminals(registry: RemoteRegistry, ports: RemoteTer
         ) as TerminalSessionInfo[]
         entry.sessions.clear()
         for (const session of listed) {
+          // One the server may not claim is left out (`mayClaim`).
           if (!session.workspaceId?.startsWith(UNLINKED)) tagSession(entry, session)
         }
       } catch {
@@ -168,6 +195,9 @@ export function createRemoteTerminals(registry: RemoteRegistry, ports: RemoteTer
   /** `terminal:data` from a server. */
   function onData(entry: HostEntry, payload: { id: string } & TerminalOutput): void {
     const { id, ...output } = payload
+    // Only a terminal this client attached to on that host: a server sends no other.
+    if (!entry.attached.has(id) && !entry.attaching.has(id)) return
+    if (!mayClaim(entry, id)) return
     sessionHosts.set(id, entry.host)
     const early = entry.attaching.get(id)
     // Held until the attach's backlog is in place (`flushEarly`), so a reset cannot wipe it.
@@ -178,6 +208,7 @@ export function createRemoteTerminals(registry: RemoteRegistry, ports: RemoteTer
 
   /** `terminal:exit` from a server, or a session a restarted server no longer has. */
   function onExit(entry: HostEntry, payload: { id: string; exitCode: number }): void {
+    if (!mayClaim(entry, payload.id)) return
     sessionHosts.delete(payload.id)
     entry.sessions.delete(payload.id)
     entry.attached.delete(payload.id)
@@ -209,6 +240,8 @@ export function createRemoteTerminals(registry: RemoteRegistry, ports: RemoteTer
     onExit,
     send,
     isRemoteSession: (id: string): boolean => sessionHost(id) !== undefined,
+    /** Whether `id` names a session on another host or this machine: `entry` may not speak for it. */
+    foreign: (entry: HostEntry, id: string): boolean => !mayClaim(entry, id),
     /** The mirror's backlog for a remote session, for the engine's synchronous `backlog` port. */
     mirrorBacklog(id: string): TerminalOutput | undefined {
       const host = sessionHosts.get(id)

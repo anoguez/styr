@@ -73,6 +73,7 @@ import { publishAgentConversation } from './usage.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
 import { bindGlobalSettingsSave, remoteRouter, routedIpcMain, startRemote } from './remote.js'
+import { isWebLink } from './windowSecurity.js'
 
 /**
  * Every handler below is routed (`remote.ts`): a remote workspace's calls go to its server, a
@@ -498,7 +499,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:revealDirectory', (_event, path: string) => shell.openPath(path))
   ipcMain.handle('terminal:openLink', (_event, url: string) => {
     // Only web links: a terminal can print any string, and openExternal would run other schemes.
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+    if (isWebLink(url)) void shell.openExternal(url)
   })
   ipcMain.handle('terminal:listDirectories', (_event, path: string) => listDirectories(path))
 }

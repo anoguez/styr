@@ -4,188 +4,12 @@ import type {
   Settings,
   TerminalOutput,
   TerminalSessionInfo,
-  WorkspaceInfo,
   WorkspaceOverview
 } from '@core/types.js'
-import { RemoteConnection } from './connection.js'
 import { PROTOCOL_VERSION } from '../rpc/jsonRpc.js'
-import { HELLO, fakeClock, fakeServer, settle } from './remoteFixture.js'
-import { createRemoteRouter } from './router.js'
+import { HELLO, remoteTask, settle } from './remoteFixture.js'
 import { TERMINAL_RESET } from './terminals.js'
-
-/** One host's fake server: its workspaces, active one, tasks, sessions and settings. */
-function hostServer(names: Record<string, string>) {
-  const state = {
-    active: Object.keys(names)[0]!,
-    tasks: {} as Record<string, { id: string; title: string; filePath: string }[]>,
-    sessions: [] as TerminalSessionInfo[],
-    backlog: {} as Record<string, TerminalOutput>,
-    settings: {} as Record<string, Partial<Settings>>
-  }
-  const overview = (): WorkspaceOverview => ({
-    activeId: state.active,
-    workspaces: Object.entries(names).map(([id, name]) => ({
-      id,
-      name,
-      taskCount: state.tasks[id]?.length ?? 0,
-      liveSessions: 0
-    }))
-  })
-  const server = fakeServer({
-    'workspaces:list': () => overview(),
-    'workspaces:switch': ([id]) => {
-      if (!(String(id) in names)) throw new Error('That workspace no longer exists.')
-      state.active = String(id)
-      return overview()
-    },
-    'workspaces:activity': () => ({ activeId: state.active, byWorkspace: {} }),
-    'workspaces:boardSummary': () => ({}),
-    'server:tray': () => ({ statuses: [], titles: {} }),
-    'tasks:list': () => state.tasks[state.active] ?? [],
-    'tasks:get': ([id]) => (state.tasks[state.active] ?? []).find((task) => task.id === id) ?? null,
-    'tasks:create': ([draft]) => {
-      const task = {
-        id: 'TASK-0009',
-        title: String((draft as { title: string }).title),
-        filePath: ''
-      }
-      ;(state.tasks[state.active] ??= []).push(task)
-      return task
-    },
-    'agents:list': () => [],
-    'orchestrate:autoState': () => ({ on: false }),
-    'terminal:list': () => state.sessions,
-    'terminal:attach': ([id]) => state.backlog[String(id)] ?? { data: '', sequence: 0, marks: [] },
-    'terminal:launchAgent': ([taskId]) => {
-      const session = {
-        id: `s-${String(taskId)}`,
-        title: 'Agent',
-        cwd: '/home/me/repo',
-        taskId: String(taskId),
-        workspaceId: state.active
-      }
-      state.sessions.push(session)
-      return session
-    },
-    'settings:get': ([id]) => ({
-      storageDir: '/home/me/Styr',
-      activeWorkspaceId: state.active,
-      openFilesWith: 'Visual Studio Code',
-      shell: '/bin/bash',
-      ...state.settings[String(id ?? state.active)]
-    }),
-    'settings:save': ([change]) => {
-      const { workspaceId, workspace } = change as { workspaceId: string; workspace: object }
-      state.settings[workspaceId] = { ...state.settings[workspaceId], ...workspace }
-      return {}
-    }
-  })
-  return { server, state }
-}
-
-const LOCAL_SETTINGS = {
-  storageDir: '/Users/me/Styr',
-  activeWorkspaceId: 'default',
-  shortcuts: { local: true },
-  experimental: { remoteWorkspaces: true },
-  updates: { checkAutomatically: true },
-  shell: '/bin/zsh',
-  openFilesWith: ''
-} as unknown as Settings
-
-function setup(options: { enabled?: boolean; active?: string } = {}) {
-  const clock = fakeClock()
-  const devbox = hostServer({ default: 'Main board', client: 'Client work' })
-  const vm = hostServer({ default: 'VM board' })
-  const servers: Record<string, ReturnType<typeof hostServer>> = { devbox, vm }
-  const spawned: string[] = []
-  let enabled = options.enabled ?? true
-  let active = options.active ?? 'default'
-  let workspaces: WorkspaceInfo[] = [
-    { id: 'default', name: 'Default' },
-    { id: 'remote-main', name: 'Devbox main', remote: { host: 'devbox', workspaceId: 'default' } },
-    {
-      id: 'remote-client',
-      name: 'Devbox client',
-      remote: { host: 'devbox', workspaceId: 'client' }
-    },
-    { id: 'remote-vm', name: 'VM', remote: { host: 'vm', workspaceId: 'default' } }
-  ]
-  const broadcasts: [string, unknown][] = []
-  const notified: string[] = []
-  const opened: string[] = []
-  const trays: { statuses: AgentStatus[]; quiet: string[] }[] = []
-  const savedGlobal: unknown[] = []
-  const localSessions = new Set<string>(['local-1'])
-
-  const router = createRemoteRouter({
-    enabled: () => enabled,
-    workspaces: () => workspaces,
-    activeWorkspaceId: () => active,
-    connect: (host, _link, events) => {
-      spawned.push(host)
-      return new RemoteConnection(
-        host,
-        { spawn: () => servers[host]!.server.spawn(), ...clock.ports },
-        events
-      )
-    },
-    broadcast: (channel, payload) => void broadcasts.push([channel, payload]),
-    notify: (title, body) => void notified.push(`${title}: ${body}`),
-    updateTray: (statuses, _titles, quiet) => void trays.push({ statuses, quiet: [...quiet] }),
-    openExternal: (url) => void opened.push(url),
-    isLocalSession: (id) => localSessions.has(id),
-    saveGlobalSettings: (global) => void savedGlobal.push(global),
-    clientVersion: HELLO.version
-  })
-  router.bindSettings(() => ({ ...LOCAL_SETTINGS, activeWorkspaceId: active }))
-
-  /** What the in-process host would answer, so a test sees which side answered. */
-  const local = (channel: string) => () => {
-    if (channel === 'workspaces:switch') return { activeId: active, workspaces: [] }
-    if (channel === 'settings:get') return { ...LOCAL_SETTINGS, activeWorkspaceId: active }
-    if (channel === 'terminal:list') return [{ id: 'local-1', title: 'Shell', cwd: '/Users/me' }]
-    return `local ${channel}`
-  }
-  const call = (channel: string, ...args: unknown[]) =>
-    Promise.resolve(router.invoke(channel, args, local(channel)))
-  /** Switches the way the renderer does: the local switch, then the router's follow-up. */
-  const switchTo = async (id: string) => {
-    const result = router.invoke('workspaces:switch', [id], () => {
-      active = id
-      return { activeId: id, workspaces: [] }
-    })
-    await settle()
-    return result
-  }
-  const connectAll = async () => {
-    devbox.server.hello()
-    vm.server.hello()
-    await settle()
-  }
-  const channels = () => broadcasts.map(([channel]) => channel)
-
-  return {
-    router,
-    clock,
-    devbox,
-    vm,
-    spawned,
-    broadcasts,
-    channels,
-    notified,
-    opened,
-    trays,
-    savedGlobal,
-    localSessions,
-    call,
-    switchTo,
-    connectAll,
-    setEnabled: (on: boolean) => (enabled = on),
-    setActive: (id: string) => (active = id),
-    setWorkspaces: (next: WorkspaceInfo[]) => (workspaces = next)
-  }
-}
+import { AT, COUNTS, LOCAL_SETTINGS, setup } from './routerFixture.js'
 
 describe('remote router: the flag', () => {
   it('with the flag off, starts no ssh and answers every call in-process', async () => {
@@ -271,7 +95,7 @@ describe('remote router: routing', () => {
     expect(t.devbox.server.calls).toContainEqual(['workspaces:switch', ['client']])
     expect(t.router.state().workspaces['remote-client']).toMatchObject({ live: true })
     expect(await t.call('tasks:list', {})).toEqual([
-      { id: 'TASK-0001', title: 'Remote task', filePath: '/x' }
+      remoteTask({ id: 'TASK-0001', title: 'Remote task', filePath: '/x' })
     ])
     expect(t.channels()).toContain('tasks:changed')
   })
@@ -292,7 +116,7 @@ describe('remote router: routing', () => {
     expect(listed.map((session) => session.id).sort()).toEqual([
       'local-1',
       's-TASK-0001',
-      's-TASK-0001'
+      'vm-TASK-0001'
     ])
   })
 
@@ -487,8 +311,8 @@ describe('remote router: merged events', () => {
     const t = setup()
     t.devbox.server.handlers['server:tray'] = () => ({
       statuses: [
-        { taskId: 'TASK-0001', state: 'waiting', workspaceId: 'default' },
-        { taskId: 'TASK-0002', state: 'working', workspaceId: 'gone' }
+        { taskId: 'TASK-0001', state: 'waiting', at: AT, workspaceId: 'default' },
+        { taskId: 'TASK-0002', state: 'working', at: AT, workspaceId: 'gone' }
       ],
       titles: { 'default:TASK-0001': 'Fix the bug' }
     })
@@ -508,7 +332,7 @@ describe('remote router: merged events', () => {
     expect(first!.quiet).toEqual(['remote-main:TASK-0001'])
     // The next model comes from the live stream: it may notify.
     t.devbox.server.push('server:tray', {
-      statuses: [{ taskId: 'TASK-0005', state: 'waiting', workspaceId: 'client' }],
+      statuses: [{ taskId: 'TASK-0005', state: 'waiting', at: AT, workspaceId: 'client' }],
       titles: {}
     })
     expect(t.trays.at(-1)!.quiet).toEqual([])
@@ -536,14 +360,14 @@ describe('remote router: merged events', () => {
     await t.connectAll()
     t.vm.server.push('workspaces:activity', {
       activeId: 'default',
-      byWorkspace: { default: { counts: {}, review: 2, top: 'waiting' } }
+      byWorkspace: { default: { counts: COUNTS, review: 2, top: 'waiting' } }
     })
     const last = t.broadcasts.filter(([c]) => c === 'workspaces:activity').at(-1)![1]
     expect(last).toEqual({
       activeId: 'default',
       byWorkspace: {
         default: { counts: {}, review: 0 },
-        'remote-vm': { counts: {}, review: 2, top: 'waiting' }
+        'remote-vm': { counts: COUNTS, review: 2, top: 'waiting' }
       }
     })
   })
@@ -684,8 +508,19 @@ describe('remote router: merged workspace views', () => {
 
   it('reports the server’s diagnostics with this machine’s terminal engine', async () => {
     const t = setup({ active: 'remote-main' })
-    t.devbox.server.handlers['diagnostics:snapshot'] = () => ({
+    const remote = {
+      takenAt: AT,
+      appVersion: '9.9.9',
+      packaged: true,
+      electron: '',
+      platform: 'linux x64',
+      processes: [],
+      terminals: 1,
       taskCount: 7,
+      notifyMs: []
+    }
+    t.devbox.server.handlers['diagnostics:snapshot'] = () => ({
+      ...remote,
       terminalEngine: 'server'
     })
     t.router.refresh()
@@ -693,7 +528,7 @@ describe('remote router: merged workspace views', () => {
     const snapshot = await Promise.resolve(
       t.router.invoke('diagnostics:snapshot', [], () => ({ taskCount: 0, terminalEngine: 'mine' }))
     )
-    expect(snapshot).toEqual({ taskCount: 7, terminalEngine: 'mine' })
+    expect(snapshot).toEqual({ ...remote, terminalEngine: 'mine' })
   })
 
   it('opens a remote folder in VS Code over ssh', async () => {
@@ -778,7 +613,7 @@ describe('remote router: edge cases', () => {
     t.router.refresh()
     await t.connectAll()
     t.broadcasts.length = 0
-    t.devbox.server.push('terminal:runtimeState', { sessionId: 's1', cwd: '/' })
+    t.devbox.server.push('terminal:runtimeState', { sessionId: 's1', cwd: '/', promptReady: true })
     t.devbox.server.push('orchestrate:autoStarted', {
       id: 's2',
       title: 'x',
@@ -787,7 +622,10 @@ describe('remote router: edge cases', () => {
     })
     t.devbox.server.push('settings:changed', { activeWorkspaceId: 'default' })
     await settle()
-    expect(t.broadcasts[0]).toEqual(['terminal:runtimeState', { sessionId: 's1', cwd: '/' }])
+    expect(t.broadcasts[0]).toEqual([
+      'terminal:runtimeState',
+      { sessionId: 's1', cwd: '/', promptReady: true }
+    ])
     expect(t.broadcasts[1]).toEqual([
       'orchestrate:autoStarted',
       { id: 's2', title: 'x', cwd: '/', workspaceId: 'remote-main', host: 'devbox' }
