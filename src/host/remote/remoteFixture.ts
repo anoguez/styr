@@ -1,3 +1,5 @@
+import { shippedSettings } from '@core/config.js'
+import type { Settings, Task } from '@core/types.js'
 import { RpcPeer } from '../rpc/jsonRpc.js'
 import type { ConnectionPorts, ServerHello, TransportChild } from './connection.js'
 
@@ -14,6 +16,34 @@ export const HELLO: ServerHello = {
   startedAt: '2026-10-19T00:00:00.000Z',
   storageDir: '/home/me/Styr',
   platform: 'linux x64'
+}
+
+/** A whole task as a server sends it, from the few fields a test cares about. */
+export function remoteTask(fields: Partial<Task> & Pick<Task, 'id' | 'title'>): Task {
+  return {
+    status: 'backlog',
+    priority: 'medium',
+    readiness: 'ready',
+    description: '',
+    activity: [],
+    tags: [],
+    orchestrate: true,
+    useWorktree: false,
+    blockedBy: [],
+    contextFiles: [],
+    sessions: [],
+    order: 0,
+    createdAt: '2026-10-19T00:00:00.000Z',
+    updatedAt: '2026-10-19T00:00:00.000Z',
+    filePath: `/home/me/Styr/tasks/${fields.id}.md`,
+    format: 'markdown',
+    ...fields
+  }
+}
+
+/** A server's whole settings, as `loadSettings` answers, with a test's own values laid over. */
+export function remoteSettings(fields: Partial<Settings> = {}): Settings {
+  return { ...shippedSettings(), storageDir: '/home/me/Styr', shell: '/bin/bash', ...fields }
 }
 
 export interface FakeChild extends TransportChild {

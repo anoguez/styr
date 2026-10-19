@@ -53,7 +53,6 @@ export const RPC_ERRORS = {
   HANDLER: -32000
 } as const
 
-/** The longest line a peer accepts: far above any backlog `TerminalTranscript` keeps. */
 /**
  * The JSON-RPC surface's own version, sent in `server:hello`. Bumped when a client must change with
  * the server; a client that speaks another one forwards nothing to that server and offers the
@@ -61,6 +60,11 @@ export const RPC_ERRORS = {
  */
 export const PROTOCOL_VERSION = 1
 
+/**
+ * The longest line a peer accepts, a client included: far above any backlog `TerminalTranscript`
+ * keeps. A longer one is dropped whole without being held, so a server cannot make a client buffer
+ * more than this; what a line may hold is then bounded per field (`REMOTE_LIMITS`).
+ */
 export const MAX_LINE_BYTES = 64 * 1024 * 1024
 
 const idSchema = z.union([z.number(), z.string()])
@@ -149,6 +153,8 @@ export function failure(
 export class LineDecoder {
   private readonly decoder = new StringDecoder('utf8')
   private pending = ''
+  /** `pending`'s size in bytes, kept as it grows: measuring it whole per chunk is quadratic. */
+  private pendingBytes = 0
   private overflowing = false
 
   constructor(
@@ -166,6 +172,7 @@ export class LineDecoder {
     this.consume(this.decoder.end())
     const rest = this.pending
     this.pending = ''
+    this.pendingBytes = 0
     if (!this.overflowing && rest.trim()) this.onLine(rest)
     this.overflowing = false
   }
@@ -178,17 +185,23 @@ export class LineDecoder {
       if (this.overflowing) {
         this.overflowing = false
         this.pending = ''
+        this.pendingBytes = 0
         continue
       }
+      const bytes = this.pendingBytes + Buffer.byteLength(piece)
       const line = this.pending + piece
       this.pending = ''
-      if (Buffer.byteLength(line) > this.maxLineBytes) this.onOverflow()
+      this.pendingBytes = 0
+      if (bytes > this.maxLineBytes) this.onOverflow()
       else if (line.trim()) this.onLine(line)
     }
     if (this.overflowing) return
-    this.pending += text.slice(start)
-    if (Buffer.byteLength(this.pending) > this.maxLineBytes) {
+    const rest = text.slice(start)
+    this.pending += rest
+    this.pendingBytes += Buffer.byteLength(rest)
+    if (this.pendingBytes > this.maxLineBytes) {
       this.pending = ''
+      this.pendingBytes = 0
       this.overflowing = true
       this.onOverflow()
     }

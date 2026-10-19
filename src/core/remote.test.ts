@@ -4,6 +4,7 @@ import {
   reconnectDelay,
   remoteAttachCommand,
   remoteEditorFor,
+  notificationText,
   remoteEditorUri,
   sshArgs
 } from './remote.js'
@@ -72,5 +73,29 @@ describe('the VS Code Remote link', () => {
     expect(remoteEditorUri('cursor', 'devbox', '/srv/repo')).toBe(
       'cursor://vscode-remote/ssh-remote+devbox/srv/repo'
     )
+  })
+
+  it('makes any path from the server one link on the host, normalised and escaped', () => {
+    const uri = (path: string) => remoteEditorUri('vscode', 'devbox', path)
+    expect(uri('../../etc/passwd')).toBe('vscode://vscode-remote/ssh-remote+devbox/etc/passwd')
+    expect(uri('/home/me/../../../root/x')).toBe('vscode://vscode-remote/ssh-remote+devbox/root/x')
+    expect(uri('javascript:alert(1)')).toBe(
+      'vscode://vscode-remote/ssh-remote+devbox/javascript%3Aalert(1)'
+    )
+    expect(uri('/a?windowId=1#b')).toBe(
+      'vscode://vscode-remote/ssh-remote+devbox/a%3FwindowId%3D1%23b'
+    )
+    expect(uri('//evil.example/x')).toBe('vscode://vscode-remote/ssh-remote+devbox/evil.example/x')
+    expect(uri('/x/\u0000\u001b\u202ey')).toBe('vscode://vscode-remote/ssh-remote+devbox/x/y')
+    expect(uri('/x/\ud800')).toBe('vscode://vscode-remote/ssh-remote+devbox/x/%EF%BF%BD')
+    expect(uri('')).toBe('vscode://vscode-remote/ssh-remote+devbox/')
+    expect(() => remoteEditorUri('vscode', '-oProxyCommand=x', '/a')).toThrow(/Not a host/)
+  })
+})
+
+describe('notificationText', () => {
+  it('strips controls and bidi overrides, collapses spaces and cuts to length', () => {
+    expect(notificationText(' a\u0007\nb\u202e  c ', 100)).toBe('a b c')
+    expect(notificationText('abcdef', 4)).toBe('abc…')
   })
 })

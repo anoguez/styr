@@ -88,12 +88,36 @@ export function remoteEditorFor(openFilesWith: string): RemoteEditor | undefined
   return undefined
 }
 
+/** C0 and C1 controls, and the bidi overrides that could make a text read other than it is. */
+// eslint-disable-next-line no-control-regex
+const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g
+/** Half of a surrogate pair standing alone, which `encodeURIComponent` refuses. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
+
 /**
- * `vscode://vscode-remote/ssh-remote+<host><path>`, or Cursor's equivalent. The host is used as
- * is (`isValidRemoteHost` admits nothing a URI needs escaped, and VS Code wants `user@host` raw);
- * the path is a remote one, never resolved here, only escaped.
+ * `vscode://vscode-remote/ssh-remote+<host>/<path>`, or Cursor's equivalent. The host is used as
+ * is (`isValidRemoteHost` admits nothing a URI needs escaped, and VS Code wants `user@host` raw).
+ * The path comes from the server, so it is untrusted: it is normalised lexically (`.` and `..`
+ * segments, never above `/`; nothing is resolved on any disk), stripped of control characters,
+ * and each segment is escaped whole, so no `?`, `#`, `:` or `%` in it can end the path or start
+ * another scheme. Whatever the path, the result is a link of this one form.
  */
 export function remoteEditorUri(editor: RemoteEditor, host: string, path: string): string {
-  const absolute = path.startsWith('/') ? path : `/${path}`
-  return `${editor}://vscode-remote/ssh-remote+${host}${encodeURI(absolute)}`
+  if (!isValidRemoteHost(host)) throw new Error(`Not a host ssh can reach: ${host}`)
+  const segments: string[] = []
+  for (const raw of path.replace(UNSAFE_CHARS, '').replace(LONE_SURROGATE, '\uFFFD').split('/')) {
+    if (raw === '' || raw === '.') continue
+    if (raw === '..') segments.pop()
+    else segments.push(encodeURIComponent(raw))
+  }
+  return `${editor}://vscode-remote/ssh-remote+${host}/${segments.join('/')}`
+}
+
+/**
+ * A server's notification text, made safe to show: controls and bidi overrides become spaces,
+ * whitespace runs collapse, and it is cut to `max` characters.
+ */
+export function notificationText(text: string, max: number): string {
+  const clean = text.replace(UNSAFE_CHARS, ' ').replace(/\s+/g, ' ').trim()
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean
 }

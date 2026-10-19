@@ -1,6 +1,8 @@
+import { remoteServerHelloSchema } from '@core/taskSchema.js'
 import { PROTOCOL_VERSION, RpcPeer } from '../rpc/jsonRpc.js'
 import { HELLO_TIMEOUT_MS, exitReason, incompatibleMessage } from './connection.js'
 import type { ServerHello, TransportChild } from './connection.js'
+import { parseResponse } from './validation.js'
 
 /**
  * A one-off session with a host's server: one `ssh … serve attach` child, the hello, one or more
@@ -55,14 +57,18 @@ export function openServerSession(host: string, ports: SessionPorts): Promise<Se
       {
         notification: (method, params) => {
           if (method !== 'server:hello' || settled) return
-          const hello = params[0] as ServerHello
-          if (hello?.protocol !== PROTOCOL_VERSION) {
+          const parsed = remoteServerHelloSchema.safeParse(params[0])
+          const hello = parsed.success ? parsed.data : undefined
+          if (!hello || hello.protocol !== PROTOCOL_VERSION) {
             fail(incompatibleMessage(host, hello))
             return
           }
           settled = true
           ports.clearTimer(timer)
-          resolve({ hello, request: (m, p = []) => peer.request(m, p), close })
+          // Answers are checked as on the shared connection (`validation.ts`).
+          const request = async (method: string, args: unknown[] = []): Promise<unknown> =>
+            parseResponse(host, method, await peer.request(method, args))
+          resolve({ hello, request, close })
         }
       }
     )

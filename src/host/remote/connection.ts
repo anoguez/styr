@@ -1,5 +1,6 @@
 import { reconnectDelay } from '@core/remote.js'
 import { isHostKeyProblem } from '@core/remoteSetup.js'
+import { remoteServerHelloSchema } from '@core/taskSchema.js'
 import type { RemoteConnectionStatus, RemoteHostState } from '@core/types.js'
 import { PROTOCOL_VERSION, RPC_ERRORS, RpcError, RpcPeer } from '../rpc/jsonRpc.js'
 
@@ -240,8 +241,10 @@ export class RemoteConnection {
     if (this.child !== child) return
     if (method === 'server:hello') {
       this.clearHelloTimer()
-      const hello = params[0] as ServerHello
-      this.hello = hello && typeof hello === 'object' ? hello : undefined
+      // Checked like every answer (`validation.ts`): it names the version and the pid to stop.
+      const parsed = remoteServerHelloSchema.safeParse(params[0])
+      const hello = parsed.success ? parsed.data : undefined
+      this.hello = hello
       this.failures = 0
       if (hello?.protocol !== PROTOCOL_VERSION) {
         this.lastError = incompatibleMessage(this.host, hello)
