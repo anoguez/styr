@@ -130,7 +130,7 @@ cp "${release}/\${last##*/}" "$out" 2>/dev/null || { echo "curl: (22) 404" >&2; 
   })
 
   it('probes a fresh host without changing anything', async () => {
-    const result = await run('--probe', '--version', VERSION, '--cli', 'no-such-agent-cli')
+    const result = await run('--probe', '--version', VERSION)
     expect(result.code).toBe(0)
     expect(parseInstallReport(result.stdout)).toEqual({
       os: 'Linux',
@@ -139,12 +139,16 @@ cp "${release}/\${last##*/}" "$out" 2>/dev/null || { echo "curl: (22) 404" >&2; 
       glibc: '2.39',
       glibc_floor: '2.36',
       glibc_hosts: 'Ubuntu 22.04+, Debian 12+, RHEL 9+',
-      git: 'yes',
-      cli: 'no',
       systemd: 'no',
       linger: 'no'
     })
     expect(existsSync(join(home, '.styr'))).toBe(false)
+  })
+
+  it('takes no --cli: setup checks nothing about agents', async () => {
+    const result = await run('--probe', '--cli', 'claude')
+    expect(result.code).toBe(64)
+    expect(result.stderr).toContain('unknown argument: --cli')
   })
 
   it('downloads the bundle on the host, checks the hash it was given, unpacks it and starts it', async () => {

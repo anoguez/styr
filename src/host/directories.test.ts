@@ -22,6 +22,19 @@ describe('listDirectories', () => {
     })
   })
 
+  it('lists the visible files too when asked', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'styr-dirs-'))
+    made.push(dir)
+    mkdirSync(join(dir, 'src'))
+    for (const name of ['b.md', 'A.txt', '.env']) writeFileSync(join(dir, name), '')
+    expect(listDirectories(dir, true)).toEqual({
+      path: dir,
+      parent: join(dir, '..'),
+      names: ['src'],
+      files: ['A.txt', 'b.md']
+    })
+  })
+
   it('reads ~ as the home folder, and gives the root no parent', () => {
     expect(listDirectories('~').path).toBe(homedir())
     expect(listDirectories(parse(tmpdir()).root).parent).toBeNull()

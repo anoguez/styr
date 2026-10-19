@@ -14,8 +14,8 @@
 #   ~/.config/systemd/user/styr-server.service
 #
 # Modes (the default is --install):
-#   --probe     print what the desktop app checks: OS, arch, glibc (and the floor below), git, the
-#               agent CLI, systemd, linger, the installed and the running version. Changes nothing.
+#   --probe     print what the desktop app checks: OS, arch, glibc (and the floor below), systemd,
+#               linger, the installed and the running version. Changes nothing.
 #   --install   download (or take --tarball), verify, unpack beside any other version, point
 #               `current` at it, and start the server unless one is already running. A running
 #               server is never restarted: the new version takes over on the next restart.
@@ -26,8 +26,7 @@
 # Options: --version <v>; --sha256 <hex>, the hash the bundle must have (the desktop app passes the
 # one built into the signed app; without it the release's SHA256SUMS is used, which only catches a
 # corrupt download); --tarball <file>, a bundle the desktop app uploaded instead of downloading;
-# --cli <name> (the agent CLI --probe looks for), --pid <pid> (the server to stop when no systemd
-# unit runs it).
+# --pid <pid> (the server to stop when no systemd unit runs it).
 #
 # Lines starting with `::styr ` are for the desktop app; everything else is for people.
 # Exit codes: 10 not Linux, 11 unsupported arch, 12 glibc older than the bundle needs, 20 the download failed and 22 the bundle did not
@@ -43,7 +42,6 @@ UNIT=styr-server.service
 mode=install
 tarball=""
 sha256=""
-cli=""
 pid=""
 
 fail() {
@@ -62,7 +60,6 @@ while [ $# -gt 0 ]; do
     --version) STYR_VERSION="${2:-}" && shift ;;
     --tarball) tarball="${2:-}" && shift ;;
     --sha256) sha256="${2:-}" && shift ;;
-    --cli) cli="${2:-}" && shift ;;
     --pid) pid="${2:-}" && shift ;;
     -h | --help)
       printf 'See the comments at the top of install.sh, or docs/architecture/remote.md.\n'
@@ -79,7 +76,6 @@ case "$STYR_VERSION" in
     STYR_VERSION=""
     ;;
 esac
-case "$cli" in *[!0-9A-Za-z._-]*) cli="" ;; esac
 case "$pid" in *[!0-9]*) pid="" ;; esac
 case "$sha256" in *[!0-9a-f]*) fail 64 "--sha256 takes a lowercase hex SHA-256" ;; esac
 # A relative --tarball is from here: the home folder when the desktop app runs this over ssh.
@@ -127,7 +123,6 @@ older_than() {
 # What a login shell finds, which is what an agent started by the server will find: ssh runs this
 # script without the profile, where ~/.local/bin (claude's usual home) is often missing from PATH.
 login_path() { "${SHELL:-/bin/sh}" -lc 'printf "\n%s" "$PATH"' </dev/null 2>/dev/null | tail -n 1; }
-has_command() { "${SHELL:-/bin/sh}" -lc "command -v $1" </dev/null >/dev/null 2>&1; }
 
 has_systemd() { command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; }
 
@@ -184,10 +179,6 @@ probe() {
   report glibc "$glibc"
   report glibc_floor "$GLIBC_FLOOR"
   report glibc_hosts "$GLIBC_HOSTS"
-  if command -v git >/dev/null 2>&1 || has_command git; then report git yes; else report git no; fi
-  if [ -n "$cli" ]; then
-    if has_command "$cli"; then report cli yes; else report cli no; fi
-  fi
   if has_systemd; then report systemd yes; else report systemd no; fi
   report linger "$(linger)"
   if [ -x "$base/current/bin/styr" ]; then

@@ -70,6 +70,7 @@ const DESKTOP_ONLY = new Set([
   'remote:switchBack',
   'remote:addWorkspace',
   // Setting up and running a host's server, over ssh from this computer (`hostSetup.ts`).
+  'remote:inspect',
   'remote:setup',
   'remote:runningAgents',
   'remote:upgrade',

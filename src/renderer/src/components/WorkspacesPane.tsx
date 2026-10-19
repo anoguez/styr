@@ -5,6 +5,7 @@ import { Button, Card, CardRow, Chip, Hint, inputBase, inputClass } from './ui.j
 import { workspaceColor } from '../lib/workspaceColor.js'
 import { ipcMessage } from '../lib/ipcMessage.js'
 import { remoteNote, useRemoteState } from '../lib/remoteStatus.js'
+import { WorkspacePlace } from './RemoteSetupDialog.js'
 
 /**
  * What Delete asks. A remote workspace's folder here is only a link: removing it touches nothing
@@ -26,17 +27,19 @@ export function deleteQuestion(
 export function WorkspacesPane({
   workspaces,
   editedWorkspaceId,
-  onEdit
+  onEdit,
+  onNewRemote
 }: {
   workspaces: Workspaces
   /** The workspace the dialog is editing, so its row can say so. */
   editedWorkspaceId: string
   /** Point the dialog at a workspace's own settings. */
   onEdit: (id: string) => void
+  /** New workspace → Remote host: Settings closes and the setup dialog opens. */
+  onNewRemote: () => void
 }): ReactNode {
   const { overview, apply } = workspaces
   const remote = useRemoteState()
-  const [name, setName] = useState('')
   const [adding, setAdding] = useState(false)
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
   const [error, setError] = useState('')
@@ -155,37 +158,12 @@ export function WorkspacesPane({
       </Card>
 
       {adding ? (
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (!name.trim()) return
-            void run(async () => apply(await window.api.workspaces.create(name))).then((done) => {
-              if (!done) return
-              setName('')
-              setAdding(false)
-            })
-          }}
-        >
-          <input
-            autoFocus
-            aria-label="New workspace name"
-            className={inputClass}
-            value={name}
-            maxLength={40}
-            placeholder="Client A"
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.stopPropagation()
-                setAdding(false)
-              }
-            }}
-          />
-          <Button type="submit" variant="primary" disabled={!name.trim()}>
-            Create
-          </Button>
-        </form>
+        <NewWorkspaceForm
+          onCreate={(name) => run(async () => apply(await window.api.workspaces.create(name)))}
+          onCreated={() => setAdding(false)}
+          onCancel={() => setAdding(false)}
+          onRemote={onNewRemote}
+        />
       ) : (
         <button
           type="button"
@@ -211,6 +189,73 @@ export function WorkspacesPane({
         A separate board with its own tasks and agents. The same repo can be used in any of them.
       </Hint>
       {error ? <p className="text-[12px] text-danger">{error}</p> : null}
+    </div>
+  )
+}
+
+/**
+ * Settings → Workspaces → New workspace: a name, created here at once. With remote workspaces on
+ * (Experimental) it offers the same "Where the workspace lives" choice as the switcher's dialog;
+ * Remote host hands over to that dialog's setup (`onRemote`).
+ */
+export function NewWorkspaceForm({
+  onCreate,
+  onCreated,
+  onCancel,
+  onRemote
+}: {
+  /** Resolves true once the workspace exists. */
+  onCreate: (name: string) => Promise<boolean>
+  onCreated: () => void
+  onCancel: () => void
+  onRemote: () => void
+}): ReactNode {
+  const remote = useRemoteState()
+  const [name, setName] = useState('')
+  const form = (
+    <form
+      className="flex gap-2"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (!name.trim()) return
+        void onCreate(name).then((done) => {
+          if (!done) return
+          setName('')
+          onCreated()
+        })
+      }}
+    >
+      <input
+        autoFocus
+        aria-label="New workspace name"
+        className={inputClass}
+        value={name}
+        maxLength={40}
+        placeholder="Client A"
+        onChange={(event) => setName(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.stopPropagation()
+            onCancel()
+          }
+        }}
+      />
+      <Button type="submit" variant="primary" disabled={!name.trim()}>
+        Create
+      </Button>
+    </form>
+  )
+  // With the flag off there is no toggle, and the form stands alone as it always has.
+  if (!remote.enabled) return form
+  return (
+    <div className="flex flex-col gap-2.5">
+      <WorkspacePlace
+        value="local"
+        onChange={(value) => {
+          if (value === 'remote') onRemote()
+        }}
+      />
+      {form}
     </div>
   )
 }

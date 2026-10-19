@@ -69,11 +69,15 @@ export interface RemoteState {
   workspaces: Record<string, RemoteWorkspaceState>
 }
 
-/** What the minimal "Add remote workspace" form sends. */
+/**
+ * New workspace → Remote host → Open an existing workspace: a local stub for a board the host's
+ * server already has. Nothing is installed or written on the host.
+ */
 export interface RemoteWorkspaceDraft {
   name: string
   host: string
   workspaceId: string
+  /** A server command other than the default; no UI asks for one (setup installs it there). */
   server?: string
 }
 
@@ -81,8 +85,26 @@ export interface RemoteWorkspaceDraft {
 export interface RemoteSetupDraft {
   name: string
   host: string
-  /** The agent CLI to look for on the host; a missing one is a warning, not a refusal. */
-  provider: 'claude' | 'codex'
+}
+
+/** A board on a host's server, as New workspace → Remote host lists it. */
+export interface RemoteServerBoard {
+  /** Its id on the server. */
+  id: string
+  name: string
+  /** This computer already has a workspace linked to it. */
+  linked: boolean
+}
+
+/**
+ * What New workspace → Remote host found on a host before installing anything: the server that
+ * answers there, if one does, and its boards, so an existing one can be opened.
+ */
+export interface RemoteHostInspection {
+  /** The running server's version, when one answers on the host. */
+  running?: string
+  /** Its boards; empty when no server runs or it could not list them. */
+  boards: RemoteServerBoard[]
 }
 
 export type RemoteSetupStep = 'check' | 'probe' | 'install' | 'create'
@@ -106,7 +128,7 @@ export interface RemoteSetupResult {
   /** The local stub's id: the app has switched to it. */
   workspaceId: string
   transfer: RemoteTransfer
-  /** Missing git or CLI, no systemd, an older server still running … */
+  /** No systemd, an older server still running … */
   warnings: string[]
   /** Set when systemd runs the server but lingering is off: the command to copy, never run. */
   lingerCommand?: string

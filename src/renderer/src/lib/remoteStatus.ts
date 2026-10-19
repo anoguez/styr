@@ -190,25 +190,47 @@ export function remoteFileAction(
   }
 }
 
+/** Where a Browse button looks: see `browseTarget`. */
+export type BrowseTarget =
+  { kind: 'native' } | { kind: 'remote'; host: string } | { kind: 'elsewhere'; reason: string }
+
 /**
- * Why a Browse button is off, or undefined when it works. The native pickers browse this computer,
- * and a path picked there means nothing on a remote host: the server would quietly start the agent
- * in its home folder instead. A remote path is typed.
+ * Where Browse looks, so it picks a path on the machine the workspace lives on: this computer's
+ * own dialog for a local workspace, the in-app picker over the host's folders
+ * (`terminal:listDirectories`, routed to the server) for a remote one. That listing follows the
+ * open workspace, so Settings editing a remote workspace that is not the open one (`notOpen`)
+ * cannot list its host, and says to open it.
  */
-export function localPickerBlocked(access: BoardAccess): string | undefined {
-  return access.remote
-    ? `This path is on ${access.remote.host}; type it. Browse picks from this computer.`
-    : undefined
+export function browseTarget(access: BoardAccess, notOpen = false): BrowseTarget {
+  if (!access.remote) return { kind: 'native' }
+  if (notOpen) {
+    return {
+      kind: 'elsewhere',
+      reason: `This path is on ${access.remote.host}. Open the workspace to browse it there, or type it.`
+    }
+  }
+  return { kind: 'remote', host: access.remote.host }
 }
 
 /** The open board's access and the remote state, for components deep in the tree. */
-export const RemoteContext = createContext<{ state: RemoteState; access: BoardAccess }>({
+export const RemoteContext = createContext<{
+  state: RemoteState
+  access: BoardAccess
+  /** Settings is editing a workspace other than the open one, whose calls the router follows. */
+  notOpen?: boolean
+}>({
   state: NO_REMOTE,
   access: { readOnly: false }
 })
 
 export function useBoardAccess(): BoardAccess {
   return useContext(RemoteContext).access
+}
+
+/** Where a Browse button in this part of the tree looks (`browseTarget`). */
+export function useBrowseTarget(): BrowseTarget {
+  const { access, notOpen } = useContext(RemoteContext)
+  return browseTarget(access, notOpen)
 }
 
 export function useRemoteState(): RemoteState {

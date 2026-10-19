@@ -1,10 +1,10 @@
 import { useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { withContextFiles } from '../../lib/taskForm.js'
 import { fileName } from '../../lib/terminalPath.js'
-import { localPickerBlocked, useBoardAccess } from '../../lib/remoteStatus.js'
+import { useBoardAccess } from '../../lib/remoteStatus.js'
 import { FileIcon, PlusIcon } from '../icons.js'
 import { GHOST_BTN, RemoveButton } from './fields.js'
-import { PickerGuard } from '../PickerGuard.js'
+import { PathBrowse } from '../PathBrowse.js'
 
 /** The task's markdown description and the files whose paths go into its prompt. */
 export function BriefTab({
@@ -23,10 +23,11 @@ export function BriefTab({
   // dragenter/dragleave fire for every child crossed, so count them to know when the drag left.
   const [dragging, setDragging] = useState(false)
   const depth = useRef(0)
-  // On a remote board this computer's files mean nothing to the agent: no picking, no dropping.
-  const pickerBlocked = localPickerBlocked(useBoardAccess())
+  // On a remote board a file dropped from this computer means nothing to the agent: no dropping.
+  // Add browses the host's files instead (`PathBrowse`).
+  const remote = Boolean(useBoardAccess().remote)
   const carriesFiles = (event: DragEvent): boolean =>
-    !pickerBlocked && event.dataTransfer.types.includes('Files')
+    !remote && event.dataTransfer.types.includes('Files')
   const add = (picked: string[]): void =>
     onChange({ contextFiles: withContextFiles(contextFiles, picked) })
 
@@ -74,25 +75,23 @@ export function BriefTab({
           <span className="min-w-0 truncate text-[11.5px] text-faint">
             {dragging
               ? 'Drop to attach.'
-              : pickerBlocked
-                ? 'Type the remote paths into the description; files here are on this computer.'
+              : remote
+                ? 'Add files from the host. Only paths go into the prompt.'
                 : 'Add or drop files and folders. Only paths go into the prompt.'}
           </span>
-          <PickerGuard className="ml-auto inline-flex">
-            {(disabled) => (
+          <PathBrowse kind="files" start={repoPath} className="ml-auto inline-flex" onPick={add}>
+            {(browse, disabled) => (
               <button
                 type="button"
                 disabled={disabled}
                 className={`${GHOST_BTN} h-6 shrink-0 disabled:pointer-events-none disabled:opacity-40`}
-                onClick={() => {
-                  void window.api.settings.pickFiles(repoPath || undefined).then(add)
-                }}
+                onClick={browse}
               >
                 <PlusIcon size={12} />
                 Add
               </button>
             )}
-          </PickerGuard>
+          </PathBrowse>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {contextFiles.map((file) => (

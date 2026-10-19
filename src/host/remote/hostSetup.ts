@@ -109,9 +109,9 @@ export function createHostSetup(ports: HostSetupPorts) {
         throw new SetupError(sshFailureMessage(host, result.stderr, result.code))
     },
 
-    /** What the host has: OS, arch, git and the CLI, systemd, linger, installed and running servers. */
-    async probe(host: string, cli?: string): Promise<HostProbe> {
-      const result = await run(host, 'probe', { version: ports.version, ...(cli ? { cli } : {}) })
+    /** What the host has: OS, arch, glibc, systemd, linger, installed and running servers. */
+    async probe(host: string): Promise<HostProbe> {
+      const result = await run(host, 'probe', { version: ports.version })
       if (result.code !== 0) throw scriptFailure(`Could not inspect ${host}`, result)
       return parseProbe(result.stdout)
     },
@@ -205,69 +205,82 @@ export function createHostSetup(ports: HostSetupPorts) {
 
 export type HostSetup = ReturnType<typeof createHostSetup>
 
-/** What the setup flow needs besides the host steps. */
-export interface SetupFlowPorts {
+/** What inspecting a host needs: the host steps and somewhere to report them. */
+export interface InspectPorts {
   setup: HostSetup
+  progress(update: RemoteSetupProgress): void
+}
+
+/** What the setup flow needs besides the host steps. */
+export interface SetupFlowPorts extends InspectPorts {
   version: string
   /** Creates the workspace on the host's server and returns its id there. */
   createServerWorkspace(host: string, name: string): Promise<string>
   /** Writes the local stub, switches to it and returns its id. */
   addStub(draft: { name: string; host: string; workspaceId: string }): Promise<string>
-  progress(update: RemoteSetupProgress): void
+}
+
+/** Runs one setup step, reporting it running, and failed with its message when it throws. */
+function stepper(ports: InspectPorts, host: string) {
+  return {
+    async step<T>(id: RemoteSetupStep, work: () => Promise<T>): Promise<T> {
+      ports.progress({ host, step: id, state: 'running' })
+      try {
+        return await work()
+      } catch (error) {
+        ports.progress({
+          host,
+          step: id,
+          state: 'failed',
+          detail: error instanceof Error ? error.message : String(error)
+        })
+        throw error
+      }
+    },
+    done(id: RemoteSetupStep, detail?: string): void {
+      ports.progress({ host, step: id, state: 'done', ...(detail ? { detail } : {}) })
+    }
+  }
 }
 
 /**
- * New workspace → Remote: check ssh, inspect the host, install (or reuse) the server, create the
- * workspace there and the local stub. Refuses only what cannot work (no ssh, not Linux); a missing
- * git or CLI, no systemd or an older server still running are warnings (warn, don't refuse).
+ * The first two steps of New workspace → Remote host: ssh reaches the host, and it can run the
+ * server (Linux, a supported arch, the glibc floor). Nothing about agents: like a local workspace,
+ * a remote one checks its agent CLI in Settings → Agents and before a launch, on the server.
+ */
+export async function inspectRemoteHost(ports: InspectPorts, value: string): Promise<HostProbe> {
+  const host = value.trim()
+  const { step, done } = stepper(ports, host)
+  await step('check', () => ports.setup.check(host))
+  done('check', `ssh reaches ${host}.`)
+  const probe = await step('probe', async () => {
+    const found = await ports.setup.probe(host)
+    const refused = unsupportedHost(host, found)
+    if (refused) throw new SetupError(refused)
+    return found
+  })
+  done('probe', `Linux ${probe.machine}${probe.running ? `, Styr ${probe.running} running` : ''}.`)
+  return probe
+}
+
+/**
+ * New workspace → Remote host: check ssh, inspect the host (unless `inspected` carries what
+ * `inspectRemoteHost` just found), install (or reuse) the server, create the workspace there and
+ * the local stub. Refuses only what cannot work (no ssh, not Linux); no systemd or an older server
+ * still running are warnings (warn, don't refuse).
  */
 export async function runRemoteSetup(
   ports: SetupFlowPorts,
-  draft: RemoteSetupDraft
+  draft: RemoteSetupDraft,
+  inspected?: HostProbe
 ): Promise<RemoteSetupResult> {
   const host = draft.host.trim()
   const name = draft.name.trim()
   if (!name) throw new SetupError('Give the workspace a name.')
   const warnings: string[] = []
+  const { step, done } = stepper(ports, host)
 
-  async function step<T>(id: RemoteSetupStep, work: () => Promise<T>): Promise<T> {
-    ports.progress({ host, step: id, state: 'running' })
-    try {
-      const result = await work()
-      return result
-    } catch (error) {
-      ports.progress({
-        host,
-        step: id,
-        state: 'failed',
-        detail: error instanceof Error ? error.message : String(error)
-      })
-      throw error
-    }
-  }
-  const done = (id: RemoteSetupStep, detail?: string): void =>
-    ports.progress({ host, step: id, state: 'done', ...(detail ? { detail } : {}) })
-
-  await step('check', () => ports.setup.check(host))
-  done('check', `ssh reaches ${host}.`)
-
-  const probe = await step('probe', async () => {
-    const found = await ports.setup.probe(host, draft.provider)
-    const refused = unsupportedHost(host, found)
-    if (refused) throw new SetupError(refused)
-    return found
-  })
-  if (!probe.git) {
-    warnings.push(
-      `git is not installed on ${host} (looked for with a login shell). Worktrees, diffs and landing need it.`
-    )
-  }
-  if (probe.cli === false) {
-    warnings.push(
-      `${draft.provider} is not on ${host}'s PATH in a login shell. Install it and log in there before launching agents.`
-    )
-  }
-  done('probe', `Linux ${probe.machine}${probe.running ? `, Styr ${probe.running} running` : ''}.`)
+  const probe = inspected ?? (await inspectRemoteHost(ports, host))
 
   let transfer: RemoteTransfer
   let report: Record<string, string> = {}

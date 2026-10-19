@@ -264,7 +264,7 @@ Per call, `router.invoke(channel, args, local)`:
   server's own app-level keys sent back unchanged), `settings:brokenFiles`, `terminal:list`
   (local sessions plus each host's), `diagnostics:snapshot` (the server's, with this machine's
   terminal engine), and the local-only actions below.
-- **Everything else** (the window, updates, pickers, the terminal engine) stays local.
+- **Everything else** (the window, updates, the native pickers, the terminal engine) stays local.
 
 Ids from a server are mapped on the way in: every `workspaceId` becomes the stub that links to
 that host and remote id, and one no stub links to becomes `remote-unlinked:<host>/<id>`, which
@@ -319,11 +319,17 @@ asked for this workspace (at start, or by switching to it while disconnected), a
 
 ### Local-only actions
 
-The Browse buttons (a task's working directory and context files, the Settings path fields) open
-this computer's file dialog, so they are disabled for a remote workspace, with a tooltip saying to
-type the path; dropping files on a task's brief is off too. A local path stored for the host
-would not fail there: the server would start the agent in its home folder. In Settings this
-follows the workspace being edited, elsewhere the open one. The storage folder is this computer's whatever the workspace, so its Browse stays on (`local`).
+**Browse picks on the machine the workspace lives on** (`PathBrowse`), as it does locally. The
+Browse buttons (a task's working directory and context files, the Settings path fields) open this
+computer's file dialog on a local workspace. On a remote one they open the in-app
+`DirectoryPicker` in a dialog, fed by `terminal:listDirectories` (`includeFiles` for files), which
+is routed to the active workspace's server, so it lists the host's folders and files and the path
+picked is the host's. A local path stored for the host would not fail there: the server would start
+the agent in its home folder. In Settings this follows the workspace being edited; since the
+listing follows the open workspace, a remote workspace edited from another one cannot be browsed
+until it is opened, and its Browse says so (`browseTarget`). The storage folder is this computer's
+whatever the workspace, so its Browse always uses the native dialog (`local`). Dropping files on a
+task's brief stays off for a remote workspace: those are this computer's paths.
 
 "Open file" on a remote task opens `vscode://vscode-remote/ssh-remote+<host><path>` when Settings
 → Open files with is VS Code or Cursor; otherwise it is disabled, with the remote path in the
@@ -338,7 +344,8 @@ process passes a remote path on as text: it never `path.resolve`s or `existsSync
 | `remote:state`         | broadcast | `RemoteState`: the flag, each host's state, each stub's live |
 | `remote:retry`         | invoke    | `[host?]`: Retry now, one host or all                        |
 | `remote:switchBack`    | invoke    | `[stubId]`: point the server at this workspace again         |
-| `remote:addWorkspace`  | invoke    | `[RemoteWorkspaceDraft]` → `WorkspaceOverview`               |
+| `remote:inspect`       | invoke    | `[host]` → `RemoteHostInspection`: ssh, the system, boards   |
+| `remote:addWorkspace`  | invoke    | `[RemoteWorkspaceDraft]` → `WorkspaceOverview`: open one     |
 | `remote:setup`         | invoke    | `[RemoteSetupDraft]` → `RemoteSetupResult` (Host setup)      |
 | `remote:setupProgress` | broadcast | `RemoteSetupProgress`: one step's state                      |
 | `remote:runningAgents` | invoke    | `[host]` → `RemoteRunningAgents`, before a restart or stop   |
@@ -436,12 +443,35 @@ wildcard.
 ## Host setup
 
 The desktop app drives the install the way VS Code Remote-SSH installs its server: every step runs
-on the host over ssh, and nothing is installed on the laptop. New workspace → Remote host takes a
-host and a name, with the agent CLI to look for.
+on the host over ssh, and nothing is installed on the laptop.
+
+**One dialog, four entries.** `RemoteSetupDialog` is the only setup UI. It opens from the
+switcher's New workspace… (Remote host), Settings → Workspaces → New workspace (the same toggle,
+`WorkspacePlace`), Settings → Remote hosts (all workspaces) → Set up a host…, and the palette's
+New remote workspace…; each is behind the experimental flag, and with it off both New workspace
+forms are what they were. From Settings, **Settings closes** (after confirming any unsaved
+changes) and the app's New workspace dialog opens on Remote host (`newWorkspace` in
+`appShell.ts`), so a finished setup switches to the new board exactly as from the switcher.
+
+**Host first, then what to do.** The dialog takes a host and runs `remote:inspect`: the check and
+probe steps below (`inspectRemoteHost`), and, when a server already answers, its boards
+(`workspaces:list` over the host's shared connection or a one-off session, parsed like any
+answer). The probe is kept for the setup that follows, so ssh and the probe run once. With boards
+there, it offers **Open an existing workspace**, listing them by name and marking those this
+computer already links to, next to **Create a new workspace**. Opening one writes only the local
+stub (`remote:addWorkspace`: no install, no server write) and switches to it. Otherwise it asks for
+a name and runs the rest. Nobody types a server workspace id or a server command: setup and
+`install.sh` put the server at the default path (`DEFAULT_SERVER_COMMAND`).
+
+**Nothing about agents.** A remote workspace behaves like a local one: setup checks only what
+installing and running the server needs. git and the agent CLI are checked where a local workspace
+checks them, Settings → Agents (`agents:cliStatus`, routed) and the check before a launch, both on
+the server.
 
 ```
 check    ssh -T -o BatchMode=yes <host> true      ssh's own error verbatim on failure
-probe    sh -s -- --probe …   (install.sh on stdin) OS, arch, glibc, git, CLI, systemd, linger, versions
+probe    sh -s -- --probe …   (install.sh on stdin) OS, arch, glibc, systemd, linger, versions
+         └ a server running: its boards, to open one (stops here) or create one
 install  sh -s -- --install --version V --sha256 H the host downloads, checks, unpacks, starts
          └ exit 20 or 22: this computer downloads, checks H, uploads (scp, or ssh … cat), --tarball
 create   workspaces:create on the server           shared connection, or a one-off session
@@ -462,8 +492,7 @@ create   workspaces:create on the server           shared connection, or a one-o
   symlink when it starts, so a running server keeps its version. The unit is
   `~/.config/systemd/user/styr-server.service`: `ExecStart=%h/.styr/server/current/bin/styr serve`,
   `Restart=on-failure`, and the PATH of a login shell, so agents find `claude` in `~/.local/bin`
-  (ssh runs the script without the profile, so `git` and the CLI are also looked for with a login
-  shell). It is written on every install, enabled, and started only when no server answers on the
+  (ssh runs the script without the profile). It is written on every install, enabled, and started only when no server answers on the
   socket (`styr serve attach` exits 0 when one does, 2 when none does).
 - **Lingering.** Without it, systemd stops the user's services when their last session ends: the
   server would die with the ssh connection. Setup reports it and shows
@@ -475,8 +504,8 @@ create   workspaces:create on the server           shared connection, or a one-o
   its stub shares that connection (one per host, `registry.wantedHosts`). An older server keeps
   running: this version is installed beside it and takes over on Upgrade.
 - **Refused, warned.** Only what cannot work is refused: no ssh, not Linux, not x86_64 or aarch64,
-  a bundle that fails its hash. A missing git or CLI, no systemd and an older server running are
-  warnings (warn, don't refuse).
+  a bundle that fails its hash. No systemd and an older server running are warnings (warn, don't
+  refuse).
 
 The steps are `src/host/remote/hostSetup.ts`, behind ports: the ssh runner, the uploader, the
 bundle on this computer, the embedded hashes and the script (`HostSetupPorts`), plus creating the
@@ -518,10 +547,14 @@ server workspace and the stub (`SetupFlowPorts`). `sshRunner.ts` is the real por
 
 ### Settings → Remote hosts
 
-One row per host in use: its status, server version, uptime (from the hello's `startedAt`) and the
-workspaces on it, with Disconnect (offline until Connect, whatever wakes the computer), Connect
-(starts the installed server if it is not running, then connects), Upgrade server (enabled on a
-version mismatch) and Stop server (asks first, listing the running agents; then disconnects).
+Labelled **Remote hosts (all workspaces)**, in the app-level group: "Machines that run your remote
+workspaces. Your local workspaces are not affected." One row per host in use: its status, server
+version, uptime (from the hello's `startedAt`) and the workspaces on it, with Disconnect (offline
+until Connect, whatever wakes the computer), Connect (starts the installed server if it is not
+running, then connects), Upgrade server (enabled on a version mismatch) and Stop server (asks
+first, listing the running agents; then disconnects). Below, **Set up a host…** opens New
+workspace → Remote host, the one way to add a remote workspace; there is no form to link one by
+its server id.
 
 ### After a restart or a reboot
 
@@ -564,12 +597,17 @@ computer uploads the local bundle.
   refusals (the glibc floor included), the ssh messages, and that no ssh or scp line weakens host-key checking.
 - `host/remote/hostSetup.test.ts`: the flow over fake ports: a fresh VM that downloads (nothing
   but ssh commands leaves the laptop), the upload fallback and what the UI is told, a tampered
-  bundle refused on both sides, an unknown host key, a non-Linux host, the warnings, reusing a
-  running server, an older one left running, restart and stop.
+  bundle refused on both sides, an unknown host key, a non-Linux host, the warnings (none about
+  agents), inspecting first so ssh and the probe run once, reusing a running server, an older one
+  left running, restart and stop.
 - `host/remote/installScript.test.ts`: `install.sh` run for real in a throwaway home with stand-in
-  `uname`, `getconf`, `ldd`, `curl`, `systemctl` and `loginctl` and a fake bundle: probe, download
+  `uname`, `getconf`, `ldd`, `curl`, `systemctl` and `loginctl` and a fake bundle: probe (no
+  `--cli`), download
   and checksum, an old glibc refused with exit 12 before any download,
   the upload path, reuse without restart, stop and restart, the unit and the linger line.
+- `renderer/…/newRemoteWorkspace.test.tsx`: the toggle in both New workspace forms with the flag
+  on and off, Set up a host… and no link form on Remote hosts; `remotePickers.test.tsx`: Browse
+  opens the in-app picker on a remote workspace and the native dialog on a local one.
 - `host/remote/sshRunner.test.ts`: the bundle download checked against the app's hash, the
   embedded hashes, ssh in batch mode, and the scp → `ssh … cat` fallback.
 - `host/remote/session.test.ts`, and the protocol cases in `connection.test.ts` and

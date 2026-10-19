@@ -66,7 +66,6 @@ export interface InstallOptions {
   version?: string
   tarball?: string
   sha256?: string
-  cli?: string
   pid?: number
 }
 
@@ -80,7 +79,6 @@ export function installCommand(mode: InstallMode, options: InstallOptions = {}):
   if (options.version) args.push('--version', quote(options.version))
   if (options.tarball) args.push('--tarball', quote(options.tarball))
   if (options.sha256) args.push('--sha256', quote(options.sha256))
-  if (options.cli) args.push('--cli', quote(options.cli))
   if (options.pid !== undefined) args.push('--pid', String(Math.trunc(options.pid)))
   return `sh -s -- ${args.join(' ')}`
 }
@@ -115,9 +113,6 @@ export interface HostProbe {
    * in `install.sh`, which ships inside the app, so the script and the app always agree.
    */
   glibcFloor?: { version: string; hosts: string }
-  git: boolean
-  /** Unset when no CLI was asked about. */
-  cli?: boolean
   systemd: boolean
   linger: boolean
   /** The version `current` points at. */
@@ -139,8 +134,6 @@ export function parseProbe(stdout: string): HostProbe {
     ...(arch ? { arch } : {}),
     ...(glibc ? { glibc } : {}),
     ...(floor ? { glibcFloor: { version: floor, hosts: report.glibc_hosts ?? '' } } : {}),
-    git: report.git === 'yes',
-    ...(report.cli !== undefined ? { cli: report.cli === 'yes' } : {}),
     systemd: report.systemd === 'yes',
     linger: report.linger === 'yes',
     ...(report.installed ? { installed: report.installed } : {}),

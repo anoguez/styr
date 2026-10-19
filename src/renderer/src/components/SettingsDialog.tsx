@@ -43,6 +43,7 @@ export function SettingsDialog({
   initialSection,
   onSave,
   onPreviewTheme,
+  onNewRemoteWorkspace,
   onClose
 }: {
   settings: Settings
@@ -51,6 +52,11 @@ export function SettingsDialog({
   onSave: (change: SettingsChange) => Promise<void>
   /** Applies a draft theme to the live app so combinations can be judged before saving. */
   onPreviewTheme: (theme: ThemeSettings | null) => void
+  /**
+   * New workspace → Remote host, from Workspaces or Remote hosts: Settings closes and the app's
+   * New workspace dialog opens on Remote host, the same one the switcher opens.
+   */
+  onNewRemoteWorkspace: () => void
   onClose: () => void
 }): ReactNode {
   const [draft, setDraft] = useState<Settings>(settings)
@@ -74,9 +80,14 @@ export function SettingsDialog({
     onLoaded: selectFirstTemplate
   })
   const remoteState = useRemoteState()
+  const openId = workspaces.overview.activeId
   const remoteContext = useMemo(
-    () => ({ state: remoteState, access: boardAccess(remoteState, target.editedWorkspaceId) }),
-    [remoteState, target.editedWorkspaceId]
+    () => ({
+      state: remoteState,
+      access: boardAccess(remoteState, target.editedWorkspaceId),
+      notOpen: target.editedWorkspaceId !== openId
+    }),
+    [remoteState, target.editedWorkspaceId, openId]
   )
 
   const active = SECTIONS.find((item) => item.id === section) ?? SECTIONS[0]
@@ -121,6 +132,12 @@ export function SettingsDialog({
       .finally(() => setSaving(false))
   }
 
+  // Settings closes for the setup, so unsaved changes are named first (warn, don't refuse).
+  function newRemoteWorkspace(): void {
+    if (dirtyCount > 0 && !window.confirm(`Close Settings and discard ${dirtyLabel}?`)) return
+    onNewRemoteWorkspace()
+  }
+
   function discard(): void {
     setDraft((current) => ({
       ...current,
@@ -130,7 +147,7 @@ export function SettingsDialog({
   }
 
   return (
-    // Path fields browse this computer: off when the workspace being edited is remote.
+    // Path fields browse the machine the edited workspace lives on (`PathBrowse`).
     <RemoteContext.Provider value={remoteContext}>
       <Modal bare backdropCloses={false} title="Settings" onClose={onClose} onSubmit={save}>
         <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)]">
@@ -312,10 +329,13 @@ export function SettingsDialog({
                       target.choose(id)
                       setSection('preferences')
                     }}
+                    onNewRemote={newRemoteWorkspace}
                   />
                 ) : null}
 
-                {section === 'remote' ? <RemoteSection workspaces={workspaces} /> : null}
+                {section === 'remote' ? (
+                  <RemoteSection workspaces={workspaces} onSetUp={newRemoteWorkspace} />
+                ) : null}
                 {section === 'storage' ? <StorageSection draft={draft} patch={patch} /> : null}
 
                 {section === 'routing' ? <RoutingSection draft={draft} patch={patch} /> : null}

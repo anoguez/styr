@@ -119,7 +119,8 @@ export const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   'terminal:listDirectories': z.object({
     path: remotePathSchema,
     parent: remotePathSchema.nullable(),
-    names: z.array(line).max(REMOTE_LIMITS.entries)
+    names: z.array(line).max(REMOTE_LIMITS.entries),
+    files: z.array(line).max(REMOTE_LIMITS.entries).optional()
   }),
   // `undefined` crosses the wire as `null`; the renderer expects it back.
   'terminal:runtimeState': remoteRuntimeStateSchema

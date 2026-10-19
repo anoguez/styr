@@ -210,7 +210,7 @@ export default function App(): ReactNode {
                     open={shell.switcher}
                     onOpenChange={(open) => toggle('switcher', open)}
                     onSwitch={(id) => void switchWorkspace(id)}
-                    onNew={() => toggle('newWorkspace', true)}
+                    onNew={() => dispatch({ type: 'newWorkspace', mode: 'local' })}
                     onManage={() => openSettings('workspaces')}
                   />
                 </>
@@ -374,6 +374,7 @@ export default function App(): ReactNode {
 
             {shell.newWorkspace ? (
               <NewWorkspaceDialog
+                initialMode={shell.newWorkspaceMode}
                 onCreate={async (name) => applyWorkspaces(await window.api.workspaces.create(name))}
                 onApply={applyWorkspaces}
                 onClose={() => toggle('newWorkspace', false)}
@@ -481,6 +482,10 @@ export default function App(): ReactNode {
                 initialSection={shell.settings.section}
                 onSave={save}
                 onPreviewTheme={setPreviewTheme}
+                onNewRemoteWorkspace={() => {
+                  setPreviewTheme(null)
+                  dispatch({ type: 'newWorkspace', mode: 'remote' })
+                }}
                 onClose={() => {
                   setPreviewTheme(null)
                   dispatch({ type: 'closeSettings' })

@@ -1,17 +1,23 @@
 import { join } from 'node:path'
 import { app, ipcMain, powerMonitor, shell, type IpcMain } from 'electron'
 import { configDir } from '@core/config.js'
-import { unsupportedHost } from '@core/remoteSetup.js'
+import { unsupportedHost, type HostProbe } from '@core/remoteSetup.js'
 import { loadSettings } from '@core/settingsStore.js'
 import { createRemoteWorkspace, listWorkspaces, validateWorkspaceName } from '@core/workspaces.js'
 import type {
   GlobalSettings,
+  RemoteHostInspection,
   RemoteSetupDraft,
   RemoteWorkspaceDraft,
   WorkspaceOverview
 } from '@core/types.js'
 import { RemoteConnection } from '@host/remote/connection.js'
-import { createHostSetup, runRemoteSetup, type HostSetup } from '@host/remote/hostSetup.js'
+import {
+  createHostSetup,
+  inspectRemoteHost,
+  runRemoteSetup,
+  type HostSetup
+} from '@host/remote/hostSetup.js'
 import { createRemoteRouter } from '@host/remote/router.js'
 import { openServerSession } from '@host/remote/session.js'
 import { createHostSetupPorts } from '@host/remote/sshRunner.js'
@@ -79,19 +85,63 @@ function hostSetup(): HostSetup {
   return setupInstance
 }
 
-/** Creates a workspace on a host's server: over the shared connection, or a one-off session. */
-async function createServerWorkspace(host: string, name: string): Promise<string> {
-  const shared = remoteRouter.requestOnHost(host, 'workspaces:create', [name])
-  if (shared) return ((await shared) as WorkspaceOverview).activeId
+/**
+ * Asks a host's server for its workspaces: over the shared connection, or a one-off session. The
+ * answer is parsed like any server answer (`validation.ts`).
+ */
+async function requestServerWorkspaces(
+  host: string,
+  method: 'workspaces:list' | 'workspaces:create',
+  params: unknown[]
+): Promise<WorkspaceOverview> {
+  const shared = remoteRouter.requestOnHost(host, method, params)
+  if (shared) return (await shared) as WorkspaceOverview
   const session = await openServerSession(host, {
     spawn: () => sshTransport({ host, workspaceId: 'default' }),
     setTimer: (run, ms) => setTimeout(run, ms),
     clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout)
   })
   try {
-    return ((await session.request('workspaces:create', [name])) as WorkspaceOverview).activeId
+    return (await session.request(method, params)) as WorkspaceOverview
   } finally {
     session.close()
+  }
+}
+
+/** Creates a workspace on a host's server and returns its id there. */
+async function createServerWorkspace(host: string, name: string): Promise<string> {
+  return (await requestServerWorkspaces(host, 'workspaces:create', [name])).activeId
+}
+
+/**
+ * New workspace → Remote host's first step: ssh, the system, and, when a server already answers,
+ * its boards by name, each marked when this computer already links to it. The probe is kept for
+ * the setup that follows, so it does not run twice.
+ */
+const inspected = new Map<string, HostProbe>()
+async function inspectHost(host: string): Promise<RemoteHostInspection> {
+  inspected.delete(host)
+  const probe = await inspectRemoteHost(
+    {
+      setup: hostSetup(),
+      progress: (update) => electronHost.broadcast('remote:setupProgress', update)
+    },
+    host
+  )
+  inspected.set(host, probe)
+  if (!probe.running) return { boards: [] }
+  // A server that cannot list (another protocol, say) offers nothing to open; setup still runs.
+  const overview = await requestServerWorkspaces(host, 'workspaces:list', []).catch(() => undefined)
+  const links = listWorkspaces(loadSettings()).flatMap((workspace) =>
+    workspace.remote?.host === host ? [workspace.remote.workspaceId] : []
+  )
+  return {
+    running: probe.running,
+    boards: (overview?.workspaces ?? []).map((board) => ({
+      id: board.id,
+      name: board.name,
+      linked: links.includes(board.id)
+    }))
   }
 }
 
@@ -144,21 +194,28 @@ export function startRemote(switchWorkspace: (id: string) => unknown): void {
     remoteRouter.refresh()
     return created.id
   }
+  ipcMain.handle('remote:inspect', (_event, host: unknown) => {
+    requireFlag()
+    return inspectHost(String(host ?? '').trim())
+  })
+  // Open an existing workspace: a board the host's server already has gets a local stub only.
   ipcMain.handle('remote:addWorkspace', (_event, draft: RemoteWorkspaceDraft) => {
     requireFlag()
     const id = addStub({
       name: String(draft?.name ?? ''),
-      host: String(draft?.host ?? ''),
-      workspaceId: String(draft?.workspaceId ?? ''),
-      ...(typeof draft?.server === 'string' ? { server: draft.server } : {})
+      host: String(draft?.host ?? '').trim(),
+      workspaceId: String(draft?.workspaceId ?? '')
     })
     return switchWorkspace(id)
   })
   ipcMain.handle('remote:setup', async (_event, draft: RemoteSetupDraft) => {
     requireFlag()
     const name = String(draft?.name ?? '')
+    const host = String(draft?.host ?? '').trim()
     // Checked before anything runs on the host, so a clash never leaves a workspace there.
     validateWorkspaceName(loadSettings(), name)
+    const probe = inspected.get(host)
+    inspected.delete(host)
     return runRemoteSetup(
       {
         setup: hostSetup(),
@@ -171,11 +228,8 @@ export function startRemote(switchWorkspace: (id: string) => unknown): void {
         },
         progress: (update) => electronHost.broadcast('remote:setupProgress', update)
       },
-      {
-        name,
-        host: String(draft?.host ?? ''),
-        provider: draft?.provider === 'codex' ? 'codex' : 'claude'
-      }
+      { name, host },
+      probe
     )
   })
   ipcMain.handle('remote:runningAgents', (_event, host: unknown) =>

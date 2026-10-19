@@ -17,8 +17,8 @@ import {
   elsewhereNotice,
   type BoardCountGroup
 } from '../lib/workspaceStatus.js'
-import { Button, Field, Modal, Segmented, inputClass } from './ui.js'
-import { RemoteSetupDialog } from './RemoteSetupDialog.js'
+import { Button, Field, Modal, inputClass } from './ui.js'
+import { RemoteSetupDialog, WorkspacePlace, type WorkspacePlaceValue } from './RemoteSetupDialog.js'
 import { IS_MAC } from '../lib/platform.js'
 import { remoteNote, useRemoteState } from '../lib/remoteStatus.js'
 
@@ -254,17 +254,20 @@ export function WorkspaceSwitcher({
 }
 
 export function NewWorkspaceDialog({
+  initialMode = 'local',
   onCreate,
   onApply,
   onClose
 }: {
+  /** Remote host when opened from Settings → Remote hosts or the palette. */
+  initialMode?: WorkspacePlaceValue
   onCreate: (name: string) => Promise<void>
   /** A remote setup's result: the workspaces after it opened the new board. */
   onApply: (overview: WorkspaceOverview) => void
   onClose: () => void
 }): ReactNode {
   const remote = useRemoteState()
-  const [mode, setMode] = useState<'local' | 'remote'>('local')
+  const [mode, setMode] = useState<WorkspacePlaceValue>(initialMode)
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -283,17 +286,7 @@ export function NewWorkspaceDialog({
   }
 
   // Remote shows only with the experimental flag on (`docs/architecture/remote.md`).
-  const switcher = remote.enabled ? (
-    <Segmented
-      label="Where the workspace lives"
-      value={mode}
-      options={[
-        { value: 'local', label: 'This computer' },
-        { value: 'remote', label: 'Remote host' }
-      ]}
-      onChange={setMode}
-    />
-  ) : null
+  const switcher = remote.enabled ? <WorkspacePlace value={mode} onChange={setMode} /> : null
   if (mode === 'remote' && remote.enabled) {
     return <RemoteSetupDialog switcher={switcher} onApply={onApply} onClose={onClose} />
   }
