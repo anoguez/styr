@@ -213,4 +213,10 @@ describe('exitReason', () => {
     expect(exitReason('', null, missing)).toBe('ssh was not found on PATH.')
     expect(exitReason('', 2)).toBe('ssh exited with code 2.')
   })
+
+  it('tells the user to accept an unknown or changed host key themselves, then Retry', () => {
+    expect(exitReason('Host key verification failed.\n', 255, undefined, 'devbox')).toBe(
+      'Host key verification failed. Run “ssh devbox” once in a terminal to check and accept the key, then click Retry.'
+    )
+  })
 })

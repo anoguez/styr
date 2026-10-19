@@ -72,7 +72,7 @@ export function openServerSession(host: string, ports: SessionPorts): Promise<Se
     })
     child.onExit((code, error) => {
       peer.close(`The session with ${host} closed.`)
-      fail(`Could not reach the Styr server on ${host}: ${exitReason(stderr, code, error)}`)
+      fail(`Could not reach the Styr server on ${host}: ${exitReason(stderr, code, error, host)}`)
     })
   })
 }

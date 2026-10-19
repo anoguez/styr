@@ -1,4 +1,5 @@
 import { reconnectDelay } from '@core/remote.js'
+import { isHostKeyProblem } from '@core/remoteSetup.js'
 import type { RemoteConnectionStatus, RemoteHostState } from '@core/types.js'
 import { PROTOCOL_VERSION, RPC_ERRORS, RpcError, RpcPeer } from '../rpc/jsonRpc.js'
 
@@ -201,7 +202,7 @@ export class RemoteConnection {
       } catch {
         // Already gone.
       }
-      const said = exitReason(stderr, null)
+      const said = exitReason(stderr, null, undefined, this.host)
       this.failed(
         `${this.host} did not answer within ${HELLO_TIMEOUT_MS / 1000}s${said === 'ssh was stopped.' ? '.' : `: ${said}`}`
       )
@@ -230,7 +231,7 @@ export class RemoteConnection {
       this.peer = undefined
       peer.close(`The connection to ${this.host} closed.`)
       const wasConnected = this.status === 'connected'
-      this.failed(exitReason(stderr, code, error))
+      this.failed(exitReason(stderr, code, error, this.host))
       if (wasConnected) this.events.disconnected()
     })
   }
@@ -319,7 +320,12 @@ export function incompatibleMessage(host: string, hello: ServerHello | undefined
 }
 
 /** ssh's last stderr line when it said something, else how the child ended. */
-export function exitReason(stderr: string, code: number | null, error?: Error): string {
+export function exitReason(
+  stderr: string,
+  code: number | null,
+  error?: Error,
+  host = '<host>'
+): string {
   if (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT'
       ? 'ssh was not found on PATH.'
@@ -330,6 +336,10 @@ export function exitReason(stderr: string, code: number | null, error?: Error): 
     .map((line) => line.trim())
     .filter(Boolean)
   const last = lines.at(-1)
+  // Only the user may accept a host key: say how, after ssh's own words.
+  if (last && isHostKeyProblem(stderr)) {
+    return `${last} Run “ssh ${host}” once in a terminal to check and accept the key, then click Retry.`
+  }
   if (last) return last
   return code === null ? 'ssh was stopped.' : `ssh exited with code ${code}.`
 }

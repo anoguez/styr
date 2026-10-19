@@ -426,7 +426,8 @@ server workspace and the stub (`SetupFlowPorts`). `sshRunner.ts` is the real por
   default host-key checking (`sshCommandArgs`, `scpArgs`): never `StrictHostKeyChecking=no` or
   `accept-new`, and Styr never writes `known_hosts`. An unknown or changed key stops setup with
   ssh's message and the instruction to run `ssh <host>` once in a terminal, check the key, accept
-  it, and click Retry. `core/remoteSetup.test.ts` holds every command line to this.
+  it, and click Retry. A live connection that hits a changed key says the same in its badge
+  (`exitReason`). `core/remoteSetup.test.ts` holds every command line to this.
 
 ### Version lock
 
