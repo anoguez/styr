@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.35.0](https://github.com/anoguez/styr/compare/v0.34.0...v0.35.0) (2026-10-19)
+
+
+### Features
+
+* Remote 2/4 — headless styr serve and its JSON-RPC protocol ([#171](https://github.com/anoguez/styr/issues/171)) ([77c0113](https://github.com/anoguez/styr/commit/77c0113a270523a75718cf048e8e9b738fdf3ee6))
+* Remote 3/4 — remote workspaces in the client (router, connection, reconnect UI) ([#173](https://github.com/anoguez/styr/issues/173)) ([2580657](https://github.com/anoguez/styr/commit/25806572f2d8aa6080e07d93c8aa4f067ee2308d))
+* Remote 4/4 — host setup, server bundles in releases, Settings → Remote hosts ([#174](https://github.com/anoguez/styr/issues/174)) ([52b4893](https://github.com/anoguez/styr/commit/52b48930fb4c19fde30f592bd9b0f5a4d8329fdf))
+
+
+### Bug Fixes
+
+* harden the desktop against a compromised remote (validate server answers, sandbox the renderer, strict CSP) ([#175](https://github.com/anoguez/styr/issues/175)) ([5e11f7e](https://github.com/anoguez/styr/commit/5e11f7ef8520678cfdede9a96a0c5d27e13c9e3c))
+
 ## [0.34.0](https://github.com/anoguez/styr/compare/v0.33.0...v0.34.0) (2026-10-14)
 
 
