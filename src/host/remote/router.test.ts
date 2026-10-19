@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { AgentStatus } from '@core/agentState.js'
 import type {
@@ -11,7 +9,8 @@ import type {
 } from '@core/types.js'
 import { RemoteConnection } from './connection.js'
 import { fakeClock, fakeServer, settle } from './remoteFixture.js'
-import { TERMINAL_RESET, channelRoute, createRemoteRouter } from './router.js'
+import { createRemoteRouter } from './router.js'
+import { TERMINAL_RESET } from './terminals.js'
 
 /** One host's fake server: its workspaces, active one, tasks, sessions and settings. */
 function hostServer(names: Record<string, string>) {
@@ -804,19 +803,5 @@ describe('remote router: edge cases', () => {
     expect(t.router.state().hosts.map((h) => h.status)).toEqual(['connecting', 'connecting'])
     t.router.stopAll()
     expect(t.router.state().hosts).toEqual([])
-  })
-})
-
-describe('channel coverage', () => {
-  it('routes every channel the server answers somewhere other than locally', () => {
-    const source = readFileSync(
-      fileURLToPath(new URL('../../server/serverHost.ts', import.meta.url)),
-      'utf8'
-    )
-    const server = [...source.matchAll(/^\s+'([a-z]+:[A-Za-z]+)': channel\(/gm)].map((m) => m[1]!)
-    expect(server.length).toBeGreaterThan(60)
-    // `terminal:write` is one-way (`send`); every invoke channel must reach a server.
-    const unrouted = server.filter((c) => c !== 'terminal:write' && channelRoute(c) === 'local')
-    expect(unrouted).toEqual([])
   })
 })

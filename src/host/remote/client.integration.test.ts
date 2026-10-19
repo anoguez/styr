@@ -16,7 +16,8 @@ import type {
 } from '@core/types.js'
 import { RpcPeer } from '../rpc/jsonRpc.js'
 import { RemoteConnection, type TransportChild } from './connection.js'
-import { TERMINAL_RESET, createRemoteRouter } from './router.js'
+import { createRemoteRouter } from './router.js'
+import { TERMINAL_RESET } from './terminals.js'
 
 /**
  * The client against a real `styr serve`: built from this checkout, run under plain Node on a

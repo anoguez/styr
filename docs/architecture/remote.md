@@ -23,7 +23,8 @@ desktop main ──ssh -T host styr serve attach──▶ attach (stdio ↔ sock
   What stays in `src/main/`) are listed there by name. When you add an IPC channel, add its line
   to `serverHost.ts` too, or to that list if it acts on the desktop, and give it a route in the
   client router (`src/host/remote/router.ts`: the active workspace's, a session's, or one the
-  router answers itself). `router.test.ts` fails for a server channel with no route.
+  router answers itself; the tables are `src/host/remote/channels.ts`). `channels.test.ts` fails
+  for a server channel with no route.
 - **Arguments are checked with zod at the boundary.** Each entry in `serverHost.ts` has a
   `z.tuple` of its arguments, and the services parse their payloads with the existing schemas
   (`taskDraftSchema`, `settingsChangeSchema` …), as they do for IPC. A bad argument is an
@@ -206,9 +207,22 @@ workspace id and server command; the guided setup is TASK-0133.
   the link and waits for wake. A request while disconnected rejects at once: **nothing is queued**.
   The child and the clock are ports (`ConnectionPorts`); `sshTransport.ts` is the real child,
   `ssh` from PATH with no shell (OpenSSH ships with Windows 10+).
-- `host/remote/router.ts`: the router (below). Electron-free; its ports are the flag, the local
-  workspaces, `connect`, `broadcast`, `notify`, `updateTray`, `openExternal`, `isLocalSession` and
-  `saveGlobalSettings`.
+- `host/remote/router.ts`: the router (below), the composition root. It owns the connections'
+  lifecycle (`refresh`), the per-call dispatch (`invoke`, `send`), the servers' events and the
+  local broadcasts (`fromLocal`). Electron-free; its ports are the flag, the local workspaces,
+  `connect`, `broadcast`, `notify`, `updateTray`, `openExternal`, `isLocalSession` and
+  `saveGlobalSettings`. Its parts, each one concern:
+  - `channels.ts`: the routing tables, pure data: which channels follow the active workspace or a
+    session, which the router answers, which are writes, which reads keep a snapshot.
+  - `registry.ts`: `RemoteRegistry`, which workspaces are remote and each host's state
+    (`HostEntry`): `target`, `isLive`, `stubFor` and `mapIn`, the server-id-to-stub mapping.
+  - `forwarding.ts`: sending a board call to a server, the `Snapshots` kept for reads, and
+    `RemoteUnavailable` for writes refused while not live.
+  - `terminals.ts`: remote sessions, attach and reattach (`TERMINAL_RESET`), the held output,
+    `send`, and the mirror the Styr Terminal engine reads.
+  - `workspaces.ts`: the servers' active workspace, switching it, the merged list and summaries.
+  - `settings.ts`: the server's workspace keys with this machine's app-level ones, and saving.
+  - `rollup.ts`: the merged tray (with the baseline after a connect) and switcher rollup.
 - `host/remote/terminalMirror.ts`: the client's copy of an attached remote terminal (backlog, then
   the live stream, bounded like `TerminalTranscript`), for the Styr Terminal engine, whose
   `backlog` port is synchronous.
@@ -328,7 +342,8 @@ process passes a remote path on as text: it never `path.resolve`s or `existsSync
 - `host/remote/router.test.ts`: the router over fake servers on the real framing: the flag, one
   child per host, routing by workspace and by session, id mapping, snapshots and refused writes,
   another client moving the server, terminal reattach with a reset, the merged tray and
-  notifications, settings, the VS Code link, and every server channel having a route.
+  notifications, settings and the VS Code link.
+- `host/remote/channels.test.ts`: every server channel has a route, and every write is routed.
 - `host/remote/client.integration.test.ts`: the router and `RemoteConnection` against a real
   `styr serve` built from the checkout, the transport running `serve attach` without ssh: the
   board through the router, a launch and attach, a drop while the terminal keeps printing, and the

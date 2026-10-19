@@ -16,7 +16,7 @@ Electron + React kanban board. See README.md for what it does and how to run it.
   **`src/host/` and `src/server/` never import `electron`** (nor `src/main/`); ESLint and the
   server build enforce it. The server answers the IPC channels under the same names, so a new
   channel goes in `serverHost.ts` too, or in the desktop-only list in `src/server/channels.test.ts`,
-  and gets a route in the client router (`src/host/remote/router.ts`). Every IPC handler is
+  and gets a route in the client router (`src/host/remote/channels.ts`). Every IPC handler is
   registered on `routedIpcMain`, so a remote workspace's calls reach its server (see
   `docs/architecture/remote.md`).
 - Markdown files under `<workspace folder>/tasks/` are the only source of truth. All writes go through
