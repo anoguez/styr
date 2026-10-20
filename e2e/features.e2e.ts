@@ -183,7 +183,7 @@ test("the Worklog lists a task's agent sessions in the period", async () => {
   styr.expectNoErrors()
 })
 
-test('a REST source is tested, previewed and imported only with the flag on', async () => {
+test('REST sources are tested, previewed and imported only with the flag on', async () => {
   const { page } = styr
   const rest = {
     request: { method: 'GET', url: restUrl, headers: [], body: '' },
@@ -223,6 +223,20 @@ test('a REST source is tested, previewed and imported only with the flag on', as
         mirrorStatus: false,
         commentOnReview: false,
         rest
+      },
+      // a second endpoint, linked on its own: what one imports, the other still offers
+      {
+        id: 'rest-two',
+        provider: 'rest',
+        name: 'Second API',
+        access: 'read',
+        enabled: true,
+        pollMinutes: 0,
+        labels: [],
+        includeClosed: false,
+        mirrorStatus: false,
+        commentOnReview: false,
+        rest
       }
     ]
   }))
@@ -245,6 +259,23 @@ test('a REST source is tested, previewed and imported only with the flag on', as
   await expect(column(page, 'Backlog').getByText('From the REST source')).toBeVisible()
   await expect(page.getByText('Also from the REST source', { exact: true })).toHaveCount(0)
   await expect(card(page, 'From the REST source')).toBeVisible()
+  const other = await page.evaluate(() => window.api.sources.preview('rest-two'))
+  expect(other.entries.map((entry) => [entry.itemId, entry.kind])).toEqual([
+    ['r-1', 'create'],
+    ['r-2', 'create']
+  ])
+
+  // Settings lists both, each with its own editor.
+  await page.getByRole('button', { name: /^Settings/ }).click()
+  const settings = page.locator('[aria-label="Settings"]')
+  await settings.getByRole('button', { name: 'REST API', exact: true }).first().click()
+  await settings.getByRole('button', { name: /^Second API/ }).click()
+  await expect(settings.getByRole('textbox', { name: 'Source name' })).toHaveValue('Second API')
+  await settings.getByRole('button', { name: 'Send test request' }).click()
+  await page.waitForTimeout(800)
+  await settings.getByRole('button', { name: 'New REST API' }).first().click()
+  await settings.getByRole('button', { name: 'Close' }).first().click()
+  await expect(settings).toBeHidden()
   // The refused test above fails its handler on purpose.
   styr.expectNoErrors(/sources:restTest/)
 })

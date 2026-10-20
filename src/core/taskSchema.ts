@@ -64,6 +64,7 @@ export const restSourceSettingsSchema = z.object({
 export const sourceConfigSchema = z.object({
   id: z.string().min(1),
   provider: z.string().min(1),
+  name: z.string().optional(),
   access: z.enum(['read', 'read_write']).default('read'),
   enabled: z.boolean().default(true),
   pollMinutes: z.number().int().min(0).max(1440).default(5),

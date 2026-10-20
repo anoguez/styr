@@ -70,6 +70,13 @@ export const DiffIcon = (props: IconProps): ReactNode => (
   </Icon>
 )
 
+export const CopyIcon = (props: IconProps): ReactNode => (
+  <Icon {...props}>
+    <rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.2" />
+    <path d="M10.5 3.5h-6a1 1 0 0 0-1 1v6" />
+  </Icon>
+)
+
 export const TrashIcon = (props: IconProps): ReactNode => (
   <Icon {...props}>
     <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />

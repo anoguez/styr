@@ -214,9 +214,10 @@ server.registerTool(
   },
   async () =>
     json(
-      currentSources().map(({ id, provider, access, enabled }) => ({
+      currentSources().map(({ id, provider, name, access, enabled }) => ({
         id,
         provider,
+        ...(name ? { name } : {}),
         access,
         enabled
       }))

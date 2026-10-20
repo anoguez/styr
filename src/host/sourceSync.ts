@@ -13,6 +13,7 @@ import {
   type SourceWriter
 } from '@core/sources/index.js'
 import { testRestRequest } from '@core/sources/rest.js'
+import { sourceName } from '@core/sources/restSources.js'
 import {
   IMPORT_LIMIT,
   fieldHashes,
@@ -234,7 +235,7 @@ export function createSourceSync(store: SourceSyncStore) {
       if (!task || task.status !== 'done') continue
       try {
         await store.writableSource(source.id, target).close(item.id)
-        tasks.addNote(task.id, 'styr', `Closed ${target}#${item.id} on ${source.provider}.`)
+        tasks.addNote(task.id, 'styr', `Closed ${target}#${item.id} on ${sourceName(source)}.`)
       } catch {
         // noted when it first failed; tried again at the next sync
       }

@@ -55,8 +55,8 @@ export const SECTIONS = [
     label: 'REST API',
     group: 'integrations',
     scope: 'workspace',
-    blurb: 'Import the items a REST endpoint returns as tasks. Styr only reads from it.',
-    // `sources` is claimed by the GitHub page; this one is judged by its own entry in it
+    blurb: 'Import the items REST endpoints return as tasks. Styr only reads from them.',
+    // `sources` is claimed by the GitHub page; this one is judged by its own entries in it
     keys: [],
     provider: 'rest',
     flag: 'externalSources',
@@ -158,7 +158,7 @@ export const SECTIONS = [
   label: string
   /** The nav heading it sits under; defaults to its scope. */
   group?: 'integrations'
-  /** An Integrations page edits only this provider's entry of `sources`. */
+  /** An Integrations page edits only this provider's entries of `sources`. */
   provider?: string
   /** Hidden unless this experimental feature is switched on. */
   flag?: keyof ExperimentalSettings
@@ -202,7 +202,7 @@ export function unsavedChanges(
   const isChanged = (key: keyof Settings): boolean =>
     JSON.stringify(draft[key]) !== JSON.stringify(baseline[key])
   const sourceOf = (settings: Settings, provider: string): string =>
-    JSON.stringify(settings.sources.find((source) => source.provider === provider))
+    JSON.stringify(settings.sources.filter((source) => source.provider === provider))
   const sectionChanged = (item: Section): boolean =>
     'provider' in item
       ? sourceOf(draft, item.provider) !== sourceOf(baseline, item.provider)
