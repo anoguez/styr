@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.0](https://github.com/anoguez/styr/compare/v0.35.2...v0.36.0) (2026-10-20)
+
+
+### Features
+
+* multiple REST API sources, with a redesigned REST API settings page ([#180](https://github.com/anoguez/styr/issues/180)) ([6473fd4](https://github.com/anoguez/styr/commit/6473fd41d6a1ca1426cc153efa1dbecb56628a70))
+
 ## [0.35.2](https://github.com/anoguez/styr/compare/v0.35.1...v0.35.2) (2026-10-19)
 
 
