@@ -14,8 +14,8 @@ and a `flag` on its section.
 A **source** is an optional external system (GitHub Issues first) whose items are imported as tasks
 and linked by `Task.externalRef` (`provider`, `id`, `url`, plus `sourceId`, `target`,
 `remoteUpdatedAt` and `syncedHash`). Sources are the workspace setting `Settings.sources`
-(`SourceConfig`): one per provider (`id` is the provider), switched on and given an access level —
-there is no repository in it. The repositories are **detected** from the tasks' own `repoPath`s and
+(`SourceConfig`): GitHub has one (`id` is `github`), switched on and given an access level —
+there is no repository in it; REST may have many (see below). The repositories are **detected** from the tasks' own `repoPath`s and
 `Settings.defaultRepoPath` (`adapter.detectTarget`, the git remote; `sourceTargets` dedupes), so an
 item's identity is source + `target` + id: issue numbers repeat across repositories. Imported tasks
 get the checkout's `repoPath`. The task
@@ -61,8 +61,13 @@ guarded `comment_on_source_item` (which takes the repository).
 ## REST API source
 
 A second provider, `rest` (`src/core/sources/rest.ts`), behind the same flag and its own
-**REST API** page under Integrations (`RestSourcePane`). Still one source per provider: its
-`SourceConfig.rest` holds one request (method, URL, headers with a per-row switch, body — sent
+**REST API** page under Integrations (`RestSourcePane`). A workspace may have **any number** of
+REST sources, listed on the left of the page like Presets, each with its own editor. They share
+the provider `rest` and differ by `id` (the first is `rest`, later ones `rest-<random>`, from
+`newRestSource` in `restSources.ts`, so a deleted source's tasks are never taken over by the next
+one) and carry a `name`; `sourceName` is what the pane, the task dialog's Issue row and the
+`Closed …` note show. Links match on `sourceId`, so two endpoints importing the same item ids keep
+separate tasks. Each source's `SourceConfig.rest` holds one request (method, URL, headers with a per-row switch, body — sent
 only for non-GET) and a mapping of dot paths (`data.items`, `fields.summary`, `labels[0].name`)
 from the JSON reply to `RemoteItem` fields. `mapItems` skips entries with no id; without an
 updated-at path, a content hash stands in for `updatedAt`, so `planSync`'s "unchanged" check still
@@ -90,5 +95,5 @@ at 64 KB, and the first five mapped items or the mapping error. Headers — toke
 stored in plain text in the workspace settings file; the pane says so.
 
 Both source pages edit `sources`, but a settings key belongs to one section, so the REST page
-lists no keys and carries `provider`; `unsavedChanges` judges a page with a `provider` by its own
-entry in `sources`.
+lists no keys and carries `provider`; `unsavedChanges` judges a page with a `provider` by all its
+entries in `sources`, so adding, changing or deleting any REST source marks it.

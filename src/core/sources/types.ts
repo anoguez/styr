@@ -2,13 +2,16 @@
 export type SourceAccess = 'read' | 'read_write'
 
 /**
- * One integration, switched on and configured for the workspace. There is one per provider and no
- * repository in it: the repositories come from the tasks' own `repoPath`s.
+ * One integration, switched on and configured for the workspace. GitHub has one, with no
+ * repository in it: the repositories come from the tasks' own `repoPath`s. REST may have many,
+ * each its own endpoint.
  */
 export interface SourceConfig {
-  /** The provider's name; there is one source per provider. */
+  /** What linked tasks point at (`ExternalRef.sourceId`). GitHub's is `github`; REST's are `rest…`. */
   id: string
   provider: string
+  /** What the user calls it; REST sources have one, GitHub goes by its provider. */
+  name?: string
   access: SourceAccess
   enabled: boolean
   /** Minutes between automatic syncs; 0 turns polling off. */

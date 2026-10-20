@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { ipcMessage } from '../lib/ipcMessage.js'
 import type { Settings, Task } from '@core/types.js'
+import { isRestSource, sourceName } from '@core/sources/restSources.js'
 import { RefreshIcon, UnlinkIcon } from './icons.js'
 import { Button, inputBase } from './ui.js'
 
@@ -28,6 +29,12 @@ export function SourceLink({
   const enabled =
     settings.experimental.externalSources &&
     settings.sources.some((source) => source.id === 'github' && source.enabled)
+  // a REST item's target is the same for every endpoint, so it goes by its source's name
+  const linkedSource = settings.sources.find((source) => source.id === ref?.sourceId)
+  const where =
+    linkedSource && isRestSource(linkedSource)
+      ? sourceName(linkedSource)
+      : (ref?.target ?? ref?.provider)
 
   async function run(action: () => Promise<Task>): Promise<void> {
     setBusy(true)
@@ -61,7 +68,7 @@ export function SourceLink({
               }
               className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--color-accent-text)] hover:underline"
             >
-              {ref.target ?? ref.provider}#{ref.id}
+              {where}#{ref.id}
             </a>
             {ref.sourceId ? (
               <button

@@ -51,6 +51,20 @@ describe('settings sections', () => {
     expect(changes.count).toBe(1)
   })
 
+  it('marks the REST page when any of its sources is added, changed or removed', () => {
+    const rest = { id: 'rest', provider: 'rest', enabled: false } as Settings['sources'][number]
+    const other = { ...rest, id: 'rest-2' }
+    const saved = settings({ sources: [rest] })
+    const sectionsOf = (sources: Settings['sources']): string[] => [
+      ...unsavedChanges(settings({ sources }), saved).sections
+    ]
+    expect(sectionsOf([rest, other])).toEqual(['source-rest'])
+    expect(sectionsOf([])).toEqual(['source-rest'])
+    expect(sectionsOf([rest, { ...rest, id: 'github', provider: 'github' }])).toEqual([
+      'source-github'
+    ])
+  })
+
   it('groups the nav, hiding flagged sections and empty groups', () => {
     const groups = settingsNav('', off)
     expect(groups.map((group) => group.label)).toEqual(['Workspace', 'All workspaces'])
