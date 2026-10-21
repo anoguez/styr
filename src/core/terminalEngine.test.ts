@@ -39,7 +39,7 @@ describe('selectTerminalEngine', () => {
   })
 
   it.each([
-    ['unsupported-platform', 'linux-x64'],
+    ['unsupported-platform', 'linux-arm64'],
     ['missing-package', 'not bundled'],
     ['load-failed', "version `GLIBC_2.35' not found"],
     ['incompatible-version', 'API 2, Styr needs 1'],
@@ -79,9 +79,11 @@ describe('experimentalTerminalOverride', () => {
 describe('isNativeTargetSupported', () => {
   it('supports only the targets the engine is built for', () => {
     expect(isNativeTargetSupported('darwin', 'arm64')).toBe(true)
+    expect(isNativeTargetSupported('linux', 'x64')).toBe(true)
+    expect(isNativeTargetSupported('win32', 'x64')).toBe(true)
     expect(isNativeTargetSupported('darwin', 'x64')).toBe(false)
-    expect(isNativeTargetSupported('win32', 'x64')).toBe(false)
-    expect(isNativeTargetSupported('linux', 'x64')).toBe(false)
+    expect(isNativeTargetSupported('linux', 'arm64')).toBe(false)
+    expect(isNativeTargetSupported('win32', 'arm64')).toBe(false)
   })
 })
 

@@ -304,10 +304,25 @@ Bracketed paste and Shift+Enter are covered by the unit tests (`keys`, `commandI
 
 ## Platforms
 
-`NATIVE_ENGINE_TARGETS` lists where it is built and verified: **darwin-arm64** only, matching the
-macOS release. Everywhere else `unsupported-platform`, and the Settings switch is not offered.
-Windows (x64, MSVC) and Linux (x64, glibc) are planned in the private repo and must be added here
-only once their artifacts load in Styr's Electron.
+`NATIVE_ENGINE_TARGETS` lists where it is built and verified, and `native-terminal.lock.json` pins
+one binary for each (a test keeps the two in step):
+
+| Target         | Binary                              | Notes                                           |
+| -------------- | ----------------------------------- | ----------------------------------------------- |
+| `darwin-arm64` | `styr-terminal.darwin-arm64.node`   | the macOS release                               |
+| `linux-x64`    | `styr-terminal.linux-x64-gnu.node`  | glibc **2.35** or later (built on Ubuntu 22.04) |
+| `win32-x64`    | `styr-terminal.win32-x64-msvc.node` | MSVC; no codesign check of the vendored binary  |
+
+Everywhere else (`darwin-x64`, `linux-arm64`, `win32-arm64`) is `unsupported-platform`, and the
+Settings switch is not offered. On a declared Linux target the binary still has to load: a glibc
+older than 2.35 or a musl system (Alpine) reports `load-failed` with the loader's message (for
+example ``version `GLIBC_2.35' not found``) and every terminal uses xterm.js.
+
+The Linux and Windows apps are not released yet (their jobs in `release.yml` are commented out, with
+the fetch step already in place). Declaring the targets serves dev and source builds, where
+`STYR_TERMINAL_PATH` names the package. Add a target here only once its binary passes the
+integration test in Node and Electron, the compatibility checklist in both engines and the forced
+fallbacks on a real machine.
 
 ## Release access
 
