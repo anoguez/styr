@@ -12,8 +12,11 @@ import {
  * `selectTerminalEngine` which engine a new terminal view gets.
  */
 
-/** Where the experimental engine has been built and verified. Everywhere else stays on xterm.js. */
-export const NATIVE_ENGINE_TARGETS: readonly string[] = ['darwin-arm64']
+/**
+ * Where the experimental engine has been built and verified. Everywhere else stays on xterm.js.
+ * linux-x64 means glibc 2.35+; an older glibc or musl reports `load-failed` and falls back.
+ */
+export const NATIVE_ENGINE_TARGETS: readonly string[] = ['darwin-arm64', 'linux-x64', 'win32-x64']
 
 export function isNativeTargetSupported(platform: string, arch: string): boolean {
   return NATIVE_ENGINE_TARGETS.includes(`${platform}-${arch}`)

@@ -7,6 +7,14 @@
     "darwin-arm64": {
       "file": "styr-terminal.darwin-arm64.node",
       "sha256": "50abe9d704ef1779661a31ddc2d23ae0efffee8df756bedcf87aeb673d8a14ae"
+    },
+    "linux-x64": {
+      "file": "styr-terminal.linux-x64-gnu.node",
+      "sha256": "a0fd9a284837fbfaba5cad5d4a55af65ea4d33698d279d55d752b8de796e0471"
+    },
+    "win32-x64": {
+      "file": "styr-terminal.win32-x64-msvc.node",
+      "sha256": "c64a428b1547eceb1baa3277530f0b73cbd0866d040d48fdd2724e6dad13bed3"
     }
   }
 }

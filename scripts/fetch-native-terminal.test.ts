@@ -1,7 +1,8 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { NATIVE_ENGINE_TARGETS } from '../src/core/terminalEngine.js'
 // @ts-expect-error: a plain .mjs build script with no declarations.
 import * as fetchScript from './fetch-native-terminal.mjs'
 
@@ -54,6 +55,21 @@ describe('fetch-native-terminal', () => {
       integrity: lock.integrity,
       binary: lock.binaries['darwin-arm64']
     })
+  })
+
+  it('pins a binary for every declared target, and nothing else', () => {
+    const real = JSON.parse(
+      readFileSync(new URL('../native-terminal.lock.json', import.meta.url), 'utf8')
+    ) as Lock
+    expect(Object.keys(real.binaries).sort()).toEqual([...NATIVE_ENGINE_TARGETS].sort())
+    expect(real.binaries['linux-x64']?.file).toBe('styr-terminal.linux-x64-gnu.node')
+    expect(real.binaries['win32-x64']?.file).toBe('styr-terminal.win32-x64-msvc.node')
+    for (const target of NATIVE_ENGINE_TARGETS) {
+      expect(pinned(real, target)).toMatchObject({ binary: real.binaries[target] })
+      expect(real.binaries[target]?.sha256).toMatch(/^[0-9a-f]{64}$/)
+    }
+    for (const target of ['linux-arm64', 'win32-arm64', 'darwin-x64'])
+      expect(pinned(real, target)).toEqual({ skip: `no binary pinned for ${target}` })
   })
 
   it('accepts a registry record that matches the pin', () => {

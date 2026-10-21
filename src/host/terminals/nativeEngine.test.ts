@@ -47,7 +47,7 @@ describe('loadNativeEngine', () => {
     const result = loadNativeEngine(
       env({
         platform: 'linux',
-        arch: 'x64',
+        arch: 'arm64',
         load: () => {
           looked = true
           return fakeNativeModule()
@@ -57,7 +57,7 @@ describe('loadNativeEngine', () => {
     expect(result.status).toEqual({
       available: false,
       reason: 'unsupported-platform',
-      detail: 'linux-x64'
+      detail: 'linux-arm64'
     })
     expect(looked).toBe(false)
   })
@@ -190,7 +190,7 @@ describe('findNativePackage', () => {
   })
 
   it('reports absence on an unsupported platform even if files exist', () => {
-    expect(findNativePackage(env({ platform: 'win32', arch: 'x64' }))).toEqual({
+    expect(findNativePackage(env({ platform: 'win32', arch: 'arm64' }))).toEqual({
       supported: false,
       present: false
     })
