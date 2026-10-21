@@ -81,8 +81,9 @@ add a line here only for a rule that must hold in every change.
   frontmatter that fails validation is skipped and never rewritten. Unparseable activity bullets
   must round-trip.
 - **Event-driven, no timers.** Auto-run and the watchers react to writes; do not add an interval.
-  `notifyTasksChanged` runs on every task write and the main process is single-threaded with
-  synchronous git — keep it cheap (see the Performance panel).
+  `notifyTasksChanged` runs on every task write and must stay cheap: it runs no git. Never run git
+  synchronously (`git()`, `gitRaw()`, `runGitSync`) on a path a write, a watcher, focus or a timer
+  triggers — write the git as `GitSteps` and run it with `runGitAsync` (see the Performance panel).
 - **Orchestrate.** `laneFor` mirrors `resolveTemplateFor` (readiness outranks status); change both
   together. Only Backlog and In Review are dispatchable.
 - **Warn, don't refuse.** Shortcut conflicts, launching a blocked task and similar user choices

@@ -754,5 +754,9 @@ export const remoteDiagnosticsSchema = z.object({
   eventLoopMs: z.object({ p50: finite, p99: finite, max: finite }).optional(),
   terminals: count,
   taskCount: count,
-  notifyMs: list(finite, 10_000)
+  notifyMs: list(finite, 10_000),
+  slowGit: list(
+    z.object({ command: line, folder: line, ms: finite, blocking: z.boolean(), at: short }),
+    100
+  ).optional()
 })

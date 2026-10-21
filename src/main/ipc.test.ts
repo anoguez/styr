@@ -61,7 +61,7 @@ vi.mock('./watcher.js', () => ({
 }))
 vi.mock('./tray.js', () => ({ updateTray: () => log('updateTray') }))
 vi.mock('./landing.js', () => ({
-  settleLandedTasks: () => {
+  settleLandedTasks: async () => {
     log('settleLandedTasks')
     return landingWrites.shift() ?? false
   }
@@ -198,26 +198,28 @@ describe('notifyTasksChanged', () => {
     invoke('tasks:update', 'TASK-0001', { title: 'Renamed' })
     expect(calls).toEqual([
       'syncIndex default',
-      'settleLandedTasks',
       'observeTasks',
       'recordNotifyDuration',
       'broadcast tasks:changed',
+      'settleLandedTasks',
       'autoRun:request'
     ])
   })
 
-  it('re-indexes a second time, still broadcasting once, when landing wrote a task file', () => {
+  it('never waits for the landing pass, and re-indexes again once it wrote a task file', async () => {
     landingWrites.push(true)
     ipc.notifyTasksChanged()
-    expect(calls).toEqual([
-      'syncIndex default',
-      'settleLandedTasks',
+    const NOTIFY = [
       'syncIndex default',
       'observeTasks',
       'recordNotifyDuration',
       'broadcast tasks:changed',
+      'settleLandedTasks',
       'autoRun:request'
-    ])
+    ]
+    expect(calls).toEqual(NOTIFY)
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(calls).toEqual([...NOTIFY, ...NOTIFY])
   })
 
   it('a burst of task writes is one Auto-run pass', async () => {
@@ -294,10 +296,10 @@ describe('switchWorkspace', () => {
       'startWatching beta',
       'startWatchingAgents beta',
       'syncIndex beta',
-      'settleLandedTasks',
       'observeTasks',
       'recordNotifyDuration',
       'broadcast tasks:changed',
+      'settleLandedTasks',
       'autoRun:request',
       'broadcast agents:changed',
       'updateTray',
@@ -398,10 +400,10 @@ describe('markAgentExited', () => {
     ).toMatchObject({ archivedAt: expect.any(String) })
     expect(calls).toEqual([
       'syncIndex default',
-      'settleLandedTasks',
       'observeTasks',
       'recordNotifyDuration',
       'broadcast tasks:changed',
+      'settleLandedTasks',
       'autoRun:request',
       'broadcast agents:changed',
       'updateTray',

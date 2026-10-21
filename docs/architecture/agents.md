@@ -354,9 +354,23 @@ or host — `gh` only when there is a GitHub remote.
 
 Styr does not rely on the agent. The rules are `settleTasks` in `core/landing.ts` — pure over the
 `CheckoutGit` adapter (`checkoutGit` from `core/taskCheckout.ts`, faked in `landing.test.ts`) and a `LandingCache`, returning the task-file writes (and any per-task errors, which
-`host/landing.ts` logs rather than swallows); `host/landing.ts` only performs them. It runs from
-`notifyTasksChanged` (so the watcher covers external merges), and after a fetch (below): an `in_review` worktree task whose branch has landed moves to `done`, and a
+`host/landing.ts` logs rather than swallows); `host/landing.ts` only performs them. Every
+`notifyTasksChanged` _requests_ a pass (`requestLanding`, so the watcher covers external merges) and
+returns without waiting; a fetch (below) requests one too. An `in_review` worktree task whose branch has landed moves to `done`, and a
 `done` task with a `worktreePath` is cleaned up through `cleanupLandedTask` in `core/worktreeLanding.ts`.
+
+**Off the main thread.** A pass's git is asynchronous: `CheckoutGit` returns promises, and the git
+conversations in `worktreeLanding.ts` are generators over `GitCall`s (`gitExec.ts`) that
+`runGitAsync` runs in child processes — one repository's conversations one after another, different
+repositories side by side — while `runGitSync` runs the same generators for the synchronous callers
+(the Changes dialog). A merged PR used to freeze the window for seconds: the fetch moves
+`origin/<base>`, so every In Review task in the repository is re-measured, and `git worktree remove`
+deletes a whole worktree (`landing.integration.test.ts` measures 1.5s of stall done synchronously).
+`createLanding` runs one pass at a time; requests made during a pass fold into a single queued pass,
+their repositories merged. The cleanup reuses the landing it was handed rather than measuring the
+branch twice. Before writing, a pass drops everything if the active workspace changed, and skips
+(without caching) a task whose `status` or `worktreePath` changed while git ran; the next pass
+measures it again. When a pass wrote, it runs `notifyTasksChanged` (`landingRequests`).
 `branchLanding` checks the local base and `origin/<base>` — the task's `baseBranch` when set and still present, else the automatic base; "landed" is either zero commits ahead, or
 (squash/rebase) every file changed since the merge-base identical on the base. A branch with no
 commits of its own is not landed — the reflog tells a never-moved tip from a fast-forward merge.
@@ -367,8 +381,8 @@ is gone. Tasks with `useWorktree: false` are skipped entirely.
 
 **Merged on the host.** `branchLanding` reads only local refs, so a PR merged on GitHub is invisible
 until `origin` is fetched. `checkForMergedWork` (`mergedWorkCheck`, wired in `ipc.ts`) → `fetchAndSettle` (`host/landing.ts`)
-fetches every repository with an In Review worktree task (`reposAwaitingLanding`), then settles the
-tasks in the repositories it fetched and, if that wrote, runs `notifyTasksChanged`. Triggers, all
+fetches every repository with an In Review worktree task (`reposAwaitingLanding`), then requests a
+pass over the repositories it fetched and, if that wrote, runs `notifyTasksChanged`. Triggers, all
 events and never an interval: a Styr window gaining focus (`browser-window-focus`), each Dispatch run
 and Auto-run pass (both wait at most 5s, then go ahead without it), and the palette's _Check for
 merged work_. `RemoteFetcher` (`core/landing.ts`) throttles to one fetch per repository per 60s and

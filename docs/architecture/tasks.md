@@ -34,23 +34,34 @@ asks. This follows the shortcut rule: warn, do not force the user to undo someth
 ## Diagnostics
 
 Command palette → "Show performance" opens `PerformanceDialog`: per-process CPU and memory
-(`app.getAppMetrics`), main event-loop delay, recent `notifyTasksChanged` durations, renderer heap,
-DOM nodes and long tasks, with a "Copy report" button. Sampling lives in `host/diagnostics.ts` (main supplies the process metrics); the
+(`app.getAppMetrics`), main event-loop delay, recent `notifyTasksChanged` durations, the slowest
+recent git calls (≥100 ms, each marked `blocking` when it ran synchronously; `core/gitTiming.ts`
+records every call with two clock reads), renderer heap, DOM nodes and long tasks, with a "Copy
+report" button. Sampling lives in `host/diagnostics.ts` (main supplies the process metrics); the
 shapes, buffer and text formatter are pure in `core/diagnostics.ts`. Everything is memory-only —
 never written to a task file, config or the index — and costs nothing while the panel is closed:
 the timer, the long-task observer and the event-loop histogram all stop on close. Dev builds read
 higher than a packaged app, so judge speed on a packaged one.
 
-The main process is single-threaded and git calls there are synchronous (`execFileSync`), so each
-costs the whole UI. Anything that runs on every task write (`notifyTasksChanged`) must be cheap in
-the steady state: `host/landing.ts` skips a task whose status, worktree and branch/base ref tips
-are unchanged (`LandingCache`, 5-minute expiry), and `git:diffStats` yields between tasks and runs
-one pass at a time. Check the panel's "Task change handling" line after touching either.
+The main process is single-threaded, and a synchronous git call (`git()`/`gitRaw()`, `execFileSync`)
+costs the whole UI for its duration. Nothing triggered by a task write, a watcher, window focus or a
+timer runs git synchronously: `notifyTasksChanged` runs none (it only requests the landing pass),
+the landing pass and `git:diffStats` run their git through `runGitAsync` (`gitExec.ts`), and diff
+stats count untracked files from disk rather than with one git process each. The landing pass still
+skips a task whose status, worktree and branch/base ref tips are unchanged (`LandingCache`, 5-minute
+expiry), and both run one pass at a time. The remaining synchronous git answers an explicit action
+(a launch's worktree, the Changes dialog). Check the panel's "Slow git calls" list after touching
+any of it: a `blocking` entry is a freeze the user felt.
+
+The renderer subscribes once to `terminal:data` and `terminal:exit` and routes each event to its
+session's view (`lib/terminalEvents.ts`), so an agent's output crosses the preload bridge once,
+not once for every open tab.
 
 ### `notifyTasksChanged` baseline
 
 Measured on 2026-10-14 for the main-process refactor (TASK-0130) to compare against, by
-`src/main/notifyTasks.perf.test.ts`: the real SQLite index, landing pass and source observer over a
+`src/main/notifyTasks.perf.test.ts`: the real SQLite index and source observer (and, before
+TASK-0145, the landing pass, which is now requested rather than run inline) over a
 200-task board (three notes each, no worktrees), timing the duration `ipc.ts` passes to
 `recordNotifyDuration` — the panel's number. 200 runs per row, milliseconds, Apple M4 Pro, macOS
 26.6, Node 24 under vitest (not Electron: compare like with like, on the same machine).
@@ -62,6 +73,10 @@ Measured on 2026-10-14 for the main-process refactor (TASK-0130) to compare agai
 | Warm: nothing changed on disk              | 1.3     | 1.5–1.6 | 1.7–1.9 |
 | Warm: one task file written (a board edit) | 1.4–1.5 | 1.7–1.8 | 3.0–6.2 |
 
+After TASK-0145 (2026-10-21, same machine, one run): cold 7.2 / 9.1 / 11.0, reopen 1.3 / 1.6 / 3.0,
+warm unchanged 1.0 / 1.2 / 1.5, warm one write 1.1 / 1.4 / 2.2 (p50 / p95 / max), all within or
+under the ranges above.
+
 Ranges span three runs. Re-run with `STYR_BENCH=1 yarn vitest run src/main/notifyTasks.perf.test.ts`
 (skipped otherwise; CI has no native modules). A refactor should stay within these ranges.
 
@@ -72,7 +87,8 @@ that fails one should be a deliberate change of behaviour, with the test and thi
 
 - `src/main/ipc.test.ts` loads the real `ipc.ts` over a temporary storage folder, with Electron, the
   index, the watchers and the terminals faked into one call log. It pins `notifyTasksChanged` (sync,
-  landing, observe, time, one broadcast, one Auto-run request; a burst is one Auto-run pass),
+  observe, time, one broadcast, a landing request it does not wait for, one Auto-run request; a
+  burst is one Auto-run pass),
   `notifyAgentsChanged`, `switchWorkspace` (synchronous, A→B→A ends on A, index closed before the
   watchers restart), `inOtherWorkspace` (pin cleared after the work, on a throw, and never held
   across an await), `markAgentExited` and the `terminal:launchAgent` dedupe per workspace.

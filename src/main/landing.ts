@@ -1,5 +1,5 @@
 import { createLanding, diskLandingStore } from '@host/landing.js'
-import { queryTasks } from './taskIndex.js'
+import { findTask, queryTasks } from './taskIndex.js'
 
 /**
  * The host's landing (`src/host/landing.ts`), bound to the task files and main's index. `ipc.ts`
@@ -7,5 +7,6 @@ import { queryTasks } from './taskIndex.js'
  */
 export const { settleLandedTasks, fetchAndSettle } = createLanding({
   ...diskLandingStore,
-  query: () => queryTasks()
+  query: () => queryTasks(),
+  find: (id) => findTask(id)
 })

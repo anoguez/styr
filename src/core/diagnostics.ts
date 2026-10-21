@@ -10,6 +10,17 @@ export interface ProcessMetric {
   memoryMb: number
 }
 
+/** One git call slower than `SLOW_GIT_MS` (`gitTiming.ts`). */
+export interface SlowGitCall {
+  command: string
+  /** The last segment of the folder git ran in: enough to tell repositories and worktrees apart. */
+  folder: string
+  ms: number
+  /** Synchronous: the main thread waited the whole time, so the app was frozen for it. */
+  blocking: boolean
+  at: string
+}
+
 export interface DiagnosticsSnapshot {
   takenAt: string
   appVersion: string
@@ -21,8 +32,10 @@ export interface DiagnosticsSnapshot {
   eventLoopMs?: { p50: number; p99: number; max: number }
   terminals: number
   taskCount: number
-  /** Recent durations of `notifyTasksChanged` (re-index plus landing check), newest last. */
+  /** Recent durations of `notifyTasksChanged` (re-index and broadcast), newest last. */
   notifyMs: number[]
+  /** Recent git calls of 100 ms or more, newest last. */
+  slowGit?: SlowGitCall[]
   /** The experimental terminal engine: whether it loaded, and recent sessions' engine choices. */
   terminalEngine?: { summary: string; sessions: TerminalEngineDiagnostic[] }
 }
@@ -90,6 +103,15 @@ export function formatDiagnostics(
     } ms`,
     `Tasks ${snapshot.taskCount} · open terminals ${snapshot.terminals}`
   ]
+  const slowGit = snapshot.slowGit ?? []
+  if (slowGit.length > 0) {
+    lines.push('', `Slow git calls (last ${slowGit.length}, ≥100 ms)`)
+    for (const call of slowGit.slice(-15)) {
+      lines.push(
+        `  ${num(call.ms, ' ms').padStart(8)} ${call.blocking ? 'blocking' : 'async   '} ${call.folder} · ${call.command}`
+      )
+    }
+  }
   if (snapshot.terminalEngine) {
     const { summary, sessions } = snapshot.terminalEngine
     lines.push('', `Terminal engine: ${summary}`)

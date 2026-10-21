@@ -83,20 +83,22 @@ src/core/  (types, schemas, taskStore, pure rules)
   stay pure in `core/orchestrate.ts` and `core/autoDispatch.ts`. `ipc.ts` creates it after the
   agents service.
 - `landing.ts`: "Done means landed" (see `agents.md`). `createLanding` runs the rules of
-  `core/landing.ts` over the board and performs their writes: `settleLandedTasks` (from
-  `notifyTasksChanged`) and `fetchAndSettle` (fetch `origin`, then settle the repositories that
-  moved), with the `LandingCache` and `RemoteFetcher` living as long as it does. `mergedWorkCheck`
-  is `checkForMergedWork`: fetch and settle, then `notifyTasksChanged` if that wrote, never
-  rejecting. Its ports are the task files, `checkoutGit`, `fetchOrigin`, the clock and the index
-  (`diskLandingStore` plus `query`).
+  `core/landing.ts` over the board and performs their writes: `settleLandedTasks` (asynchronous,
+  one pass at a time, requests during a pass folded into one queued pass) and `fetchAndSettle`
+  (fetch `origin`, then settle the repositories that moved), with the `LandingCache` and
+  `RemoteFetcher` living as long as it does. `landingRequests` is the tasks service's
+  `requestLanding`: start or join a pass without waiting, then `notifyTasksChanged` if it wrote.
+  `mergedWorkCheck` is `checkForMergedWork`: fetch and settle, then `notifyTasksChanged` if that
+  wrote, never rejecting. Its ports are the task files, `checkoutGit` (async), `fetchOrigin`, the
+  clock and the index (`diskLandingStore` plus `query` and `find`, which a pass re-reads before
+  writing so a task that changed while git ran is skipped).
 - `gitService.ts`: the checkouts' views. `taskDiff` and `filePatch` (`git:taskDiff`,
   `git:filePatch`: a bad request is an `{ error }`, not a throw), `diffStats` (`git:diffStats`: one
-  pass at a time, yielding to the event loop between tasks through the `yieldTurn` port, `nextTurn`
-  for real), `branches`, `gitContext` (`terminal:gitContext`) and `checkout(task)`, the active
+  pass at a time, each task's `checkout.diffStat()` running its git off the main thread), `branches`, `gitContext` (`terminal:gitContext`) and `checkout(task)`, the active
   workspace's checkout of a task, which the tasks service removes a worktree through. Its ports are
   the settings, the index and `diskRepoGit` (`taskCheckout` and the `core/worktree.ts` reads).
-- `worklogService.ts`: `worklog:load`, the Worklog for a span, yielding between tasks like the diff
-  stats. Its ports are the index, the transcripts (`diskWorklogSources`) and `yieldTurn`.
+- `worklogService.ts`: `worklog:load`, the Worklog for a span, yielding between tasks through
+  `yieldTurn` (`nextTurn` for real). Its ports are the index, the transcripts (`diskWorklogSources`) and `yieldTurn`.
 - `sourceSync.ts`: external sources (see `sources.md`). `createSourceSync` over a `SourceSyncStore`
   (`diskSourceSyncStore`: the settings, `currentSources`, `adapterFor`, the guarded
   `writableSource`, `testRestRequest`, the task files and the poll timers): sync, preview, a

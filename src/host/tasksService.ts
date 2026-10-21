@@ -26,8 +26,11 @@ export interface TasksServicePorts extends Pick<HostPorts, 'broadcast'> {
     | 'deleteTask'
     | 'removeWorktree'
   > & { brokenTaskFiles(): { filePath: string; reason: string }[] }
-  /** Moves In Review tasks whose work landed to Done; true when it wrote a task file. */
-  settleLandedTasks(): boolean
+  /**
+   * Asks for a landing pass (In Review work that landed moves to Done). Returns at once: the pass
+   * runs git off the main thread and re-indexes itself when it writes.
+   */
+  requestLanding(): void
   /** Hands the board to the external-source observer. */
   observeTasks(tasks: Task[]): void
   /** Feeds the Performance panel. */
@@ -42,16 +45,16 @@ export function createTasksService(ports: TasksServicePorts) {
 
   /**
    * Re-indexes the active board and tells the renderer. Runs on every task write and every watcher
-   * event, so it stays cheap: the index re-reads only changed files, and a landing pass that wrote
-   * a file costs one more sync, never a second broadcast.
+   * event, so it stays cheap and runs no git: the index re-reads only changed files, and the
+   * landing check is requested, not awaited.
    */
   function notifyTasksChanged(): void {
     const started = performance.now()
     index.sync()
-    if (ports.settleLandedTasks()) index.sync()
     ports.observeTasks(index.query())
     ports.recordNotifyDuration(performance.now() - started)
     ports.broadcast('tasks:changed')
+    ports.requestLanding()
     ports.requestAutoRun()
   }
 

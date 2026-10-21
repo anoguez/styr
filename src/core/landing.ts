@@ -1,5 +1,5 @@
 import { branchNameFor } from './worktree.js'
-import { checkoutOf, type Checkout, type CheckoutGit } from './taskCheckout.js'
+import { checkoutOf, type Checkout, type CheckoutGit, type Landing } from './taskCheckout.js'
 import type { Task, TaskStatus, WorktreeLocation } from './types.js'
 
 /** git is slow enough (~0.2s a task) that re-checking every kept worktree on each write froze the app. */
@@ -113,15 +113,22 @@ export interface LandingOutcome {
  * Tasks without a worktree are skipped: with no `styr/<id>` branch there is nothing to compare or
  * delete, and the work lives in the user's own checkout.
  */
-export function settleTasks(tasks: readonly LandingTask[], ports: LandingPorts): LandingOutcome {
+export async function settleTasks(
+  tasks: readonly LandingTask[],
+  ports: LandingPorts
+): Promise<LandingOutcome> {
   const { git, cache, workspaceId, worktreeLocation } = ports
   const writes: LandingWrite[] = []
   const errors: LandingError[] = []
   // One ref listing per repository per pass, not one per task.
-  const listings = new Map<string, string | undefined>()
-  const listingFor = (path: string): string | undefined => {
-    if (!listings.has(path)) listings.set(path, git.refListing(path))
-    return listings.get(path)
+  const listings = new Map<string, Promise<string | undefined>>()
+  const listingFor = (path: string): Promise<string | undefined> => {
+    let listing = listings.get(path)
+    if (!listing) {
+      listing = git.refListing(path)
+      listings.set(path, listing)
+    }
+    return listing
   }
 
   for (const task of tasks) {
@@ -132,10 +139,10 @@ export function settleTasks(tasks: readonly LandingTask[], ports: LandingPorts):
     const cacheKey = `${workspaceId}:${task.id}`
     const taskWrites: LandingWrite[] = []
     try {
-      const refs = refsFingerprint(listingFor(repoPath), checkout.key, task.baseBranch)
+      const refs = refsFingerprint(await listingFor(repoPath), checkout.key, task.baseBranch)
       const fingerprint = `${task.status}|${task.worktreePath ?? ''}|${refs}`
       if (cache.isFresh(cacheKey, fingerprint)) continue
-      settle(task, checkout, git, taskWrites)
+      await settle(task, checkout, git, taskWrites)
       if (taskWrites.length > 0) cache.forget(cacheKey)
       else cache.remember(cacheKey, fingerprint)
     } catch (error) {
@@ -149,32 +156,34 @@ export function settleTasks(tasks: readonly LandingTask[], ports: LandingPorts):
   return { writes, errors }
 }
 
-function settle(
+async function settle(
   task: LandingTask,
   checkout: Checkout,
   git: CheckoutGit,
   out: LandingWrite[]
-): void {
+): Promise<void> {
   if (task.status === 'in_review') {
-    const landing = git.branchLanding(checkout)
+    const landing = await git.branchLanding(checkout)
     if (!landing?.landed) return
     out.push(
       { kind: 'status', taskId: task.id, status: 'done' },
       { kind: 'note', taskId: task.id, message: `Work landed on ${landing.base}; moved to done.` }
     )
-    cleanup(task, checkout, git, out)
+    // The cleanup reuses this check rather than measuring the branch a second time.
+    await cleanup(task, checkout, git, out, landing)
     return
   }
-  cleanup(task, checkout, git, out)
+  await cleanup(task, checkout, git, out)
 }
 
-function cleanup(
+async function cleanup(
   task: LandingTask,
   checkout: Checkout,
   git: CheckoutGit,
-  out: LandingWrite[]
-): void {
-  const result = git.cleanupLandedTask(checkout)
+  out: LandingWrite[],
+  landing?: Landing
+): Promise<void> {
+  const result = await git.cleanupLandedTask(checkout, landing)
   if (result.worktreeRemoved && task.worktreePath) {
     out.push({ kind: 'clearWorktree', taskId: task.id })
   }

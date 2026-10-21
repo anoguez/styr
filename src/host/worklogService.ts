@@ -15,7 +15,7 @@ const spanSchema = z.object({ from: z.number().finite(), to: z.number().finite()
 
 /**
  * The Worklog for `[from, to)`: each task's sessions and the tokens their transcripts record. On
- * demand only, never from `notifyTasksChanged`; the loop yields between tasks like the diff stats.
+ * demand only, never from `notifyTasksChanged`; the loop yields between tasks.
  */
 export function createWorklogService(ports: WorklogServicePorts) {
   async function load(from: unknown, to: unknown): Promise<WorklogData> {

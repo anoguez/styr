@@ -49,15 +49,15 @@ const task = (over: Partial<LandingTask> = {}): LandingTask => ({
 function ports(over: Partial<CheckoutGit> = {}, cache = new LandingCache(1000, () => 0)) {
   const calls = { listing: 0, landing: 0, cleanup: 0 }
   const git: CheckoutGit = {
-    refListing: () => {
+    refListing: async () => {
       calls.listing++
       return 'refs/heads/styr/TASK-0001 aaa'
     },
-    branchLanding: () => {
+    branchLanding: async () => {
       calls.landing++
       return { branch: 'styr/TASK-0001', base: 'main', ahead: 0, landed: true }
     },
-    cleanupLandedTask: () => {
+    cleanupLandedTask: async () => {
       calls.cleanup++
       return { worktreeRemoved: true, notes: ['Removed worktree.'] }
     },
@@ -66,10 +66,10 @@ function ports(over: Partial<CheckoutGit> = {}, cache = new LandingCache(1000, (
   return { calls, ports: { git, cache, workspaceId: 'default' } }
 }
 
-describe('settleTasks', () => {
-  it('moves a landed in_review task to done and cleans it up', () => {
+describe('settleTasks', async () => {
+  it('moves a landed in_review task to done and cleans it up', async () => {
     const { ports: p, calls } = ports()
-    const { writes, errors } = settleTasks([task()], p)
+    const { writes, errors } = await settleTasks([task()], p)
     expect(errors).toEqual([])
     expect(calls.cleanup).toBe(1)
     expect(writes).toEqual([
@@ -80,15 +80,15 @@ describe('settleTasks', () => {
     ])
   })
 
-  it('leaves an unlanded in_review task alone and does not clean up', () => {
+  it('leaves an unlanded in_review task alone and does not clean up', async () => {
     const { ports: p, calls } = ports({
-      branchLanding: () => ({ branch: 'b', base: 'main', ahead: 2, landed: false })
+      branchLanding: async () => ({ branch: 'b', base: 'main', ahead: 2, landed: false })
     })
-    expect(settleTasks([task()], p).writes).toEqual([])
+    expect((await settleTasks([task()], p)).writes).toEqual([])
     expect(calls.cleanup).toBe(0)
   })
 
-  it('skips tasks that are not worktree tasks or have nothing to settle', () => {
+  it('skips tasks that are not worktree tasks or have nothing to settle', async () => {
     const { ports: p, calls } = ports()
     const tasks = [
       task({ useWorktree: false }),
@@ -96,88 +96,100 @@ describe('settleTasks', () => {
       task({ status: 'in_progress' }),
       task({ status: 'done', worktreePath: undefined })
     ]
-    expect(settleTasks(tasks, p).writes).toEqual([])
+    expect((await settleTasks(tasks, p)).writes).toEqual([])
     expect(calls.listing).toBe(0)
   })
 
-  it('reports a refusal once: the repeat is deduped against the task activity', () => {
+  it('reports a refusal once: the repeat is deduped against the task activity', async () => {
     const refusal = 'Left worktree in place: it has uncommitted or untracked changes.'
     const { ports: p } = ports({
-      cleanupLandedTask: () => ({ worktreeRemoved: false, notes: [refusal] })
+      cleanupLandedTask: async () => ({ worktreeRemoved: false, notes: [refusal] })
     })
-    const first = settleTasks([task({ status: 'done' })], p)
+    const first = await settleTasks([task({ status: 'done' })], p)
     expect(first.writes).toEqual([{ kind: 'note', taskId: 'TASK-0001', message: refusal }])
 
-    const second = settleTasks(
+    const second = await settleTasks(
       [task({ status: 'done', activity: [{ at: '', author: 'styr', message: refusal }] })],
-      ports({ cleanupLandedTask: () => ({ worktreeRemoved: false, notes: [refusal] }) }).ports
+      ports({ cleanupLandedTask: async () => ({ worktreeRemoved: false, notes: [refusal] }) }).ports
     )
     expect(second.writes).toEqual([])
   })
 
-  it('skips a task checked with the same fingerprint, until the ttl passes', () => {
+  it('skips a task checked with the same fingerprint, until the ttl passes', async () => {
     let now = 0
     const cache = new LandingCache(1000, () => now)
     const calls = { landing: 0 }
     const { ports: p } = ports(
       {
-        branchLanding: () => {
+        branchLanding: async () => {
           calls.landing++
           return { branch: 'b', base: 'main', ahead: 1, landed: false }
         }
       },
       cache
     )
-    settleTasks([task()], p)
-    settleTasks([task()], p)
+    await settleTasks([task()], p)
+    await settleTasks([task()], p)
     expect(calls.landing).toBe(1)
     now = 1000
-    settleTasks([task()], p)
+    await settleTasks([task()], p)
     expect(calls.landing).toBe(2)
   })
 
-  it('rechecks when the refs change, and lists refs once per repository', () => {
+  it('rechecks when the refs change, and lists refs once per repository', async () => {
     let tip = 'a'
     const calls = { listing: 0, landing: 0 }
     const { ports: p } = ports({
-      refListing: () => {
+      refListing: async () => {
         calls.listing++
         return `refs/heads/styr/TASK-0001 ${tip}\nrefs/heads/styr/TASK-0002 ${tip}`
       },
-      branchLanding: () => {
+      branchLanding: async () => {
         calls.landing++
         return { branch: 'b', base: 'main', ahead: 1, landed: false }
       }
     })
     const two = [task(), task({ id: 'TASK-0002' })]
-    settleTasks(two, p)
+    await settleTasks(two, p)
     expect(calls).toEqual({ listing: 1, landing: 2 })
-    settleTasks(two, p)
+    await settleTasks(two, p)
     expect(calls.landing).toBe(2)
     tip = 'b'
-    settleTasks(two, p)
+    await settleTasks(two, p)
     expect(calls.landing).toBe(4)
   })
 
-  it('returns an error instead of swallowing it, and retries next pass', () => {
+  it('returns an error instead of swallowing it, and retries next pass', async () => {
     const boom = new Error('git exploded')
     const { ports: p } = ports({
-      branchLanding: () => {
+      branchLanding: async () => {
         throw boom
       }
     })
-    const first = settleTasks([task()], p)
+    const first = await settleTasks([task()], p)
     expect(first.errors).toEqual([{ taskId: 'TASK-0001', error: boom }])
-    expect(settleTasks([task()], p).errors).toHaveLength(1)
+    expect((await settleTasks([task()], p)).errors).toHaveLength(1)
   })
 
-  it('keeps the done move when cleanup throws', () => {
+  it('hands the landing it measured to the cleanup, so the branch is checked once', async () => {
+    const { ports: p, calls } = ports()
+    const handed: unknown[] = []
+    p.git.cleanupLandedTask = async (_checkout, landing) => {
+      handed.push(landing)
+      return { worktreeRemoved: true, notes: [] }
+    }
+    await settleTasks([task()], p)
+    expect(calls.landing).toBe(1)
+    expect(handed).toEqual([{ branch: 'styr/TASK-0001', base: 'main', ahead: 0, landed: true }])
+  })
+
+  it('keeps the done move when cleanup throws', async () => {
     const { ports: p } = ports({
-      cleanupLandedTask: () => {
+      cleanupLandedTask: async () => {
         throw new Error('push failed')
       }
     })
-    const { writes, errors } = settleTasks([task()], p)
+    const { writes, errors } = await settleTasks([task()], p)
     expect(writes[0]).toEqual({ kind: 'status', taskId: 'TASK-0001', status: 'done' })
     expect(errors).toHaveLength(1)
   })

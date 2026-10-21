@@ -70,7 +70,7 @@ vi.mock('./tray.js', () => ({
   updateTray: (statuses: AgentStatus[], titles: Map<string, string>) =>
     trays.push({ statuses, titles })
 }))
-vi.mock('./landing.js', () => ({ settleLandedTasks: () => false }))
+vi.mock('./landing.js', () => ({ settleLandedTasks: async () => false }))
 vi.mock('./sourceSync.js', () => ({
   initSourceSync: () => {},
   linkTask: () => {},

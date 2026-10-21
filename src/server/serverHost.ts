@@ -28,7 +28,7 @@ import { createDiagnostics } from '@host/diagnostics.js'
 import { listDirectories } from '@host/directories.js'
 import { createDispatchService, diskDispatchSettings, realClock } from '@host/dispatchService.js'
 import { createGitService, diskRepoGit, nextTurn } from '@host/gitService.js'
-import { createLanding, diskLandingStore, mergedWorkCheck } from '@host/landing.js'
+import { createLanding, diskLandingStore, landingRequests, mergedWorkCheck } from '@host/landing.js'
 import type { HostPorts } from '@host/ports.js'
 import { createSettingsService, diskSettingsStore } from '@host/settingsService.js'
 import { createSourceSync, diskSourceSyncStore } from '@host/sourceSync.js'
@@ -117,7 +117,15 @@ export function createServerHost(ports: ServerHostPorts) {
     processMetrics: ports.processMetrics
   })
 
-  const landing = createLanding({ ...diskLandingStore, query: () => queryTasks() })
+  const landing = createLanding({
+    ...diskLandingStore,
+    query: () => queryTasks(),
+    find: (id) => findTask(id)
+  })
+  const requestLanding = landingRequests({
+    settleLandedTasks: () => landing.settleLandedTasks(),
+    notifyTasks: () => notifyTasksChanged()
+  })
   const sources = createSourceSync(diskSourceSyncStore)
   const cli = createAgentCliChecks(execFileShell)
 
@@ -134,7 +142,7 @@ export function createServerHost(ports: ServerHostPorts) {
       removeWorktree: (task) => gitService.checkout(task).removeWorktree(),
       brokenTaskFiles
     },
-    settleLandedTasks: landing.settleLandedTasks,
+    requestLanding: () => requestLanding(),
     observeTasks: sources.observeTasks,
     recordNotifyDuration: diagnostics.recordNotifyDuration,
     requestAutoRun: () => dispatchService.requestAutoRun(),
@@ -197,8 +205,7 @@ export function createServerHost(ports: ServerHostPorts) {
   const gitService = createGitService({
     loadSettings: () => loadSettings(),
     index: { query: () => queryTasks(), find: (id) => findTask(id) },
-    git: diskRepoGit,
-    yieldTurn: nextTurn
+    git: diskRepoGit
   })
 
   const worklogService = createWorklogService({

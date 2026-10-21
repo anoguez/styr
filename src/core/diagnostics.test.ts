@@ -55,3 +55,19 @@ describe('formatDiagnostics', () => {
     )
   })
 })
+
+describe('slow git calls in the report', () => {
+  it('lists them, blocking ones marked, and leaves the section out when there are none', () => {
+    expect(formatDiagnostics(snapshot)).not.toContain('Slow git calls')
+    const text = formatDiagnostics({
+      ...snapshot,
+      slowGit: [
+        { command: 'git worktree remove /w', folder: 'repo', ms: 1450, blocking: true, at: '' },
+        { command: 'git diff --numstat', folder: 'TASK-0001', ms: 120, blocking: false, at: '' }
+      ]
+    })
+    expect(text).toContain('Slow git calls (last 2, ≥100 ms)')
+    expect(text).toMatch(/1450 ms blocking repo · git worktree remove \/w/)
+    expect(text).toMatch(/120 ms async\s+TASK-0001 · git diff --numstat/)
+  })
+})

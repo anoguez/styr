@@ -1,5 +1,6 @@
 import { monitorEventLoopDelay } from 'node:perf_hooks'
 import { SampleBuffer, type DiagnosticsSnapshot, type ProcessMetric } from '@core/diagnostics.js'
+import { slowGitCalls } from '@core/gitTiming.js'
 import type { AppPaths } from './ports.js'
 
 export interface DiagnosticsPorts {
@@ -11,8 +12,8 @@ export interface DiagnosticsPorts {
 const RESOLUTION_MS = 10
 
 /**
- * What the Performance panel shows: the app's processes, the main thread's event-loop delay and
- * recent `notifyTasksChanged` durations. Memory-only, and cheap enough to leave on.
+ * What the Performance panel shows: the app's processes, the main thread's event-loop delay,
+ * recent `notifyTasksChanged` durations and the slowest recent git calls. Memory-only, and cheap enough to leave on.
  */
 export function createDiagnostics(ports: DiagnosticsPorts) {
   const notifyDurations = new SampleBuffer(20)
@@ -57,7 +58,8 @@ export function createDiagnostics(ports: DiagnosticsPorts) {
       processes: ports.processMetrics(),
       eventLoopMs,
       ...counts,
-      notifyMs: notifyDurations.toArray()
+      notifyMs: notifyDurations.toArray(),
+      slowGit: slowGitCalls()
     }
   }
 
