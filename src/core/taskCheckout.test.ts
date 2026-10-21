@@ -122,6 +122,63 @@ describe('landing and cleanup', () => {
     expect(branches(repository)).not.toContain(branch)
   })
 
+  it('sees a squash merge after the base has changed the same files again', async () => {
+    const repository = temporaryRepository()
+    writeFileSync(join(repository, 'notes.txt'), 'one\ntwo\nthree\nfour\n')
+    runGit(['add', 'notes.txt'], repository)
+    runGit(['commit', '-m', 'Add notes'], repository)
+    const { path, branch } = ensureWorktree(open(repository, 'TASK-0058').checkout)
+    const edits: [string, string][] = [
+      ['README.md', '# Test repository\nwork\n'],
+      ['feature.txt', 'work\n']
+    ]
+    for (const [file, text] of edits) {
+      writeFileSync(join(path, file), text)
+      runGit(['add', file], path)
+      runGit(['commit', '-m', `Change ${file}`], path)
+    }
+    // a rename: a squash commit's patch is only recognised when read whole, not cut to these paths
+    runGit(['mv', 'notes.txt', 'docs.txt'], path)
+    runGit(['commit', '-m', 'Rename the notes'], path)
+    runGit(['merge', '--squash', branch], repository)
+    runGit(['commit', '-m', 'Squashed (#1)'], repository)
+    writeFileSync(join(repository, 'README.md'), '# Test repository\nwork\nbadge\n')
+    runGit(['commit', '-am', 'Refresh the badge'], repository)
+
+    expect(open(repository, 'TASK-0058').landing()).toMatchObject({ ahead: 3, landed: true })
+    expect(
+      await checkoutGit.cleanupLandedTask(open(repository, 'TASK-0058').checkout)
+    ).toMatchObject({ worktreeRemoved: true })
+    expect(branches(repository)).not.toContain(branch)
+  })
+
+  it('cleans up a branch with no commits of its own without calling it landed', async () => {
+    const repository = temporaryRepository()
+    const { path, branch } = ensureWorktree(open(repository, 'TASK-0059').checkout)
+    expect(open(repository, 'TASK-0059').landing()).toMatchObject({ ahead: 0, landed: false })
+
+    const result = await checkoutGit.cleanupLandedTask(open(repository, 'TASK-0059').checkout)
+    expect(result.worktreeRemoved).toBe(true)
+    expect(existsSync(path)).toBe(false)
+    expect(branches(repository)).not.toContain(branch)
+  })
+
+  it('keeps a branch that moved after it was measured', async () => {
+    const repository = temporaryRepository()
+    const { path, branch } = ensureWorktree(open(repository, 'TASK-0063').checkout)
+    const measured = open(repository, 'TASK-0063').landing()
+    writeFileSync(join(path, 'late.txt'), 'late\n')
+    runGit(['add', 'late.txt'], path)
+    runGit(['commit', '-m', 'Late work'], path)
+
+    const result = await checkoutGit.cleanupLandedTask(
+      open(repository, 'TASK-0063').checkout,
+      measured
+    )
+    expect(result.notes.join(' ')).toContain('Could not delete local branch')
+    expect(branches(repository)).toContain(branch)
+  })
+
   it('keeps the worktree and branch when the work has not landed', async () => {
     const repository = temporaryRepository()
     const branch = commitOnTask(repository, 'TASK-0054')
