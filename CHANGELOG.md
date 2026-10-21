@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.36.1](https://github.com/anoguez/styr/compare/v0.36.0...v0.36.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* clean up Done tasks' worktrees after a squash merge, and empty branches ([#184](https://github.com/anoguez/styr/issues/184)) ([4ad38d9](https://github.com/anoguez/styr/commit/4ad38d9686f11db40aa26f0bdf7eb8983bb039df))
+
+
+### Performance
+
+* keep git off the main thread for landing and diff stats ([#182](https://github.com/anoguez/styr/issues/182)) ([a21a5bb](https://github.com/anoguez/styr/commit/a21a5bbfe99ea59e72de69e598916339805d98e8))
+
 ## [0.36.0](https://github.com/anoguez/styr/compare/v0.35.2...v0.36.0) (2026-10-20)
 
 
