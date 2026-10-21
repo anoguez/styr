@@ -9,6 +9,7 @@ import { BlockTracker, type BlockLayout } from '../lib/blockTracker.js'
 import { syntaxFor, type ShellDialect } from '@core/shell.js'
 import { TerminalOutputSynchronizer } from '../lib/terminalOutput.js'
 import { benchTimer } from '../lib/terminalBench.js'
+import { onSessionData, onSessionExit } from '../lib/terminalEvents.js'
 
 export interface TerminalSelection {
   text: string
@@ -143,17 +144,14 @@ export function TerminalView({
           bench.drawn(mark)
         })
     })
-    const offData = window.api.terminal.onData(({ id, ...event }) => {
-      if (id === sessionId) output.writeLive(event)
-    })
+    const offData = onSessionData(sessionId, (event) => output.writeLive(event))
     void window.api.terminal.backlog(sessionId).then((backlog) => {
       output.writeBacklog(backlog)
       pushSize()
     })
-    const offExit = window.api.terminal.onExit(({ id, exitCode }) => {
-      if (id === sessionId)
-        terminal.write(`\r\n\x1b[90m[process exited with code ${exitCode}]\x1b[0m\r\n`)
-    })
+    const offExit = onSessionExit(sessionId, ({ exitCode }) =>
+      terminal.write(`\r\n\x1b[90m[process exited with code ${exitCode}]\x1b[0m\r\n`)
+    )
     const rangeText = (from: number, to: number): string => {
       const buffer = terminal.buffer.active
       const lines: string[] = []

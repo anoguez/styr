@@ -1,11 +1,10 @@
 import { resolve } from 'node:path'
-import type { DiffResult, PatchResult } from './diff.js'
+import type { DiffResult, DiffStat, PatchResult } from './diff.js'
 import { checkoutPath, removeWorktree, type Checkout } from './worktree.js'
-import { taskDiff, taskFilePatch } from './worktreeDiff.js'
+import { taskDiff, taskDiffStat, taskFilePatch } from './worktreeDiff.js'
 import {
   branchLanding,
-  cleanupLandedTask,
-  refListing,
+  landingGitAsync,
   type CleanupResult,
   type Landing
 } from './worktreeLanding.js'
@@ -54,6 +53,8 @@ export type CheckoutTask = Pick<Task, 'id' | 'baseBranch'> &
 export interface TaskCheckout {
   readonly checkout: Checkout
   diff(): DiffResult
+  /** The card's totals for a `changes` diff, else undefined. Asynchronous: git off the main thread. */
+  diffStat(): Promise<DiffStat | undefined>
   /** `path` must be in the current diff — no arbitrary reads. `full` returns the whole file as context. */
   filePatch(path: string, full?: boolean): PatchResult
   /** Undefined when there is no task branch or no base to compare with. */
@@ -72,22 +73,28 @@ export function taskCheckout(
   return {
     checkout,
     diff: () => taskDiff(checkout, worktree),
+    diffStat: () => taskDiffStat(checkout, worktree),
     filePatch: (path, full = false) => taskFilePatch(checkout, worktree, path, full),
-    landing: () => checkoutGit.branchLanding(checkout),
+    landing: () => branchLanding(checkout),
     removeWorktree: () => removeWorktree(checkout)
   }
 }
 
 /**
  * The git a landing pass runs: one ref listing per repository, then a landing check and a cleanup
- * per checkout. `checkoutGit` is real git; `landing.test.ts` fakes it to test the rules alone.
+ * per checkout. Asynchronous — child processes the main thread does not wait on, one repository's
+ * calls in order — because a pass can measure a dozen branches and delete a whole worktree.
+ * `checkoutGit` is real git; `landing.test.ts` fakes it to test the rules alone.
  */
 export interface CheckoutGit {
   /** Every local and origin ref with its tip, in one git call. Undefined when git cannot list them. */
-  refListing(repoPath: string): string | undefined
-  branchLanding(checkout: Checkout): Landing | undefined
-  /** Removes a landed task's worktree and branches; each refusal is a note, never a throw. */
-  cleanupLandedTask(checkout: Checkout): CleanupResult
+  refListing(repoPath: string): Promise<string | undefined>
+  branchLanding(checkout: Checkout): Promise<Landing | undefined>
+  /**
+   * Removes a landed task's worktree and branches; each refusal is a note, never a throw. `landing`
+   * is the check the caller already ran for this checkout, so it is not run again.
+   */
+  cleanupLandedTask(checkout: Checkout, landing?: Landing): Promise<CleanupResult>
 }
 
-export const checkoutGit: CheckoutGit = { refListing, branchLanding, cleanupLandedTask }
+export const checkoutGit: CheckoutGit = landingGitAsync

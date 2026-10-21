@@ -41,15 +41,21 @@ function harness(): Harness {
         h.calls.push(`checkout ${workspaceId} ${t.id} ${t.repoPath} ${location}`)
         return {
           diff: () => h.diffs[t.id] ?? emptyDiff('empty'),
+          diffStat: async () => {
+            const diff = h.diffs[t.id] ?? emptyDiff('empty')
+            if ('error' in diff || diff.kind !== 'changes') return undefined
+            return {
+              added: diff.totalAdditions,
+              removed: diff.totalDeletions,
+              files: diff.totalFiles
+            }
+          },
           filePatch: (path: string, full?: boolean) => ({ patch: `${path} full=${full}` })
         } as unknown as TaskCheckout
       },
       listBranches: (repo) => ({ branches: [`${repo}-main`] }),
       findGitRoot: (path) => (path.startsWith('/repo') ? '/repo' : undefined),
       readGitBranch: () => 'main'
-    },
-    yieldTurn: async () => {
-      h.calls.push('yield')
     }
   }
   return h
@@ -84,7 +90,7 @@ describe('gitService', () => {
     expect(git.filePatch('TASK-1', '')).toEqual({ error: 'Invalid path' })
   })
 
-  it('totals the changes of open worktree tasks, yielding before each', async () => {
+  it('totals the changes of open worktree tasks', async () => {
     const h = harness()
     h.rows = [
       task('TASK-1'),
@@ -99,11 +105,8 @@ describe('gitService', () => {
       'TASK-1': { added: 3, removed: 1, files: 2 }
     })
     expect(h.calls).toEqual([
-      'yield',
       'checkout ws TASK-1 /repo inside',
-      'yield',
       'checkout ws TASK-5 /repo inside',
-      'yield',
       'checkout ws TASK-6 /repo inside'
     ])
   })

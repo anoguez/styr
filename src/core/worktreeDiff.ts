@@ -1,4 +1,5 @@
 import { existsSync, statSync } from 'node:fs'
+import { lstat, readFile, readlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   MAX_PATCH_BYTES,
@@ -10,34 +11,44 @@ import {
   emptyDiff,
   MAX_DIFF_FILES,
   type DiffResult,
+  type DiffStat,
   type PatchResult
 } from './diff.js'
 import {
   baseBranchFor,
-  branchExists,
+  baseBranchSteps,
+  branchExistsSteps,
   branchNameFor,
   checkoutPath,
   firstLine,
   git,
   gitRaw,
-  isGitRepo,
-  refExists,
-  type Checkout
+  gitRawStep,
+  gitStep,
+  isGitRepoSteps,
+  refExistsSteps,
+  runGitAsync,
+  runGitSync,
+  type Checkout,
+  type GitSteps
 } from './gitExec.js'
 import { branchLanding } from './worktreeLanding.js'
 
 /** The ref a task's diff is measured against: the merge-base with its (preferably remote) base. */
-function diffBaseFor(dir: string, { repoPath, baseBranch }: Checkout): string | undefined {
-  const name = baseBranch ?? baseBranchFor(repoPath)
+function* diffBaseFor(
+  dir: string,
+  { repoPath, baseBranch }: Checkout
+): GitSteps<string | undefined> {
+  const name = baseBranch ?? (yield* baseBranchSteps(repoPath))
   const candidates = name ? [`origin/${name}`, name] : []
   let best: string | undefined
   let bestAhead = Infinity
   for (const ref of candidates) {
-    if (!refExists(dir, ref)) continue
+    if (!(yield* refExistsSteps(dir, ref))) continue
     try {
-      const mergeBase = git(['merge-base', ref, 'HEAD'], dir)
+      const mergeBase = yield* gitStep(['merge-base', ref, 'HEAD'], dir)
       // Prefer the ref whose merge-base is closest to HEAD, so landed work is not re-shown.
-      const ahead = Number(git(['rev-list', '--count', `${mergeBase}..HEAD`], dir))
+      const ahead = Number(yield* gitStep(['rev-list', '--count', `${mergeBase}..HEAD`], dir))
       if (ahead < bestAhead) {
         best = mergeBase
         bestAhead = ahead
@@ -48,7 +59,7 @@ function diffBaseFor(dir: string, { repoPath, baseBranch }: Checkout): string | 
   }
   if (best) return best
   try {
-    return git(['rev-parse', 'HEAD^'], dir)
+    return yield* gitStep(['rev-parse', 'HEAD^'], dir)
   } catch {
     return undefined
   }
@@ -68,8 +79,12 @@ type DiffTarget =
 
 /** True when the task is meant to have a worktree; false diffs the repository itself. */
 function diffTarget(checkout: Checkout, worktree: boolean): DiffTarget {
+  return runGitSync(diffTargetSteps(checkout, worktree))
+}
+
+function* diffTargetSteps(checkout: Checkout, worktree: boolean): GitSteps<DiffTarget> {
   const { repoPath, key } = checkout
-  if (!isGitRepo(repoPath)) {
+  if (!(yield* isGitRepoSteps(repoPath))) {
     return { error: `${repoPath || '(no repository)'} is not a git repository` }
   }
   if (!worktree) {
@@ -82,10 +97,12 @@ function diffTarget(checkout: Checkout, worktree: boolean): DiffTarget {
   }
   const branch = branchNameFor(key)
   const dir = checkoutPath(checkout)
-  if (!existsSync(dir)) return { gone: true, branch, branchKept: branchExists(repoPath, branch) }
+  if (!existsSync(dir)) {
+    return { gone: true, branch, branchKept: yield* branchExistsSteps(repoPath, branch) }
+  }
   let onBranch = false
   try {
-    onBranch = git(['rev-parse', '--abbrev-ref', 'HEAD'], dir) === branch
+    onBranch = (yield* gitStep(['rev-parse', '--abbrev-ref', 'HEAD'], dir)) === branch
   } catch {
     // unborn HEAD
   }
@@ -96,7 +113,7 @@ function diffTarget(checkout: Checkout, worktree: boolean): DiffTarget {
       note: 'The task branch is missing or detached — showing uncommitted changes only.'
     }
   }
-  const base = diffBaseFor(dir, checkout)
+  const base = yield* diffBaseFor(dir, checkout)
   if (!base) return { error: 'Could not find a base branch to compare against' }
   return {
     dir,
@@ -177,6 +194,90 @@ export function taskDiff(checkout: Checkout, worktree: boolean): DiffResult {
     return { error: firstLine(error) }
   }
 }
+
+/**
+ * A card's change totals: `taskDiff`'s `totalAdditions`/`totalDeletions`/`totalFiles` when its
+ * kind is `changes`, undefined otherwise. Off the main thread — the git runs in child processes and
+ * untracked files are counted from disk, not with one git process each — because the board asks
+ * for every worktree task's totals after each change.
+ */
+export async function taskDiffStat(
+  checkout: Checkout,
+  worktree: boolean
+): Promise<DiffStat | undefined> {
+  try {
+    const listed = await runGitAsync(checkout.repoPath, statSteps(checkout, worktree))
+    if (!listed) return undefined
+    const { dir, files, untracked } = listed
+    let added = 0
+    let removed = 0
+    for (const file of files) {
+      added += file.additions
+      removed += file.deletions
+    }
+    for (const path of untracked) added += await untrackedLines(dir, path)
+    const total = files.length + untracked.length
+    return total > 0 ? { added, removed, files: total } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function* statSteps(
+  checkout: Checkout,
+  worktree: boolean
+): GitSteps<
+  { dir: string; files: ReturnType<typeof parseNumstat>; untracked: string[] } | undefined
+> {
+  const target = yield* diffTargetSteps(checkout, worktree)
+  if ('error' in target || 'gone' in target || target.repo) return undefined
+  const { dir, base } = target
+  const statuses = parseNameStatus(
+    yield* gitRawStep(['diff', '--name-status', '-z', '-M', base], dir)
+  )
+  const files = parseNumstat(
+    yield* gitRawStep(['diff', '--numstat', '-z', '-M', base], dir),
+    statuses
+  )
+  const untracked = untrackedFiles(
+    yield* gitRawStep(['ls-files', '--others', '--exclude-standard', '-z'], dir),
+    new Set(files.map((file) => file.path))
+  ).map((file) => file.path)
+  return { dir, files, untracked }
+}
+
+/** Bytes git inspects for a NUL when deciding a file is binary. */
+const BINARY_SNIFF_BYTES = 8000
+
+/**
+ * The lines `git diff --no-index /dev/null <path>` would add for an untracked file, as
+ * `untrackedPatch` counts them: none for a binary file, a directory, or a patch over `gitRaw`'s
+ * buffer, which `taskDiff` reads as too large to count.
+ */
+async function untrackedLines(dir: string, path: string): Promise<number> {
+  try {
+    const full = join(dir, path)
+    const info = await lstat(full)
+    // git diffs a symlink as its target path: one line, without a trailing newline.
+    if (info.isSymbolicLink()) return (await readlink(full)).length > 0 ? 1 : 0
+    if (!info.isFile() || info.size === 0 || info.size > RAW_PATCH_LIMIT) return 0
+    const content = await readFile(full)
+    if (content.subarray(0, BINARY_SNIFF_BYTES).includes(0)) return 0
+    let lines = 0
+    for (const byte of content) if (byte === 0x0a) lines++
+    if (content[content.length - 1] !== 0x0a) lines++
+    // Each line gains a `+`, plus the patch's header: over the buffer, git's answer is unreadable.
+    return content.length + lines + PATCH_HEADER_BYTES + path.length * 4 > RAW_PATCH_LIMIT
+      ? 0
+      : lines
+  } catch {
+    return 0
+  }
+}
+
+/** `gitRaw`'s output buffer: a patch past it is not counted. */
+const RAW_PATCH_LIMIT = MAX_PATCH_BYTES * 4
+const PATCH_HEADER_BYTES = 120
 
 function branchIsLanded(checkout: Checkout): boolean {
   try {

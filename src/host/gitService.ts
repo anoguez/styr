@@ -24,8 +24,6 @@ export interface GitServicePorts {
   /** The active board, from the index. */
   index: { query(): Task[]; find(id: string): Task | null | undefined }
   git: RepoGit
-  /** Lets IPC, the watcher and the terminals run between two tasks' synchronous git work. */
-  yieldTurn(): Promise<void>
 }
 
 export const nextTurn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
@@ -67,8 +65,8 @@ export function createGitService(ports: GitServicePorts) {
   }
 
   /**
-   * Per-task change totals for the cards. The git work is synchronous, so the loop yields between
-   * tasks (~0.2s each): IPC, the watcher and the terminals keep being served in the gaps.
+   * Per-task change totals for the cards. The git runs in child processes, so IPC, the watcher and
+   * the terminals are served the whole time.
    */
   async function computeDiffStats(): Promise<Record<string, DiffStat>> {
     const { activeWorkspaceId: workspaceId, worktreeLocation } = ports.loadSettings()
@@ -77,14 +75,10 @@ export function createGitService(ports: GitServicePorts) {
       // Done work has landed (or is being cleaned up); a count there is noise.
       const { repoPath } = task
       if (!task.worktreePath || !repoPath || task.status === 'done' || task.archivedAt) continue
-      await ports.yieldTurn()
-      const diff = ports.git.checkout(workspaceId, { ...task, repoPath }, worktreeLocation).diff()
-      if ('error' in diff || diff.kind !== 'changes') continue
-      stats[task.id] = {
-        added: diff.totalAdditions,
-        removed: diff.totalDeletions,
-        files: diff.totalFiles
-      }
+      const stat = await ports.git
+        .checkout(workspaceId, { ...task, repoPath }, worktreeLocation)
+        .diffStat()
+      if (stat) stats[task.id] = stat
     }
     return stats
   }

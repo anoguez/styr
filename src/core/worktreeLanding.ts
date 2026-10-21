@@ -1,14 +1,17 @@
 import { existsSync } from 'node:fs'
 import {
-  baseBranchFor,
-  branchExists,
+  baseBranchSteps,
+  branchExistsSteps,
   branchNameFor,
   checkoutPath,
   firstLine,
-  git,
-  isGitRepo,
-  refExists,
-  type Checkout
+  gitStep,
+  isGitRepoSteps,
+  refExistsSteps,
+  runGitAsync,
+  runGitSync,
+  type Checkout,
+  type GitSteps
 } from './gitExec.js'
 
 export interface Landing {
@@ -21,19 +24,19 @@ export interface Landing {
   landed: boolean
 }
 
-function countAhead(repoPath: string, base: string, branch: string): number {
-  return Number(git(['rev-list', '--count', `${base}..${branch}`], repoPath))
+function* countAhead(repoPath: string, base: string, branch: string): GitSteps<number> {
+  return Number(yield* gitStep(['rev-list', '--count', `${base}..${branch}`], repoPath))
 }
 
 /** True when every file the branch changed since its merge-base is identical on `base`. */
-function contentLanded(repoPath: string, base: string, branch: string): boolean {
+function* contentLanded(repoPath: string, base: string, branch: string): GitSteps<boolean> {
   try {
-    const mergeBase = git(['merge-base', base, branch], repoPath)
-    const changed = git(['diff', '--name-only', '-z', mergeBase, branch], repoPath)
+    const mergeBase = yield* gitStep(['merge-base', base, branch], repoPath)
+    const changed = (yield* gitStep(['diff', '--name-only', '-z', mergeBase, branch], repoPath))
       .split('\0')
       .filter(Boolean)
     if (changed.length === 0) return false
-    git(['diff', '--quiet', base, branch, '--', ...changed], repoPath)
+    yield* gitStep(['diff', '--quiet', base, branch, '--', ...changed], repoPath)
     return true
   } catch {
     return false
@@ -44,44 +47,58 @@ function contentLanded(repoPath: string, base: string, branch: string): boolean 
  * Whether a task branch's work is on the base. A remote-tracking base counts too, so a PR merged on
  * the host is seen before the user pulls. Undefined when there is no branch or no base to compare.
  */
-export function branchLanding({ repoPath, key, baseBranch }: Checkout): Landing | undefined {
-  if (!isGitRepo(repoPath)) return undefined
+export function branchLanding(checkout: Checkout): Landing | undefined {
+  return runGitSync(branchLandingSteps(checkout))
+}
+
+function* branchLandingSteps({
+  repoPath,
+  key,
+  baseBranch
+}: Checkout): GitSteps<Landing | undefined> {
+  if (!(yield* isGitRepoSteps(repoPath))) return undefined
   const branch = branchNameFor(key)
-  if (!branchExists(repoPath, branch)) return undefined
+  if (!(yield* branchExistsSteps(repoPath, branch))) return undefined
   // The task's own base wins while it still exists; a vanished one falls back to the automatic base.
   const chosen =
     baseBranch &&
-    (refExists(repoPath, `refs/heads/${baseBranch}`) ||
-      refExists(repoPath, `refs/remotes/origin/${baseBranch}`))
+    ((yield* refExistsSteps(repoPath, `refs/heads/${baseBranch}`)) ||
+      (yield* refExistsSteps(repoPath, `refs/remotes/origin/${baseBranch}`)))
       ? baseBranch
       : undefined
-  const base = chosen ?? baseBranchFor(repoPath)
+  const base = chosen ?? (yield* baseBranchSteps(repoPath))
   if (!base) return undefined
 
-  const bases = [base, `origin/${base}`].filter((ref) => refExists(repoPath, ref))
+  const bases: string[] = []
+  for (const ref of [base, `origin/${base}`]) {
+    if (yield* refExistsSteps(repoPath, ref)) bases.push(ref)
+  }
   if (bases.length === 0) return undefined
   // Everything below measures this one commit. The answer is computed from several git calls, and
   // an agent committing in between used to mix "0 ahead" (old tip) with "has own commits" (new
   // tip), which reads as a fast-forward merge and sent unlanded work to Done.
-  const tip = branchTip(repoPath, branch)
+  const tip = yield* branchTip(repoPath, branch)
   if (!tip) return undefined
   let ahead = Infinity
   let landed = false
   for (const ref of bases) {
-    const count = countAhead(repoPath, ref, tip)
+    const count = yield* countAhead(repoPath, ref, tip)
     ahead = Math.min(ahead, count)
-    if (count === 0 || contentLanded(repoPath, ref, tip)) landed = true
+    if (count === 0 || (yield* contentLanded(repoPath, ref, tip))) landed = true
   }
-  if (landed && ahead === 0 && !hasOwnCommits(repoPath, branch, tip)) landed = false
+  if (landed && ahead === 0 && !(yield* hasOwnCommits(repoPath, branch, tip))) landed = false
   // The branch moved while it was being measured: whatever was decided describes a state that no
   // longer exists, so say "not landed" and let the next pass look again.
-  if (landed && branchTip(repoPath, branch) !== tip) landed = false
+  if (landed && (yield* branchTip(repoPath, branch)) !== tip) landed = false
   return { branch, base, ahead, landed }
 }
 
-function branchTip(repoPath: string, branch: string): string | undefined {
+function* branchTip(repoPath: string, branch: string): GitSteps<string | undefined> {
   try {
-    return git(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`], repoPath)
+    return yield* gitStep(
+      ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`],
+      repoPath
+    )
   } catch {
     return undefined
   }
@@ -93,9 +110,12 @@ function branchTip(repoPath: string, branch: string): string | undefined {
  * that was fast-forward merged. Without a reflog the branch is not assumed to have landed. The
  * newest entry must be the tip being measured, or the reflog describes a different state.
  */
-function hasOwnCommits(repoPath: string, branch: string, tip: string): boolean {
+function* hasOwnCommits(repoPath: string, branch: string, tip: string): GitSteps<boolean> {
   try {
-    const entries = git(['reflog', 'show', '--format=%H', `refs/heads/${branch}`], repoPath)
+    const entries = (yield* gitStep(
+      ['reflog', 'show', '--format=%H', `refs/heads/${branch}`],
+      repoPath
+    ))
       .split('\n')
       .filter(Boolean)
     return entries.length > 1 && entries[0] === tip && entries[0] !== entries[entries.length - 1]
@@ -106,8 +126,12 @@ function hasOwnCommits(repoPath: string, branch: string, tip: string): boolean {
 
 /** Every local and origin ref with its tip, in one git call. Undefined when git cannot list them. */
 export function refListing(repoPath: string): string | undefined {
+  return runGitSync(refListingSteps(repoPath))
+}
+
+function* refListingSteps(repoPath: string): GitSteps<string | undefined> {
   try {
-    return git(
+    return yield* gitStep(
       ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads', 'refs/remotes/origin'],
       repoPath
     )
@@ -130,11 +154,19 @@ export interface CleanupResult {
  * to be on the base stays — and each refusal is reported rather than thrown.
  */
 export function cleanupLandedTask(checkout: Checkout): CleanupResult {
+  return runGitSync(cleanupSteps(checkout))
+}
+
+/**
+ * `cleanupLandedTask` measured once: `known` is the landing the caller just computed for this
+ * checkout, so the check is not run twice. Omitted, it is computed here.
+ */
+function* cleanupSteps(checkout: Checkout, known?: Landing): GitSteps<CleanupResult> {
   const { repoPath, key } = checkout
   const notes: string[] = []
   const path = checkoutPath(checkout)
   const branch = branchNameFor(key)
-  const landing = branchLanding(checkout)
+  const landing = known ?? (yield* branchLandingSteps(checkout))
 
   if (landing && !landing.landed) {
     notes.push(
@@ -143,10 +175,10 @@ export function cleanupLandedTask(checkout: Checkout): CleanupResult {
     return { worktreeRemoved: !existsSync(path), notes }
   }
 
-  git(['worktree', 'prune'], repoPath)
+  yield* gitStep(['worktree', 'prune'], repoPath)
   if (existsSync(path)) {
     try {
-      git(['worktree', 'remove', path], repoPath)
+      yield* gitStep(['worktree', 'remove', path], repoPath)
       notes.push(`Removed worktree ${path}.`)
     } catch {
       notes.push(`Left worktree ${path} in place: it has uncommitted or untracked changes.`)
@@ -156,10 +188,23 @@ export function cleanupLandedTask(checkout: Checkout): CleanupResult {
   if (!landing) return { worktreeRemoved: true, notes }
 
   try {
-    git(['branch', '-D', branch], repoPath)
+    yield* gitStep(['branch', '-D', branch], repoPath)
     notes.push(`Deleted local branch ${branch}.`)
   } catch (error) {
     notes.push(`Could not delete local branch ${branch}: ${firstLine(error)}`)
   }
   return { worktreeRemoved: true, notes }
+}
+
+/**
+ * The landing pass's git, off the main thread: the same conversations as the synchronous functions
+ * above, run in child processes through each repository's queue.
+ */
+export const landingGitAsync = {
+  refListing: (repoPath: string): Promise<string | undefined> =>
+    runGitAsync(repoPath, refListingSteps(repoPath)),
+  branchLanding: (checkout: Checkout): Promise<Landing | undefined> =>
+    runGitAsync(checkout.repoPath, branchLandingSteps(checkout)),
+  cleanupLandedTask: (checkout: Checkout, landing?: Landing): Promise<CleanupResult> =>
+    runGitAsync(checkout.repoPath, cleanupSteps(checkout, landing))
 }

@@ -9,15 +9,12 @@ function task(extra: Partial<Task> = {}): Task {
 interface Harness {
   ports: TasksServicePorts
   calls: string[]
-  /** What the next landing passes return: true when one wrote a task file. */
-  landing: boolean[]
   rows: Task[]
 }
 
 function harness(): Harness {
   const calls: string[] = []
-  const landing: boolean[] = []
-  const h = { calls, landing, rows: [task()] } as Harness
+  const h = { calls, rows: [task()] } as Harness
   h.ports = {
     broadcast: (channel) => calls.push(`broadcast ${channel}`),
     index: {
@@ -47,10 +44,7 @@ function harness(): Harness {
       removeWorktree: (t) => calls.push(`removeWorktree ${t.id}`),
       brokenTaskFiles: () => [{ filePath: '/tasks/bad.md', reason: 'no frontmatter' }]
     },
-    settleLandedTasks: () => {
-      calls.push('settle')
-      return landing.shift() ?? false
-    },
+    requestLanding: () => calls.push('landing'),
     observeTasks: (tasks) => calls.push(`observe ${tasks.length}`),
     recordNotifyDuration: (ms) => calls.push(`time ${typeof ms}`),
     requestAutoRun: () => calls.push('autoRun'),
@@ -68,18 +62,18 @@ beforeEach(() => {
 })
 
 /** One `notifyTasksChanged`, as the call log records it. */
-const NOTIFY = ['sync', 'settle', 'observe 1', 'time number', 'broadcast tasks:changed', 'autoRun']
+const NOTIFY = ['sync', 'observe 1', 'time number', 'broadcast tasks:changed', 'landing', 'autoRun']
 
 describe('notifyTasksChanged', () => {
-  it('re-indexes, settles, observes, times, broadcasts once, then requests Auto-run', () => {
+  it('re-indexes, observes, times, broadcasts once, then requests landing and Auto-run', () => {
     service.notifyTasksChanged()
     expect(h.calls).toEqual(NOTIFY)
   })
 
-  it('re-indexes again, still broadcasting once, when landing wrote a task file', () => {
-    h.landing.push(true)
+  it('only requests the landing pass: it runs no git and re-indexes once', () => {
     service.notifyTasksChanged()
-    expect(h.calls).toEqual(['sync', 'settle', 'sync', ...NOTIFY.slice(2)])
+    expect(h.calls.filter((call) => call === 'landing')).toHaveLength(1)
+    expect(h.calls.filter((call) => call === 'sync')).toHaveLength(1)
   })
 
   it('is synchronous: everything has run when it returns', () => {

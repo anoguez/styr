@@ -44,7 +44,7 @@ import { diskWorklogSources } from '@core/worklogSources.js'
 import { createAgentsService, diskAgentStore, diskGit } from '@host/agentsService.js'
 import { createDispatchService, diskDispatchSettings, realClock } from '@host/dispatchService.js'
 import { createGitService, diskRepoGit, nextTurn } from '@host/gitService.js'
-import { mergedWorkCheck } from '@host/landing.js'
+import { landingRequests, mergedWorkCheck } from '@host/landing.js'
 import { createSettingsService, diskSettingsStore } from '@host/settingsService.js'
 import { createTasksService } from '@host/tasksService.js'
 import { createWorklogService } from '@host/worklogService.js'
@@ -106,7 +106,7 @@ const tasksService = createTasksService({
     removeWorktree: (task) => gitService.checkout(task).removeWorktree(),
     brokenTaskFiles
   },
-  settleLandedTasks,
+  requestLanding: () => requestLanding(),
   observeTasks,
   recordNotifyDuration,
   requestAutoRun: () => dispatchService.requestAutoRun(),
@@ -198,14 +198,19 @@ export function notifyAgentsChanged(): void {
 const gitService = createGitService({
   loadSettings: () => loadSettings(),
   index: { query: () => queryTasks(), find: (id) => findTask(id) },
-  git: diskRepoGit,
-  yieldTurn: nextTurn
+  git: diskRepoGit
 })
 
 const worklogService = createWorklogService({
   query: () => queryTasks(),
   sources: diskWorklogSources,
   yieldTurn: nextTurn
+})
+
+/** A landing pass after a task change; `notifyTasksChanged` never waits for its git. */
+const requestLanding = landingRequests({
+  settleLandedTasks: () => settleLandedTasks(),
+  notifyTasks: notifyTasksChanged
 })
 
 /**

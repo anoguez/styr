@@ -50,6 +50,7 @@ import {
   type GridSelection
 } from '../lib/nativeTerminal/selection.js'
 import { BlockListStore } from '../lib/nativeTerminal/blockList.js'
+import { onSessionExit } from '../lib/terminalEvents.js'
 import { TerminalBlockList, type InputHint } from './TerminalBlockList.js'
 import { AgentBlockList, type ApprovalRequest } from './AgentBlockList.js'
 import {
@@ -269,9 +270,7 @@ export function NativeTerminalView({
     const offFailed = window.api.terminal.native.onFailed((failure) => {
       if (failure.id === sessionId) fail(failure.reason, failure.detail)
     })
-    const offExit = window.api.terminal.onExit(({ id, exitCode }) => {
-      if (id === sessionId) setExitCode(exitCode)
-    })
+    const offExit = onSessionExit(sessionId, ({ exitCode }) => setExitCode(exitCode))
 
     size = measure()
     void window.api.terminal.native.attach(sessionId, size.cols, size.rows).then(
