@@ -5,6 +5,7 @@ import {
   branchNameFor,
   checkoutPath,
   firstLine,
+  gitPipeStep,
   gitStep,
   isGitRepoSteps,
   refExistsSteps,
@@ -20,8 +21,13 @@ export interface Landing {
   base: string
   /** Commits on the task branch that are not on the base. */
   ahead: number
-  /** Every commit is on the base, or (squash/rebase merges) every file it changed matches the base. */
+  /**
+   * Every commit is on the base, or (squash/rebase merges) every file it changed matches the base,
+   * or one commit on the base carries the branch's whole change.
+   */
   landed: boolean
+  /** The branch commit this answer describes; cleanup deletes the branch only while it is still here. */
+  tip?: string
 }
 
 function* countAhead(repoPath: string, base: string, branch: string): GitSteps<number> {
@@ -41,6 +47,76 @@ function* contentLanded(repoPath: string, base: string, branch: string): GitStep
   } catch {
     return false
   }
+}
+
+/** Squash merges older than the branch tip by more than this are not searched for (clock skew). */
+const SQUASH_SEARCH_SLACK_S = 24 * 60 * 60
+/** Generous: a big squash merge's patch, which a search must read whole. */
+const SQUASH_LOG_MAX_BUFFER = 64 * 1024 * 1024
+const SQUASH_ANSWERS_MAX = 1000
+const squashAnswers = new Map<string, boolean>()
+
+/**
+ * True when one commit on `base` carries the branch's whole change: a squash merge. Unlike
+ * `contentLanded` it still holds after the base changes those files again (a badge refresh, a later
+ * fix). Patch ids ignore line numbers, so the base may also have moved elsewhere in the same files.
+ * Only commits on the base since the merge-base, no older than the tip, and touching the branch's
+ * files are read, and answers are kept by commit ids, so a pass after the first costs one rev-parse.
+ */
+function* squashLanded(repoPath: string, base: string, branch: string): GitSteps<boolean> {
+  try {
+    const key = [repoPath, yield* gitStep(['rev-parse', `${base}^{commit}`], repoPath), branch]
+    const known = squashAnswers.get(key.join('\0'))
+    if (known !== undefined) return known
+    const answer = yield* searchSquash(repoPath, base, branch)
+    if (squashAnswers.size >= SQUASH_ANSWERS_MAX) squashAnswers.clear()
+    squashAnswers.set(key.join('\0'), answer)
+    return answer
+  } catch {
+    return false
+  }
+}
+
+function* searchSquash(repoPath: string, base: string, branch: string): GitSteps<boolean> {
+  const mergeBase = yield* gitStep(['merge-base', base, branch], repoPath)
+  const changed = (yield* gitStep(['diff', '--name-only', '-z', mergeBase, branch], repoPath))
+    .split('\0')
+    .filter(Boolean)
+  if (changed.length === 0) return false
+  const maxBuffer = SQUASH_LOG_MAX_BUFFER
+  const diffFlags = ['--no-color', '--no-ext-diff', '--no-textconv']
+  const patchIds = function* (patch: string): GitSteps<string[]> {
+    const ids = yield* gitPipeStep(['patch-id', '--stable'], repoPath, { input: patch, maxBuffer })
+    return ids
+      .split('\n')
+      .map((line) => line.split(' ')[0] ?? '')
+      .filter(Boolean)
+  }
+  const ownPatch = yield* gitPipeStep(['diff', ...diffFlags, mergeBase, branch], repoPath, {
+    maxBuffer
+  })
+  const [own] = yield* patchIds(ownPatch)
+  if (!own) return false
+  const tipTime = Number(yield* gitStep(['log', '-1', '--format=%ct', branch], repoPath))
+  const since = new Date((tipTime - SQUASH_SEARCH_SLACK_S) * 1000).toISOString()
+  const onBase = yield* gitPipeStep(
+    [
+      'log',
+      '-p',
+      '--no-merges',
+      // whole commits: a diff cut to these paths loses renames, and with them the patch id
+      '--full-diff',
+      ...diffFlags,
+      '--format=commit %H',
+      `--since=${since}`,
+      `${mergeBase}..${base}`,
+      '--',
+      ...changed
+    ],
+    repoPath,
+    { maxBuffer }
+  )
+  return onBase !== '' && (yield* patchIds(onBase)).includes(own)
 }
 
 /**
@@ -86,11 +162,16 @@ function* branchLandingSteps({
     ahead = Math.min(ahead, count)
     if (count === 0 || (yield* contentLanded(repoPath, ref, tip))) landed = true
   }
+  // The costliest check, so only once the others have failed.
+  for (const ref of bases) {
+    if (landed || ahead === 0) break
+    landed = yield* squashLanded(repoPath, ref, tip)
+  }
   if (landed && ahead === 0 && !(yield* hasOwnCommits(repoPath, branch, tip))) landed = false
   // The branch moved while it was being measured: whatever was decided describes a state that no
   // longer exists, so say "not landed" and let the next pass look again.
   if (landed && (yield* branchTip(repoPath, branch)) !== tip) landed = false
-  return { branch, base, ahead, landed }
+  return { branch, base, ahead, landed, tip }
 }
 
 function* branchTip(repoPath: string, branch: string): GitSteps<string | undefined> {
@@ -167,8 +248,13 @@ function* cleanupSteps(checkout: Checkout, known?: Landing): GitSteps<CleanupRes
   const path = checkoutPath(checkout)
   const branch = branchNameFor(key)
   const landing = known ?? (yield* branchLandingSteps(checkout))
+  // The branch is deleted only while it is at the commit that was measured, so a commit made since
+  // (an agent still at work) keeps it.
+  const tip = landing?.tip ?? (yield* branchTip(repoPath, branch))
 
-  if (landing && !landing.landed) {
+  // A branch with no commits of its own is not "landed" (that would close an In Review task with
+  // no work), but a Done task holds nothing on it to lose, so it is cleaned up like landed work.
+  if (landing && !landing.landed && landing.ahead > 0) {
     notes.push(
       `Kept worktree and branch ${branch}: ${landing.ahead} commit(s) are not on ${landing.base}. Use Remove in the task dialog to discard the checkout.`
     )
@@ -188,7 +274,9 @@ function* cleanupSteps(checkout: Checkout, known?: Landing): GitSteps<CleanupRes
   if (!landing) return { worktreeRemoved: true, notes }
 
   try {
-    yield* gitStep(['branch', '-D', branch], repoPath)
+    if (!tip) throw new Error('its tip could not be read')
+    // `branch -D` without the race: update-ref deletes only if the ref still holds `tip`.
+    yield* gitStep(['update-ref', '-d', `refs/heads/${branch}`, tip], repoPath)
     notes.push(`Deleted local branch ${branch}.`)
   } catch (error) {
     notes.push(`Could not delete local branch ${branch}: ${firstLine(error)}`)

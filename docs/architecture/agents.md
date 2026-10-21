@@ -372,9 +372,14 @@ branch twice. Before writing, a pass drops everything if the active workspace ch
 (without caching) a task whose `status` or `worktreePath` changed while git ran; the next pass
 measures it again. When a pass wrote, it runs `notifyTasksChanged` (`landingRequests`).
 `branchLanding` checks the local base and `origin/<base>` — the task's `baseBranch` when set and still present, else the automatic base; "landed" is either zero commits ahead, or
-(squash/rebase) every file changed since the merge-base identical on the base. A branch with no
-commits of its own is not landed — the reflog tells a never-moved tip from a fast-forward merge.
-Cleanup never forces the worktree removal, uses `branch -D` only after that check, never touches a remote
+(squash/rebase) every file changed since the merge-base identical on the base, or — once the base
+has changed those files again — one base commit whose patch id equals the branch's whole diff
+(`squashLanded`: whole commits via `--full-diff`, or renames break the id; patches go to `patch-id`
+through `gitPipeStep`; answers cached by commit
+ids). A branch with no commits of its own is not landed — the reflog tells a never-moved tip from a
+fast-forward merge — but a Done task's cleanup still removes it, since nothing on it can be lost.
+Cleanup never forces the worktree removal, deletes the local branch only after that check and only
+while it is at the tip that was measured (`Landing.tip`, `update-ref -d <old>`), never touches a remote
 (no push, no remote branch deletion — it could close an open PR), and reports refusals once (deduped against the task's own latest styr note, so a restart does not repeat it —
 the note write retriggers the watcher). `worktreePath` is cleared via `taskStore` once the worktree
 is gone. Tasks with `useWorktree: false` are skipped entirely.

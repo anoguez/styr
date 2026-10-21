@@ -102,6 +102,23 @@ export function gitRaw(args: string[], cwd: string, okExit: number[] = [0]): str
 
 const RAW_MAX_BUFFER = MAX_PATCH_BYTES * 4
 
+function gitPiped({ args, cwd, input, maxBuffer, timeout }: GitCall): string {
+  const started = performance.now()
+  try {
+    return execFileSync('git', args, {
+      cwd,
+      env: cleanEnv(),
+      encoding: 'utf8',
+      input,
+      maxBuffer,
+      timeout,
+      stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe']
+    }).trim()
+  } finally {
+    recordGitCall(args, cwd, performance.now() - started, true)
+  }
+}
+
 /**
  * One git invocation a step sequence asks for. `raw` is `gitRaw` (untrimmed output, `okExit`
  * accepted), otherwise `git`.
@@ -112,6 +129,10 @@ export interface GitCall {
   raw?: boolean
   okExit?: number[]
   timeout?: number
+  /** Fed to git on stdin (`patch-id`). */
+  input?: string
+  /** For output past the usual buffer (`log -p`); a call that overflows it fails. */
+  maxBuffer?: number
 }
 
 /**
@@ -126,6 +147,15 @@ export function* gitStep(args: string[], cwd: string, timeout?: number): GitStep
   return yield { args, cwd, timeout }
 }
 
+/** A `gitStep` with stdin and room for large output; its output is trimmed like `git()`'s. */
+export function* gitPipeStep(
+  args: string[],
+  cwd: string,
+  options: { input?: string; maxBuffer?: number }
+): GitSteps<string> {
+  return yield { args, cwd, ...options }
+}
+
 export function* gitRawStep(args: string[], cwd: string, okExit: number[] = [0]): GitSteps<string> {
   return yield { args, cwd, raw: true, okExit }
 }
@@ -138,7 +168,9 @@ export function runGitSync<T>(steps: GitSteps<T>): T {
     try {
       output = call.raw
         ? gitRaw(call.args, call.cwd, call.okExit)
-        : git(call.args, call.cwd, call.timeout)
+        : call.input !== undefined || call.maxBuffer !== undefined
+          ? gitPiped(call)
+          : git(call.args, call.cwd, call.timeout)
     } catch (error) {
       next = steps.throw(error)
       continue
@@ -190,10 +222,18 @@ function inRepoQueue<T>(repoPath: string, work: () => Promise<T>): Promise<T> {
  * One git call in a child process. A failure carries `status` (the exit code) and `stdout` the way
  * `execFileSync`'s does, so a step's `catch` cannot tell the two apart.
  */
-function execAsync({ args, cwd, raw, okExit = [0], timeout }: GitCall): Promise<string> {
+function execAsync({
+  args,
+  cwd,
+  raw,
+  okExit = [0],
+  timeout,
+  input,
+  maxBuffer
+}: GitCall): Promise<string> {
   const started = performance.now()
   return new Promise((done, fail) => {
-    execFile(
+    const child = execFile(
       'git',
       args,
       {
@@ -201,7 +241,7 @@ function execAsync({ args, cwd, raw, okExit = [0], timeout }: GitCall): Promise<
         env: { ...cleanEnv(), GIT_TERMINAL_PROMPT: '0' },
         encoding: 'utf8',
         timeout,
-        maxBuffer: raw ? RAW_MAX_BUFFER : 1024 * 1024
+        maxBuffer: maxBuffer ?? (raw ? RAW_MAX_BUFFER : 1024 * 1024)
       },
       (error, stdout, stderr) => {
         recordGitCall(args, cwd, performance.now() - started, false)
@@ -211,6 +251,8 @@ function execAsync({ args, cwd, raw, okExit = [0], timeout }: GitCall): Promise<
         fail(Object.assign(error, { status, stdout, stderr }))
       }
     )
+    // A failed write (git exited before reading it all) surfaces through the callback instead.
+    if (input !== undefined) child.stdin?.on('error', () => undefined).end(input)
   })
 }
 
