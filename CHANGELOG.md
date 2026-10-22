@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.2](https://github.com/anoguez/styr/compare/v0.37.1...v0.37.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* never drop lines under a task's Activity heading ([#191](https://github.com/anoguez/styr/issues/191)) ([a8db53f](https://github.com/anoguez/styr/commit/a8db53f9fe289eeb3791a3dc256c16344e74de7c))
+
 ## [0.37.1](https://github.com/anoguez/styr/compare/v0.37.0...v0.37.1) (2026-10-22)
 
 
