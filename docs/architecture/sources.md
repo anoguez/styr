@@ -51,6 +51,9 @@ adds, skips blockers with no linked task, and a refused relation (cycle) is note
 first and disables adding, testing and syncing until ready. `gh` is run with a PATH widened by
 Homebrew's directories because a Finder-launched app has a bare one.
 
+On a remote workspace everything above runs on the server (`remote.md`): `gh` is the server's,
+and the flag is the desktop's, which the router pushes to the server (`server:experimental`).
+
 Settings has an **Integrations** nav group (`group: 'integrations'` on a `SECTIONS` entry; the
 Claude/Codex section is `agents`). The pane is one switch, an access control and the detected
 repositories, with no list to maintain. Sync acts on the saved, active workspace's settings, so the

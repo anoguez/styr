@@ -426,6 +426,27 @@ describe('remote router: settings and local-only actions', () => {
     expect(t.devbox.state.settings.default).toEqual({ shell: '/bin/fish' })
   })
 
+  it('gives each server this machine’s External sources switch on connect and on a change', async () => {
+    const t = setup()
+    t.setLocalSettings({
+      ...LOCAL_SETTINGS,
+      experimental: { remoteWorkspaces: true, externalSources: true }
+    } as Settings)
+    t.router.refresh()
+    await t.connectAll()
+    expect(t.devbox.state.experimental).toEqual({ externalSources: true })
+    expect(t.vm.state.experimental).toEqual({ externalSources: true })
+
+    t.setLocalSettings({
+      ...LOCAL_SETTINGS,
+      experimental: { remoteWorkspaces: true, externalSources: false }
+    } as Settings)
+    t.router.fromLocal('settings:changed', LOCAL_SETTINGS)
+    await settle()
+    expect(t.devbox.state.experimental).toEqual({ externalSources: false })
+    expect(t.vm.state.experimental).toEqual({ externalSources: false })
+  })
+
   it('opens a remote task file in VS Code over ssh, and never in the file manager', async () => {
     const t = setup({ active: 'remote-main' })
     t.router.refresh()

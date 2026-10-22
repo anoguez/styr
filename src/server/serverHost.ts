@@ -1,10 +1,10 @@
 import { z } from 'zod'
-import { pathsInWorkspace, pinWorkspace, pinnedWorkspaceId } from '@core/config.js'
+import { pathsInWorkspace, pinWorkspace, pinnedWorkspaceId, workspaceDir } from '@core/config.js'
 import { readAllAgentStatuses } from '@core/agentStore.js'
 import { planLaunch } from '@core/launch.js'
 import { codexTranscript } from '@core/providers/codex.js'
 import { migrateLegacySettings } from '@core/settingsMigration.js'
-import { loadSettings, tasksDir } from '@core/settingsStore.js'
+import { loadSettings, saveGlobalSettings, tasksDir } from '@core/settingsStore.js'
 import { sourceProviders } from '@core/sources/index.js'
 import { taskStatusSchema } from '@core/taskSchema.js'
 import { listWorkspaces } from '@core/workspaces.js'
@@ -19,7 +19,7 @@ import {
   updateTask
 } from '@core/taskStore.js'
 import type { AgentStatus } from '@core/agentState.js'
-import type { TerminalOutput } from '@core/types.js'
+import { globalSettingsFor, type TerminalOutput } from '@core/types.js'
 import { diskWorklogSources } from '@core/worklogSources.js'
 import { createAgentCliChecks, execFileShell } from '@host/agentCli.js'
 import { createAgentsService, diskAgentStore, diskGit } from '@host/agentsService.js'
@@ -47,7 +47,7 @@ import {
   diskWorkspaceStore,
   inOtherWorkspace
 } from '@host/workspacesService.js'
-import type { Channel, ChannelTable } from './hub.js'
+import type { Channel, ChannelTable, ServerExperimental } from './hub.js'
 import { exitOrphanedAgents } from './orphans.js'
 
 export interface ServerHostPorts extends HostPorts {
@@ -423,6 +423,22 @@ export function createServerHost(ports: ServerHostPorts) {
     usage.start()
   }
 
+  /**
+   * `server:experimental`: the client's own flags for the features the server acts on. They are
+   * app-level settings, which never sync, but the server's sources follow the desktop's switch
+   * (External sources), so the last client to connect or change it sets it here.
+   */
+  function setExperimental(flags: ServerExperimental): void {
+    const before = loadSettings()
+    if (before.experimental.externalSources === flags.externalSources) return
+    saveGlobalSettings({
+      ...globalSettingsFor(before),
+      experimental: { ...before.experimental, externalSources: flags.externalSources }
+    })
+    // Polling starts or stops, and every client's board re-reads its settings.
+    workspacesService.afterSettingsSave(workspaceDir(before), before.activeWorkspaceId)
+  }
+
   async function stop(): Promise<void> {
     terminals.killAllSessions()
     sources.stopSourcePolling()
@@ -437,6 +453,7 @@ export function createServerHost(ports: ServerHostPorts) {
     stop,
     terminals,
     notifyTasksChanged,
+    setExperimental,
     /** The pin check the hub runs after every handler. */
     pin: { current: pinnedWorkspaceId, clear: () => pinWorkspace(undefined) }
   }

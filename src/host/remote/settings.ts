@@ -10,7 +10,8 @@ import type { RemoteRegistry } from './registry.js'
 
 /**
  * A remote workspace's settings: its own keys live on the server, the app-level keys (storage,
- * shortcuts, updates, experimental, the active workspace) on this machine, and they never sync.
+ * shortcuts, updates, experimental, the active workspace) on this machine, and they never sync —
+ * except the External sources switch, which the router pushes to the server (`server:experimental`).
  */
 
 export interface RemoteSettingsPorts {

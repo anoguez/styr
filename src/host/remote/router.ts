@@ -179,6 +179,7 @@ export function createRemoteRouter(ports: RouterPorts) {
     entry.wantSwitch = undefined
     entry.trayBaseline = true
     await Promise.all([
+      pushExperimental(entry),
       terminals.reattach(entry),
       entry.conn.request('workspaces:activity').then(
         (activity) => rollup.setActivity(entry, activity as WorkspacesActivity),
@@ -192,6 +193,20 @@ export function createRemoteRouter(ports: RouterPorts) {
     emitState()
     if (registry.activeRemote()?.host === entry && !entry.switching) refreshBoard(entry)
     ports.broadcast('workspaces:changed')
+  }
+
+  /**
+   * Gives the server this machine's switch for External sources. The flag is app-level, so it
+   * never syncs with the settings, but the server runs a remote board's sources (sync, polling,
+   * mirroring) and gates them on its own copy; without this they stay off there whatever the
+   * desktop shows. The server ignores a value it already has.
+   */
+  function pushExperimental(entry: HostEntry): Promise<void> {
+    const externalSources = loadSettings().experimental.externalSources === true
+    return entry.conn.request('server:experimental', [{ externalSources }]).then(
+      () => undefined,
+      () => undefined
+    )
   }
 
   function onDisconnected(entry: HostEntry): void {
@@ -399,6 +414,11 @@ export function createRemoteRouter(ports: RouterPorts) {
       return rollup.localActivityChanged(payload as WorkspacesActivity)
     }
     if (channel === 'workspaces:changed' || channel === 'settings:changed') refresh()
+    if (channel === 'settings:changed') {
+      for (const entry of registry.hosts.values()) {
+        if (entry.conn.connected) void pushExperimental(entry)
+      }
+    }
     // A remote board's settings are the server's, with this machine's app-level keys laid over.
     if (channel === 'settings:changed' && registry.activeRemote()) return emitSettings()
     // Checked first: terminal data passes through here on every chunk.

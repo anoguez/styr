@@ -66,6 +66,7 @@ desktop main ──ssh -T host styr serve attach──▶ attach (stdio ↔ sock
 | server → client | notification | `server:hello`, on connect                     | `[ServerInfo]`                          |
 | client → server | request      | `server:info`                                  | `[]` → `ServerInfo`                     |
 | client → server | request      | `server:tray`, the last tray model             | `[]` → `{ statuses, titles }`           |
+| client → server | request      | `server:experimental`, the client's switches   | `[{ externalSources }]` → `null`        |
 | client → server | request      | any invoke channel (`tasks:list` …)            | the IPC arguments → the IPC result      |
 | client → server | notification | `terminal:write`                               | `[id, data]`                            |
 | client → server | request      | `terminal:attach`                              | `[id, cols?, rows?]` → `TerminalOutput` |
@@ -259,12 +260,19 @@ Per call, `router.invoke(channel, args, local)`:
 - **Answered by the router**: `workspaces:list` / `activity` / `boardSummary` (stubs take their
   counts and rollup from their server), `workspaces:switch` (the local switch, then
   `workspaces:switch` on the server), `settings:get` (the server's workspace keys, this machine's
-  app-level keys: storage, shortcuts, updates, experimental and the active workspace never sync),
+  app-level keys: storage, shortcuts, updates, experimental and the active workspace never sync;
+  the one exception is below),
   `settings:save` (the app-level part saved here, the workspace part on the server with the
   server's own app-level keys sent back unchanged), `settings:brokenFiles`, `terminal:list`
   (local sessions plus each host's), `diagnostics:snapshot` (the server's, with this machine's
   terminal engine), and the local-only actions below.
 - **Everything else** (the window, updates, the native pickers, the terminal engine) stays local.
+- **External sources follow the desktop.** The server runs a remote board's sources (sync,
+  polling, mirroring, `gh`) and gates them on its own `experimental.externalSources`, so the router
+  sends this machine's switch with `server:experimental` on every connect and every local
+  `settings:changed`. The server saves it as its own app-level setting only when it differs, then
+  restarts polling and broadcasts `settings:changed`. With many clients, the last to connect or
+  change it wins. `gh` itself (`sources:ghStatus`) is the server's: installed and logged in there.
 
 Ids from a server are mapped on the way in: every `workspaceId` becomes the stub that links to
 that host and remote id, and one no stub links to becomes `remote-unlinked:<host>/<id>`, which

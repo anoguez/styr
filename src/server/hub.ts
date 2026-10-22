@@ -28,6 +28,10 @@ export interface ServerInfo {
 
 export { PROTOCOL_VERSION } from '@host/rpc/jsonRpc.js'
 
+/** `server:experimental`: the client's switches for the experimental features the server runs. */
+export const serverExperimentalSchema = z.object({ externalSources: z.boolean() })
+export type ServerExperimental = z.infer<typeof serverExperimentalSchema>
+
 export interface HubPorts {
   /** Invoke channels (request/response) and one-way channels (notifications). */
   invoke: ChannelTable
@@ -35,6 +39,8 @@ export interface HubPorts {
   info(): ServerInfo
   /** The last `server:tray` model, for a client that has just attached. */
   tray(): unknown
+  /** Sets the server's flags to the client's (`server:experimental`). */
+  experimental(flags: ServerExperimental): void
   terminals: {
     backlog(id: string): TerminalOutput
     resize(id: string, cols: number, rows: number): void
@@ -56,6 +62,7 @@ const size = z.number().int().min(1).max(10_000)
 const attachArgs = z.tuple([z.string().min(1), size.optional(), size.optional()])
 const terminalArgs = z.tuple([z.string().min(1)])
 const resizeArgs = z.tuple([z.string().min(1), size, size])
+const experimentalArgs = z.tuple([serverExperimentalSchema])
 
 /**
  * The connected clients. Each gets its own peer; broadcasts go to all of them, and terminal data
@@ -102,6 +109,11 @@ export function createHub(ports: HubPorts) {
         return ports.info()
       case 'server:tray':
         return ports.tray()
+      case 'server:experimental': {
+        const [flags] = experimentalArgs.parse(params)
+        ports.experimental(flags)
+        return undefined
+      }
       case 'terminal:attach': {
         const [id, cols, rows] = attachArgs.parse(params)
         client.attached.add(id)
