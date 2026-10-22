@@ -166,7 +166,7 @@ export function reviewMessage(
   for (const group of groups) {
     lines.push('', group.path)
     for (const comment of group.comments) {
-      const marks = `${comment.side === 'old' ? ' (old side)' : ''}${outdated.has(comment.id) ? ' (outdated)' : ''}`
+      const marks = `${comment.side === 'old' ? ' (old side)' : ''}${outdated.has(comment.id) ? ' (outdated: the line has changed)' : ''}`
       const text = comment.text.trim()
       lines.push(`- ${comment.path}:${comment.line}${marks}${text ? `  ${text}` : ''}`)
       for (const bodyLine of comment.body.trim().split(/\r?\n/)) lines.push(`  ${bodyLine}`)

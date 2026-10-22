@@ -388,7 +388,18 @@ keeps its colour across periods. Tasks without a `project` group under "No proje
 The Changes dialog (`ChangesDialog`, `DiffPane`, the file list in `ChangesFileList`) takes review
 comments on diff lines, as on a GitHub PR, and sends them to the task's agent with Request changes.
 The review UI lives in `components/review/` (`CommentComposer`, `ReviewThread`,
-`RequestChangesSheet`, `ReviewFooter`, `useDiffPaneReview`) and `hooks/useTaskReview.ts`.
+`ReviewCommentList`, `RequestChangesSheet`, `ReviewFooter`, `ReviewSentToast`, `useDiffPaneReview`,
+`useCommentJump`) and `hooks/useTaskReview.ts`.
+
+- **Finding comments.** The file list's Comments tab (beside List and Tree, also opened by the
+  footer's pending count) lists every pending comment by path and line, then the last sent batch
+  under "Sent 14:20". Clicking one, or a comment in the Request changes sheet, opens its file and
+  scrolls to it (`useCommentJump`: the card carries `data-cmt-id`; a comment inside a fold loads
+  the whole file first); J / K walk the comments while the tab is open. Which comments are
+  outdated in files not on screen comes from `review:prepare`.
+- **After Send.** The Changes dialog closes and `ReviewSentToast` (App level, 8 s, held while
+  hovered) says what went where, with Show terminal and Reopen changes. A resumed or started agent's
+  tab takes focus; a live agent keeps its place.
 
 - **Storage.** One file per task, `<workspace>/.styr/reviews/<TASK-id>.json` (`TaskReview`: the
   `pending` comments and the `lastSent` batch), written atomically by `host/reviewService.ts`. It is
@@ -400,7 +411,8 @@ The review UI lives in `components/review/` (`CommentComposer`, `ReviewThread`,
   deleted row), `line` and the line's `text` (`commentAnchor` in `core/review.ts`, pure).
   `placeComments` puts it back on a refreshed diff: same side, line and text; else the fold hiding
   that line ("Show N unchanged lines · 1 comment"); else the nearest row on that side with the same
-  text within 50 lines; else it is outdated, listed above the rows and marked in the message. The
+  text within 50 lines; else it is outdated, pinned in a band above the rows and marked "(outdated: the line has
+  changed)" in the message. The
   last sent batch is drawn, dimmed, only where it places on its exact line.
 - **Delivery.** `review:requestChanges(taskId, summary)` builds the message (`reviewMessage`, which
   the sheet's preview shows verbatim) from the stored comments, never from the caller's, and hands

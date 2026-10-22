@@ -57,7 +57,13 @@ const GLYPHS = {
   edit: <path d="M3 13h3l7-7-3-3-7 7z" />,
   trash: <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />,
   check: <path d="M3.5 8.5l3 3 6-7" />,
-  send: <path d="M2.5 8 13.5 3 10 13.5 7.5 9z M7.5 9l6-6" />
+  send: <path d="M2.5 8 13.5 3 10 13.5 7.5 9z M7.5 9l6-6" />,
+  terminal: (
+    <>
+      <rect x="2" y="3" width="12" height="10" rx="1.5" />
+      <path d="M5 7l2 1.5L5 10M8.5 10.5H11" />
+    </>
+  )
 }
 
 export type GlyphName = keyof typeof GLYPHS

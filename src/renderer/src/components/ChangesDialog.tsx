@@ -9,7 +9,7 @@ import {
 } from 'react'
 import type { DiffFile, DiffResult, PatchResult, TaskDiff } from '@core/diff.js'
 import { buildRows } from '@core/diffView.js'
-import type { Task, TerminalSessionInfo } from '@core/types.js'
+import type { ReviewSent, Task } from '@core/types.js'
 import { useTaskReview } from '../hooks/useTaskReview.js'
 import { TaskLookupContext } from '../lib/blockerContext.js'
 import { pendingByPath } from '../lib/reviewLayout.js'
@@ -26,6 +26,8 @@ import { DiffPane } from './DiffPane.js'
 import { Glyph, PaneMessage, Spinner } from './changesParts.js'
 import { RequestChangesSheet } from './review/RequestChangesSheet.js'
 import { ReviewFooter, ReviewHint } from './review/ReviewFooter.js'
+import { ReviewCommentList } from './review/ReviewCommentList.js'
+import { useCommentJump } from './review/useCommentJump.js'
 import { useDiffPaneReview } from './review/useDiffPaneReview.js'
 import { Modal, StatusBadge } from './ui.js'
 
@@ -69,12 +71,12 @@ const filesLabel = (count: number): string =>
 export function ChangesDialog({
   task,
   onClose,
-  onSession
+  onSent
 }: {
   task: Task
   onClose: () => void
-  /** A terminal that Request changes opened (a resumed chat, a fresh launch), to show. */
-  onSession: (session: TerminalSessionInfo) => void
+  /** Request changes delivered: the dialog closes and the app confirms it. */
+  onSent: (sent: ReviewSent) => void
 }): ReactNode {
   const rootRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -95,6 +97,9 @@ export function ChangesDialog({
   const [drawer, setDrawer] = useState(false)
   const [copied, setCopied] = useState(false)
   const [sheet, setSheet] = useState(false)
+  const [showComments, setShowComments] = useState(false)
+  const [commentQuery, setCommentQuery] = useState('')
+  const diffRef = useRef<HTMLDivElement>(null)
   const reviewState = useTaskReview(task.id)
 
   const load = useCallback(() => {
@@ -191,12 +196,43 @@ export function ChangesDialog({
   )
   const comments = useMemo(() => pendingByPath(reviewState.review), [reviewState.review])
   const lookup = useContext(TaskLookupContext)
+  const jump = useCommentJump({
+    region: diffRef,
+    review: reviewState.review,
+    openFile: (path) => {
+      setSelected(path)
+      setDrawer(false)
+      setSheet(false)
+    },
+    expand: (path) => {
+      if (current?.path !== path || !entry || entry.version !== version || entry.full) return false
+      fetchPatch(path, true)
+      return true
+    }
+  })
   const paneReview = useDiffPaneReview(
     reviewState,
     current?.path,
     rows,
-    Boolean(!stale && entry && 'patch' in entry.result)
+    Boolean(!stale && entry && 'patch' in entry.result),
+    jump.focusId
   )
+  const { checkOutdated } = reviewState
+  const pendingCount = reviewState.pending.length
+  // The Comments tab marks outdated comments in every file, which the host works out.
+  useEffect(() => {
+    if (showComments) checkOutdated()
+  }, [showComments, version, pendingCount, checkOutdated])
+  const outdated = useMemo(
+    () =>
+      new Set([...reviewState.outdated, ...(paneReview?.layout.outdated.map((c) => c.id) ?? [])]),
+    [reviewState.outdated, paneReview]
+  )
+  const outdatedPending = reviewState.pending.filter((c) => outdated.has(c.id)).length
+  const openComments = (): void => {
+    setShowComments(true)
+    if (narrow) setDrawer(true)
+  }
 
   const select = (path: string): void => {
     setSelected(path)
@@ -311,12 +347,14 @@ export function ChangesDialog({
           // Arrows walk the files from the list or the bare dialog; in the diff they scroll it.
           const inList =
             event.target === event.currentTarget || listRef.current?.contains(event.target as Node)
+          // On the Comments tab they walk the comments instead, across files.
+          const step = showComments ? jump.step : move
           if (event.key === 'j' || (inList && event.key === 'ArrowDown')) {
             event.preventDefault()
-            move(1)
+            step(1)
           } else if (event.key === 'k' || (inList && event.key === 'ArrowUp')) {
             event.preventDefault()
-            move(-1)
+            step(-1)
           }
         }}
       >
@@ -437,8 +475,24 @@ export function ChangesDialog({
             <ChangesFileList
               narrow={narrow}
               drawer={drawer}
-              query={query}
+              query={showComments ? commentQuery : query}
               layout={layout}
+              showComments={showComments}
+              pendingCount={pendingCount}
+              commentSummary={
+                pendingCount
+                  ? `${pendingCount} pending${outdatedPending ? ` · ${outdatedPending} outdated` : ''}`
+                  : ''
+              }
+              commentList={
+                <ReviewCommentList
+                  review={reviewState.review}
+                  outdated={outdated}
+                  query={commentQuery}
+                  focusId={jump.focusId}
+                  onGo={jump.go}
+                />
+              }
               diff={diff}
               isLoading={isLoading}
               listRows={listRows}
@@ -446,8 +500,12 @@ export function ChangesDialog({
               current={current}
               comments={comments}
               listRef={listRef}
-              onQuery={setQuery}
-              onLayout={setLayout}
+              onQuery={showComments ? setCommentQuery : setQuery}
+              onLayout={(next) => {
+                setShowComments(false)
+                setLayout(next)
+              }}
+              onShowComments={() => setShowComments(true)}
               onToggleFolder={(key) =>
                 setCollapsed((all) => {
                   const next = new Set(all)
@@ -569,6 +627,7 @@ export function ChangesDialog({
               </div>
 
               <div
+                ref={diffRef}
                 tabIndex={0}
                 role="region"
                 aria-label={`Diff of ${fileCurrent?.path ?? ''}`}
@@ -595,7 +654,7 @@ export function ChangesDialog({
 
         <footer className="flex min-h-[34px] shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-edge bg-chrome/40 px-3.5 py-1.5 text-[11.5px] text-faint">
           {[
-            ['↑↓', 'J K', 'Files'],
+            ['↑↓', 'J K', showComments ? 'Comments' : 'Files'],
             ['⇥', '', 'Focus diff'],
             ['Esc', '', 'Close']
           ].map(([a, b, label]) => (
@@ -623,9 +682,10 @@ export function ChangesDialog({
             </span>
             <ReviewFooter
               active={reviewing}
-              pending={reviewState.pending.length}
-              sent={reviewState.sent}
+              pending={pendingCount}
+              lastSent={reviewState.review.lastSent}
               saveError={reviewState.saveError}
+              onShowComments={openComments}
               onRequestChanges={() => setSheet(true)}
             />
           </div>
@@ -635,9 +695,10 @@ export function ChangesDialog({
             task={lookup.get(task.id) ?? task}
             pending={reviewState.pending}
             onClose={() => setSheet(false)}
+            onJump={jump.go}
             onSend={async (summary) => {
               const sent = await reviewState.requestChanges(summary)
-              if (sent.session) onSession(sent.session)
+              onSent(sent)
               return sent
             }}
           />

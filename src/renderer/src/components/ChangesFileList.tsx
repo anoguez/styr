@@ -100,12 +100,19 @@ export function CommentCount({ count }: { count: number }): ReactNode {
   )
 }
 
-/** The Changes dialog's file list: filter, List / Tree, and the files; a drawer when narrow. */
+/**
+ * The Changes dialog's file list: filter, List / Tree / Comments, and the files (or the review
+ * comments, on the Comments tab); a drawer when narrow.
+ */
 export function ChangesFileList({
   narrow,
   drawer,
   query,
   layout,
+  showComments,
+  pendingCount,
+  commentSummary,
+  commentList,
   diff,
   isLoading,
   listRows,
@@ -115,6 +122,7 @@ export function ChangesFileList({
   listRef,
   onQuery,
   onLayout,
+  onShowComments,
   onToggleFolder,
   onSelect
 }: {
@@ -122,6 +130,12 @@ export function ChangesFileList({
   drawer: boolean
   query: string
   layout: Layout
+  /** The Comments tab is open: the filter and the list are the comments'. */
+  showComments: boolean
+  pendingCount: number
+  /** "3 pending · 1 outdated", beside the tabs on the Comments tab. */
+  commentSummary: string
+  commentList: ReactNode
   diff: TaskDiff | null
   isLoading: boolean
   listRows: ListRow[]
@@ -132,6 +146,7 @@ export function ChangesFileList({
   listRef: RefObject<HTMLDivElement | null>
   onQuery: (query: string) => void
   onLayout: (layout: Layout) => void
+  onShowComments: () => void
   onToggleFolder: (key: string) => void
   onSelect: (path: string) => void
 }): ReactNode {
@@ -151,8 +166,8 @@ export function ChangesFileList({
           <input
             value={query}
             onChange={(event) => onQuery(event.target.value)}
-            aria-label="Filter files"
-            placeholder="Filter files"
+            aria-label={showComments ? 'Filter comments' : 'Filter files'}
+            placeholder={showComments ? 'Filter comments' : 'Filter files'}
             className="box-border h-7 w-full rounded-lg border border-edge-strong bg-chrome pl-[29px] pr-2.5 text-[12.5px] text-ink outline-none focus:border-accent focus:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-accent)_40%,transparent)]"
           />
         </div>
@@ -167,15 +182,35 @@ export function ChangesFileList({
                 key={value}
                 type="button"
                 role="radio"
-                aria-checked={layout === value}
+                aria-checked={!showComments && layout === value}
                 onClick={() => onLayout(value)}
-                className={`h-[22px] rounded-md px-2.5 text-[12px] font-medium ${layout === value ? 'bg-raised text-ink' : 'text-dim'}`}
+                className={`h-[22px] rounded-md px-2.5 text-[12px] font-medium ${!showComments && layout === value ? 'bg-raised text-ink' : 'text-dim'}`}
               >
                 {value === 'flat' ? 'List' : 'Tree'}
               </button>
             ))}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={showComments}
+              onClick={onShowComments}
+              className={`inline-flex h-[22px] items-center gap-[5px] whitespace-nowrap rounded-md px-[9px] text-[12px] font-medium ${showComments ? 'bg-raised text-ink' : 'text-dim'}`}
+            >
+              Comments
+              {pendingCount > 0 ? (
+                <span
+                  className={`inline-flex h-4 min-w-4 items-center justify-center rounded-[5px] px-1 font-mono text-[10px] ${showComments ? 'bg-accent/45 text-ink' : 'bg-accent/20 text-[var(--color-accent-text)]'}`}
+                >
+                  {pendingCount}
+                </span>
+              ) : null}
+            </button>
           </div>
-          {diff?.kind !== 'repo' ? (
+          {showComments ? (
+            commentSummary ? (
+              <span className="whitespace-nowrap text-[11px] text-faint">{commentSummary}</span>
+            ) : null
+          ) : diff?.kind !== 'repo' ? (
             <span
               title="Not committed yet: staged, unstaged or untracked"
               className="inline-flex items-center gap-[5px] text-[11px] text-faint"
@@ -185,105 +220,109 @@ export function ChangesFileList({
           ) : null}
         </div>
       </div>
-      <div
-        ref={listRef}
-        role="listbox"
-        tabIndex={0}
-        aria-label="Changed files"
-        className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-1.5 pb-2 pt-0.5 outline-offset-[-2px]"
-      >
-        {isLoading
-          ? [
-              '52%/28%',
-              '38%/34%',
-              '44%/22%',
-              '30%/40%',
-              '56%/18%',
-              '36%/30%',
-              '48%/24%',
-              '32%/36%'
-            ].map((pair) => {
-              const [a, b] = pair.split('/')
+      {showComments ? (
+        commentList
+      ) : (
+        <div
+          ref={listRef}
+          role="listbox"
+          tabIndex={0}
+          aria-label="Changed files"
+          className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-1.5 pb-2 pt-0.5 outline-offset-[-2px]"
+        >
+          {isLoading
+            ? [
+                '52%/28%',
+                '38%/34%',
+                '44%/22%',
+                '30%/40%',
+                '56%/18%',
+                '36%/30%',
+                '48%/24%',
+                '32%/36%'
+              ].map((pair) => {
+                const [a, b] = pair.split('/')
+                return (
+                  <div key={pair} className="flex h-7 items-center gap-2 px-2">
+                    <span className="size-4 shrink-0 rounded bg-raised" />
+                    <span className="h-[9px] rounded bg-raised" style={{ width: a }} />
+                    <span className="h-[9px] rounded bg-raised opacity-55" style={{ width: b }} />
+                  </div>
+                )
+              })
+            : null}
+          {listRows.map((row) => {
+            if (row.kind === 'folder') {
               return (
-                <div key={pair} className="flex h-7 items-center gap-2 px-2">
-                  <span className="size-4 shrink-0 rounded bg-raised" />
-                  <span className="h-[9px] rounded bg-raised" style={{ width: a }} />
-                  <span className="h-[9px] rounded bg-raised opacity-55" style={{ width: b }} />
-                </div>
+                <button
+                  key={`d:${row.key}`}
+                  type="button"
+                  aria-expanded={row.open}
+                  onClick={() => onToggleFolder(row.key)}
+                  className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-md pr-2 text-left text-[12px] text-dim hover:bg-raised/60 hover:text-ink"
+                  style={{ paddingLeft: 8 + row.depth * 14 }}
+                >
+                  <span className={`shrink-0 text-faint ${row.open ? '' : '-rotate-90'}`}>
+                    <Glyph name="chevron" size={11} />
+                  </span>
+                  <span className="min-w-0 truncate font-medium">{row.name}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[10.5px] text-faint">
+                    {row.count}
+                  </span>
+                </button>
               )
-            })
-          : null}
-        {listRows.map((row) => {
-          if (row.kind === 'folder') {
+            }
+            const { file } = row
+            const [dir, name] = splitPath(file.path)
+            const on = current?.path === file.path
+            const renamed = file.oldPath && splitPath(file.oldPath)[1] !== name
             return (
-              <button
-                key={`d:${row.key}`}
-                type="button"
-                aria-expanded={row.open}
-                onClick={() => onToggleFolder(row.key)}
-                className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-md pr-2 text-left text-[12px] text-dim hover:bg-raised/60 hover:text-ink"
+              <div
+                key={file.path}
+                role="option"
+                aria-selected={on}
+                onClick={() => onSelect(file.path)}
+                title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+                className={`flex h-7 shrink-0 cursor-pointer items-center gap-2 rounded-md border pr-2 hover:bg-raised ${on ? 'border-edge-strong bg-raised' : 'border-transparent'}`}
                 style={{ paddingLeft: 8 + row.depth * 14 }}
               >
-                <span className={`shrink-0 text-faint ${row.open ? '' : '-rotate-90'}`}>
-                  <Glyph name="chevron" size={11} />
+                <StatusBadge status={LETTER[file.status]} />
+                <span className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden whitespace-nowrap">
+                  {renamed ? (
+                    <>
+                      <span className="shrink-0 text-[12.5px] text-faint line-through decoration-faint/60">
+                        {splitPath(file.oldPath!)[1]}
+                      </span>
+                      <span aria-hidden className="shrink-0 text-[11px] text-faint">
+                        →
+                      </span>
+                    </>
+                  ) : null}
+                  <span className="shrink-0 text-[12.5px] font-semibold text-ink">{name}</span>
+                  {layout === 'flat' ? (
+                    <span className="min-w-0 truncate text-[11px] text-faint">{dir}</span>
+                  ) : null}
                 </span>
-                <span className="min-w-0 truncate font-medium">{row.name}</span>
-                <span className="ml-auto shrink-0 font-mono text-[10.5px] text-faint">
-                  {row.count}
+                <CommentCount count={comments.get(file.path) ?? 0} />
+                {file.uncommitted && diff?.kind !== 'repo' ? UNCOMMITTED_DOT : null}
+                <span className="flex shrink-0 gap-[5px] font-mono text-[10.5px]">
+                  {file.status === 'renamed' && file.additions + file.deletions === 0 ? (
+                    <span className="text-faint">100%</span>
+                  ) : (
+                    <Counts file={file} />
+                  )}
                 </span>
-              </button>
+              </div>
             )
-          }
-          const { file } = row
-          const [dir, name] = splitPath(file.path)
-          const on = current?.path === file.path
-          const renamed = file.oldPath && splitPath(file.oldPath)[1] !== name
-          return (
-            <div
-              key={file.path}
-              role="option"
-              aria-selected={on}
-              onClick={() => onSelect(file.path)}
-              title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
-              className={`flex h-7 shrink-0 cursor-pointer items-center gap-2 rounded-md border pr-2 hover:bg-raised ${on ? 'border-edge-strong bg-raised' : 'border-transparent'}`}
-              style={{ paddingLeft: 8 + row.depth * 14 }}
-            >
-              <StatusBadge status={LETTER[file.status]} />
-              <span className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden whitespace-nowrap">
-                {renamed ? (
-                  <>
-                    <span className="shrink-0 text-[12.5px] text-faint line-through decoration-faint/60">
-                      {splitPath(file.oldPath!)[1]}
-                    </span>
-                    <span aria-hidden className="shrink-0 text-[11px] text-faint">
-                      →
-                    </span>
-                  </>
-                ) : null}
-                <span className="shrink-0 text-[12.5px] font-semibold text-ink">{name}</span>
-                {layout === 'flat' ? (
-                  <span className="min-w-0 truncate text-[11px] text-faint">{dir}</span>
-                ) : null}
-              </span>
-              <CommentCount count={comments.get(file.path) ?? 0} />
-              {file.uncommitted && diff?.kind !== 'repo' ? UNCOMMITTED_DOT : null}
-              <span className="flex shrink-0 gap-[5px] font-mono text-[10.5px]">
-                {file.status === 'renamed' && file.additions + file.deletions === 0 ? (
-                  <span className="text-faint">100%</span>
-                ) : (
-                  <Counts file={file} />
-                )}
-              </span>
-            </div>
-          )
-        })}
-        {!isLoading && visible.length === 0 ? (
-          <p className="m-0 px-2 py-4 text-center text-[12px] text-faint">
-            No files match “{query}”
-          </p>
-        ) : null}
-      </div>
-      {diff && diff.omitted > 0 ? (
+          })}
+          {!isLoading && visible.length === 0 ? (
+            <p className="m-0 px-2 py-4 text-center text-[12px] text-faint">
+              No files match “{query}”
+            </p>
+          ) : null}
+        </div>
+      )}
+      {diff && diff.omitted > 0 && !showComments ? (
         <div className="flex shrink-0 flex-col gap-0.5 border-t border-edge px-3.5 py-[9px]">
           <span className="text-[11.5px] text-dim">
             Showing {diff.files.length.toLocaleString()} of {diff.totalFiles.toLocaleString()} files

@@ -143,7 +143,7 @@ describe('reviewMessage', () => {
         '  lines',
         '',
         'src/z.ts',
-        '- src/z.ts:9 (outdated)  return x',
+        '- src/z.ts:9 (outdated: the line has changed)  return x',
         '  Rename x'
       ].join('\n')
     )

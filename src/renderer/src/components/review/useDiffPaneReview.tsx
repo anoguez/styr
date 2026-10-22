@@ -6,6 +6,7 @@ import type { TaskReviewState } from '../../hooks/useTaskReview.js'
 import { reviewLayout } from '../../lib/reviewLayout.js'
 import type { DiffPaneReview } from '../DiffPane.js'
 import { CommentComposer } from './CommentComposer.js'
+import { sentTime } from './ReviewCommentList.js'
 import { ReviewCommentCard, ReviewThread } from './ReviewThread.js'
 
 /**
@@ -16,7 +17,9 @@ export function useDiffPaneReview(
   state: TaskReviewState,
   path: string | undefined,
   rows: DiffRow[],
-  enabled: boolean
+  enabled: boolean,
+  /** The comment the Comments tab jumped to, outlined. */
+  focusId?: string
 ): DiffPaneReview | undefined {
   const { review, draft, setDraft, openDraft, saveDraft, remove } = state
   const layout = useMemo(
@@ -49,30 +52,28 @@ export function useDiffPaneReview(
   const top =
     layout.outdated.length > 0 || layout.draftRow === 'top' ? (
       <div
-        className="sticky left-0 z-[2] box-border flex w-[100cqw] flex-col gap-2 border-b border-edge bg-chrome px-4 py-2.5"
+        className="sticky left-0 z-[2] box-border flex w-[100cqw] flex-col gap-2 border-b border-edge bg-[color-mix(in_oklab,var(--color-raised)_35%,var(--color-chrome))] px-4 pb-3 pt-2.5 leading-normal"
         style={{ fontFamily: 'var(--font-ui)' }}
       >
         {layout.draftRow === 'top' ? composer(true) : null}
         {layout.outdated.length > 0 ? (
-          <details className="flex flex-col gap-2" open>
-            <summary className="cursor-pointer text-[11.5px] font-medium text-[var(--color-col-review-text)]">
-              {plural(layout.outdated.length, 'outdated comment')}
-              <span className="font-normal text-faint">
-                {' '}
-                · their lines changed; they are still sent
+          <>
+            <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11.5px] text-dim">
+              <span className="font-semibold text-ink">
+                {plural(layout.outdated.length, 'outdated comment')}
               </span>
-            </summary>
-            <div className="mt-2 flex flex-col gap-2">
-              {layout.outdated.map((comment) => (
-                <ReviewCommentCard
-                  key={comment.id}
-                  item={{ comment, sent: false }}
-                  showText
-                  onDelete={() => remove(comment.id)}
-                />
-              ))}
-            </div>
-          </details>
+              The line changed after you commented, so it’s pinned here.
+            </span>
+            {layout.outdated.map((comment) => (
+              <ReviewCommentCard
+                key={comment.id}
+                item={{ comment, sent: false }}
+                outdated
+                focused={focusId === comment.id}
+                onDelete={() => remove(comment.id)}
+              />
+            ))}
+          </>
         ) : null}
       </div>
     ) : null
@@ -92,6 +93,8 @@ export function useDiffPaneReview(
       return (
         <ReviewThread
           items={items}
+          sentAt={review.lastSent ? sentTime(review.lastSent.at) : undefined}
+          focusId={focusId}
           composer={open ? composer(false) : undefined}
           onEdit={edit}
           onDelete={(comment) => remove(comment.id)}

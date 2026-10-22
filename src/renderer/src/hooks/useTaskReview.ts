@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CommentAnchor } from '@core/review.js'
-import { plural } from '@core/review.js'
-import {
-  AGENT_PROVIDER_SHORT_LABELS,
-  type ReviewComment,
-  type ReviewSent,
-  type TaskReview
-} from '@core/types.js'
+import type { ReviewComment, ReviewSent, TaskReview } from '@core/types.js'
 import { ipcMessage } from '../lib/ipcMessage.js'
 
 /** The comment being written or edited: one at a time, across every file of the dialog. */
@@ -25,13 +19,6 @@ function newId(): string {
   }
 }
 
-/** The Sent note in the footer, from what `requestChanges` reported. */
-export function sentNote(sent: ReviewSent): string {
-  const agent = AGENT_PROVIDER_SHORT_LABELS[sent.provider]
-  const moved = sent.movedToInProgress ? ' · task moved to In progress' : ''
-  return `Sent ${plural(sent.count, 'comment')} to ${agent}${moved}`
-}
-
 /**
  * A task's review comments for the Changes dialog: loaded from the host, changed optimistically
  * and saved whole (last write wins). A failed save keeps the local state and says so; the open
@@ -40,7 +27,7 @@ export function sentNote(sent: ReviewSent): string {
 export function useTaskReview(taskId: string) {
   const [review, setReview] = useState<TaskReview>({ taskId, pending: [] })
   const [saveError, setSaveError] = useState<string>()
-  const [sent, setSent] = useState<ReviewSent>()
+  const [outdated, setOutdated] = useState<ReadonlySet<string>>(new Set())
   const [draft, setDraft] = useState<ReviewDraft | null>(null)
   const latest = useRef(review)
   latest.current = review
@@ -85,7 +72,6 @@ export function useTaskReview(taskId: string) {
         createdAt: new Date().toISOString()
       }
       commit([...pending, comment])
-      setSent(undefined)
     }
     setDraft(null)
     return true
@@ -118,18 +104,29 @@ export function useTaskReview(taskId: string) {
   const requestChanges = useCallback(
     async (summary: string): Promise<ReviewSent> => {
       const result = await window.api.review.requestChanges(taskId, summary)
-      setSent(result)
       load()
       return result
     },
     [taskId, load]
   )
 
+  /**
+   * Which pending comments no longer place on the current diff, across every file (the host reads
+   * each commented file's patch). For the Comments tab; an unreviewable diff marks none.
+   */
+  const checkOutdated = useCallback(() => {
+    void window.api.review.prepare(taskId).then(
+      (prep) => setOutdated(new Set(prep.outdated)),
+      () => setOutdated(new Set())
+    )
+  }, [taskId])
+
   return {
     review,
     pending: review.pending,
     saveError,
-    sent,
+    outdated,
+    checkOutdated,
     draft,
     setDraft,
     openDraft,

@@ -40,11 +40,15 @@ export function RequestChangesSheet({
   task,
   pending,
   onClose,
+  onJump,
   onSend
 }: {
   task: Task
   pending: ReviewComment[]
   onClose: () => void
+  /** Closes the sheet and jumps to the comment, which stays pending. */
+  onJump: (comment: ReviewComment) => void
+  /** Sends; on success the Changes dialog closes, taking the sheet with it. */
   onSend: (summary: string) => Promise<ReviewSent>
 }): ReactNode {
   const [prep, setPrep] = useState<ReviewPreparation>()
@@ -92,7 +96,7 @@ export function RequestChangesSheet({
     setSending(true)
     setError(undefined)
     onSend(summary).then(
-      () => onClose(),
+      () => undefined,
       (failure: unknown) => {
         setSending(false)
         setError(ipcMessage(failure))
@@ -193,26 +197,30 @@ export function RequestChangesSheet({
                   </span>
                 </div>
                 {group.comments.map((comment) => (
-                  <div
+                  <button
                     key={comment.id}
-                    className="flex flex-col gap-1 border-t border-edge px-3 py-[9px]"
+                    type="button"
+                    title="Show in the diff"
+                    onClick={() => onJump(comment)}
+                    className="flex w-full flex-col gap-1 border-t border-edge px-3 py-[9px] text-left hover:bg-raised/55"
                   >
-                    <div className="flex min-w-0 items-baseline gap-2">
+                    <span className="flex w-full min-w-0 items-baseline gap-2">
                       <span className="shrink-0 font-mono text-[10.5px] text-[var(--color-accent-text)]">
                         {commentRef(comment)}
                       </span>
-                      {outdated.has(comment.id) ? <Chip tone="warn">Outdated</Chip> : null}
+                      {outdated.has(comment.id) ? <Chip>Outdated</Chip> : null}
                       <code
-                        className="min-w-0 truncate text-[11px] text-faint"
+                        className="min-w-0 flex-1 truncate text-[11px] text-faint"
                         style={{ fontFamily: 'var(--font-terminal)' }}
                       >
                         {comment.text.trim()}
                       </code>
-                    </div>
-                    <p className="m-0 whitespace-pre-wrap text-[12.5px] leading-normal text-ink [text-wrap:pretty]">
+                      <span className="shrink-0 text-[11px] text-faint">Show</span>
+                    </span>
+                    <span className="m-0 whitespace-pre-wrap text-[12.5px] leading-normal text-ink [text-wrap:pretty]">
                       {comment.body}
-                    </p>
-                  </div>
+                    </span>
+                  </button>
                 ))}
               </div>
             ))}
@@ -248,8 +256,10 @@ export function RequestChangesSheet({
             ) : tooLong ? (
               <span className="text-danger">Too long to send: shorten or remove comments</span>
             ) : task.status !== 'in_progress' ? (
-              `Moves ${task.id} back to In progress.`
-            ) : null}
+              `Closes this dialog and moves ${task.id} back to In Progress.`
+            ) : (
+              'Closes this dialog.'
+            )}
           </span>
           <Button className="h-[30px]" onClick={onClose}>
             Cancel

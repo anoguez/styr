@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
 import { plural } from '@core/review.js'
-import type { ReviewSent } from '@core/types.js'
-import { sentNote } from '../../hooks/useTaskReview.js'
+import type { ReviewBatch } from '@core/types.js'
 import { Glyph } from '../changesParts.js'
 import { Button } from '../ui.js'
+import { sentTime } from './ReviewCommentList.js'
 
 /** The footer's "Click a line number to comment" hint, beside the dialog's key hints. */
 export function ReviewHint(): ReactNode {
@@ -18,34 +18,28 @@ export function ReviewHint(): ReactNode {
 }
 
 /**
- * The right of the Changes dialog's footer: the last send's note, a failed save, the pending
- * count and Request changes. `active` is false in the whole-dialog states and while loading, where
- * only the notes show; the comments stay stored.
+ * The right of the Changes dialog's footer: a failed save, the pending count (which opens the
+ * Comments tab) or what was last sent, and Request changes. `active` is false in the whole-dialog
+ * states and while loading, where only a failed save shows; the comments stay stored.
  */
 export function ReviewFooter({
   active,
   pending,
-  sent,
+  lastSent,
   saveError,
+  onShowComments,
   onRequestChanges
 }: {
   active: boolean
   pending: number
-  sent?: ReviewSent
+  lastSent?: ReviewBatch
   saveError?: string
+  onShowComments: () => void
   onRequestChanges: () => void
 }): ReactNode {
+  const sentCount = lastSent?.comments.length ?? 0
   return (
     <>
-      {sent ? (
-        <span
-          role="status"
-          className="inline-flex items-center gap-1.5 text-[var(--color-col-done-text)]"
-        >
-          <Glyph name="check" size={12} />
-          {sentNote(sent)}
-        </span>
-      ) : null}
       {saveError ? (
         <span role="alert" className="text-danger">
           {saveError}
@@ -53,10 +47,30 @@ export function ReviewFooter({
       ) : null}
       {active ? (
         <>
+          {sentCount > 0 && pending === 0 && lastSent ? (
+            <span
+              role="status"
+              className="inline-flex items-center gap-1.5 text-[var(--color-col-done-text)]"
+            >
+              <Glyph name="check" size={12} />
+              {plural(sentCount, 'comment')} sent {sentTime(lastSent.at)}
+            </span>
+          ) : null}
           <span aria-hidden className="h-4 w-px bg-edge" />
-          <span className="text-dim">
-            {pending ? plural(pending, 'pending comment') : 'No comments yet'}
-          </span>
+          <button
+            type="button"
+            title="Show comments"
+            disabled={pending === 0 && sentCount === 0}
+            onClick={onShowComments}
+            className="inline-flex h-6 items-center gap-[5px] rounded-md px-1.5 text-dim hover:bg-raised/70 hover:text-ink disabled:pointer-events-none"
+          >
+            <Glyph name="comment" size={12} />
+            {pending
+              ? plural(pending, 'pending comment')
+              : sentCount
+                ? 'No pending comments'
+                : 'No comments yet'}
+          </button>
           {/* The title sits on a wrapper: a disabled button takes no pointer events. */}
           <span title={pending ? 'Send pending comments to the agent' : 'Add a comment first'}>
             <Button
