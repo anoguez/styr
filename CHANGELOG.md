@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.37.1](https://github.com/anoguez/styr/compare/v0.37.0...v0.37.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* activity timeline order, long notes and links ([#189](https://github.com/anoguez/styr/issues/189)) ([e906427](https://github.com/anoguez/styr/commit/e906427488cc1eef5595b92f40e89f5babd377eb))
+* run External sources on a remote workspace's server ([#187](https://github.com/anoguez/styr/issues/187)) ([84e6378](https://github.com/anoguez/styr/commit/84e63782abf94a7169c7ec5b71358c9badac93c7))
+
 ## [0.37.0](https://github.com/anoguez/styr/compare/v0.36.1...v0.37.0) (2026-10-22)
 
 
