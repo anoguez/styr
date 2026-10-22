@@ -30,7 +30,10 @@ import {
   remoteWorklogSchema,
   remoteWorkspaceOverviewSchema,
   remoteWorkspacesActivitySchema,
-  settingsSchema
+  reviewPreparationSchema,
+  reviewSentSchema,
+  settingsSchema,
+  taskReviewSchema
 } from '@core/taskSchema.js'
 import { RemoteUnavailable } from './forwarding.js'
 import type { Connection } from './registry.js'
@@ -92,6 +95,10 @@ export const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   'agents:remove': ignored,
   'agents:cliStatus': remoteAgentCliReportSchema,
   'worklog:load': remoteWorklogSchema,
+  'review:get': taskReviewSchema,
+  'review:save': taskReviewSchema,
+  'review:prepare': reviewPreparationSchema,
+  'review:requestChanges': reviewSentSchema,
   'diagnostics:snapshot': remoteDiagnosticsSchema,
   'diagnostics:stop': ignored,
   'app:mcpCommand': z.string().max(REMOTE_LIMITS.message),
@@ -183,6 +190,7 @@ export const NOTIFICATION_SCHEMAS: Readonly<Record<string, z.ZodType | typeof NO
   'orchestrate:autoStarted': remoteTerminalSessionSchema,
   'sources:state': syncStates,
   'usage:claude': remoteProviderUsageSchema.nullable(),
+  'review:changed': z.object({ taskId: short }),
   'usage:context': z.object({
     terminalId: remoteSessionIdSchema,
     context: remoteContextUsageSchema.nullable()

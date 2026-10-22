@@ -10,9 +10,12 @@ import {
   SHORTCUT_COMMANDS,
   TASK_PRIORITIES,
   TASK_READINESS,
+  REVIEW_LIMITS,
   TASK_STATUSES,
   type GlobalSettingKey
 } from './types.js'
+
+export { REVIEW_LIMITS }
 
 export const TASK_ID_RE = /^TASK-\d+$/
 
@@ -759,4 +762,49 @@ export const remoteDiagnosticsSchema = z.object({
     z.object({ command: line, folder: line, ms: finite, blocking: z.boolean(), at: short }),
     100
   ).optional()
+})
+
+export const reviewCommentSchema = z.object({
+  id: z.string().min(1).max(REMOTE_LIMITS.short),
+  path: remotePathSchema.pipe(z.string().min(1)),
+  side: z.enum(['new', 'old']),
+  line: z.number().int().min(1),
+  text: line,
+  body: z.string().max(REVIEW_LIMITS.body),
+  createdAt: short
+})
+
+export const reviewCommentsSchema = z.array(reviewCommentSchema).max(REVIEW_LIMITS.comments)
+
+/** A task's review file (`.styr/reviews/<TASK-id>.json`), and `review:get`'s answer. */
+export const taskReviewSchema = z.object({
+  taskId: short,
+  pending: reviewCommentsSchema,
+  lastSent: z
+    .object({
+      at: short,
+      comments: reviewCommentsSchema,
+      summary: z.string().max(REVIEW_LIMITS.body).optional()
+    })
+    .optional()
+})
+
+export const reviewPreparationSchema = z.object({
+  route: z.enum(['queued', 'now', 'resume', 'fresh']),
+  provider,
+  target: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('branch'), branch: line, base: line }),
+    z.object({ kind: z.literal('repo'), repoName: line })
+  ]),
+  outdated: z.array(short).max(REVIEW_LIMITS.comments)
+})
+
+export const reviewSentSchema = z.object({
+  route: z.enum(['queued', 'now', 'resume', 'fresh']),
+  provider,
+  count,
+  files: count,
+  movedToInProgress: z.boolean(),
+  warning: message.optional(),
+  session: remoteTerminalSessionSchema.optional()
 })

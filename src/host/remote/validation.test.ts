@@ -55,6 +55,29 @@ describe('the client’s schemas', () => {
     expect(parseResponse('devbox', 'settings:get', settings)).toEqual(settings)
   })
 
+  it('passes a task’s review and refuses one with a hostile comment', () => {
+    const comment = {
+      id: 'c1',
+      path: 'src/a.ts',
+      side: 'new',
+      line: 3,
+      text: 'const a = 1',
+      body: 'Rename it',
+      createdAt: '2026-10-22T10:00:00.000Z'
+    }
+    const review = { taskId: 'TASK-0001', pending: [comment] }
+    expect(parseResponse('devbox', 'review:get', review)).toEqual(review)
+    expect(() =>
+      parseResponse('devbox', 'review:get', { ...review, pending: [{ ...comment, line: -1 }] })
+    ).toThrow(RemoteInvalidResponse)
+    expect(() =>
+      parseResponse('devbox', 'review:get', {
+        ...review,
+        pending: [{ ...comment, path: 'a\u0007b' }]
+      })
+    ).toThrow(RemoteInvalidResponse)
+  })
+
   it('drops keys a schema does not know', () => {
     const task = { ...remoteTask({ id: 'TASK-0001', title: 'x' }), extra: 'surprise' }
     expect(parseResponse('devbox', 'tasks:get', task)).not.toHaveProperty('extra')

@@ -11,6 +11,7 @@ import {
   rmSync
 } from 'node:fs'
 import chokidar from 'chokidar'
+import { MAX_PROMPT_CHARS } from '@core/agentPrompt.js'
 import { configDir } from '@core/config.js'
 import {
   approvalOptions,
@@ -51,7 +52,7 @@ export function watchFiles(
 }
 
 /** Longest prompt sent through the inbox. */
-export const MAX_PROMPT_CHARS = 100_000
+export { MAX_PROMPT_CHARS }
 
 /** Account-wide, so it lives beside the global config, not in a workspace. */
 const claudeUsageFile = (): string => join(configDir(), 'usage', 'claude.json')

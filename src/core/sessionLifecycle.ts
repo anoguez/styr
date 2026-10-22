@@ -1,6 +1,13 @@
+import { AGENT_ENTER_DELAY_MS, agentPrompt, promptRoute } from './agentPrompt.js'
 import { askTitle, forkDescription } from './askAgent.js'
 import { askDraft, handoffDraft } from './derivedTask.js'
-import { agentHandoffPrompt, handoffFileName, isAgentProgram, renderHandoff } from './handoff.js'
+import {
+  agentHandoffPrompt,
+  agentProgramProvider,
+  handoffFileName,
+  isAgentProgram,
+  renderHandoff
+} from './handoff.js'
 import type { LaunchOptions, LaunchPlan } from './launch.js'
 import { laneFor, providerForLane } from './orchestrate.js'
 import { resolveTemplateFor } from './prompt.js'
@@ -14,9 +21,11 @@ import {
   type Task,
   type TaskDraft,
   type TaskPatch,
+  type ReviewRoute,
   type TaskSessionRef,
   type TerminalSessionInfo
 } from './types.js'
+import { syntaxFor } from './shell.js'
 import type { AgentStatus } from './agentState.js'
 
 /**
@@ -57,6 +66,8 @@ export interface SessionRequest {
 export interface RuntimeSnapshot {
   cwd?: string
   runningCommand?: { command?: string } | null
+  /** The shell integration saw its prompt: nothing runs. Never set without the integration. */
+  promptReady?: boolean
 }
 
 export interface WorkingTreeSummary {
@@ -96,6 +107,13 @@ export interface SessionPorts {
   writeToSession(sessionId: string, data: string): void
   runtimeState(sessionId: string): RuntimeSnapshot | undefined
   agentStatuses(): AgentStatus[]
+  /** Whether the agent in a terminal reads prompts from Styr (`promptInbox` in its conversation). */
+  promptInbox(sessionId: string): boolean
+  /**
+   * Sends a prompt through the agent's own channel (the usage service's `prompt`: the inbox, or
+   * Codex's app-server); false when it was not taken, and the text is typed instead.
+   */
+  promptAgent(sessionId: string, text: string): Promise<boolean>
 
   monitor: {
     expect(socketPath: string, key: string, cwd: string): Promise<void>
@@ -282,7 +300,15 @@ export function createSessionLifecycle(ports: SessionPorts) {
     ports.notifyAgents()
   }
 
-  async function start(taskId: string, requested: LaunchOptions): Promise<TerminalSessionInfo> {
+  /**
+   * Launches the task's agent. With `into`, a live terminal of the task whose agent has quit, the
+   * command is typed at its shell instead of opening a tab (Request changes resuming a chat).
+   */
+  async function start(
+    taskId: string,
+    requested: LaunchOptions,
+    into?: TerminalSessionInfo
+  ): Promise<TerminalSessionInfo> {
     const task = ports.findTask(taskId)
     if (!task) throw new Error(`Task ${taskId} not found`)
 
@@ -334,6 +360,16 @@ export function createSessionLifecycle(ports: SessionPorts) {
       } else await ports.monitor.watch(socketPath, key, plan.sessionId)
     }
     try {
+      if (into) {
+        const syntax = syntaxFor(into.dialect)
+        ports.writeToSession(into.id, `${syntax.cd(plan.cwd)}\r`)
+        ports.writeToSession(into.id, `${plan.command}\r`)
+        if (plan.provider === 'codex' && plan.resumed) {
+          ports.recordAgentEvent(workspaceId, task.id, 'SessionStart')
+          ports.notifyAgents()
+        }
+        return into
+      }
       const session = ports.createSession({
         cwd: plan.cwd,
         shell: settings.shell,
@@ -549,7 +585,137 @@ export function createSessionLifecycle(ports: SessionPorts) {
     return { taskId: task.id, path, agentAsked }
   }
 
-  return { startForTask, recordCodexUpdate, askForPullRequest, askReview, askFork, handOff }
+  /**
+   * The task's live terminal and what runs in it, for Request changes. A live terminal is the
+   * agent's only while the shell integration reports an agent CLI as its running command
+   * (`agentProgramProvider`, or the command configured in Settings). A conversation file the
+   * agent left behind says nothing: Claude's stays until the tab closes, so an inbox would take a
+   * prompt nobody reads.
+   */
+  function liveAgent(taskId: string): {
+    live?: TerminalSessionInfo
+    state: 'none' | 'agent' | 'shell' | 'busy' | 'unknown'
+    command?: string
+  } {
+    const settings = ports.settings()
+    const live = ports.findSessionByTask(taskId, settings.activeWorkspaceId)
+    if (!live) return { state: 'none' }
+    const runtime = ports.runtimeState(live.id)
+    const command = runtime?.runningCommand?.command?.trim()
+    if (command) {
+      const configured = [settings.claudeCommand, settings.codexCommand]
+        .map((value) => value?.trim())
+        .filter(Boolean)
+      const agent =
+        agentProgramProvider(command) !== undefined ||
+        configured.some((value) => command === value || command.startsWith(`${value} `))
+      return { live, state: agent ? 'agent' : 'busy', command }
+    }
+    // Only the integration's prompt says the shell is idle; without it nothing is known.
+    return { live, state: runtime?.promptReady ? 'shell' : 'unknown' }
+  }
+
+  /**
+   * How Request changes would reach the task's agent now (`ReviewRoute`), and which provider. A
+   * live agent takes it in its session; a busy one queues it itself. Otherwise the task's chat is
+   * resumed with it, and with no chat the agent starts.
+   */
+  function reviewRoute(taskId: string): { route: ReviewRoute; provider: 'claude' | 'codex' } {
+    const task = ports.findTask(taskId)
+    if (!task) throw new Error(`Task ${taskId} not found`)
+    const settings = ports.settings()
+    const { live, state, command } = liveAgent(taskId)
+    // Never type a review into something that is not the agent, nor append it to an inbox nobody
+    // reads: say what is in the way instead. A new tab is no way out, as the launch gate would
+    // hand back this one.
+    if (state === 'busy') {
+      throw new Error(`${taskId}'s terminal is running \`${command}\`. Stop it or close the tab.`)
+    }
+    if (state === 'unknown') {
+      throw new Error(
+        `Styr can't tell what is running in ${taskId}'s terminal (its shell reports no prompt). Close the tab and send again.`
+      )
+    }
+    const running = state === 'agent'
+    const ref = task.agentSession
+    const provider =
+      (running ? live?.provider : undefined) ??
+      ref?.provider ??
+      task.provider ??
+      settings.defaultProvider
+    if (running) return { route: agentState(taskId) === 'working' ? 'queued' : 'now', provider }
+    const chat = ref && providerById(ref.provider).sessionExists(ref.id)
+    return { route: chat ? 'resume' : 'fresh', provider }
+  }
+
+  /**
+   * Sends a prompt to the agent in a live terminal the way one typed in Styr's input goes: its own
+   * channel when it listens, else one bracketed paste and, `AGENT_ENTER_DELAY_MS` later, Enter.
+   * Throws when the terminal went away before the Enter.
+   */
+  async function promptLiveAgent(sessionId: string, text: string): Promise<void> {
+    if (promptRoute(text, ports.promptInbox(sessionId)) === 'inbox') {
+      if (await ports.promptAgent(sessionId, text)) return
+    }
+    const { paste, enter } = agentPrompt(text)
+    ports.writeToSession(sessionId, paste)
+    await new Promise((resolve) => setTimeout(resolve, AGENT_ENTER_DELAY_MS))
+    if (!ports.listSessions().some((session) => session.id === sessionId)) {
+      throw new Error('The agent’s terminal closed before the comments were sent.')
+    }
+    ports.writeToSession(sessionId, enter)
+  }
+
+  /**
+   * Delivers a review message (Request changes) to the task's agent, by `reviewRoute`: into its
+   * live session; else resuming its chat with the message as the whole prompt; else a fresh
+   * launch of the implement lane's template with the message before it. A live terminal whose
+   * agent quit is reused. Throws when it could not be delivered; nothing is written then.
+   */
+  async function deliverReview(
+    taskId: string,
+    message: string
+  ): Promise<{
+    route: ReviewRoute
+    provider: 'claude' | 'codex'
+    session?: TerminalSessionInfo
+  }> {
+    const task = ports.findTask(taskId)
+    if (!task) throw new Error(`Task ${taskId} not found`)
+    const settings = ports.settings()
+    const choice = reviewRoute(taskId)
+    const { live } = liveAgent(taskId)
+    if (choice.route === 'queued' || choice.route === 'now') {
+      await promptLiveAgent(live!.id, message)
+      return choice
+    }
+    const ref = task.agentSession
+    const options: LaunchOptions =
+      choice.route === 'resume' && ref
+        ? { resume: ref.id, provider: ref.provider, withPrompt: true, prompt: message }
+        : {
+            withPrompt: true,
+            promptPreface: message,
+            templateId: resolveTemplateFor(settings, {
+              ...task,
+              status: 'in_progress',
+              readiness: 'ready'
+            }).id
+          }
+    const session = live ? await start(taskId, options, live) : await startForTask(taskId, options)
+    return { ...choice, session }
+  }
+
+  return {
+    startForTask,
+    recordCodexUpdate,
+    askForPullRequest,
+    askReview,
+    askFork,
+    handOff,
+    reviewRoute,
+    deliverReview
+  }
 }
 
 export type SessionLifecycle = ReturnType<typeof createSessionLifecycle>

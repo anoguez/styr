@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
@@ -109,6 +109,70 @@ test("a worktree task's changes show on its card and in the Changes dialog", asy
   await expect(files.getByRole('option')).toHaveCount(2)
   await files.getByRole('option', { name: /a\.txt/ }).click()
   await expect(dialog.getByText('two', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await expect(dialog).toBeHidden()
+  styr.expectNoErrors()
+})
+
+test('a review comment on a diff line is kept and goes into Request changes', async () => {
+  const { page } = styr
+  const openChanges = async () => {
+    await column(page, 'In Progress')
+      .getByRole('button', { name: 'View changes: 2 files, +2 −0', exact: true })
+      .click()
+    const dialog = page.getByRole('dialog', { name: 'Changes — Has changes' })
+    await dialog
+      .getByRole('listbox', { name: 'Changed files' })
+      .getByRole('option', { name: /a\.txt/ })
+      .click()
+    await expect(dialog.getByText('two', { exact: true })).toBeVisible()
+    return dialog
+  }
+
+  let dialog = await openChanges()
+  await expect(dialog.getByRole('button', { name: 'Request changes' })).toBeDisabled()
+  await dialog.getByTitle('Comment on line 2').click()
+  await dialog.getByRole('textbox', { name: 'Comment' }).fill('Say two in capitals')
+  // Esc in the composer cancels it, not the dialog.
+  await dialog.getByRole('textbox', { name: 'Comment' }).press('Escape')
+  await expect(dialog.getByRole('textbox', { name: 'Comment' })).toBeHidden()
+  await expect(dialog).toBeVisible()
+  await dialog.getByTitle('Comment on line 2').click()
+  await dialog.getByRole('textbox', { name: 'Comment' }).fill('Say two in capitals')
+  await dialog.getByRole('button', { name: 'Add comment' }).click()
+  await expect(dialog.getByText('Pending', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('1 pending comment')).toBeVisible()
+  const reviewFile = join(styr.storageDir, '.styr', 'reviews', 'TASK-0001.json')
+  await expect
+    .poll(() => existsSync(reviewFile) && readFileSync(reviewFile, 'utf8'))
+    .toContain('Say two in capitals')
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await expect(dialog).toBeHidden()
+
+  dialog = await openChanges()
+  await expect(dialog.getByText('Say two in capitals')).toBeVisible()
+  // The footer's count opens the Comments tab; an entry jumps back to its comment.
+  await dialog.getByRole('button', { name: '1 pending comment' }).click()
+  const list = dialog.getByRole('list', { name: 'Comments' })
+  await list.getByRole('button', { name: /Line 2/ }).click()
+  await expect(list.getByRole('button', { name: /Line 2/ })).toHaveAttribute('aria-current', 'true')
+  await dialog.getByRole('radio', { name: 'List' }).click()
+  await dialog.getByRole('button', { name: 'Request changes' }).click()
+  const sheet = page.getByRole('dialog', { name: 'Request changes' })
+  await expect(sheet.getByText('Send to Claude on TASK-0001')).toBeVisible()
+  await expect(sheet.getByText('Starts the agent with the comments.')).toBeVisible()
+  await sheet.getByRole('button', { name: 'What the agent receives' }).click()
+  await expect(sheet.locator('pre')).toContainText('- a.txt:2  two\n  Say two in capitals')
+  await expect(sheet.getByText('Closes this dialog.')).toBeVisible()
+  // A comment's row closes the sheet and shows the comment, still pending.
+  await sheet.getByRole('button', { name: /Line 2/ }).click()
+  await expect(sheet).toBeHidden()
+  await expect(dialog.getByText('Pending', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Request changes' }).click()
+  await expect(sheet).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(sheet).toBeHidden()
+  await expect(dialog).toBeVisible()
   await dialog.getByRole('button', { name: 'Close' }).click()
   await expect(dialog).toBeHidden()
   styr.expectNoErrors()

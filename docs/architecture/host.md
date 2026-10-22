@@ -99,6 +99,11 @@ src/core/  (types, schemas, taskStore, pure rules)
   the settings, the index and `diskRepoGit` (`taskCheckout` and the `core/worktree.ts` reads).
 - `worklogService.ts`: `worklog:load`, the Worklog for a span, yielding between tasks through
   `yieldTurn` (`nextTurn` for real). Its ports are the index, the transcripts (`diskWorklogSources`) and `yieldTurn`.
+- `reviewService.ts`: review comments on a task's diff and Request changes (see `ui.md`, Changes
+  review): `review:get`, `review:save`, `review:prepare` and `review:requestChanges`. Its ports
+  are the review files (`diskReviewStore`), the index and task writes, the git service's diff and
+  whole-file patch, and the agents service's `reviewRoute` and `deliverReview`. `ipc.ts` creates it
+  after the git service; deleting a task removes its review.
 - `sourceSync.ts`: external sources (see `sources.md`). `createSourceSync` over a `SourceSyncStore`
   (`diskSourceSyncStore`: the settings, `currentSources`, `adapterFor`, the guarded
   `writableSource`, `testRestRequest`, the task files and the poll timers): sync, preview, a

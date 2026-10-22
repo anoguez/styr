@@ -21,6 +21,9 @@ import type {
   RemoteWorkspaceDraft,
   RestSourceSettings,
   RestTestResult,
+  ReviewComment,
+  ReviewPreparation,
+  ReviewSent,
   Settings,
   SettingsChange,
   SourceSyncState,
@@ -30,6 +33,7 @@ import type {
   TaskDraft,
   TaskFilter,
   TaskPatch,
+  TaskReview,
   TaskStatus,
   EngineFrameLine,
   NativeAttachResult,
@@ -161,6 +165,17 @@ const api = {
   worklog: {
     load: (from: number, to: number): Promise<WorklogData> =>
       ipcRenderer.invoke('worklog:load', from, to)
+  },
+  review: {
+    get: (taskId: string): Promise<TaskReview> => ipcRenderer.invoke('review:get', taskId),
+    save: (taskId: string, pending: ReviewComment[]): Promise<TaskReview> =>
+      ipcRenderer.invoke('review:save', taskId, pending),
+    prepare: (taskId: string): Promise<ReviewPreparation> =>
+      ipcRenderer.invoke('review:prepare', taskId),
+    requestChanges: (taskId: string, summary: string): Promise<ReviewSent> =>
+      ipcRenderer.invoke('review:requestChanges', taskId, summary),
+    onChanged: (handler: (event: { taskId: string }) => void): (() => void) =>
+      subscribe('review:changed', handler as (...args: never[]) => void)
   },
   git: {
     branches: (repoPath: string): Promise<{ branches: string[]; current?: string }> =>

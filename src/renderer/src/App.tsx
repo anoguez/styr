@@ -8,6 +8,7 @@ import {
   globalSettingsFor,
   workspaceSettingsFor,
   type AppInfo,
+  type ReviewSent,
   type Task,
   type TaskPreset,
   type ThemeSettings
@@ -16,6 +17,7 @@ import { AgentsSidebar } from './components/AgentsSidebar.js'
 import { ArchiveDialog } from './components/ArchiveDialog.js'
 import { Board } from './components/Board.js'
 import { ChangesDialog } from './components/ChangesDialog.js'
+import { ReviewSentToast } from './components/review/ReviewSentToast.js'
 import { ConnectionBadge } from './components/ConnectionBadge.js'
 import { CommandPalette } from './components/CommandPalette.js'
 import { DoneFooter, hasDoneFooter } from './components/DoneFooter.js'
@@ -106,6 +108,8 @@ export default function App(): ReactNode {
   const { sessions, activeSession, terminalOpen, adopt: adoptSession } = terminals
   useRemoteSessions(remote, terminals.merge)
   const [terminalExpanded, setTerminalExpanded] = useState(false)
+  /** Request changes just went out: the toast that confirms it after the dialog closed. */
+  const [reviewSent, setReviewSent] = useState<{ sent: ReviewSent; task: Task } | null>(null)
   const { height: terminalHeight, startResize } = useTerminalHeight(terminalOpen)
   const agentRows = useMemo(
     () => agentRowsFor(tasks, shown, sessions, activeWorkspaceId),
@@ -473,6 +477,38 @@ export default function App(): ReactNode {
               <ChangesDialog
                 task={changesTask}
                 onClose={() => dispatch({ type: 'showChanges', task: null })}
+                onSent={(sent) => {
+                  dispatch({ type: 'showChanges', task: null })
+                  // A resumed or started agent's tab takes focus; a live one keeps its place.
+                  if (sent.session && (sent.route === 'resume' || sent.route === 'fresh')) {
+                    adoptSession(sent.session)
+                  }
+                  setReviewSent({ sent, task: changesTask })
+                }}
+              />
+            ) : null}
+
+            {reviewSent ? (
+              <ReviewSentToast
+                sent={reviewSent.sent}
+                task={reviewSent.task}
+                onShowTerminal={() => {
+                  const { sent, task } = reviewSent
+                  const session =
+                    sent.session ??
+                    sessions.find(
+                      (s) =>
+                        s.taskId === task.id &&
+                        (s.workspaceId ?? activeWorkspaceId) === activeWorkspaceId
+                    )
+                  if (session) adoptSession(session)
+                  setReviewSent(null)
+                }}
+                onReopen={() => {
+                  dispatch({ type: 'showChanges', task: reviewSent.task })
+                  setReviewSent(null)
+                }}
+                onDismiss={() => setReviewSent(null)}
               />
             ) : null}
 

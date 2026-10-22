@@ -106,10 +106,4 @@ export function encodeKey(input: KeyInput, options: KeyOptions): string | null {
   return `${meta}${key}`
 }
 
-/** Bracketed paste wraps pasted text so a shell or editor does not run it line by line. */
-export function pasteSequence(text: string, bracketed: boolean): string {
-  // A newline is sent as CR, as typed; and a pasted end marker must not end the paste early.
-  const normalised = text.replace(/\r?\n/g, '\r')
-  if (!bracketed) return normalised
-  return `\x1b[200~${normalised.replaceAll('\x1b[201~', '')}\x1b[201~`
-}
+export { pasteSequence } from '@core/agentPrompt.js'
