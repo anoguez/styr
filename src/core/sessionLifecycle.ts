@@ -1,7 +1,13 @@
 import { AGENT_ENTER_DELAY_MS, agentPrompt, promptRoute } from './agentPrompt.js'
 import { askTitle, forkDescription } from './askAgent.js'
 import { askDraft, handoffDraft } from './derivedTask.js'
-import { agentHandoffPrompt, handoffFileName, isAgentProgram, renderHandoff } from './handoff.js'
+import {
+  agentHandoffPrompt,
+  agentProgramProvider,
+  handoffFileName,
+  isAgentProgram,
+  renderHandoff
+} from './handoff.js'
 import type { LaunchOptions, LaunchPlan } from './launch.js'
 import { laneFor, providerForLane } from './orchestrate.js'
 import { resolveTemplateFor } from './prompt.js'
@@ -580,17 +586,33 @@ export function createSessionLifecycle(ports: SessionPorts) {
   }
 
   /**
-   * The task's live terminal, and whether its agent still runs there. Only a shell prompt the
-   * integration reported counts as "the agent quit": a shell without the integration reports
-   * nothing, and its agent is taken to be running rather than typing a launch into it.
+   * The task's live terminal and what runs in it, for Request changes. A live terminal is the
+   * agent's only while the shell integration reports an agent CLI as its running command
+   * (`agentProgramProvider`, or the command configured in Settings). A conversation file the
+   * agent left behind says nothing: Claude's stays until the tab closes, so an inbox would take a
+   * prompt nobody reads.
    */
-  function liveAgent(taskId: string): { live?: TerminalSessionInfo; running: boolean } {
-    const live = ports.findSessionByTask(taskId, ports.settings().activeWorkspaceId)
-    const runtime = live && ports.runtimeState(live.id)
-    return {
-      live,
-      running: Boolean(live && (runtime?.runningCommand || !runtime?.promptReady))
+  function liveAgent(taskId: string): {
+    live?: TerminalSessionInfo
+    state: 'none' | 'agent' | 'shell' | 'busy' | 'unknown'
+    command?: string
+  } {
+    const settings = ports.settings()
+    const live = ports.findSessionByTask(taskId, settings.activeWorkspaceId)
+    if (!live) return { state: 'none' }
+    const runtime = ports.runtimeState(live.id)
+    const command = runtime?.runningCommand?.command?.trim()
+    if (command) {
+      const configured = [settings.claudeCommand, settings.codexCommand]
+        .map((value) => value?.trim())
+        .filter(Boolean)
+      const agent =
+        agentProgramProvider(command) !== undefined ||
+        configured.some((value) => command === value || command.startsWith(`${value} `))
+      return { live, state: agent ? 'agent' : 'busy', command }
     }
+    // Only the integration's prompt says the shell is idle; without it nothing is known.
+    return { live, state: runtime?.promptReady ? 'shell' : 'unknown' }
   }
 
   /**
@@ -602,7 +624,19 @@ export function createSessionLifecycle(ports: SessionPorts) {
     const task = ports.findTask(taskId)
     if (!task) throw new Error(`Task ${taskId} not found`)
     const settings = ports.settings()
-    const { live, running } = liveAgent(taskId)
+    const { live, state, command } = liveAgent(taskId)
+    // Never type a review into something that is not the agent, nor append it to an inbox nobody
+    // reads: say what is in the way instead. A new tab is no way out, as the launch gate would
+    // hand back this one.
+    if (state === 'busy') {
+      throw new Error(`${taskId}'s terminal is running \`${command}\`. Stop it or close the tab.`)
+    }
+    if (state === 'unknown') {
+      throw new Error(
+        `Styr can't tell what is running in ${taskId}'s terminal (its shell reports no prompt). Close the tab and send again.`
+      )
+    }
+    const running = state === 'agent'
     const ref = task.agentSession
     const provider =
       (running ? live?.provider : undefined) ??

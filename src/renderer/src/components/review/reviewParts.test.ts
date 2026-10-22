@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ReviewComment, ReviewSent } from '@core/types.js'
+import { closingNote } from './RequestChangesSheet.js'
 import { orderedComments } from './ReviewCommentList.js'
 import { sentToastText } from './ReviewSentToast.js'
 
@@ -50,5 +51,23 @@ describe('orderedComments', () => {
       ['b2', false],
       ['s', true]
     ])
+  })
+})
+
+describe('closingNote', () => {
+  it('moves In Review and Done back, and Backlog only when the agent is launched', () => {
+    const at = (status: 'backlog' | 'in_progress' | 'in_review' | 'done') => ({
+      id: 'TASK-7',
+      status
+    })
+    expect(closingNote(at('in_review'), 'now')).toBe(
+      'Closes this dialog and moves TASK-7 back to In Progress.'
+    )
+    expect(closingNote(at('done'))).toBe('Closes this dialog and moves TASK-7 back to In Progress.')
+    expect(closingNote(at('backlog'), 'fresh')).toBe(
+      'Closes this dialog and moves TASK-7 to In Progress.'
+    )
+    expect(closingNote(at('backlog'), 'now')).toBe('Closes this dialog.')
+    expect(closingNote(at('in_progress'), 'resume')).toBe('Closes this dialog.')
   })
 })

@@ -46,6 +46,7 @@ function harness(status: Task['status'] = 'in_review') {
   const delivered: string[] = []
   const task = { id: 'TASK-1', status, repoPath: '/work/styr' } as Task
   const failure: { value?: Error } = {}
+  const workspace = { active: 'ws-a', during: undefined as string | undefined }
   const ports: ReviewServicePorts = {
     broadcast: (channel, payload) => calls.push(`broadcast ${channel} ${JSON.stringify(payload)}`),
     store: {
@@ -54,6 +55,15 @@ function harness(status: Task['status'] = 'in_review') {
       remove: (id) => void files.delete(id)
     },
     findTask: (id) => (id === task.id ? task : undefined),
+    getTask: (id) => {
+      calls.push(`read file ${id}`)
+      return id === task.id ? task : undefined
+    },
+    activeWorkspace: () => workspace.active,
+    pinWorkspace: (id, work) => {
+      calls.push(`pin ${id}`)
+      return work()
+    },
     updateTask: (id, patch) => {
       calls.push(`update ${id} ${JSON.stringify(patch)}`)
       Object.assign(task, patch)
@@ -66,12 +76,13 @@ function harness(status: Task['status'] = 'in_review') {
     deliver: async (_id, message) => {
       if (failure.value) throw failure.value
       delivered.push(message)
+      if (workspace.during) workspace.active = workspace.during
       return { route: 'now', provider: 'claude' }
     },
     now: () => '2026-10-22T11:00:00.000Z',
     warn: (message) => warnings.push(message)
   }
-  return { ports, files, calls, warnings, delivered, task, failure }
+  return { ports, files, calls, warnings, delivered, task, failure, workspace }
 }
 
 describe('reviewService', () => {
@@ -165,6 +176,35 @@ describe('reviewService', () => {
     expect(service.get('TASK-1').pending).toEqual([comment()])
     expect(h.calls).toEqual([])
     expect(h.task.status).toBe('in_review')
+  })
+
+  it('records the send in the workspace it came from when the board switched meanwhile', async () => {
+    const h = harness('in_review')
+    const service = createReviewService(h.ports)
+    service.save('TASK-1', [comment()])
+    h.workspace.during = 'ws-b'
+    expect((await service.requestChanges('TASK-1', '')).movedToInProgress).toBe(true)
+    expect(h.calls).toEqual([
+      'pin ws-a',
+      'read file TASK-1',
+      'update TASK-1 {"status":"in_progress"}',
+      'note TASK-1 styr Requested changes: 1 comment in 1 file',
+      'read file TASK-1',
+      'broadcast review:changed {"taskId":"TASK-1"}'
+    ])
+  })
+
+  it('reports a delivered send whose record failed as sent, with a warning', async () => {
+    const h = harness()
+    const service = createReviewService(h.ports)
+    service.save('TASK-1', [comment()])
+    h.ports.store.write = () => {
+      throw new Error('disk full')
+    }
+    const sent = await service.requestChanges('TASK-1', '')
+    expect(sent.warning).toMatch(/could not record it/)
+    expect(h.delivered).toHaveLength(1)
+    expect(h.warnings.join('\n')).toContain('disk full')
   })
 
   it('refuses with nothing pending, or a message over the prompt limit', async () => {

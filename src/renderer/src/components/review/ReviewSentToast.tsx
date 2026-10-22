@@ -81,6 +81,11 @@ export function ReviewSentToast({
       <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
         <span className="text-[13px] font-semibold">{title}</span>
         <span className="text-[12px] leading-[1.45] text-dim [text-wrap:pretty]">{body}</span>
+        {sent.warning ? (
+          <span className="text-[12px] leading-[1.45] text-danger [text-wrap:pretty]">
+            {sent.warning}
+          </span>
+        ) : null}
         <div className="mt-[7px] flex flex-wrap gap-1.5">
           <button
             type="button"

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { formatAccelerator, matchesAccelerator } from '@core/shortcuts.js'
+import { REVIEW_LIMITS } from '@core/types.js'
 import { Button, Chip, inputBase } from '../ui.js'
 
 const SAVE_KEY = 'mod+enter'
@@ -40,6 +41,7 @@ export function CommentComposer({
         // The composer opens on a click and is meant to be typed into at once.
         autoFocus
         rows={3}
+        maxLength={REVIEW_LIMITS.body}
         value={body}
         aria-label="Comment"
         placeholder="What should the agent change here?"

@@ -3,6 +3,7 @@ import { MAX_PROMPT_CHARS } from '@core/agentPrompt.js'
 import { commentRef, groupComments, plural, reviewMessage } from '@core/review.js'
 import {
   AGENT_PROVIDER_SHORT_LABELS,
+  REVIEW_LIMITS,
   TASK_STATUS_LABELS,
   type ReviewComment,
   type ReviewPreparation,
@@ -29,6 +30,20 @@ const ROUTES: Record<ReviewRoute, { label: string; tone: string; note: string }>
     note: 'Its session resumes and works through each comment.'
   },
   fresh: { label: 'No chat yet', tone: 'faint', note: 'Starts the agent with the comments.' }
+}
+
+/**
+ * What Send does to the board: In Review and Done move back to In Progress; Backlog moves only
+ * when the send launches the agent (a live agent's prompt starts nothing).
+ */
+export function closingNote(task: Pick<Task, 'id' | 'status'>, route?: ReviewRoute): string {
+  if (task.status === 'in_review' || task.status === 'done') {
+    return `Closes this dialog and moves ${task.id} back to In Progress.`
+  }
+  if (task.status === 'backlog' && (route === 'resume' || route === 'fresh')) {
+    return `Closes this dialog and moves ${task.id} to In Progress.`
+  }
+  return 'Closes this dialog.'
 }
 
 /**
@@ -174,6 +189,7 @@ export function RequestChangesSheet({
           <Field label="Overall note · optional">
             <textarea
               rows={2}
+              maxLength={REVIEW_LIMITS.body}
               value={summary}
               aria-label="Overall note"
               placeholder="Anything that applies to the whole change"
@@ -255,10 +271,8 @@ export function RequestChangesSheet({
               </span>
             ) : tooLong ? (
               <span className="text-danger">Too long to send: shorten or remove comments</span>
-            ) : task.status !== 'in_progress' ? (
-              `Closes this dialog and moves ${task.id} back to In Progress.`
             ) : (
-              'Closes this dialog.'
+              closingNote(task, prep?.route)
             )}
           </span>
           <Button className="h-[30px]" onClick={onClose}>

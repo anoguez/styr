@@ -219,10 +219,11 @@ export function ChangesDialog({
   )
   const { checkOutdated } = reviewState
   const pendingCount = reviewState.pending.length
-  // The Comments tab marks outdated comments in every file, which the host works out.
+  // The Comments tab marks outdated comments in every file, which the host works out from each
+  // file's patch: when the tab opens and on a refresh only, never on each comment's save.
   useEffect(() => {
     if (showComments) checkOutdated()
-  }, [showComments, version, pendingCount, checkOutdated])
+  }, [showComments, version, checkOutdated])
   const outdated = useMemo(
     () =>
       new Set([...reviewState.outdated, ...(paneReview?.layout.outdated.map((c) => c.id) ?? [])]),

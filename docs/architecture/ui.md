@@ -421,9 +421,12 @@ The review UI lives in `components/review/` (`CommentComposer`, `ReviewThread`,
   Styr Terminal's input sends one (`core/agentPrompt.ts`: the inbox or Codex's channel, else one
   bracketed paste and Enter), and a busy agent queues it itself; otherwise the task's chat is resumed
   with the message as its whole prompt (`LaunchOptions.prompt`), or with no chat the implement
-  lane's template runs with the message as `promptPreface`. A live terminal whose agent quit gets the
-  launch typed at its shell. Only after delivery do the comments move to `lastSent`, an In Review or
+  lane's template runs with the message as `promptPreface`. The terminal counts as the agent's only while
+  the shell integration reports an agent CLI running (`agentProgramProvider` or the configured
+  command): a conversation file left behind proves nothing. Its shell at a prompt gets the launch
+  typed in; another program running there, or a shell that reports nothing, refuses with what is
+  in the way. Only after delivery, pinned to the workspace it was sent from, do the comments move to `lastSent`, an In Review or
   Done task go back to In progress, a `styr` note record the counts and `review:changed` refresh open
-  dialogs; a failure changes nothing. A tab the launch opened comes back in the result for the
+  dialogs; a failed delivery changes nothing, and a record that fails after it is a warning on a sent review. A tab the launch opened comes back in the result for the
   renderer to adopt. Remote workspaces route the four `review:*` channels to their server like any
   board call.

@@ -64,6 +64,11 @@ export interface ReviewServicePorts extends Pick<HostPorts, 'broadcast'> {
   store: ReviewStore
   /** The active board's task, from the index. */
   findTask(taskId: string): Task | null | undefined
+  /** The task's file, read in the workspace in force (for a pinned one, whose index is not open). */
+  getTask(taskId: string): Task | null | undefined
+  activeWorkspace(): string
+  /** Runs synchronous writes with every path resolved in `workspaceId` (`inOtherWorkspace`). */
+  pinWorkspace<T>(workspaceId: string, work: () => T): T
   updateTask(taskId: string, patch: TaskPatch): unknown
   addNote(taskId: string, author: string, message: string): unknown
   notifyTasks(): void
@@ -169,7 +174,8 @@ export function createReviewService(ports: ReviewServicePorts) {
   async function requestChanges(taskId: unknown, summary: unknown): Promise<ReviewSent> {
     const id = taskIdSchema.parse(taskId)
     const note = summarySchema.parse(summary ?? '')
-    const { review, preparation } = prepareFor(id)
+    const prepared = prepareFor(id)
+    const { review, preparation } = prepared
     const sent = review.pending
     if (sent.length === 0) throw new Error('There are no pending comments to send.')
     const message = reviewMessage(preparation.target, sent, note, new Set(preparation.outdated))
@@ -177,31 +183,53 @@ export function createReviewService(ports: ReviewServicePorts) {
       throw new Error('Too long to send: shorten or remove comments.')
     }
 
+    const workspaceId = ports.activeWorkspace()
+    const statusBefore = prepared.task.status
     const delivered = await ports.deliver(id, message)
+    const files = groupComments(sent).length
+    const result: ReviewSent = { ...delivered, count: sent.length, files, movedToInProgress: false }
 
     // Delivered: only now does anything move. Comments added while it was sending stay pending.
-    const sentIds = new Set(sent.map((comment) => comment.id))
-    ports.store.write(id, {
-      taskId: id,
-      pending: read(id).pending.filter((comment) => !sentIds.has(comment.id)),
-      lastSent: {
-        at: ports.now(),
-        comments: sent,
-        ...(note.trim() ? { summary: note.trim() } : {})
+    // The agent has the message, so a write that fails here is a warning, never a failed send
+    // that would invite a second one.
+    const active = ports.activeWorkspace() === workspaceId
+    const settle = (): boolean => {
+      const sentIds = new Set(sent.map((comment) => comment.id))
+      ports.store.write(id, {
+        taskId: id,
+        pending: read(id).pending.filter((comment) => !sentIds.has(comment.id)),
+        lastSent: {
+          at: ports.now(),
+          comments: sent,
+          ...(note.trim() ? { summary: note.trim() } : {})
+        }
+      })
+      // The active board reads the index; one switched away from while sending reads its file.
+      const task = active ? ports.findTask(id) : ports.getTask(id)
+      if (task?.status === 'in_review' || task?.status === 'done') {
+        ports.updateTask(id, { status: 'in_progress' })
       }
-    })
-    const task = ports.findTask(id)
-    const movedToInProgress = task?.status === 'in_review' || task?.status === 'done'
-    if (movedToInProgress) ports.updateTask(id, { status: 'in_progress' })
-    const files = groupComments(sent).length
-    ports.addNote(
-      id,
-      'styr',
-      `Requested changes: ${plural(sent.length, 'comment')} in ${plural(files, 'file')}`
-    )
-    ports.notifyTasks()
+      ports.addNote(
+        id,
+        'styr',
+        `Requested changes: ${plural(sent.length, 'comment')} in ${plural(files, 'file')}`
+      )
+      // A launch moves a Backlog task itself; either way it is in progress now if it moved.
+      return (
+        statusBefore !== 'in_progress' &&
+        (active ? ports.findTask(id) : ports.getTask(id))?.status !== statusBefore
+      )
+    }
+    try {
+      // The board may have switched while the agent took it: write to the one it was sent from.
+      result.movedToInProgress = active ? settle() : ports.pinWorkspace(workspaceId, settle)
+    } catch (error) {
+      ports.warn(`Styr: sent the review of ${id} but could not record it: ${String(error)}`)
+      result.warning = 'Sent, but Styr could not record it: the comments may still show as Pending.'
+    }
+    if (active) ports.notifyTasks()
     ports.broadcast('review:changed', { taskId: id })
-    return { ...delivered, count: sent.length, files, movedToInProgress }
+    return result
   }
 
   /** Drops a deleted task's review. Never fails the delete. */

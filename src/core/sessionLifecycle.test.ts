@@ -727,12 +727,34 @@ describe('Request changes delivery', () => {
     expect(options!.prompt).toBeUndefined()
   })
 
-  it('takes the agent to be running in a shell that reports no prompt', async () => {
+  it('refuses a terminal running another program, typing and writing nothing', async () => {
+    const h = harness()
+    h.sessions.push(session())
+    h.running.value = { command: 'npm test' }
+    h.inbox.listens = true
+    h.tasks.set('TASK-1', task({ agentSession: { provider: 'claude', id: 'saved-chat' } }))
+    const lifecycle = createSessionLifecycle(h.ports)
+    expect(() => lifecycle.reviewRoute('TASK-1')).toThrow(
+      "TASK-1's terminal is running `npm test`. Stop it or close the tab."
+    )
+    await expect(lifecycle.deliverReview('TASK-1', MESSAGE)).rejects.toThrow(/npm test/)
+    expect(h.calls).toEqual([])
+    expect(h.writes).toEqual([])
+  })
+
+  it('counts the command configured in Settings as the agent', () => {
+    const h = harness()
+    h.sessions.push(session())
+    h.settings = { ...h.settings, claudeCommand: 'cc-wrapper' }
+    h.running.value = { command: 'cc-wrapper --settings x --resume saved-chat' }
+    expect(createSessionLifecycle(h.ports).reviewRoute('TASK-1').route).toBe('now')
+  })
+
+  it('refuses a terminal whose shell reports no prompt, as nothing is known of it', () => {
     const h = harness()
     h.sessions.push(session())
     h.ports.runtimeState = () => ({ cwd: '/repo' })
-    h.tasks.set('TASK-1', task({ agentSession: { provider: 'claude', id: 'saved-chat' } }))
-    expect(createSessionLifecycle(h.ports).reviewRoute('TASK-1').route).toBe('now')
+    expect(() => createSessionLifecycle(h.ports).reviewRoute('TASK-1')).toThrow(/can't tell/)
   })
 
   it('reuses a live terminal whose agent quit, typing the resume at its shell', async () => {

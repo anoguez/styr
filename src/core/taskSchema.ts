@@ -10,9 +10,12 @@ import {
   SHORTCUT_COMMANDS,
   TASK_PRIORITIES,
   TASK_READINESS,
+  REVIEW_LIMITS,
   TASK_STATUSES,
   type GlobalSettingKey
 } from './types.js'
+
+export { REVIEW_LIMITS }
 
 export const TASK_ID_RE = /^TASK-\d+$/
 
@@ -761,9 +764,6 @@ export const remoteDiagnosticsSchema = z.object({
   ).optional()
 })
 
-/** Bounds of a stored review: generous for a person, small enough to read whole. */
-export const REVIEW_LIMITS = { comments: 500, body: 20_000 } as const
-
 export const reviewCommentSchema = z.object({
   id: z.string().min(1).max(REMOTE_LIMITS.short),
   path: remotePathSchema.pipe(z.string().min(1)),
@@ -805,5 +805,6 @@ export const reviewSentSchema = z.object({
   count,
   files: count,
   movedToInProgress: z.boolean(),
+  warning: message.optional(),
   session: remoteTerminalSessionSchema.optional()
 })

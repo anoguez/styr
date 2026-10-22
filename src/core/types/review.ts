@@ -5,6 +5,9 @@ import type { TerminalSessionInfo } from './terminal.js'
  * per task in `<workspace>/.styr/reviews/<TASK-id>.json`: not task data, not in the index.
  */
 
+/** Bounds of a stored review: generous for a person, small enough to read whole. */
+export const REVIEW_LIMITS = { comments: 500, body: 20_000 } as const
+
 /** Which side of the diff a comment's line number counts on: `old` only for deleted rows. */
 export type ReviewSide = 'new' | 'old'
 
@@ -65,6 +68,8 @@ export interface ReviewSent {
   provider: 'claude' | 'codex'
   count: number
   files: number
-  /** The task moved back to In progress. */
+  /** The task moved to In progress. */
   movedToInProgress: boolean
+  /** Delivered, but recording it failed; the toast says so. */
+  warning?: string
 }
