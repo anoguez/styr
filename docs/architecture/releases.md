@@ -20,12 +20,24 @@ named export, so it is imported as the default export.
 
 `.github/workflows/release.yml` runs release-please on every push to `main`. It keeps a release PR
 open that bumps `package.json` and writes `CHANGELOG.md` from conventional commits; merging it tags
-the release as a **draft** (`draft` + `force-tag-creation` in `release-please-config.json`). A
-macOS job builds, signs, notarises, verifies and attaches its files; a `publish` job that needs it
-then publishes it. A Windows job (the unsigned NSIS installer and `latest.yml`) and a Linux job
-(the AppImage, `.deb` and `latest-linux.yml`) are written but commented out until those builds
-have been tested; re-enabling one means adding it back to `publish`'s `needs` and `if`. Never publish before the files are attached: a public release without
-`latest-mac.yml` or `latest.yml` is one the updater sees but cannot install. Commit
+the release as a **draft** (`draft` + `force-tag-creation` in `release-please-config.json`).
+`build-macos` builds, signs, notarises, verifies and attaches its files; `build-windows` (the
+unsigned NSIS installer, its blockmap and `latest.yml`) and `build-linux` (the AppImage, `.deb` and
+`latest-linux.yml`) build, check their package with `scripts/verify-package.mjs` and attach theirs.
+A `publish` job needs every one of them and `server-release`, and requires each to succeed: if any
+platform fails, the release stays a draft — there is no publishing a release with a platform
+missing. Recovery is **Run workflow** with the tag, which rebuilds every job (the server bundles
+too, so every app carries the hashes of the bundles attached). A new platform job goes into
+`publish`'s `needs` and `if` the same way. Never publish before the files are attached: a public
+release without `latest-mac.yml`, `latest.yml` or `latest-linux.yml` is one the updater sees but
+cannot install.
+
+`build-linux` runs on `ubuntu-22.04`, not `ubuntu-latest`: node-pty and better-sqlite3 are compiled
+there and need the runner's glibc or newer, and 2.35 is also Styr Terminal's linux-x64 floor.
+`verify-package.mjs` fails the build if any native module needs a newer glibc (`GLIBC_FLOOR`);
+moving the runner means moving that floor and the README with it. A `.deb` install updates through
+electron-updater's `DebUpdater` (the `package-type` file electron-builder writes into it), so
+`latest-linux.yml` must keep listing the `.deb` beside the AppImage, and the script checks it does. Commit
 messages must therefore be conventional (`feat:`, `fix:`, `docs:` …) or they are left out of the
 changelog. `scripts/setup-signing-secrets.sh <p12>` sets the five signing secrets on the repo from a
 `.p12` exported in Keychain Access — never from `security export`, which cannot reach the
@@ -44,14 +56,16 @@ release is published:
    runs the same workflow on every PR, so a bundle that does not build or run fails the PR, not the
    release. A different container means a different floor: change `GLIBC_FLOOR` in `install.sh`
    with it (`remote.md`, Server bundles).
-2. `build-macos` needs it: after `yarn build` it writes both bundles' SHA-256s into the app
-   (`scripts/server-checksums.mjs app` → `out/main/serverBundles.json`) before signing, so the
-   hash a host checks its download against ships inside the signed, notarised app.
+2. `build-macos`, `build-windows` and `build-linux` need it: after `yarn build` each writes both
+   bundles' SHA-256s into its app (`scripts/server-checksums.mjs app` → `out/main/serverBundles.json`)
+   before packaging, so the hash a host checks its download against ships inside the app (signed
+   and notarised on macOS). Without it a remote workspace cannot set up its host from that
+   platform; `verify-package.mjs` checks it is there on Windows and Linux.
 3. `server-release` writes `styr-server-<version>-SHA256SUMS` and `install.sh` with the version
    filled in (`scripts/server-checksums.mjs release`), generates a build provenance attestation
    for the bundles and the script (`actions/attest-build-provenance`), and attaches all four to
    the draft release.
-4. `publish` needs both `build-macos` and `server-release`, so a release is never public without
+4. `publish` needs every platform's build and `server-release`, so a release is never public without
    the bundles, their checksums and the installer. A failed bundle build blocks the app build too,
    since the app would carry no hashes.
 
