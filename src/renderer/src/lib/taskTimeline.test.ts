@@ -55,8 +55,8 @@ describe('taskTimeline', () => {
       ]
     })
     expect(rows.map((row) => row.message)).toEqual([
-      'Typed by hand first.',
       'Task created',
+      'Typed by hand first.',
       'Timed.',
       'Typed by hand after.',
       'Started: Review'
@@ -65,5 +65,34 @@ describe('taskTimeline', () => {
 
   it('drops an event whose time does not parse', () => {
     expect(taskTimeline({ ...base, createdAt: 'garbage' })).toEqual([])
+  })
+
+  it('puts untimed notes after the agent run that wrote them when no note has a time', () => {
+    const rows = taskTimeline({
+      ...base,
+      sessions: [
+        {
+          id: 's1',
+          provider: 'claude',
+          startedAt: '2026-10-20T10:05:00.000Z',
+          label: 'Implement the task'
+        }
+      ],
+      activity: [
+        { at: '', author: '', message: 'Cause found.' },
+        { at: '', author: '', message: 'Opened a PR.' }
+      ]
+    })
+    expect(rows.map((row) => row.message)).toEqual([
+      'Task created',
+      'Started: Implement the task',
+      'Cause found.',
+      'Opened a PR.'
+    ])
+  })
+
+  it('puts untimed notes after creation when nothing else has a time', () => {
+    const rows = taskTimeline({ ...base, activity: [{ at: '', author: '', message: 'Typed.' }] })
+    expect(rows.map((row) => row.message)).toEqual(['Task created', 'Typed.'])
   })
 })
