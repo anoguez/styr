@@ -172,7 +172,7 @@ export function TerminalActivity({
           ) : null}
         </span>
       </div>
-      <ol className="m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto px-3 pb-1 pt-3">
+      <ol className="m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto overflow-x-hidden px-3 pb-1 pt-3">
         {entries.length === 0 ? <li className="text-[12px] text-faint">No activity yet.</li> : null}
         {entries.map((entry, index) => {
           // The newest entry is the one the agent is working from while it works.
@@ -200,7 +200,7 @@ export function TerminalActivity({
                   </span>
                 ) : null}
                 <p
-                  className={`m-0 whitespace-pre-wrap text-[12px] leading-normal ${entry.event ? 'text-dim' : 'text-ink'}`}
+                  className={`m-0 whitespace-pre-wrap wrap-anywhere text-[12px] leading-normal ${entry.event ? 'text-dim' : 'text-ink'}`}
                 >
                   {entry.message}
                 </p>

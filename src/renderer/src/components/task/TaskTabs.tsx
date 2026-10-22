@@ -118,7 +118,7 @@ export function ChatsTab({
 export function ActivityTab({ task }: { task: Task }): ReactNode {
   const activity = taskTimeline(task)
   return (
-    <ol className="m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto px-5 pb-5 pt-4">
+    <ol className="m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto overflow-x-hidden px-5 pb-5 pt-4">
       {activity.length === 0 ? <li className="text-[12px] text-faint">No activity yet.</li> : null}
       {activity.map((entry, index) => (
         <li key={`${index}-${entry.at}`} className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-3">
@@ -134,7 +134,7 @@ export function ActivityTab({ task }: { task: Task }): ReactNode {
               </span>
             ) : null}
             <p
-              className={`m-0 whitespace-pre-wrap text-[12.5px] leading-normal ${entry.event ? 'text-dim' : 'text-ink'}`}
+              className={`m-0 whitespace-pre-wrap wrap-anywhere text-[12.5px] leading-normal ${entry.event ? 'text-dim' : 'text-ink'}`}
             >
               {entry.message}
             </p>

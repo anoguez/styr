@@ -98,7 +98,9 @@ body {
   background: var(--color-faint);
   background-clip: content-box;
 }
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+/* Where two scrollbars meet; Chromium paints it white otherwise. */
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 
