@@ -8,6 +8,7 @@ import {
 import { TASK_STATUS_LABELS, type Task } from '@core/types.js'
 import { STATUS_DOT } from '../lib/statusTone.js'
 import { dotTone, taskTimeline } from '../lib/taskTimeline.js'
+import { LinkedText } from './LinkedText.js'
 
 /**
  * The floating panel's width, and the room the terminal leaves for it. The terminal is narrowed by
@@ -172,7 +173,7 @@ export function TerminalActivity({
           ) : null}
         </span>
       </div>
-      <ol className="m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto px-3 pb-1 pt-3">
+      <ol className="m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto overflow-x-hidden px-3 pb-1 pt-3">
         {entries.length === 0 ? <li className="text-[12px] text-faint">No activity yet.</li> : null}
         {entries.map((entry, index) => {
           // The newest entry is the one the agent is working from while it works.
@@ -200,9 +201,9 @@ export function TerminalActivity({
                   </span>
                 ) : null}
                 <p
-                  className={`m-0 whitespace-pre-wrap text-[12px] leading-normal ${entry.event ? 'text-dim' : 'text-ink'}`}
+                  className={`m-0 whitespace-pre-wrap wrap-anywhere text-[12px] leading-normal ${entry.event ? 'text-dim' : 'text-ink'}`}
                 >
-                  {entry.message}
+                  <LinkedText text={entry.message} />
                 </p>
               </div>
             </li>

@@ -17,7 +17,9 @@ function time(iso: string | undefined): number {
  * The task's activity with the events its file already records — created, each agent run, done,
  * archived — merged in by time, oldest first. Nothing here is stored: the events come from the
  * frontmatter, so they need no write and cover every existing task. A note with no time (a bullet
- * typed by hand) keeps its place after the note before it.
+ * typed by hand) keeps its place after the note before it; one that opens the log goes just before
+ * the first timed note, or, when no note has a time, after the latest agent run started (an agent
+ * wrote it), else after the task was created.
  */
 export function taskTimeline(task: TimelineTask): TimelineEntry[] {
   const events: TimelineEntry[] = [
@@ -36,8 +38,12 @@ export function taskTimeline(task: TimelineTask): TimelineEntry[] {
       : [])
   ].filter((entry) => Number.isFinite(time(entry.at)))
 
-  // An untimed note sorts with the note before it, or at the start when none before it has a time.
-  let carried = -Infinity
+  // Where the opening untimed notes sit: before the first timed note, else after the latest run
+  // started (or creation). Math.max of nothing is -Infinity: the very start.
+  const starts = [task.createdAt, ...task.sessions.map((session) => session.startedAt)]
+  let carried =
+    task.activity.map((entry) => time(entry.at)).find(Number.isFinite) ??
+    Math.max(...starts.map(time).filter(Number.isFinite))
   const notes = task.activity.map((entry) => {
     const at = time(entry.at)
     if (Number.isFinite(at)) carried = at
