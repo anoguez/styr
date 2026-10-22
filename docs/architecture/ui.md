@@ -99,7 +99,10 @@ their cards.
 
 A task session's terminal can show its task's activity log (`TerminalActivity.tsx`) floating over
 its right side, newest first — the same entries as the task dialog's Activity tab, read from the
-board's `TaskLookupContext`, so it writes nothing. One switch in `TerminalPanel` covers every tab:
+board's `TaskLookupContext`, so it writes nothing. Both views show `taskTimeline` (`lib/taskTimeline.ts`): the
+notes plus the events the frontmatter already records (created, each agent run in `sessions`, done,
+archived), merged by time and drawn quieter. They are derived, never written; column moves are not
+among them, since the file keeps only the current status. One switch in `TerminalPanel` covers every tab:
 the Activity button in the context bar (in the tab bar while a full-screen program hides the bar)
 and `terminalActivity` (⌘⇧A). While it is closed the button counts entries that arrived since the
 task was last in view. The panel does not cover output: `TerminalSurface` gives the terminal a right

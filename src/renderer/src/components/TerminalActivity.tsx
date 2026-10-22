@@ -5,8 +5,9 @@ import {
   subagentCountLabel,
   type AgentStatus
 } from '@core/agentState.js'
-import { TASK_STATUS_LABELS, type ActivityEntry, type Task } from '@core/types.js'
+import { TASK_STATUS_LABELS, type Task } from '@core/types.js'
 import { STATUS_DOT } from '../lib/statusTone.js'
+import { dotTone, taskTimeline } from '../lib/taskTimeline.js'
 
 /**
  * The floating panel's width, and the room the terminal leaves for it. The terminal is narrowed by
@@ -34,7 +35,7 @@ export function activityTime(iso: string, now = new Date()): string {
 export function useActivityUnread(task: Task | undefined, open: boolean): number {
   const [seen, setSeen] = useState<ReadonlyMap<string, number>>(new Map())
   const id = task?.id
-  const count = task?.activity.length ?? 0
+  const count = task ? taskTimeline(task).length : 0
   const known = id === undefined ? undefined : seen.get(id)
   useEffect(() => {
     if (id === undefined || (known !== undefined && (!open || known === count))) return
@@ -99,11 +100,6 @@ export function ActivityToggle({
   )
 }
 
-function dotTone(entry: ActivityEntry): string {
-  if (entry.author === 'you' || !entry.author) return 'bg-dim'
-  return entry.author === 'subagent' ? 'bg-col-done' : 'bg-col-progress'
-}
-
 /**
  * The task's activity, floating over the right of its terminal: the same log as the task dialog's
  * Activity tab, newest first, so an agent's progress reads without leaving the terminal.
@@ -122,7 +118,7 @@ export function TerminalActivity({
   onOpenTask: () => void
   onClose: () => void
 }): ReactNode {
-  const entries = [...task.activity].reverse()
+  const entries = taskTimeline(task).reverse()
   const working = agent?.state === 'working'
   const subagents = runningSubagents(agent)
   return (
@@ -203,7 +199,9 @@ export function TerminalActivity({
                       .join(' · ')}
                   </span>
                 ) : null}
-                <p className="m-0 whitespace-pre-wrap text-[12px] leading-normal text-ink">
+                <p
+                  className={`m-0 whitespace-pre-wrap text-[12px] leading-normal ${entry.event ? 'text-dim' : 'text-ink'}`}
+                >
                   {entry.message}
                 </p>
               </div>
