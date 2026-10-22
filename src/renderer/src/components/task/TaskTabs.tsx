@@ -3,6 +3,7 @@ import { AGENT_PROVIDER_SHORT_LABELS, type Task } from '@core/types.js'
 import { dotTone, taskTimeline } from '../../lib/taskTimeline.js'
 import { Chip } from '../ui.js'
 import { GHOST_BTN } from './fields.js'
+import { LinkedText } from '../LinkedText.js'
 
 export type TabKey = 'brief' | 'chats' | 'activity' | 'prompt'
 
@@ -136,7 +137,7 @@ export function ActivityTab({ task }: { task: Task }): ReactNode {
             <p
               className={`m-0 whitespace-pre-wrap wrap-anywhere text-[12.5px] leading-normal ${entry.event ? 'text-dim' : 'text-ink'}`}
             >
-              {entry.message}
+              <LinkedText text={entry.message} />
             </p>
           </div>
         </li>

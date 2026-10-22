@@ -8,6 +8,7 @@ import {
 import { TASK_STATUS_LABELS, type Task } from '@core/types.js'
 import { STATUS_DOT } from '../lib/statusTone.js'
 import { dotTone, taskTimeline } from '../lib/taskTimeline.js'
+import { LinkedText } from './LinkedText.js'
 
 /**
  * The floating panel's width, and the room the terminal leaves for it. The terminal is narrowed by
@@ -202,7 +203,7 @@ export function TerminalActivity({
                 <p
                   className={`m-0 whitespace-pre-wrap wrap-anywhere text-[12px] leading-normal ${entry.event ? 'text-dim' : 'text-ink'}`}
                 >
-                  {entry.message}
+                  <LinkedText text={entry.message} />
                 </p>
               </div>
             </li>
