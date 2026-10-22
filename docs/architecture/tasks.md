@@ -116,6 +116,13 @@ wins when both exist, and serialising always writes the marker.
 `renderActivity` writes those back bare. That is what makes a hand-written note survive a later
 programmatic write.
 
+Every rewrite (`add_task_note`, a status change) serialises the parsed task, so **nothing under
+the activity heading may be dropped by the parser**. A line that is not a note joins the note before
+it as written (or opens an untimed one). A heading or a thematic break (`---`) ends the section:
+what follows is content an agent appended below Activity, such as a spec written with `cat >>`, and
+it goes back into the description, so the next write moves it above the section. Dropping those
+lines is what once erased a spec. `markdown.test.ts` holds both shapes.
+
 ## Ask agent
 
 "Ask agent" (✦ button, selection toolbar, `terminalAskAgent`) opens `AskPrompt` first; nothing is

@@ -181,4 +181,95 @@ describe('task Markdown', () => {
     expect(parsed.description).toContain('Explain the section.')
     expect(parsed.activity).toHaveLength(1)
   })
+
+  const front = [
+    '---',
+    'id: TASK-0046',
+    'title: Spec below Activity',
+    'status: backlog',
+    'priority: low',
+    'readiness: ready',
+    'createdAt: 2026-10-01T07:00:00.000Z',
+    'updatedAt: 2026-10-01T07:00:00.000Z',
+    '---',
+    '',
+    'Build the review UI.',
+    '',
+    '<!-- styr:activity -->',
+    '## Activity',
+    ''
+  ]
+
+  it('moves content appended below Activity back into the description, not into notes', () => {
+    // What a spec agent did with `cat >>`: the spec landed after the notes.
+    const raw = [
+      ...front,
+      '- `2026-10-01T08:00:00.000Z` **claude** — Speccing.',
+      '',
+      '---',
+      '',
+      '# Spec',
+      '',
+      '## Goal',
+      '',
+      'Review a diff like a PR.',
+      '',
+      '- In scope: comments.',
+      '',
+      '1. Hovering a row shows a button.',
+      '   Clicking it opens the composer.'
+    ].join('\n')
+    const parsed = parseTaskMarkdown(raw, '/workspace/tasks/TASK-0046-spec.md')
+
+    expect(parsed.activity).toEqual([
+      { at: '2026-10-01T08:00:00.000Z', author: 'claude', message: 'Speccing.' }
+    ])
+    expect(parsed.description).toBe(
+      [
+        'Build the review UI.',
+        '',
+        '---',
+        '',
+        '# Spec',
+        '',
+        '## Goal',
+        '',
+        'Review a diff like a PR.',
+        '',
+        '- In scope: comments.',
+        '',
+        '1. Hovering a row shows a button.',
+        '   Clicking it opens the composer.'
+      ].join('\n')
+    )
+    // A rewrite (any add_task_note) puts the spec above Activity and keeps every line.
+    const rewritten = parseTaskMarkdown(serialiseTask(parsed), parsed.filePath)
+    expect(rewritten.description).toBe(parsed.description)
+    expect(rewritten.activity).toEqual(parsed.activity)
+  })
+
+  it('keeps lines under Activity that are not notes, through a rewrite', () => {
+    const raw = [
+      ...front,
+      'A paragraph before any note.',
+      '- `2026-10-01T08:00:00.000Z` **claude** — Plan:',
+      '1. First step',
+      '   still the first step',
+      '  ',
+      'Plain line.'
+    ].join('\n')
+    const parsed = parseTaskMarkdown(raw, '/workspace/tasks/TASK-0046-spec.md')
+
+    expect(parsed.activity).toEqual([
+      { at: '', author: '', message: 'A paragraph before any note.' },
+      {
+        at: '2026-10-01T08:00:00.000Z',
+        author: 'claude',
+        message: 'Plan:\n1. First step\n still the first step\n\nPlain line.'
+      }
+    ])
+    const again = parseTaskMarkdown(serialiseTask(parsed), parsed.filePath)
+    expect(again.activity).toEqual(parsed.activity)
+    expect(serialiseTask(again)).toBe(serialiseTask(parsed))
+  })
 })

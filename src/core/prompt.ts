@@ -82,6 +82,8 @@ function boardProtocol(task: Task, workspaceId?: string, plainFolder = false): s
     '- If you finish writing a spec and stop, set `status: backlog` with `readiness: ready` so the task can be picked up.',
     `- Log progress notes with the ${NOTE_TOOL} (the task id and your note; it stamps the time and`,
     `  author). Only if you do not have that tool, ${noteFallback('the file')}.`,
+    '- `## Activity` stays the last section of the file. Put a spec or any other text above it, never',
+    '  after it, and never append to the end of the file.',
     '- Change only those lines; leave the rest of the frontmatter as it is.',
     '- If work must land first, record it with `blockedBy: [TASK-xxxx]` (ids from this board). Do not start a task whose blockers are not Done.',
     '',

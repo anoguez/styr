@@ -34,7 +34,7 @@ const SPEC_TEMPLATE = [
   'Writing the spec is work like any other, so keep `status: in_progress` while you are on it.',
   '',
   '## When you are done specifying',
-  '- Write the finished spec into the body of {{filePath}}, below the frontmatter.',
+  '- Write the finished spec into the body of {{filePath}}, below the frontmatter and above `## Activity`.',
   '- Set `readiness: ready` so the task can be picked up.',
   '- If you stop after specifying, set `status: backlog` together with `readiness: ready`, so the orchestrator can pick the task up.',
   '- Leave the status at in_progress only if you carry straight on into building it.'
