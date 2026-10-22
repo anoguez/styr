@@ -30,7 +30,8 @@ export function hostServer(names: Record<string, string>, sessionPrefix = 's') {
     tasks: {} as Record<string, { id: string; title: string; filePath: string }[]>,
     sessions: [] as TerminalSessionInfo[],
     backlog: {} as Record<string, TerminalOutput>,
-    settings: {} as Record<string, Partial<Settings>>
+    settings: {} as Record<string, Partial<Settings>>,
+    experimental: undefined as { externalSources: boolean } | undefined
   }
   const overview = (): WorkspaceOverview => ({
     activeId: state.active,
@@ -51,6 +52,10 @@ export function hostServer(names: Record<string, string>, sessionPrefix = 's') {
     'workspaces:activity': () => ({ activeId: state.active, byWorkspace: {} }),
     'workspaces:boardSummary': () => ({}),
     'server:tray': () => ({ statuses: [], titles: {} }),
+    'server:experimental': ([flags]) => {
+      state.experimental = flags as { externalSources: boolean }
+      return null
+    },
     'tasks:list': () => (state.tasks[state.active] ?? []).map(remoteTask),
     'tasks:get': ([id]) => {
       const task = (state.tasks[state.active] ?? []).find((t) => t.id === id)
@@ -153,7 +158,8 @@ export function setup(options: { enabled?: boolean; active?: string } = {}) {
     saveGlobalSettings: (global) => void savedGlobal.push(global),
     clientVersion: HELLO.version
   })
-  router.bindSettings(() => ({ ...LOCAL_SETTINGS, activeWorkspaceId: active }))
+  let localSettings = LOCAL_SETTINGS
+  router.bindSettings(() => ({ ...localSettings, activeWorkspaceId: active }))
 
   /** What the in-process host would answer, so a test sees which side answered. */
   const local = (channel: string) => () => {
@@ -198,6 +204,7 @@ export function setup(options: { enabled?: boolean; active?: string } = {}) {
     connectAll,
     setEnabled: (on: boolean) => (enabled = on),
     setActive: (id: string) => (active = id),
-    setWorkspaces: (next: WorkspaceInfo[]) => (workspaces = next)
+    setWorkspaces: (next: WorkspaceInfo[]) => (workspaces = next),
+    setLocalSettings: (next: Settings) => (localSettings = next)
   }
 }

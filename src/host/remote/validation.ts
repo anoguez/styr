@@ -66,6 +66,7 @@ const count = z.number().int().min(0)
 export const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   'server:info': remoteServerHelloSchema,
   'server:tray': remoteTraySchema,
+  'server:experimental': ignored,
   'tasks:list': tasks,
   'tasks:get': task.nullable(),
   'tasks:problems': z

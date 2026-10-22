@@ -41,6 +41,7 @@ function setup(overrides: Partial<HubPorts> = {}) {
     },
     info: () => INFO,
     tray: () => ({ statuses: [], titles: { 'TASK-0001': 'Tray' } }),
+    experimental: (flags) => calls.push(`experimental ${JSON.stringify(flags)}`),
     terminals: {
       backlog: (id) => ({ data: `backlog of ${id}`, sequence: 3, marks: [] }),
       resize: (id, cols, rows) => calls.push(`resize ${id} ${cols}x${rows}`)
@@ -101,6 +102,18 @@ describe('hub', () => {
     await expect(peer.request('missing')).rejects.toMatchObject({
       code: RPC_ERRORS.METHOD_NOT_FOUND
     })
+  })
+
+  it('takes the client’s experimental flags, refusing a malformed set', async () => {
+    const { client, calls } = setup()
+    const { peer } = client()
+    await expect(
+      peer.request('server:experimental', [{ externalSources: true }])
+    ).resolves.toBeNull()
+    await expect(
+      peer.request('server:experimental', [{ externalSources: 'yes' }])
+    ).rejects.toMatchObject({ code: RPC_ERRORS.INVALID_PARAMS })
+    expect(calls).toEqual(['experimental {"externalSources":true}'])
   })
 
   it('reads a null argument as left out, as JSON sends an undefined one', async () => {

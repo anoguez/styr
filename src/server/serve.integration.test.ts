@@ -17,7 +17,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { build } from 'vite'
 import { RpcPeer } from '@host/rpc/jsonRpc.js'
 import type { ServerInfo } from './hub.js'
-import type { Task, TerminalOutput, TerminalSessionInfo } from '@core/types.js'
+import type { Settings, Task, TerminalOutput, TerminalSessionInfo } from '@core/types.js'
 
 /**
  * Builds `styr serve` from this checkout, runs it under plain Node on a temporary socket and
@@ -208,6 +208,21 @@ describe.skipIf(!enabled)('styr serve (integration)', { timeout: 30_000 }, () =>
       expect(agent?.state).toBe('exited')
       expect(Date.parse(agent!.at)).toBeGreaterThanOrEqual(before - 1000)
     }, WAIT)
+  })
+
+  it('takes the External sources switch from a client, and every client hears of it', async () => {
+    const a = await client()
+    const b = await client()
+    await expect(call(a, 'sources:restTest', {})).rejects.toThrow(/Turn on External sources/)
+    await call(a, 'server:experimental', { externalSources: true })
+    await expect(call<Settings>(b, 'settings:get')).resolves.toMatchObject({
+      experimental: { externalSources: true }
+    })
+    await vi.waitFor(
+      () => expect(b.events.some(([method]) => method === 'settings:changed')).toBe(true),
+      WAIT
+    )
+    await call(a, 'server:experimental', { externalSources: false })
   })
 
   it('reattaches a terminal with its backlog, and sizes it to the client that focused it last', async () => {

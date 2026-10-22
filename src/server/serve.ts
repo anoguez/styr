@@ -62,6 +62,7 @@ export async function serve(options: ServeOptions): Promise<void> {
     send: host.send,
     info,
     tray: () => tray,
+    experimental: host.setExperimental,
     terminals: { backlog: host.terminals.sessionBacklog, resize: host.terminals.resizeSession },
     pin: host.pin
   })
