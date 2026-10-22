@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.37.0](https://github.com/anoguez/styr/compare/v0.36.1...v0.37.0) (2026-10-22)
+
+
+### Features
+
+* declare Styr Terminal for linux-x64 and win32-x64 ([#185](https://github.com/anoguez/styr/issues/185)) ([8609134](https://github.com/anoguez/styr/commit/8609134f8e70a65883da2246a4cee2ff1f0a0511))
+* task activity panel on the terminal ([#188](https://github.com/anoguez/styr/issues/188)) ([7b396f5](https://github.com/anoguez/styr/commit/7b396f5dcd0f10ecbd094a10be66c66a77cad099))
+
 ## [0.36.1](https://github.com/anoguez/styr/compare/v0.36.0...v0.36.1) (2026-10-21)
 
 
