@@ -236,6 +236,47 @@ export function shortcutHint(bindings: ShortcutBindings, command: ShortcutComman
   return first ? formatAccelerator(first) : ''
 }
 
+const ELECTRON_MODIFIERS: Record<string, string> = {
+  mod: 'CmdOrCtrl',
+  ctrl: 'Ctrl',
+  meta: 'Super',
+  alt: 'Alt',
+  shift: 'Shift'
+}
+
+const ELECTRON_KEYS: Record<string, string> = {
+  arrowup: 'Up',
+  arrowdown: 'Down',
+  arrowleft: 'Left',
+  arrowright: 'Right',
+  enter: 'Return',
+  escape: 'Escape',
+  ' ': 'Space'
+}
+
+/**
+ * A binding in Electron's accelerator syntax, for a native menu to show beside an item; undefined
+ * for a key Electron has no name for. Electron draws it the platform's way (⇧⌘N, Ctrl+Shift+N).
+ */
+export function electronAccelerator(accelerator: string): string | undefined {
+  const parts = accelerator.split('+')
+  const key = parts.pop() ?? ''
+  const modifiers = parts.map((part) => ELECTRON_MODIFIERS[part])
+  if (modifiers.some((modifier) => !modifier)) return undefined
+  const name =
+    ELECTRON_KEYS[key] ?? (/^[a-z0-9,./;'[\]\\`=-]$/.test(key) ? key.toUpperCase() : undefined)
+  return name ? [...modifiers, name].join('+') : undefined
+}
+
+/** A command's first binding as a native menu accelerator; undefined when it is unbound. */
+export function menuAccelerator(
+  bindings: ShortcutBindings,
+  command: ShortcutCommand
+): string | undefined {
+  const first = bindings[command][0]
+  return first ? electronAccelerator(first) : undefined
+}
+
 export function isReserved(accelerator: string): boolean {
   // Where Control is `mod`, the terminal's Ctrl+C arrives as `mod+c`.
   const physical = primaryModifier === 'ctrl' ? accelerator.replace(/^mod\+/, 'ctrl+') : accelerator

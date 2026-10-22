@@ -39,7 +39,7 @@ import {
   unlinkTask
 } from './sourceSync.js'
 import { sourceProviders } from '@core/sources/index.js'
-import type { TaskStatus } from '@core/types.js'
+import type { AutoDispatchState, TaskStatus, TrayCommand } from '@core/types.js'
 import { diskWorklogSources } from '@core/worklogSources.js'
 import { createAgentsService, diskAgentStore, diskGit } from '@host/agentsService.js'
 import { createDispatchService, diskDispatchSettings, realClock } from '@host/dispatchService.js'
@@ -314,6 +314,30 @@ export function startAutoDispatch(): void {
   dispatchService.startAutoRun()
 }
 
+/** Auto-run of the active workspace, for the tray: routed, so a remote board's server answers. */
+export async function autoRunState(): Promise<AutoDispatchState> {
+  return (await remoteRouter.invoke('orchestrate:autoState', [], () =>
+    dispatchService.autoState()
+  )) as AutoDispatchState
+}
+
+/** The tray's Start Auto-run, routed like the renderer's switch. Stopping asks in the window. */
+export async function startAutoRunFromTray(): Promise<void> {
+  await remoteRouter.invoke('orchestrate:autoSet', [true], () => dispatchService.autoSet(true))
+}
+
+/**
+ * The tray's request for the window (`app:command`). It is held until the renderer takes it, so a
+ * window that is still loading — created by the click — runs it once it has mounted, and a live
+ * one runs it at once; either way exactly once.
+ */
+let pendingCommand: TrayCommand | null = null
+
+export function sendWindowCommand(command: TrayCommand): void {
+  pendingCommand = command
+  broadcast('app:command')
+}
+
 export function registerIpcHandlers(): void {
   initSourceSync({
     onTasksChanged: notifyTasksChanged,
@@ -404,6 +428,12 @@ export function registerIpcHandlers(): void {
       color: String(background),
       symbolColor: String(symbols)
     })
+  })
+
+  ipcMain.handle('app:takeCommand', () => {
+    const command = pendingCommand
+    pendingCommand = null
+    return command
   })
 
   ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') =>
