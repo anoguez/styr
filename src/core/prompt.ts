@@ -1,3 +1,4 @@
+import { NOTE_TOOL, noteFallback } from './activityNote.js'
 import {
   TASK_STATUSES,
   WORKTREE_BRANCH_PREFIX,
@@ -79,7 +80,8 @@ function boardProtocol(task: Task, workspaceId?: string, plainFolder = false): s
     ...finish,
     '- Set `readiness: ready` once the task is specified well enough to be worked on.',
     '- If you finish writing a spec and stop, set `status: backlog` with `readiness: ready` so the task can be picked up.',
-    '- Append progress notes as `- ` bullets under `## Activity` at the end of the file.',
+    `- Log progress notes with the ${NOTE_TOOL} (the task id and your note; it stamps the time and`,
+    `  author). Only if you do not have that tool, ${noteFallback('the file')}.`,
     '- Change only those lines; leave the rest of the frontmatter as it is.',
     '- If work must land first, record it with `blockedBy: [TASK-xxxx]` (ids from this board). Do not start a task whose blockers are not Done.',
     '',

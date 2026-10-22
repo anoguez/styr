@@ -270,6 +270,10 @@ It is rendered in, not written into each template, so an old or hand-edited temp
 an agent with no way to report progress — which is how a task ends up finished but still sitting in
 Backlog.
 
+Agents log activity notes with the MCP server's `add_task_note` tool, which stamps each note with
+the time and the agent's name. An agent without the MCP server appends the bullet itself, in the
+same ``- `<time>` **<name>** — <note>`` shape, so the note still shows when and who.
+
 Position it with `{{board}}` if you want it somewhere specific; otherwise it is appended.
 
 ### The prompt follows the column

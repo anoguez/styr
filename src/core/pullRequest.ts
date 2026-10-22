@@ -1,3 +1,4 @@
+import { NOTE_TOOL, noteFallback } from './activityNote.js'
 export interface PullRequestRequest {
   /** Absolute path of the task's markdown file, where the PR's URL is recorded. */
   taskFile: string
@@ -17,7 +18,8 @@ export function createPullRequestPrompt({ taskFile, base }: PullRequestRequest):
     'Please create a pull request for this task. Make sure all of the work is committed, push the ' +
     `branch, and open the PR ${target} (use gh if the repo has a GitHub remote; otherwise tell me ` +
     `the branch is ready and what you could not do). Then set \`prUrl:\` to the PR's URL in the ` +
-    `frontmatter of \`${taskFile}\` and add a short note under \`## Activity\`. Leave the status as ` +
+    `frontmatter of \`${taskFile}\` and add a short note with the ${NOTE_TOOL} (only if you do not ` +
+    `have that tool, ${noteFallback(`\`${taskFile}\``)}). Leave the status as ` +
     'in_review.'
   )
 }

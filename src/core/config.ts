@@ -1,6 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { defaultShell } from './platformShell.js'
+import { NOTE_TOOL, noteFallback } from './activityNote.js'
 import {
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
@@ -72,7 +73,8 @@ const REVIEW_TEMPLATE = [
   '- Check every acceptance criterion in the spec against what was actually produced.',
   '',
   '## When you are done',
-  '- Append your verdict as a bullet under `## Activity` at the end of {{filePath}}.',
+  `- Record your verdict as a note with the ${NOTE_TOOL}. Only if you do not have that tool,`,
+  `  ${noteFallback('{{filePath}}')}.`,
   '- If it does not pass, set `status: backlog` (keep `readiness: ready`) and list the required fixes',
   '  in that note. Backlog hands the task back to an implementer; do not fix it yourself.',
   '- If there is no git repository, a pass means set `status: in_review` and say so: I mark it done.',
