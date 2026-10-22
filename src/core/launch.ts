@@ -105,6 +105,11 @@ export interface LaunchOptions {
   sessionLabel?: string
   /** Put before the rendered prompt, e.g. to tell an implementer a review sent the task back. */
   promptPreface?: string
+  /**
+   * Literal text sent instead of the rendered template (Request changes resuming a chat). Not
+   * with `templateId` or `promptPreface`, which shape a template this replaces.
+   */
+  prompt?: string
 }
 
 export function planLaunch(
@@ -113,6 +118,9 @@ export function planLaunch(
   options: LaunchOptions = {}
 ): LaunchPlan {
   const { templateId, homeRoot, withPrompt = false, fresh = false, resume, forkFrom } = options
+  if (options.prompt !== undefined && (templateId || options.promptPreface)) {
+    throw new Error('A literal prompt replaces the template: pass no templateId or promptPreface.')
+  }
   const provider = options.provider ? providerById(options.provider) : providerFor(settings, task)
   const checkout = checkoutFor(settings, task)
   const existing = task.agentSession?.provider === provider.id ? task.agentSession.id : undefined
@@ -123,7 +131,7 @@ export function planLaunch(
 
   const writePrompt = (): string => {
     const file = join(supportDir(settings, 'prompts'), `${task.id}.txt`)
-    const rendered = renderPrompt(settings, task, templateId)
+    const rendered = options.prompt ?? renderPrompt(settings, task, templateId)
     const text = options.promptPreface ? `${options.promptPreface}\n\n${rendered}` : rendered
     writeFileSync(file, text, 'utf8')
     return syntax.fileContents(file)

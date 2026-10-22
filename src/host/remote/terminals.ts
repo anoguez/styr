@@ -63,12 +63,15 @@ export function createRemoteTerminals(registry: RemoteRegistry, ports: RemoteTer
    * id the server may not claim fails the call (`mayClaim`).
    */
   function recordSessions(entry: HostEntry, channel: string, result: unknown): void {
+    const opened = (result as { session?: TerminalSessionInfo } | null)?.session
     const sessions =
       channel === 'orchestrate:run' && Array.isArray(result)
         ? result.map((item: { session: TerminalSessionInfo }) => item.session)
         : SESSION_RESULT_CHANNELS.has(channel) && result && typeof result === 'object'
           ? [result as TerminalSessionInfo]
-          : []
+          : channel === 'review:requestChanges' && opened
+            ? [opened]
+            : []
     for (const session of sessions) {
       if (!tagSession(entry, session)) {
         throw new RemoteInvalidResponse(

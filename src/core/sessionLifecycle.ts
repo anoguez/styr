@@ -1,3 +1,4 @@
+import { AGENT_ENTER_DELAY_MS, agentPrompt, promptRoute } from './agentPrompt.js'
 import { askTitle, forkDescription } from './askAgent.js'
 import { askDraft, handoffDraft } from './derivedTask.js'
 import { agentHandoffPrompt, handoffFileName, isAgentProgram, renderHandoff } from './handoff.js'
@@ -14,9 +15,11 @@ import {
   type Task,
   type TaskDraft,
   type TaskPatch,
+  type ReviewRoute,
   type TaskSessionRef,
   type TerminalSessionInfo
 } from './types.js'
+import { syntaxFor } from './shell.js'
 import type { AgentStatus } from './agentState.js'
 
 /**
@@ -96,6 +99,13 @@ export interface SessionPorts {
   writeToSession(sessionId: string, data: string): void
   runtimeState(sessionId: string): RuntimeSnapshot | undefined
   agentStatuses(): AgentStatus[]
+  /** Whether the agent in a terminal reads prompts from Styr (`promptInbox` in its conversation). */
+  promptInbox(sessionId: string): boolean
+  /**
+   * Sends a prompt through the agent's own channel (the usage service's `prompt`: the inbox, or
+   * Codex's app-server); false when it was not taken, and the text is typed instead.
+   */
+  promptAgent(sessionId: string, text: string): Promise<boolean>
 
   monitor: {
     expect(socketPath: string, key: string, cwd: string): Promise<void>
@@ -282,7 +292,15 @@ export function createSessionLifecycle(ports: SessionPorts) {
     ports.notifyAgents()
   }
 
-  async function start(taskId: string, requested: LaunchOptions): Promise<TerminalSessionInfo> {
+  /**
+   * Launches the task's agent. With `into`, a live terminal of the task whose agent has quit, the
+   * command is typed at its shell instead of opening a tab (Request changes resuming a chat).
+   */
+  async function start(
+    taskId: string,
+    requested: LaunchOptions,
+    into?: TerminalSessionInfo
+  ): Promise<TerminalSessionInfo> {
     const task = ports.findTask(taskId)
     if (!task) throw new Error(`Task ${taskId} not found`)
 
@@ -334,6 +352,16 @@ export function createSessionLifecycle(ports: SessionPorts) {
       } else await ports.monitor.watch(socketPath, key, plan.sessionId)
     }
     try {
+      if (into) {
+        const syntax = syntaxFor(into.dialect)
+        ports.writeToSession(into.id, `${syntax.cd(plan.cwd)}\r`)
+        ports.writeToSession(into.id, `${plan.command}\r`)
+        if (plan.provider === 'codex' && plan.resumed) {
+          ports.recordAgentEvent(workspaceId, task.id, 'SessionStart')
+          ports.notifyAgents()
+        }
+        return into
+      }
       const session = ports.createSession({
         cwd: plan.cwd,
         shell: settings.shell,
@@ -549,7 +577,101 @@ export function createSessionLifecycle(ports: SessionPorts) {
     return { taskId: task.id, path, agentAsked }
   }
 
-  return { startForTask, recordCodexUpdate, askForPullRequest, askReview, askFork, handOff }
+  /** The task's live terminal, and whether an agent (not a bare shell) is running in it. */
+  function liveAgent(taskId: string): { live?: TerminalSessionInfo; running: boolean } {
+    const live = ports.findSessionByTask(taskId, ports.settings().activeWorkspaceId)
+    return { live, running: Boolean(live && ports.runtimeState(live.id)?.runningCommand) }
+  }
+
+  /**
+   * How Request changes would reach the task's agent now (`ReviewRoute`), and which provider. A
+   * live agent takes it in its session; a busy one queues it itself. Otherwise the task's chat is
+   * resumed with it, and with no chat the agent starts.
+   */
+  function reviewRoute(taskId: string): { route: ReviewRoute; provider: 'claude' | 'codex' } {
+    const task = ports.findTask(taskId)
+    if (!task) throw new Error(`Task ${taskId} not found`)
+    const settings = ports.settings()
+    const { live, running } = liveAgent(taskId)
+    const ref = task.agentSession
+    const provider =
+      (running ? live?.provider : undefined) ??
+      ref?.provider ??
+      task.provider ??
+      settings.defaultProvider
+    if (running) return { route: agentState(taskId) === 'working' ? 'queued' : 'now', provider }
+    const chat = ref && providerById(ref.provider).sessionExists(ref.id)
+    return { route: chat ? 'resume' : 'fresh', provider }
+  }
+
+  /**
+   * Sends a prompt to the agent in a live terminal the way one typed in Styr's input goes: its own
+   * channel when it listens, else one bracketed paste and, `AGENT_ENTER_DELAY_MS` later, Enter.
+   * Throws when the terminal went away before the Enter.
+   */
+  async function promptLiveAgent(sessionId: string, text: string): Promise<void> {
+    if (promptRoute(text, ports.promptInbox(sessionId)) === 'inbox') {
+      if (await ports.promptAgent(sessionId, text)) return
+    }
+    const { paste, enter } = agentPrompt(text)
+    ports.writeToSession(sessionId, paste)
+    await new Promise((resolve) => setTimeout(resolve, AGENT_ENTER_DELAY_MS))
+    if (!ports.listSessions().some((session) => session.id === sessionId)) {
+      throw new Error('The agent’s terminal closed before the comments were sent.')
+    }
+    ports.writeToSession(sessionId, enter)
+  }
+
+  /**
+   * Delivers a review message (Request changes) to the task's agent, by `reviewRoute`: into its
+   * live session; else resuming its chat with the message as the whole prompt; else a fresh
+   * launch of the implement lane's template with the message before it. A live terminal whose
+   * agent quit is reused. Throws when it could not be delivered; nothing is written then.
+   */
+  async function deliverReview(
+    taskId: string,
+    message: string
+  ): Promise<{
+    route: ReviewRoute
+    provider: 'claude' | 'codex'
+    session?: TerminalSessionInfo
+  }> {
+    const task = ports.findTask(taskId)
+    if (!task) throw new Error(`Task ${taskId} not found`)
+    const settings = ports.settings()
+    const choice = reviewRoute(taskId)
+    const { live } = liveAgent(taskId)
+    if (choice.route === 'queued' || choice.route === 'now') {
+      await promptLiveAgent(live!.id, message)
+      return choice
+    }
+    const ref = task.agentSession
+    const options: LaunchOptions =
+      choice.route === 'resume' && ref
+        ? { resume: ref.id, provider: ref.provider, withPrompt: true, prompt: message }
+        : {
+            withPrompt: true,
+            promptPreface: message,
+            templateId: resolveTemplateFor(settings, {
+              ...task,
+              status: 'in_progress',
+              readiness: 'ready'
+            }).id
+          }
+    const session = live ? await start(taskId, options, live) : await startForTask(taskId, options)
+    return { ...choice, session }
+  }
+
+  return {
+    startForTask,
+    recordCodexUpdate,
+    askForPullRequest,
+    askReview,
+    askFork,
+    handOff,
+    reviewRoute,
+    deliverReview
+  }
 }
 
 export type SessionLifecycle = ReturnType<typeof createSessionLifecycle>

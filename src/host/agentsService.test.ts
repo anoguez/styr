@@ -138,6 +138,7 @@ function harness(): Harness {
       void submit('hi')
       void answer('a1', 'allow')
     },
+    prompts: { promptInbox: () => false, promptAgent: async () => false },
     ensureAgentCli: async (provider) => void calls.push(`ensureCli ${provider}`),
     prepareCodex: async () => {
       calls.push('prepareCodex')

@@ -14,6 +14,7 @@ export * from './types/terminal.js'
 export * from './types/terminalEngine.js'
 export * from './types/blocks.js'
 export * from './types/worklog.js'
+export * from './types/review.js'
 export type {
   CliStatus,
   RemoteItem,

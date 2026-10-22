@@ -48,6 +48,7 @@ import { landingRequests, mergedWorkCheck } from '@host/landing.js'
 import { createSettingsService, diskSettingsStore } from '@host/settingsService.js'
 import { createTasksService } from '@host/tasksService.js'
 import { createWorklogService } from '@host/worklogService.js'
+import { createReviewService, diskReviewStore } from '@host/reviewService.js'
 import { listDirectories } from '@host/directories.js'
 import {
   createWorkspacesService,
@@ -69,7 +70,7 @@ import {
   type SpawnOptions
 } from './terminal/ptyManager.js'
 import { CodexMonitor, prepareCodex } from './codexMonitor.js'
-import { publishAgentConversation } from './usage.js'
+import { agentPrompts, publishAgentConversation } from './usage.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
 import { bindGlobalSettingsSave, remoteRouter, routedIpcMain, startRemote } from './remote.js'
@@ -102,7 +103,10 @@ const tasksService = createTasksService({
     addNote,
     reorderTasks,
     setArchived,
-    deleteTask,
+    deleteTask: (taskId) => {
+      deleteTask(taskId)
+      reviewService.forget(taskId)
+    },
     removeWorktree: (task) => gitService.checkout(task).removeWorktree(),
     brokenTaskFiles
   },
@@ -173,6 +177,10 @@ const agentsService = createAgentsService({
   },
   createMonitor: (onUpdate, onConversation) => new CodexMonitor(onUpdate, onConversation),
   publishConversation: publishAgentConversation,
+  prompts: {
+    promptInbox: (terminalId) => agentPrompts.promptInbox(terminalId),
+    promptAgent: (terminalId, text) => agentPrompts.promptAgent(terminalId, text)
+  },
   ensureAgentCli,
   prepareCodex,
   planLaunch,
@@ -205,6 +213,22 @@ const worklogService = createWorklogService({
   query: () => queryTasks(),
   sources: diskWorklogSources,
   yieldTurn: nextTurn
+})
+
+/** Review comments on a task's diff, and Request changes to its agent. */
+const reviewService = createReviewService({
+  broadcast,
+  store: diskReviewStore,
+  findTask,
+  updateTask,
+  addNote,
+  notifyTasks: notifyTasksChanged,
+  diff: (taskId) => gitService.taskDiff(taskId),
+  patch: (taskId, path) => gitService.filePatch(taskId, path, true),
+  route: (taskId) => agentsService.reviewRoute(taskId),
+  deliver: (taskId, message) => agentsService.deliverReview(taskId, message),
+  now: () => new Date().toISOString(),
+  warn: (message) => console.warn(message)
 })
 
 /** A landing pass after a task change; `notifyTasksChanged` never waits for its git. */
@@ -326,6 +350,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('agents:list', () => agentStatuses())
   ipcMain.handle('worklog:load', (_event, from: unknown, to: unknown) =>
     worklogService.load(from, to)
+  )
+  ipcMain.handle('review:get', (_event, taskId: unknown) => reviewService.get(taskId))
+  ipcMain.handle('review:save', (_event, taskId: unknown, pending: unknown) =>
+    reviewService.save(taskId, pending)
+  )
+  ipcMain.handle('review:prepare', (_event, taskId: unknown) => reviewService.prepare(taskId))
+  ipcMain.handle('review:requestChanges', (_event, taskId: unknown, summary: unknown) =>
+    reviewService.requestChanges(taskId, summary)
   )
 
   ipcMain.handle('tasks:create', (_event, draft: unknown) => tasksService.create(draft))

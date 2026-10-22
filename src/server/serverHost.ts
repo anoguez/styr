@@ -42,6 +42,7 @@ import {
 import { createUsage, watchFiles } from '@host/usage.js'
 import { startWatching, startWatchingAgents, stopWatching } from '@host/watcher.js'
 import { createWorklogService } from '@host/worklogService.js'
+import { createReviewService, diskReviewStore } from '@host/reviewService.js'
 import {
   createWorkspacesService,
   diskWorkspaceStore,
@@ -138,7 +139,10 @@ export function createServerHost(ports: ServerHostPorts) {
       addNote,
       reorderTasks,
       setArchived,
-      deleteTask,
+      deleteTask: (taskId) => {
+        deleteTask(taskId)
+        reviewService.forget(taskId)
+      },
       removeWorktree: (task) => gitService.checkout(task).removeWorktree(),
       brokenTaskFiles
     },
@@ -194,6 +198,10 @@ export function createServerHost(ports: ServerHostPorts) {
     },
     createMonitor: (onUpdate, onConversation) => new CodexMonitor(onUpdate, onConversation),
     publishConversation: usage.publishAgentConversation,
+    prompts: {
+      promptInbox: (terminalId) => usage.conversation(terminalId)?.promptInbox === true,
+      promptAgent: (terminalId, text) => usage.prompt(terminalId, text)
+    },
     ensureAgentCli: cli.ensureAgentCli,
     prepareCodex,
     planLaunch,
@@ -212,6 +220,21 @@ export function createServerHost(ports: ServerHostPorts) {
     query: () => queryTasks(),
     sources: diskWorklogSources,
     yieldTurn: nextTurn
+  })
+
+  const reviewService = createReviewService({
+    broadcast,
+    store: diskReviewStore,
+    findTask,
+    updateTask,
+    addNote,
+    notifyTasks: notifyTasksChanged,
+    diff: (taskId) => gitService.taskDiff(taskId),
+    patch: (taskId, path) => gitService.filePatch(taskId, path, true),
+    route: (taskId) => agentsService.reviewRoute(taskId),
+    deliver: (taskId, message) => agentsService.deliverReview(taskId, message),
+    now: () => new Date().toISOString(),
+    warn: (message) => console.warn(message)
   })
 
   const checkForMergedWork = mergedWorkCheck({
@@ -294,6 +317,15 @@ export function createServerHost(ports: ServerHostPorts) {
     ),
     'worklog:load': channel(z.tuple([z.unknown(), z.unknown()]), (from, to) =>
       worklogService.load(from, to)
+    ),
+    'review:get': channel(z.tuple([z.unknown()]), (taskId) => reviewService.get(taskId)),
+    'review:save': channel(z.tuple([z.unknown(), z.unknown()]), (taskId, pending) =>
+      reviewService.save(taskId, pending)
+    ),
+    'review:prepare': channel(z.tuple([z.unknown()]), (taskId) => reviewService.prepare(taskId)),
+    'review:requestChanges': channel(
+      z.tuple([z.unknown(), z.unknown().optional()]),
+      (taskId, summary) => reviewService.requestChanges(taskId, summary)
     ),
 
     'diagnostics:snapshot': channel(none, () =>

@@ -37,6 +37,10 @@ export const ACTIVE_CHANNELS: ReadonlySet<string> = new Set([
   'agents:remove',
   'agents:cliStatus',
   'worklog:load',
+  'review:get',
+  'review:save',
+  'review:prepare',
+  'review:requestChanges',
   'diagnostics:stop',
   'app:mcpCommand',
   'orchestrate:plan',
@@ -122,7 +126,9 @@ export const WRITE_CHANNELS: ReadonlySet<string> = new Set([
   'terminal:askFork',
   'terminal:handOff',
   'agent:prompt',
-  'agent:approval'
+  'agent:approval',
+  'review:save',
+  'review:requestChanges'
 ])
 
 /** Reads whose last answer is kept, so a disconnected board stays visible read-only. */
@@ -164,7 +170,8 @@ export const BOARD_BROADCASTS: ReadonlySet<string> = new Set([
   'orchestrate:autoState',
   'orchestrate:autoStarted',
   'sources:state',
-  'usage:claude'
+  'usage:claude',
+  'review:changed'
 ])
 
 /** Broadcasts addressed to one terminal session: forwarded from every host. */

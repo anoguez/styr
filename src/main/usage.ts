@@ -28,6 +28,14 @@ const usage = createUsage({
 
 export const { usageEnv, forgetContext, publishAgentConversation } = usage
 
+/** The agent's own prompt channel in a terminal, for Request changes (`agentsService`'s `prompts`). */
+export const agentPrompts = {
+  promptInbox: (terminalId: string): boolean =>
+    usage.conversation(terminalId)?.promptInbox === true,
+  promptAgent: (terminalId: string, text: string): Promise<boolean> =>
+    usage.prompt(terminalId, text)
+}
+
 /** Serves the last reading and pushes each new one. */
 export function initUsage(): void {
   ipcMain.handle('usage:claude', () => usage.claudeUsage())

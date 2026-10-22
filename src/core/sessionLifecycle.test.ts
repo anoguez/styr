@@ -11,6 +11,9 @@ import {
   splitMonitorKey,
   type SessionPorts
 } from './sessionLifecycle.js'
+import type { LaunchOptions } from './launch.js'
+import { resolveTemplateFor } from './prompt.js'
+import { syntaxFor } from './shell.js'
 import type { Settings, Task, TerminalSessionInfo } from './types.js'
 
 vi.mock('./providers/index.js', () => ({
@@ -51,6 +54,8 @@ interface Harness {
   agentState: { value?: AgentStatus['state'] }
   sessions: TerminalSessionInfo[]
   running: { value: { command?: string } | null }
+  inbox: { listens: boolean; takes: boolean }
+  launches: LaunchOptions[]
 }
 
 function harness(): Harness {
@@ -65,7 +70,19 @@ function harness(): Harness {
   const agentState: Harness['agentState'] = {}
   const sessions: TerminalSessionInfo[] = []
   const running: Harness['running'] = { value: { command: 'claude' } }
-  const h = { settings, tasks, calls, writes, agentState, sessions, running } as Harness
+  const inbox = { listens: false, takes: true }
+  const launches: LaunchOptions[] = []
+  const h = {
+    settings,
+    tasks,
+    calls,
+    writes,
+    agentState,
+    sessions,
+    running,
+    inbox,
+    launches
+  } as Harness
   h.ports = {
     settings: () => h.settings,
     findTask: (id) => tasks.get(id),
@@ -105,6 +122,11 @@ function harness(): Harness {
     runtimeState: () => ({ cwd: '/repo', runningCommand: running.value }),
     agentStatuses: () =>
       agentState.value ? [{ taskId: 'TASK-1', state: agentState.value } as AgentStatus] : [],
+    promptInbox: () => inbox.listens,
+    promptAgent: async (id, text) => {
+      calls.push(`prompt ${id} ${text}`)
+      return inbox.takes
+    },
     monitor: {
       expect: async (_socket, key, cwd) => void calls.push(`expect ${key} ${cwd}`),
       watch: async (_socket, key, id) => void calls.push(`watch ${key} ${id}`),
@@ -112,15 +134,18 @@ function harness(): Harness {
     },
     ensureAgentCli: async () => undefined,
     prepareCodex: async () => '/sock',
-    planLaunch: (_settings, t, options) => ({
-      provider: options.provider ?? 'claude',
-      command: 'agent',
-      cwd: '/repo',
-      sessionId: 'sess-1',
-      resumed: false,
-      worktreePath: '/repo.worktrees/TASK-1',
-      ...(t.id === 'TASK-1' ? {} : {})
-    }),
+    planLaunch: (_settings, t, options) => (
+      launches.push(options),
+      {
+        provider: options.provider ?? 'claude',
+        command: 'agent',
+        cwd: '/repo',
+        sessionId: 'sess-1',
+        resumed: false,
+        worktreePath: '/repo.worktrees/TASK-1',
+        ...(t.id === 'TASK-1' ? {} : {})
+      }
+    ),
     git: {
       branch: () => 'styr/TASK-1',
       baseBranch: () => 'main',
@@ -614,5 +639,99 @@ describe('handOff', () => {
     const result = createSessionLifecycle(h.ports).handOff('s1', '')
     expect(result.agentAsked).toBe(false)
     expect(h.writes).toEqual([])
+  })
+})
+
+describe('Request changes delivery', () => {
+  const MESSAGE =
+    'Review of styr/TASK-1 against main: 1 comment in 1 file.\n\nsrc/a.ts\n- src/a.ts:1'
+
+  it('prompts a live, waiting agent through its inbox, without a new tab', async () => {
+    const h = harness()
+    h.sessions.push(session())
+    h.agentState.value = 'waiting'
+    h.inbox.listens = true
+    const lifecycle = createSessionLifecycle(h.ports)
+    expect(lifecycle.reviewRoute('TASK-1').route).toBe('now')
+    await expect(lifecycle.deliverReview('TASK-1', MESSAGE)).resolves.toMatchObject({
+      route: 'now'
+    })
+    expect(h.calls).toEqual([`prompt s1 ${MESSAGE}`])
+    expect(h.writes).toEqual([])
+  })
+
+  it('says a working agent queues it, and types it when there is no inbox', async () => {
+    const h = harness()
+    h.sessions.push(session())
+    h.agentState.value = 'working'
+    const lifecycle = createSessionLifecycle(h.ports)
+    await expect(lifecycle.deliverReview('TASK-1', MESSAGE)).resolves.toMatchObject({
+      route: 'queued'
+    })
+    expect(h.calls.some((call) => call.startsWith('prompt'))).toBe(false)
+    expect(h.writes).toEqual([`s1:\x1b[200~${MESSAGE.replace(/\n/g, '\r')}\x1b[201~`, 's1:\r'])
+  })
+
+  it('types it when the inbox refuses it', async () => {
+    const h = harness()
+    h.sessions.push(session())
+    h.inbox.listens = true
+    h.inbox.takes = false
+    await createSessionLifecycle(h.ports).deliverReview('TASK-1', MESSAGE)
+    expect(h.writes).toHaveLength(2)
+  })
+
+  it('fails when the terminal closes before the Enter', async () => {
+    const h = harness()
+    h.sessions.push(session())
+    const lifecycle = createSessionLifecycle(h.ports)
+    const sent = lifecycle.deliverReview('TASK-1', MESSAGE)
+    h.sessions.length = 0
+    await expect(sent).rejects.toThrow(/closed/)
+    expect(h.writes).toHaveLength(1)
+  })
+
+  it('resumes the task’s chat with the message as the whole prompt', async () => {
+    const h = harness()
+    h.tasks.set(
+      'TASK-1',
+      task({ status: 'in_review', agentSession: { provider: 'claude', id: 'saved-chat' } })
+    )
+    const lifecycle = createSessionLifecycle(h.ports)
+    expect(lifecycle.reviewRoute('TASK-1').route).toBe('resume')
+    await lifecycle.deliverReview('TASK-1', MESSAGE)
+    expect(h.launches).toEqual([
+      { resume: 'saved-chat', provider: 'claude', withPrompt: true, prompt: MESSAGE }
+    ])
+    expect(h.calls).toContain('session TASK-1 claude')
+  })
+
+  it('starts the agent on the implement template with the message first when there is no chat', async () => {
+    const h = harness()
+    h.tasks.set('TASK-1', task({ status: 'in_review' }))
+    const lifecycle = createSessionLifecycle(h.ports)
+    expect(lifecycle.reviewRoute('TASK-1').route).toBe('fresh')
+    await lifecycle.deliverReview('TASK-1', MESSAGE)
+    const [options] = h.launches
+    expect(options).toMatchObject({ withPrompt: true, promptPreface: MESSAGE })
+    expect(options!.templateId).toBe(
+      resolveTemplateFor(h.settings, task({ status: 'in_progress' })).id
+    )
+    expect(options!.templateId).not.toBe(
+      resolveTemplateFor(h.settings, task({ status: 'in_review' })).id
+    )
+    expect(options!.prompt).toBeUndefined()
+  })
+
+  it('reuses a live terminal whose agent quit, typing the resume at its shell', async () => {
+    const h = harness()
+    h.sessions.push(session())
+    h.running.value = null
+    h.tasks.set('TASK-1', task({ agentSession: { provider: 'claude', id: 'saved-chat' } }))
+    const lifecycle = createSessionLifecycle(h.ports)
+    expect(lifecycle.reviewRoute('TASK-1').route).toBe('resume')
+    await lifecycle.deliverReview('TASK-1', MESSAGE)
+    expect(h.calls.some((call) => call.startsWith('session'))).toBe(false)
+    expect(h.writes).toEqual([`s1:${syntaxFor('posix').cd('/repo')}\r`, 's1:agent\r'])
   })
 })

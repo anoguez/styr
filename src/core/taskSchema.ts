@@ -760,3 +760,50 @@ export const remoteDiagnosticsSchema = z.object({
     100
   ).optional()
 })
+
+/** Bounds of a stored review: generous for a person, small enough to read whole. */
+export const REVIEW_LIMITS = { comments: 500, body: 20_000 } as const
+
+export const reviewCommentSchema = z.object({
+  id: z.string().min(1).max(REMOTE_LIMITS.short),
+  path: remotePathSchema.pipe(z.string().min(1)),
+  side: z.enum(['new', 'old']),
+  line: z.number().int().min(1),
+  text: line,
+  body: z.string().max(REVIEW_LIMITS.body),
+  createdAt: short
+})
+
+export const reviewCommentsSchema = z.array(reviewCommentSchema).max(REVIEW_LIMITS.comments)
+
+/** A task's review file (`.styr/reviews/<TASK-id>.json`), and `review:get`'s answer. */
+export const taskReviewSchema = z.object({
+  taskId: short,
+  pending: reviewCommentsSchema,
+  lastSent: z
+    .object({
+      at: short,
+      comments: reviewCommentsSchema,
+      summary: z.string().max(REVIEW_LIMITS.body).optional()
+    })
+    .optional()
+})
+
+export const reviewPreparationSchema = z.object({
+  route: z.enum(['queued', 'now', 'resume', 'fresh']),
+  provider,
+  target: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('branch'), branch: line, base: line }),
+    z.object({ kind: z.literal('repo'), repoName: line })
+  ]),
+  outdated: z.array(short).max(REVIEW_LIMITS.comments)
+})
+
+export const reviewSentSchema = z.object({
+  route: z.enum(['queued', 'now', 'resume', 'fresh']),
+  provider,
+  count,
+  files: count,
+  movedToInProgress: z.boolean(),
+  session: remoteTerminalSessionSchema.optional()
+})

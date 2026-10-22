@@ -109,6 +109,8 @@ export interface AgentsServicePorts extends Pick<HostPorts, 'broadcast'> {
     submitPrompt: (text: string) => Promise<void>,
     answerApproval: (approvalId: string, option: string) => Promise<void>
   ): void
+  /** The agent's own prompt channel in a terminal (`usage.ts`), for Request changes. */
+  prompts: Pick<SessionPorts, 'promptInbox' | 'promptAgent'>
   ensureAgentCli: SessionPorts['ensureAgentCli']
   prepareCodex: SessionPorts['prepareCodex']
   planLaunch: SessionPorts['planLaunch']
@@ -206,6 +208,7 @@ export function createAgentsService(ports: AgentsServicePorts) {
     pinWorkspace: ports.pinWorkspace,
     ...terminals,
     agentStatuses,
+    ...ports.prompts,
     monitor,
     ensureAgentCli: ports.ensureAgentCli,
     prepareCodex: ports.prepareCodex,
@@ -308,7 +311,9 @@ export function createAgentsService(ports: AgentsServicePorts) {
     askForPullRequest: lifecycle.askForPullRequest,
     askReview: lifecycle.askReview,
     askFork: lifecycle.askFork,
-    handOff: lifecycle.handOff
+    handOff: lifecycle.handOff,
+    reviewRoute: lifecycle.reviewRoute,
+    deliverReview: lifecycle.deliverReview
   }
 }
 
