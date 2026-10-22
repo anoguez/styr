@@ -49,7 +49,21 @@ describe('the client’s schemas', () => {
   })
 
   it('passes what a real server sends: a whole task and whole settings', () => {
-    const task = remoteTask({ id: 'TASK-0001', title: 'x', prUrl: 'https://x' })
+    const task = remoteTask({
+      id: 'TASK-0001',
+      title: 'x',
+      prUrl: 'https://x',
+      sessions: [
+        {
+          id: 's',
+          provider: 'claude',
+          startedAt: 'x',
+          label: 'R',
+          dispatch: 'review',
+          sentBack: true
+        }
+      ]
+    })
     expect(parseResponse('devbox', 'tasks:get', task)).toEqual(task)
     const settings = remoteSettings()
     expect(parseResponse('devbox', 'settings:get', settings)).toEqual(settings)

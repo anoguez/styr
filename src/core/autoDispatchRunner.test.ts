@@ -5,8 +5,10 @@ import {
   AUTO_DEBOUNCE_MS,
   AUTO_STARTUP_GRACE_MS
 } from './autoDispatchRunner.js'
+import { reworkCappedMessage } from './autoDispatch.js'
 import { planOrchestration } from './orchestrate.js'
-import type { Task } from './types.js'
+import { launchPatch } from './sessionLifecycle.js'
+import type { Task, TaskSessionRef } from './types.js'
 
 function task(id: string, order = 0): Task {
   return {
@@ -22,6 +24,8 @@ function task(id: string, order = 0): Task {
     orchestrate: true,
     repoPath: '/repo',
     filePath: `/tasks/${id}.md`,
+    sessions: [],
+    activity: [],
     order,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z'
@@ -37,9 +41,18 @@ function setup(
     beforePass?: () => void
     /** Sessions end as soon as they start, so a task can be started again. */
     sessionsEnd?: boolean
+    /**
+     * Launches and capped notes are written to the tasks as the real ports write them to the
+     * files, so a second runner can be built over the same tasks.
+     */
+    writeFiles?: boolean
+    /** `Settings.autoDispatchSince`. */
+    since?: string
+    clock?: number
   } = {}
 ) {
-  let clock = 0
+  let clock = options.clock ?? 0
+  let since = options.since
   let enabled = options.enabled ?? true
   let workspace = 'w'
   const timers: { at: number; run: () => void; id: number }[] = []
@@ -55,6 +68,7 @@ function setup(
     enabled: () => enabled,
     setEnabled: (on) => (enabled = on),
     workspaceId: () => workspace,
+    since: () => since,
     beforePass: async () => {
       calls.push('beforePass')
       options.beforePass?.()
@@ -71,10 +85,35 @@ function setup(
       if (options.failLaunch) throw new Error('boom')
       calls.push(`launch ${t.id} ${lane}`)
       launched.push(t.id)
+      if (options.writeFiles) {
+        // Reviews start fresh; a rework resumes the one implementer chat.
+        const sessionId = lane === 'review' ? `${t.id}-review-${calls.length}` : `${t.id}-implement`
+        const at = () => new Date(clock).toISOString()
+        Object.assign(
+          t,
+          launchPatch(
+            shippedSettings(),
+            t,
+            { provider: 'claude' },
+            { sessionId, dispatchLane: lane },
+            at
+          )
+        )
+      }
       options.onLaunch?.()
     },
     noteFailure: (t) => notes.push(t.id),
-    reworkCapped: (t) => capped.push(t.id),
+    reworkCapped: (t) => {
+      capped.push(t.id)
+      if (options.writeFiles) {
+        const note = {
+          at: new Date(clock).toISOString(),
+          author: 'styr',
+          message: reworkCappedMessage(t.id)
+        }
+        t.activity = [...t.activity, note]
+      }
+    },
     paused: (reason) => paused.push(reason),
     stateChanged: (state) => states.push(state),
     now: () => clock,
@@ -110,6 +149,12 @@ function setup(
     tasks,
     timers,
     setEnabled: (on: boolean) => (enabled = on),
+    /** Switching Auto-run on as `orchestrate:autoSet` does: stamp `autoDispatchSince`, then tell it. */
+    switchOn: () => {
+      enabled = true
+      since = new Date(clock).toISOString()
+      runner.enabledChanged()
+    },
     setWorkspace: (id: string) => (workspace = id)
   }
 }
@@ -200,34 +245,120 @@ describe('createAutoDispatch', () => {
     expect(t.calls).toEqual(['beforePass', 'launch B implement'])
   })
 
+  /** One pass, as a write to the board would trigger it. */
+  async function pass(t: ReturnType<typeof setup>): Promise<void> {
+    t.runner.request()
+    await t.advance(AUTO_DEBOUNCE_MS)
+  }
+
+  /** Auto-run reviews A three times, and each review sends it back to Backlog. */
+  async function failThreeReviews(t: ReturnType<typeof setup>, a: Task): Promise<void> {
+    for (let round = 0; round < 3; round += 1) {
+      await pass(t)
+      a.status = 'backlog' // the reviewer asked for fixes
+      await pass(t)
+      if (round < 2) a.status = 'in_review' // the implementer finished again
+    }
+  }
+
   it('stops starting a task after three failed reviews, notifies once, and a toggle on resets it', async () => {
     const a = { ...task('A'), status: 'in_review' } as Task
-    const t = setup({ tasks: [a], sessionsEnd: true })
-    const pass = async (): Promise<void> => {
-      t.runner.request()
-      await t.advance(AUTO_DEBOUNCE_MS)
-    }
-    for (let round = 0; round < 3; round += 1) {
-      await pass()
-      a.status = 'backlog' // the reviewer asked for fixes
-      await pass()
-      a.status = 'in_review' // the implementer finished again
-    }
+    const t = setup({ tasks: [a], sessionsEnd: true, writeFiles: true, clock: 1_000 })
+    await failThreeReviews(t, a)
     expect(t.calls.filter((call) => call === 'launch A review')).toHaveLength(3)
     expect(t.calls.filter((call) => call === 'launch A implement')).toHaveLength(2)
     expect(t.capped).toEqual(['A'])
     expect(t.runner.held()).toEqual(new Set(['A']))
 
     const before = t.calls.length
-    await pass()
-    a.status = 'backlog'
-    await pass()
+    await pass(t)
     expect(t.calls.slice(before).filter((call) => call.startsWith('launch'))).toEqual([])
     expect(t.capped).toEqual(['A'])
 
-    t.runner.enabledChanged()
+    await t.advance(1)
+    t.switchOn()
     await t.advance(AUTO_DEBOUNCE_MS)
     expect(t.calls.at(-1)).toBe('launch A implement')
     expect(t.runner.held()).toEqual(new Set())
+  })
+
+  it('a new runner over the same files keeps a capped task held and does not notify again', async () => {
+    const a = { ...task('A'), status: 'in_review' } as Task
+    const first = setup({ tasks: [a], sessionsEnd: true, writeFiles: true, clock: 1_000 })
+    await failThreeReviews(first, a)
+    expect(first.capped).toEqual(['A'])
+
+    // A relaunch: nothing survives but the task file.
+    const second = setup({ tasks: [a], sessionsEnd: true, clock: 5_000 })
+    await pass(second)
+    expect(second.launched).toEqual([])
+    expect(second.runner.held()).toEqual(new Set(['A']))
+    expect(second.capped).toEqual([])
+  })
+
+  it('a new runner notifies a cap reached while nothing was running, once', async () => {
+    const at = (ms: number) => new Date(ms).toISOString()
+    const review = (id: string, ms: number, sentBack?: true): TaskSessionRef => ({
+      id,
+      provider: 'claude',
+      startedAt: at(ms),
+      label: 'Review the work',
+      templateId: 'code-review',
+      dispatch: 'review',
+      ...(sentBack ? { sentBack } : {})
+    })
+    const a = {
+      ...task('A'),
+      agentSession: { provider: 'claude', id: 'r3' },
+      sessions: [review('r1', 1, true), review('r2', 2, true), review('r3', 3)]
+    } as Task
+    const t = setup({ tasks: [a], writeFiles: true, clock: 10 })
+    await pass(t)
+    await pass(t)
+    expect(t.capped).toEqual(['A'])
+    expect(t.launched).toEqual([])
+    const again = setup({ tasks: [a], clock: 20 })
+    await pass(again)
+    expect(again.capped).toEqual([])
+  })
+
+  it('a new runner does not start again a review Auto-run already ran on this state', async () => {
+    const a = { ...task('A'), status: 'in_review' } as Task
+    const first = setup({ tasks: [a], sessionsEnd: true, writeFiles: true })
+    await pass(first)
+    expect(first.launched).toEqual(['A']) // the review passed and left A In Review
+
+    const second = setup({ tasks: [a, task('B', 1)], sessionsEnd: true })
+    await pass(second)
+    expect(second.launched).toEqual(['B'])
+  })
+
+  it("a new runner counts the past hour's launches against the limit", async () => {
+    const hour = 60 * 60 * 1000
+    const started = (index: number, ms: number): Task =>
+      ({
+        ...task(`D${index}`),
+        status: 'in_progress',
+        sessions: [
+          {
+            id: `s${index}`,
+            provider: 'claude',
+            startedAt: new Date(ms).toISOString(),
+            label: 'Implement the task',
+            dispatch: 'implement'
+          }
+        ]
+      }) as Task
+    const now = 3 * hour
+    const recent = Array.from({ length: 20 }, (_, i) => started(i, now - hour + 1_000 + i))
+    const t = setup({ tasks: [...recent, task('A')], clock: now })
+    await pass(t)
+    expect(t.launched).toEqual([])
+    expect(t.paused).toEqual(['limit'])
+
+    const older = Array.from({ length: 20 }, (_, i) => started(i, now - hour - 1_000))
+    const fresh = setup({ tasks: [...older, task('A')], clock: now })
+    await pass(fresh)
+    expect(fresh.launched).toEqual(['A'])
   })
 })

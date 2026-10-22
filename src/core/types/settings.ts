@@ -127,6 +127,11 @@ export interface Settings {
   orchestration: OrchestrationCapacity
   /** Auto-run: keep starting eligible work as slots free up. Off until the user turns it on. */
   autoDispatch: boolean
+  /**
+   * When Auto-run was last switched on (ISO time). Failed reviews before it no longer hold a task:
+   * switching on is the person saying "go".
+   */
+  autoDispatchSince?: string
   theme: ThemeSettings
   shortcuts: ShortcutBindings
   updates: UpdateSettings
@@ -170,6 +175,7 @@ export const WORKSPACE_SETTING_KEYS = [
   'promptRouting',
   'orchestration',
   'autoDispatch',
+  'autoDispatchSince',
   'theme',
   'taskDefaults',
   'taskPresets',

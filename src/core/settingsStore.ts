@@ -299,12 +299,13 @@ export function persistSettings(change: SettingsChange): void {
   const current = loadSettings()
   const global = { ...change.global, activeWorkspaceId: current.activeWorkspaceId }
   // Auto-run is switched from the Dispatch dialog, never from a draft: an open dialog must not
-  // undo a Stop (or a limit pause) that happened since it was opened.
-  const keptAutoDispatch = loadSettings(change.workspaceId).autoDispatch
+  // undo a Stop (or a limit pause) that happened since it was opened, nor when it was switched on.
+  const onDisk = loadSettings(change.workspaceId)
   const destination = settingsSchema.parse({
     ...current,
     ...change.workspace,
-    autoDispatch: keptAutoDispatch,
+    autoDispatch: onDisk.autoDispatch,
+    autoDispatchSince: onDisk.autoDispatchSince,
     ...global
   })
   if (resolveWorkspaceId(destination, change.workspaceId) !== change.workspaceId) {
