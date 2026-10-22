@@ -24,6 +24,8 @@
     "src/core/diff.ts",
     "src/core/usage.ts",
     "src/core/diffView.ts",
+    "src/core/review.ts",
+    "src/core/agentPrompt.ts",
     "src/core/handoff.ts",
     "src/core/askAgent.ts",
     "src/core/derivedTask.ts",

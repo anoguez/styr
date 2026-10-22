@@ -1,7 +1,20 @@
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import type { DiffFile, PatchResult } from '@core/diff.js'
 import type { DiffRow } from '@core/diffView.js'
+import { plural } from '@core/review.js'
+import type { ReviewLayout } from '../lib/reviewLayout.js'
 import { Glyph, PaneMessage, Spinner } from './changesParts.js'
+
+/** Commenting on the drawn rows; absent where the file cannot be commented on. */
+export interface DiffPaneReview {
+  layout: ReviewLayout
+  /** Opens the composer under the row at `index`. */
+  onComment: (index: number) => void
+  /** The block under the row at `index`: its comments and the composer, or null. */
+  renderThread: (index: number) => ReactNode
+  /** Above the rows: outdated comments, and a draft whose line is gone. */
+  top: ReactNode
+}
 
 const ROW_STYLE = {
   ctx: {
@@ -38,6 +51,7 @@ export function DiffPane({
   rows,
   wrap,
   stale,
+  review,
   onFold,
   onRefresh
 }: {
@@ -47,6 +61,7 @@ export function DiffPane({
   rows: DiffRow[]
   wrap: boolean
   stale: boolean
+  review?: DiffPaneReview
   onFold: () => void
   onRefresh: () => void
 }): ReactNode {
@@ -137,6 +152,7 @@ export function DiffPane({
           </button>
         </div>
       ) : null}
+      {review?.top}
       <div
         className="min-w-full pb-3 text-[12px] leading-5"
         style={{
@@ -165,6 +181,7 @@ export function DiffPane({
             )
           }
           if (row.kind === 'fold') {
+            const hidden = review?.layout.folded.get(index) ?? 0
             return (
               <button
                 key={index}
@@ -180,50 +197,82 @@ export function DiffPane({
                   <span className="w-[88px]" />
                   <span className="w-[18px] text-center">↕</span>
                 </span>
-                <span className="px-1 pr-5">Show {row.count} unchanged lines</span>
+                <span className="px-1 pr-5">
+                  Show {row.count} unchanged lines
+                  {hidden > 0 ? ` · ${plural(hidden, 'comment')}` : ''}
+                </span>
               </button>
             )
           }
           const style = ROW_STYLE[row.kind]
           const wordBg =
             row.kind === 'add' ? 'var(--color-diff-add-word)' : 'var(--color-diff-del-word)'
+          const flagged = review?.layout.threads.has(index) ?? false
+          const line = row.kind === 'del' ? row.oldLine : row.newLine
+          const comment = review ? () => review.onComment(index) : undefined
           return (
-            <div key={index} className="flex min-h-5" style={{ background: style.bg }}>
-              <span
-                aria-hidden
-                className="sticky left-0 z-[1] flex shrink-0 select-none"
-                style={{
-                  background: style.gutter,
-                  color: row.kind === 'ctx' ? 'var(--color-faint)' : 'var(--color-dim)'
-                }}
-              >
-                <span className="w-11 box-border pr-1.5 text-right">{row.oldLine ?? ''}</span>
-                <span className="w-11 box-border pr-1.5 text-right">{row.newLine ?? ''}</span>
+            <Fragment key={index}>
+              <div className="group flex min-h-5" style={{ background: style.bg }}>
                 <span
-                  className="w-[18px] text-center font-medium"
-                  style={{ color: style.markColor }}
+                  onClick={comment}
+                  title={
+                    review
+                      ? `Comment on ${row.kind === 'del' ? 'old line' : 'line'} ${line}`
+                      : undefined
+                  }
+                  className={`sticky left-0 z-[1] flex shrink-0 select-none ${review ? 'cursor-pointer' : ''}`}
+                  style={{
+                    background: style.gutter,
+                    color: row.kind === 'ctx' ? 'var(--color-faint)' : 'var(--color-dim)',
+                    boxShadow: flagged ? 'inset 2px 0 0 var(--color-accent-text)' : undefined
+                  }}
                 >
-                  {style.mark}
-                </span>
-              </span>
-              <span
-                className="flex-1 px-1 pr-5 text-ink"
-                style={{
-                  whiteSpace: wrap ? 'pre-wrap' : 'pre',
-                  overflowWrap: wrap ? 'anywhere' : 'normal'
-                }}
-              >
-                {row.segments.map((segment, at) => (
-                  <span
-                    key={at}
-                    className="rounded-sm"
-                    style={{ background: segment.em ? wordBg : 'transparent' }}
-                  >
-                    {segment.text || ' '}
+                  <span aria-hidden className="w-11 box-border pr-1.5 text-right">
+                    {row.oldLine ?? ''}
                   </span>
-                ))}
-              </span>
-            </div>
+                  <span aria-hidden className="w-11 box-border pr-1.5 text-right">
+                    {row.newLine ?? ''}
+                  </span>
+                  <span
+                    className="relative w-[18px] text-center font-medium"
+                    style={{ color: style.markColor }}
+                  >
+                    <span aria-hidden>{style.mark}</span>
+                    {comment && review?.layout.draftRow !== index ? (
+                      <button
+                        type="button"
+                        aria-label="Comment on this line"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          comment()
+                        }}
+                        className="absolute left-1/2 top-px hidden size-[18px] -translate-x-1/2 place-items-center rounded-[5px] bg-accent text-[var(--color-on-accent)] shadow-sm group-hover:grid focus-visible:grid"
+                      >
+                        <Glyph name="plus" size={11} />
+                      </button>
+                    ) : null}
+                  </span>
+                </span>
+                <span
+                  className="flex-1 px-1 pr-5 text-ink"
+                  style={{
+                    whiteSpace: wrap ? 'pre-wrap' : 'pre',
+                    overflowWrap: wrap ? 'anywhere' : 'normal'
+                  }}
+                >
+                  {row.segments.map((segment, at) => (
+                    <span
+                      key={at}
+                      className="rounded-sm"
+                      style={{ background: segment.em ? wordBg : 'transparent' }}
+                    >
+                      {segment.text || ' '}
+                    </span>
+                  ))}
+                </span>
+              </div>
+              {review?.renderThread(index)}
+            </Fragment>
           )
         })}
       </div>

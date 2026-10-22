@@ -119,7 +119,11 @@ function harness(): Harness {
     listSessions: () => sessions,
     killSession: (id) => calls.push(`kill ${id}`),
     writeToSession: (id, data) => writes.push(`${id}:${data}`),
-    runtimeState: () => ({ cwd: '/repo', runningCommand: running.value }),
+    runtimeState: () => ({
+      cwd: '/repo',
+      runningCommand: running.value,
+      promptReady: running.value === null
+    }),
     agentStatuses: () =>
       agentState.value ? [{ taskId: 'TASK-1', state: agentState.value } as AgentStatus] : [],
     promptInbox: () => inbox.listens,
@@ -721,6 +725,14 @@ describe('Request changes delivery', () => {
       resolveTemplateFor(h.settings, task({ status: 'in_review' })).id
     )
     expect(options!.prompt).toBeUndefined()
+  })
+
+  it('takes the agent to be running in a shell that reports no prompt', async () => {
+    const h = harness()
+    h.sessions.push(session())
+    h.ports.runtimeState = () => ({ cwd: '/repo' })
+    h.tasks.set('TASK-1', task({ agentSession: { provider: 'claude', id: 'saved-chat' } }))
+    expect(createSessionLifecycle(h.ports).reviewRoute('TASK-1').route).toBe('now')
   })
 
   it('reuses a live terminal whose agent quit, typing the resume at its shell', async () => {

@@ -473,6 +473,7 @@ export default function App(): ReactNode {
               <ChangesDialog
                 task={changesTask}
                 onClose={() => dispatch({ type: 'showChanges', task: null })}
+                onSession={adoptSession}
               />
             ) : null}
 

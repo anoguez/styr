@@ -60,6 +60,8 @@ export interface SessionRequest {
 export interface RuntimeSnapshot {
   cwd?: string
   runningCommand?: { command?: string } | null
+  /** The shell integration saw its prompt: nothing runs. Never set without the integration. */
+  promptReady?: boolean
 }
 
 export interface WorkingTreeSummary {
@@ -577,10 +579,18 @@ export function createSessionLifecycle(ports: SessionPorts) {
     return { taskId: task.id, path, agentAsked }
   }
 
-  /** The task's live terminal, and whether an agent (not a bare shell) is running in it. */
+  /**
+   * The task's live terminal, and whether its agent still runs there. Only a shell prompt the
+   * integration reported counts as "the agent quit": a shell without the integration reports
+   * nothing, and its agent is taken to be running rather than typing a launch into it.
+   */
   function liveAgent(taskId: string): { live?: TerminalSessionInfo; running: boolean } {
     const live = ports.findSessionByTask(taskId, ports.settings().activeWorkspaceId)
-    return { live, running: Boolean(live && ports.runtimeState(live.id)?.runningCommand) }
+    const runtime = live && ports.runtimeState(live.id)
+    return {
+      live,
+      running: Boolean(live && (runtime?.runningCommand || !runtime?.promptReady))
+    }
   }
 
   /**

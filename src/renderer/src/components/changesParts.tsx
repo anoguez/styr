@@ -49,7 +49,15 @@ const GLYPHS = {
       <path d="M4 2.5h5l3 3v8H4z" />
       <path d="M6.25 7h3.5M8 5.25v3.5M6.25 11h3.5" />
     </>
-  )
+  ),
+  comment: (
+    <path d="M3 3h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 13.5V11H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+  ),
+  plus: <path d="M8 3.5v9M3.5 8h9" />,
+  edit: <path d="M3 13h3l7-7-3-3-7 7z" />,
+  trash: <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />,
+  check: <path d="M3.5 8.5l3 3 6-7" />,
+  send: <path d="M2.5 8 13.5 3 10 13.5 7.5 9z M7.5 9l6-6" />
 }
 
 export type GlyphName = keyof typeof GLYPHS

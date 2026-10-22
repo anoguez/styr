@@ -382,3 +382,36 @@ Terminal activity outside an agent session is not a source: nothing records it t
 
 Project colours come from theme tokens in a fixed order over the sorted project names, so a project
 keeps its colour across periods. Tasks without a `project` group under "No project".
+
+## Changes review
+
+The Changes dialog (`ChangesDialog`, `DiffPane`, the file list in `ChangesFileList`) takes review
+comments on diff lines, as on a GitHub PR, and sends them to the task's agent with Request changes.
+The review UI lives in `components/review/` (`CommentComposer`, `ReviewThread`,
+`RequestChangesSheet`, `ReviewFooter`, `useDiffPaneReview`) and `hooks/useTaskReview.ts`.
+
+- **Storage.** One file per task, `<workspace>/.styr/reviews/<TASK-id>.json` (`TaskReview`: the
+  `pending` comments and the `lastSent` batch), written atomically by `host/reviewService.ts`. It is
+  draft UI state: not in the task markdown, not in the index, not watched. A file that fails
+  `taskReviewSchema` reads as empty, logs a warning and is left alone until the next save. Every
+  add, edit and delete saves the whole pending list (`review:save`, last write wins); deleting a
+  task removes its file.
+- **Anchoring.** A comment stores its `path` (the new one for a rename), `side` (`old` only for a
+  deleted row), `line` and the line's `text` (`commentAnchor` in `core/review.ts`, pure).
+  `placeComments` puts it back on a refreshed diff: same side, line and text; else the fold hiding
+  that line ("Show N unchanged lines · 1 comment"); else the nearest row on that side with the same
+  text within 50 lines; else it is outdated, listed above the rows and marked in the message. The
+  last sent batch is drawn, dimmed, only where it places on its exact line.
+- **Delivery.** `review:requestChanges(taskId, summary)` builds the message (`reviewMessage`, which
+  the sheet's preview shows verbatim) from the stored comments, never from the caller's, and hands
+  it to `deliverReview` in `core/sessionLifecycle.ts`. Its route (`reviewRoute`, which
+  `review:prepare` shows in the sheet): a live terminal running the agent gets it as a prompt the way
+  Styr Terminal's input sends one (`core/agentPrompt.ts`: the inbox or Codex's channel, else one
+  bracketed paste and Enter), and a busy agent queues it itself; otherwise the task's chat is resumed
+  with the message as its whole prompt (`LaunchOptions.prompt`), or with no chat the implement
+  lane's template runs with the message as `promptPreface`. A live terminal whose agent quit gets the
+  launch typed at its shell. Only after delivery do the comments move to `lastSent`, an In Review or
+  Done task go back to In progress, a `styr` note record the counts and `review:changed` refresh open
+  dialogs; a failure changes nothing. A tab the launch opened comes back in the result for the
+  renderer to adopt. Remote workspaces route the four `review:*` channels to their server like any
+  board call.
