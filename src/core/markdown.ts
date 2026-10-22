@@ -21,9 +21,20 @@ function renderActivity(activity: ActivityEntry[]): string {
   return [ACTIVITY_MARKER, '## Activity', '', ...lines, ''].join('\n')
 }
 
-function parseActivity(block: string): ActivityEntry[] {
+// A heading or a thematic break at the start of a line: where an Activity section ends.
+const SECTION_END_RE = /^(#{1,6}\s|(-{3,}|\*{3,}|_{3,})\s*$)/
+
+/**
+ * The notes under `## Activity` (`block` starts after its heading), and whatever follows the
+ * section: content an agent appended below Activity (a spec, say) goes back to the description, so
+ * a rewrite moves it above the section instead of dropping it. Every other line is kept too: one
+ * that is not a note joins the note before it as written, so nothing in the file is ever lost.
+ */
+function parseActivity(block: string): { entries: ActivityEntry[]; rest: string } {
   const entries: ActivityEntry[] = []
-  for (const line of block.split('\n')) {
+  const lines = block.split('\n')
+  for (const [index, line] of lines.entries()) {
+    if (SECTION_END_RE.test(line)) return { entries, rest: lines.slice(index).join('\n').trim() }
     const match = ENTRY_RE.exec(line)
     if (match) {
       entries.push({
@@ -38,9 +49,13 @@ function parseActivity(block: string): ActivityEntry[] {
       continue
     }
     const current = entries[entries.length - 1]
+    // An indented line continues the note, a blank one ("  ") included; a bare blank line is spacing.
     if (current && line.startsWith('  ')) current.message += `\n${line.slice(2)}`
+    else if (!line.trim()) continue
+    else if (current) current.message += `\n${line}`
+    else entries.push({ at: '', author: '', message: line })
   }
-  return entries
+  return { entries, rest: '' }
 }
 
 export function hasFrontmatter(raw: string): boolean {
@@ -127,7 +142,16 @@ export function parseTaskMarkdown(raw: string, filePath: string): Task {
   // The marker wins; a bare heading counts only when no marker exists, so a description that
   // mentions "## Activity" above a real marker is left alone.
   const splitAt = markerAt !== -1 ? markerAt : headingAt
-  const description = (splitAt === -1 ? parsed.content : parsed.content.slice(0, splitAt)).trim()
-  const activity = splitAt === -1 ? [] : parseActivity(parsed.content.slice(splitAt))
-  return { ...front, description, activity, filePath, format: 'markdown' }
+  const head = (splitAt === -1 ? parsed.content : parsed.content.slice(0, splitAt)).trim()
+  if (splitAt === -1)
+    return { ...front, description: head, activity: [], filePath, format: 'markdown' }
+  // The section's own lines (the marker, the heading) are not notes.
+  const section = parsed.content.slice(splitAt)
+  const heading = ACTIVITY_HEADING_RE.exec(section)
+  const start = heading
+    ? heading.index + heading[0].length
+    : section.indexOf('\n') + 1 || section.length
+  const { entries, rest } = parseActivity(section.slice(start))
+  const description = [head, rest].filter(Boolean).join('\n\n')
+  return { ...front, description, activity: entries, filePath, format: 'markdown' }
 }
