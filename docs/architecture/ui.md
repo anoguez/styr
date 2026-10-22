@@ -95,6 +95,21 @@ While the terminal is showing, the agents sidebar highlights the row owning the 
 hover style, and scrolls it into view when the selection changes — so many tabs stay matchable to
 their cards.
 
+### Task activity panel
+
+A task session's terminal can show its task's activity log (`TerminalActivity.tsx`) floating over
+its right side, newest first — the same entries as the task dialog's Activity tab, read from the
+board's `TaskLookupContext`, so it writes nothing. Both views show `taskTimeline` (`lib/taskTimeline.ts`): the
+notes plus the events the frontmatter already records (created, each agent run in `sessions`, done,
+archived), merged by time and drawn quieter. They are derived, never written; column moves are not
+among them, since the file keeps only the current status. One switch in `TerminalPanel` covers every tab:
+the Activity button in the context bar (in the tab bar while a full-screen program hides the bar)
+and `terminalActivity` (⌘⇧A). While it is closed the button counts entries that arrived since the
+task was last in view. The panel does not cover output: `TerminalSurface` gives the terminal a right
+margin of the panel's width (`ACTIVITY_RESERVE`), and xterm refits from its resize observer. That
+wrapper is always rendered, so toggling the panel never remounts the terminal. A plain shell, or a
+session from another workspace, has no task here and shows neither button nor panel.
+
 ## Theme
 
 `Field` renders a `div`, never a `label`. A label activates the first control inside it, so a Field

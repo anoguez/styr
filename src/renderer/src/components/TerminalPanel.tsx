@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   DndContext,
   PointerSensor,
@@ -21,8 +21,10 @@ import {
   type AgentStatus
 } from '@core/agentState.js'
 import type { DiffStat } from '@core/diff.js'
+import { shortcutHint } from '@core/shortcuts.js'
 import type {
   ShortcutBindings,
+  Task,
   TerminalRuntimeState,
   TaskStatus,
   TerminalSessionInfo,
@@ -36,6 +38,9 @@ import { sessionLabel, type SessionLabel } from '../lib/sessionLabel.js'
 import { FILE_MANAGER } from '../lib/platform.js'
 import { fileName } from '../lib/terminalPath.js'
 import { sessionDisconnected, useRemoteState } from '../lib/remoteStatus.js'
+import { TaskLookupContext } from '../lib/blockerContext.js'
+import { onTerminalCommand } from '../lib/terminalCommands.js'
+import { ActivityToggle, TerminalActivity, useActivityUnread } from './TerminalActivity.js'
 
 const basename = fileName
 
@@ -157,7 +162,8 @@ export function TerminalPanel({
   onCloseSession,
   onCreateTask,
   onAskReview,
-  onAskFork
+  onAskFork,
+  onOpenTask
 }: {
   sessions: TerminalSessionInfo[]
   agents: Map<string, AgentStatus>
@@ -183,6 +189,8 @@ export function TerminalPanel({
   onCreateTask: (request: TerminalTaskRequest) => Promise<string>
   onAskReview: (taskId: string) => Promise<void>
   onAskFork: (sessionId: string, question: string) => Promise<boolean>
+  /** Open a task in the task dialog, from its activity panel. */
+  onOpenTask: (task: Task) => void
 }): ReactNode {
   const runtimes = useTerminalRuntimes(sessions)
   const [fullscreen, setFullscreen] = useState<ReadonlySet<string>>(new Set())
@@ -205,6 +213,26 @@ export function TerminalPanel({
     activeId && fullscreen.has(activeId) && activeRuntime && !activeHost
       ? activeRuntime.cwd
       : undefined
+
+  // One switch for the whole panel, so the activity stays open (or shut) as you move between tabs.
+  const [activityOpen, setActivityOpen] = useState(true)
+  useEffect(
+    () =>
+      onTerminalCommand((command) => {
+        if (command === 'terminalActivity') setActivityOpen((open) => !open)
+      }),
+    []
+  )
+  const tasks = useContext(TaskLookupContext)
+  // The board holds the active workspace's tasks only; a session from another has no activity here.
+  const taskOf = (session?: TerminalSessionInfo): Task | undefined =>
+    session?.taskId && session.workspaceId === workspaces.activeId
+      ? tasks.get(session.taskId)
+      : undefined
+  const activeTask = taskOf(sessions.find((session) => session.id === activeId))
+  const unread = useActivityUnread(activeTask, activityOpen)
+  const activityHint = shortcutHint(bindings, 'terminalActivity')
+  const toggleActivity = (): void => setActivityOpen((open) => !open)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
@@ -277,6 +305,19 @@ export function TerminalPanel({
               {basename(folder)}
             </button>
           ) : null}
+          {activeTask && activeId && fullscreen.has(activeId) ? (
+            // The bar that holds the toggle is gone while a full-screen program runs.
+            <>
+              <ActivityToggle
+                open={activityOpen}
+                unread={unread}
+                hint={activityHint}
+                inHeader
+                onToggle={toggleActivity}
+              />
+              <span aria-hidden className="h-3.5 w-px bg-edge" />
+            </>
+          ) : null}
           <Button variant="subtle" onClick={() => onNewSession()}>
             + Shell
           </Button>
@@ -325,52 +366,75 @@ export function TerminalPanel({
             </p>
           </div>
         ) : (
-          sessions.map((session) => (
-            <div key={session.id} className="absolute inset-2" hidden={session.id !== activeId}>
-              <TerminalSurface
-                session={session}
-                active={session.id === activeId}
-                theme={theme}
-                bindings={bindings}
-                nativeTerminal={nativeTerminal}
-                runtime={runtimes.get(session.id)}
-                agentStatus={
-                  session.taskId && session.workspaceId === workspaces.activeId
-                    ? agents.get(session.taskId)
-                    : undefined
-                }
-                shownState={
-                  session.taskId && session.workspaceId === workspaces.activeId
-                    ? shownAgents.get(session.taskId)?.state
-                    : undefined
-                }
-                onFullscreenChange={setSessionFullscreen}
-                onSplit={onNewSession}
-                onCreateTask={onCreateTask}
-                taskStatus={
-                  session.taskId && session.workspaceId === workspaces.activeId
-                    ? taskStates.get(session.taskId)?.status
-                    : undefined
-                }
-                taskPrUrl={
-                  session.taskId && session.workspaceId === workspaces.activeId
-                    ? taskStates.get(session.taskId)?.prUrl
-                    : undefined
-                }
-                diffStat={
-                  session.taskId && session.workspaceId === workspaces.activeId
-                    ? diffStats.get(session.taskId)
-                    : undefined
-                }
-                onShowChanges={session.taskId ? () => onShowChanges(session.taskId!) : undefined}
-                onAskReview={onAskReview}
-                onAskFork={onAskFork}
-              />
-              {sessionDisconnected(remote, session) ? (
-                <DisconnectedOverlay host={session.host!} />
-              ) : null}
-            </div>
-          ))
+          sessions.map((session) => {
+            const task = taskOf(session)
+            return (
+              <div key={session.id} className="absolute inset-2" hidden={session.id !== activeId}>
+                <TerminalSurface
+                  session={session}
+                  active={session.id === activeId}
+                  theme={theme}
+                  bindings={bindings}
+                  nativeTerminal={nativeTerminal}
+                  runtime={runtimes.get(session.id)}
+                  agentStatus={
+                    session.taskId && session.workspaceId === workspaces.activeId
+                      ? agents.get(session.taskId)
+                      : undefined
+                  }
+                  shownState={
+                    session.taskId && session.workspaceId === workspaces.activeId
+                      ? shownAgents.get(session.taskId)?.state
+                      : undefined
+                  }
+                  onFullscreenChange={setSessionFullscreen}
+                  onSplit={onNewSession}
+                  onCreateTask={onCreateTask}
+                  taskStatus={
+                    session.taskId && session.workspaceId === workspaces.activeId
+                      ? taskStates.get(session.taskId)?.status
+                      : undefined
+                  }
+                  taskPrUrl={
+                    session.taskId && session.workspaceId === workspaces.activeId
+                      ? taskStates.get(session.taskId)?.prUrl
+                      : undefined
+                  }
+                  diffStat={
+                    session.taskId && session.workspaceId === workspaces.activeId
+                      ? diffStats.get(session.taskId)
+                      : undefined
+                  }
+                  onShowChanges={session.taskId ? () => onShowChanges(session.taskId!) : undefined}
+                  onAskReview={onAskReview}
+                  onAskFork={onAskFork}
+                  activity={
+                    task && activityOpen ? (
+                      <TerminalActivity
+                        task={task}
+                        agent={shownAgents.get(task.id)}
+                        hint={activityHint}
+                        onOpenTask={() => onOpenTask(task)}
+                        onClose={() => setActivityOpen(false)}
+                      />
+                    ) : undefined
+                  }
+                >
+                  {task ? (
+                    <ActivityToggle
+                      open={activityOpen}
+                      unread={session.id === activeId ? unread : 0}
+                      hint={activityHint}
+                      onToggle={toggleActivity}
+                    />
+                  ) : null}
+                </TerminalSurface>
+                {sessionDisconnected(remote, session) ? (
+                  <DisconnectedOverlay host={session.host!} />
+                ) : null}
+              </div>
+            )
+          })
         )}
       </div>
     </section>

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { AGENT_PROVIDER_SHORT_LABELS, type Task } from '@core/types.js'
+import { dotTone, taskTimeline } from '../../lib/taskTimeline.js'
 import { Chip } from '../ui.js'
 import { GHOST_BTN } from './fields.js'
 
@@ -12,7 +13,7 @@ export function tabsFor(task: Task | null): { key: TabKey; label: string; count?
     ...(task
       ? [
           { key: 'chats' as const, label: 'Agent chats', count: task.sessions.length },
-          { key: 'activity' as const, label: 'Activity', count: task.activity.length }
+          { key: 'activity' as const, label: 'Activity', count: taskTimeline(task).length }
         ]
       : []),
     { key: 'prompt', label: 'Prompt preview' }
@@ -110,17 +111,19 @@ export function ChatsTab({
   )
 }
 
-/** The task's activity log as a timeline; agent entries are marked apart from yours. */
-export function ActivityTab({ activity }: { activity: Task['activity'] }): ReactNode {
+/**
+ * The task's activity log as a timeline, with the events its file records (created, agent runs,
+ * done) merged in; agent entries are marked apart from yours.
+ */
+export function ActivityTab({ task }: { task: Task }): ReactNode {
+  const activity = taskTimeline(task)
   return (
     <ol className="m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto px-5 pb-5 pt-4">
       {activity.length === 0 ? <li className="text-[12px] text-faint">No activity yet.</li> : null}
       {activity.map((entry, index) => (
         <li key={`${index}-${entry.at}`} className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-3">
           <span className="flex flex-col items-center">
-            <span
-              className={`mt-[5px] size-[7px] shrink-0 rounded-full ${entry.author === 'you' || !entry.author ? 'bg-dim' : 'bg-col-progress'}`}
-            />
+            <span className={`mt-[5px] size-[7px] shrink-0 rounded-full ${dotTone(entry)}`} />
             {index < activity.length - 1 ? <span className="w-px flex-1 bg-edge" /> : null}
           </span>
           <div className="flex flex-col gap-[3px] pb-4">
@@ -130,7 +133,9 @@ export function ActivityTab({ activity }: { activity: Task['activity'] }): React
                 {entry.author ? ` · ${entry.author}` : ''}
               </span>
             ) : null}
-            <p className="m-0 whitespace-pre-wrap text-[12.5px] leading-normal text-ink">
+            <p
+              className={`m-0 whitespace-pre-wrap text-[12.5px] leading-normal ${entry.event ? 'text-dim' : 'text-ink'}`}
+            >
               {entry.message}
             </p>
           </div>

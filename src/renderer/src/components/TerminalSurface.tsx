@@ -1,24 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import {
-  AGENT_STATE_LABELS,
-  runningSubagents,
-  subagentCountLabel,
-  type AgentStatus
-} from '@core/agentState.js'
+import { runningSubagents, type AgentStatus } from '@core/agentState.js'
 import { isAgentProgram } from '@core/handoff.js'
 import { syntaxFor } from '@core/shell.js'
-import { shortcutHint } from '@core/shortcuts.js'
+import { formatAccelerator, shortcutHint } from '@core/shortcuts.js'
 import {
-  TASK_STATUS_LABELS,
   type ShortcutBindings,
   type TaskStatus,
   type TerminalRuntimeState,
   type TerminalSessionInfo,
   type ThemeSettings
 } from '@core/types.js'
-import { AGENT_TONE } from '../lib/agentTone.js'
-import { STATUS_DOT } from '../lib/statusTone.js'
-import { displayPath } from '../lib/terminalPath.js'
 import { onTerminalCommand, type TerminalCommand } from '../lib/terminalCommands.js'
 import {
   firstLine,
@@ -27,7 +18,8 @@ import {
   type TerminalTaskKind
 } from '../lib/terminalContext.js'
 import { AskPrompt } from './AskPrompt.js'
-import { DirectoryPicker } from './DirectoryPicker.js'
+import { ACTIVITY_RESERVE } from './TerminalActivity.js'
+import { ContextBar, agentButton, iconProps, quietButton } from './TerminalContextBar.js'
 import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
 import { TerminalBlocks, type ActionBlock, type BlockActions } from './TerminalBlocks.js'
 import type { BlockLayout } from '../lib/blockTracker.js'
@@ -39,16 +31,10 @@ import type { DiffStat } from '@core/diff.js'
 import { useClaudeUsage } from '../hooks/useClaudeUsage.js'
 import { useContextUsage } from '../hooks/useContextUsage.js'
 import { useCodexUsage } from '../hooks/useCodexUsage.js'
-import { formatAccelerator } from '@core/shortcuts.js'
 import { FILE_MANAGER } from '../lib/platform.js'
 
 const INTERRUPT = '\x03'
 const CLEAR = '\x0c'
-
-const quietButton =
-  'pointer-events-auto inline-flex items-center gap-1.5 rounded-md border border-transparent font-medium text-dim hover:bg-raised/70 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40'
-const agentButton =
-  'pointer-events-auto inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/15 font-medium text-accent-ink hover:bg-accent/30 focus-visible:outline-2 focus-visible:outline-accent'
 
 export interface TerminalTaskRequest {
   title: string
@@ -61,33 +47,6 @@ export interface TerminalTaskRequest {
   /** The repository the task works in, when the terminal is inside one. */
   repoPath?: string
 }
-
-function useElapsedSeconds(startedAt: number | undefined): string | undefined {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (startedAt === undefined) return
-    setNow(Date.now())
-    const timer = setInterval(() => setNow(Date.now()), 100)
-    return () => clearInterval(timer)
-  }, [startedAt])
-  return startedAt === undefined ? undefined : (Math.max(0, now - startedAt) / 1000).toFixed(1)
-}
-
-function formatDuration(ms: number): string {
-  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`
-}
-
-function Kbd({ children }: { children: ReactNode }): ReactNode {
-  return <span className="font-mono text-[10px] text-faint">{children}</span>
-}
-
-const iconProps = {
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 1.5,
-  strokeLinecap: 'round',
-  strokeLinejoin: 'round'
-} as const
 
 function CopyIcon(): ReactNode {
   return (
@@ -194,291 +153,6 @@ function FailureActions({
   )
 }
 
-function ContextBar({
-  runtime,
-  fallbackCwd,
-  isAgent,
-  agentState,
-  subagents = 0,
-  taskStatus,
-  blocksOn,
-  inputHints,
-  branch,
-  repoRoot,
-  usage,
-  diff,
-  onOpenBranch,
-  picking,
-  menuOpen,
-  askHint,
-  directoryHint,
-  menu,
-  onTogglePicker,
-  onClosePicker,
-  onToggleMenu,
-  onChoose,
-  onInterrupt,
-  onAsk,
-  onReview,
-  onCreatePr,
-  onHandOff,
-  reviewHint,
-  children
-}: {
-  runtime: TerminalRuntimeState
-  fallbackCwd: string
-  /** An agent CLI is running: it is shown by its state, not as a command with a timer. */
-  isAgent?: boolean
-  agentState?: AgentStatus['state']
-  /** Running subagents of that agent, shown after its state. */
-  subagents?: number
-  /** The board column of this session's task, so it reads even with the board hidden. */
-  taskStatus?: TaskStatus
-  /** Commands report themselves in blocks over the terminal, so the bar leaves them out. */
-  blocksOn?: boolean
-  /** The block list shows the keys beside its own input, so a new shell's bar does not repeat them. */
-  inputHints?: boolean
-  branch: string | null
-  repoRoot: string | null
-  /** The usage control, for a Claude session; sits beside Ask agent. */
-  usage?: ReactNode
-  /** The task's change totals, present only when its branch has changes. */
-  diff?: ReactNode
-  onOpenBranch: () => void
-  picking: boolean
-  menuOpen: boolean
-  askHint: string
-  directoryHint: string
-  menu: ReactNode
-  onTogglePicker: () => void
-  onClosePicker: () => void
-  onToggleMenu: () => void
-  onChoose: (path: string) => void
-  onInterrupt: () => void
-  onAsk: () => void
-  /** Offered only when the task is in review and its agent is not mid-turn. */
-  onReview?: () => void
-  /** Offered only while an agent is running; a bare shell has no intent to hand over. */
-  onHandOff?: () => void
-  /** Offered once a task in review has passed and its agent is idle. */
-  onCreatePr?: () => void
-  reviewHint: string
-  children?: ReactNode
-}): ReactNode {
-  const cwd = runtime.cwd || fallbackCwd
-  const running = runtime.runningCommand
-  const elapsed = useElapsedSeconds(running?.startedAt)
-  const last = runtime.lastCommand
-  const failed = !running && runtime.lastExitCode !== undefined && runtime.lastExitCode !== 0
-  const fresh = !running && !last && runtime.lastExitCode === undefined
-  const path = displayPath(cwd, repoRoot)
-  // A cd typed while a command runs would reach that command's stdin, so only offer it at a prompt.
-  const canChange = runtime.promptReady && !running
-
-  return (
-    <footer className="pointer-events-none relative flex h-[30px] shrink-0 items-center gap-1.5 border-t border-edge px-1.5">
-      <button
-        type="button"
-        title={canChange ? cwd : `${cwd} — available at a prompt`}
-        aria-haspopup="dialog"
-        aria-expanded={picking}
-        disabled={!canChange}
-        className={`pointer-events-auto inline-flex h-[22px] min-w-0 items-center gap-1.5 rounded-md border py-0 pl-[7px] pr-1.5 font-mono text-[11px] text-ink hover:bg-raised/70 focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-60 ${
-          picking ? 'border-edge-strong bg-raised' : 'border-transparent'
-        }`}
-        onClick={onTogglePicker}
-      >
-        <svg aria-hidden viewBox="0 0 16 16" width="13" height="13" className="shrink-0 text-dim">
-          <path
-            d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"
-            {...iconProps}
-          />
-        </svg>
-        <span className="shrink-0 font-medium">{path.name}</span>
-        {path.rest ? (
-          <span
-            className="min-w-0 max-w-[280px] truncate text-left text-dim"
-            style={{ direction: 'rtl' }}
-          >
-            <bdi>{path.rest}</bdi>
-          </span>
-        ) : null}
-        <svg aria-hidden viewBox="0 0 16 16" width="12" height="12" className="shrink-0 text-faint">
-          <path d="M5 6.5 8 9.5l3-3" {...iconProps} />
-        </svg>
-      </button>
-
-      {branch ? (
-        <button
-          type="button"
-          title="Open this checkout in VS Code"
-          onClick={onOpenBranch}
-          className="pointer-events-auto hidden min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10.5px] text-faint hover:bg-raised/70 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent @lg:flex"
-        >
-          <svg aria-hidden viewBox="0 0 16 16" width="11" height="11" className="shrink-0">
-            <g {...iconProps}>
-              <circle cx="4.5" cy="3.5" r="1.8" />
-              <circle cx="4.5" cy="12.5" r="1.8" />
-              <circle cx="11.5" cy="3.5" r="1.8" />
-              <path d="M4.5 5.3v5.4M11.5 5.3c0 3-2.8 3.4-5.2 4" />
-            </g>
-          </svg>
-          <span className="truncate">{branch}</span>
-        </button>
-      ) : null}
-
-      {usage}
-
-      {diff}
-
-      <span className="flex-1" />
-
-      {fresh && !inputHints ? (
-        <span className="hidden items-center gap-2.5 text-[11.5px] text-faint @md:flex">
-          {askHint ? (
-            <span>
-              <span className="font-mono text-[10.5px]">{askHint}</span> ask agent
-            </span>
-          ) : null}
-          {directoryHint ? (
-            <span>
-              <span className="font-mono text-[10.5px]">{directoryHint}</span> change directory
-            </span>
-          ) : null}
-        </span>
-      ) : null}
-
-      {taskStatus ? (
-        <span
-          title={`Task column: ${TASK_STATUS_LABELS[taskStatus]}`}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-edge px-1.5 py-px text-[10.5px] text-dim"
-        >
-          <span
-            aria-hidden
-            className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[taskStatus]}`}
-          />
-          {TASK_STATUS_LABELS[taskStatus]}
-        </span>
-      ) : null}
-
-      {running && isAgent ? (
-        // The agent process lives as long as the session, so a timer would count idle time as work.
-        // Its own state (from its hooks) says what it is actually doing.
-        <span
-          className={`inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] ${
-            agentState ? AGENT_TONE[agentState] : 'text-dim'
-          }`}
-        >
-          <span
-            aria-hidden
-            className={`size-1.5 shrink-0 rounded-full bg-current ${agentState === 'working' ? 'wd-pulse' : ''}`}
-          />
-          {agentState ? <span className="shrink-0">{AGENT_STATE_LABELS[agentState]}</span> : null}
-          {subagents ? (
-            <span title={`${subagentCountLabel(subagents)} running`} className="truncate text-dim">
-              · {subagentCountLabel(subagents)}
-            </span>
-          ) : null}
-        </span>
-      ) : running && !blocksOn ? (
-        <>
-          <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] text-col-progress">
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current wd-pulse" />
-            <span className="max-w-56 truncate">{running.command}</span>
-            <span className="shrink-0">· {elapsed}s</span>
-          </span>
-          <button
-            type="button"
-            className={`${quietButton} h-5 shrink-0 rounded-[5px] border-edge-strong px-1.5 text-[11px]`}
-            onClick={onInterrupt}
-          >
-            <svg aria-hidden viewBox="0 0 16 16" width="10" height="10">
-              <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" />
-            </svg>
-            Interrupt
-            <Kbd>{formatAccelerator('ctrl+c')}</Kbd>
-          </button>
-        </>
-      ) : runtime.lastExitCode !== undefined && !blocksOn ? (
-        <span
-          className={`inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] ${
-            failed ? 'text-danger' : 'text-faint'
-          }`}
-        >
-          {failed ? <span>exit {runtime.lastExitCode} ·</span> : null}
-          {last?.endedAt !== undefined ? (
-            <span>{formatDuration(last.endedAt - last.startedAt)}</span>
-          ) : null}
-        </span>
-      ) : null}
-
-      <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">{children}</div>
-
-      {onReview ? (
-        <button
-          type="button"
-          title={`Close this session and start a fresh reviewer, as Dispatch would${reviewHint ? ` (${reviewHint})` : ''}`}
-          className={`${agentButton} h-[22px] px-2 text-[11.5px]`}
-          onClick={onReview}
-        >
-          ✓ <span className="hidden @md:inline">Ask to review</span>
-          <span className="@md:hidden">Review</span>
-        </button>
-      ) : null}
-      {onCreatePr ? (
-        <button
-          type="button"
-          title="Ask the agent to push the branch and open a pull request"
-          className={`${agentButton} h-[22px] px-2 text-[11.5px]`}
-          onClick={onCreatePr}
-        >
-          ⎇ <span className="hidden @md:inline">Create PR</span>
-          <span className="@md:hidden">PR</span>
-        </button>
-      ) : null}
-      {onHandOff ? (
-        <button
-          type="button"
-          title="Write a handoff document and create a task another agent can pick up"
-          className={`${quietButton} hidden h-[22px] px-[7px] text-[11.5px] @lg:inline-flex`}
-          onClick={onHandOff}
-        >
-          Hand off
-        </button>
-      ) : null}
-      <button
-        type="button"
-        title={`Ask agent about this terminal${askHint ? ` (${askHint})` : ''}`}
-        className={`${quietButton} h-[22px] px-[7px] text-[11.5px]`}
-        onClick={onAsk}
-      >
-        <span className="text-accent-soft">✦</span>
-        <span className="hidden @md:inline">Ask agent</span>
-        {askHint ? (
-          <span className="hidden font-mono text-[10px] text-faint @md:inline">{askHint}</span>
-        ) : null}
-      </button>
-      <button
-        type="button"
-        aria-label="Terminal actions"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        className={`${quietButton} size-[22px] justify-center ${menuOpen ? 'bg-raised' : ''}`}
-        onClick={onToggleMenu}
-      >
-        <svg aria-hidden viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-          <circle cx="3.75" cy="8" r="1.15" />
-          <circle cx="8" cy="8" r="1.15" />
-          <circle cx="12.25" cy="8" r="1.15" />
-        </svg>
-      </button>
-
-      {picking ? <DirectoryPicker start={cwd} onClose={onClosePicker} onChoose={onChoose} /> : null}
-      {menu}
-    </footer>
-  )
-}
-
 /**
  * The native React boundary around xterm. It owns semantic state presentation while TerminalView
  * remains exclusively responsible for terminal emulation and lifecycle.
@@ -501,6 +175,7 @@ export function TerminalSurface({
   onFullscreenChange,
   onSplit,
   onCreateTask,
+  activity,
   children
 }: {
   session: TerminalSessionInfo
@@ -533,7 +208,12 @@ export function TerminalSurface({
   onSplit?: (cwd: string) => void
   /** Hand terminal output to an agent as a new task; resolves to the task id. */
   onCreateTask?: (request: TerminalTaskRequest) => Promise<string>
-  /** Extension point for future terminal actions and controls. */
+  /**
+   * The task's floating activity panel, when it is showing. The terminal narrows to leave it room,
+   * so nothing it prints sits underneath.
+   */
+  activity?: ReactNode
+  /** Controls for the context bar, beside Ask agent. */
   children?: ReactNode
 }): ReactNode {
   const handle = useRef<TerminalHandle | null>(null)
@@ -885,70 +565,77 @@ export function TerminalSurface({
   return (
     <div className="@container flex h-full w-full flex-col">
       <div className="relative min-h-0 flex-1">
-        <TerminalEngineView
-          nativeTerminal={nativeTerminal}
-          sessionId={session.id}
-          dialect={session.dialect}
-          active={active}
-          theme={theme}
-          bindings={bindings}
-          handle={handle}
-          onSelection={setSelection}
-          onFullscreenChange={setAltScreen}
-          onBlocks={setLayout}
-          onHoverLine={setHoverLine}
-          blockActions={blockActions}
-          canRetry={canChange}
-          commandHints={[
-            { keys: askHint, label: 'ask agent' },
-            { keys: shortcutHint(bindings, 'terminalDirectory'), label: 'change directory' }
-          ]}
-          onBlockListChange={setBlockList}
-          agentProvider={session.provider}
-          agentWaiting={
-            agentStatus?.state === 'waiting' ? agentStatus.lastMessage || 'Waiting on you' : null
-          }
-        />
-        {blocksOn && layout ? (
-          <TerminalBlocks
-            layout={{ ...layout, blocks: shellBlocks }}
-            hoveredId={hoveredBlock}
-            menuId={blockMenu}
+        {/* Always rendered, so opening the panel resizes the terminal rather than remounting it. */}
+        <div
+          className="relative h-full"
+          style={{ marginRight: activity ? ACTIVITY_RESERVE : undefined }}
+        >
+          <TerminalEngineView
+            nativeTerminal={nativeTerminal}
+            sessionId={session.id}
+            dialect={session.dialect}
+            active={active}
+            theme={theme}
+            bindings={bindings}
+            handle={handle}
+            onSelection={setSelection}
+            onFullscreenChange={setAltScreen}
+            onBlocks={setLayout}
+            onHoverLine={setHoverLine}
+            blockActions={blockActions}
             canRetry={canChange}
-            actions={blockActions}
-            onHover={setStickyBlock}
-            onMenu={setBlockMenu}
+            commandHints={[
+              { keys: askHint, label: 'ask agent' },
+              { keys: shortcutHint(bindings, 'terminalDirectory'), label: 'change directory' }
+            ]}
+            onBlockListChange={setBlockList}
+            agentProvider={session.provider}
+            agentWaiting={
+              agentStatus?.state === 'waiting' ? agentStatus.lastMessage || 'Waiting on you' : null
+            }
           />
-        ) : null}
-        {selection && !fullscreen && onCreateTask ? (
-          <SelectionToolbar
-            selection={selection}
-            askHint={askHint}
-            onCopy={() => {
-              copy(selection.text, 'selection')
-              setSelection(null)
-            }}
-            onExplain={() => void sendToAgent('explain', true)}
-            onAsk={() => openAsk(true)}
-          />
-        ) : null}
-        {asking ? (
-          <AskPrompt
-            attached={asking.attached}
-            forking={Boolean(session.taskId && onAskFork)}
-            sendHint="↵"
-            onSubmit={(question) => void submitAsk(question)}
-            onCancel={closeAsk}
-          />
-        ) : null}
-        {notice ? (
-          <div
-            role="status"
-            className="pointer-events-none absolute bottom-2 left-1/2 z-20 -translate-x-1/2 rounded-md border border-edge-strong bg-panel px-2.5 py-1 text-[11.5px] text-ink shadow-xl"
-          >
-            {notice}
-          </div>
-        ) : null}
+          {blocksOn && layout ? (
+            <TerminalBlocks
+              layout={{ ...layout, blocks: shellBlocks }}
+              hoveredId={hoveredBlock}
+              menuId={blockMenu}
+              canRetry={canChange}
+              actions={blockActions}
+              onHover={setStickyBlock}
+              onMenu={setBlockMenu}
+            />
+          ) : null}
+          {selection && !fullscreen && onCreateTask ? (
+            <SelectionToolbar
+              selection={selection}
+              askHint={askHint}
+              onCopy={() => {
+                copy(selection.text, 'selection')
+                setSelection(null)
+              }}
+              onExplain={() => void sendToAgent('explain', true)}
+              onAsk={() => openAsk(true)}
+            />
+          ) : null}
+          {asking ? (
+            <AskPrompt
+              attached={asking.attached}
+              forking={Boolean(session.taskId && onAskFork)}
+              sendHint="↵"
+              onSubmit={(question) => void submitAsk(question)}
+              onCancel={closeAsk}
+            />
+          ) : null}
+          {notice ? (
+            <div
+              role="status"
+              className="pointer-events-none absolute bottom-2 left-1/2 z-20 -translate-x-1/2 rounded-md border border-edge-strong bg-panel px-2.5 py-1 text-[11.5px] text-ink shadow-xl"
+            >
+              {notice}
+            </div>
+          ) : null}
+        </div>
+        {activity}
       </div>
       {showBar && failed && runtime && !blockList ? (
         <FailureActions

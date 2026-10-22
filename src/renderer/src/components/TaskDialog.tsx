@@ -196,7 +196,7 @@ export function TaskDialog({
                   onForget={() => void window.api.tasks.forgetSession(task.id).then(onClose)}
                 />
               ) : null}
-              {tab === 'activity' && task ? <ActivityTab activity={task.activity} /> : null}
+              {tab === 'activity' && task ? <ActivityTab task={task} /> : null}
               {tab === 'prompt' ? (
                 <PromptTab
                   agent={AGENT_PROVIDER_SHORT_LABELS[form.provider]}
