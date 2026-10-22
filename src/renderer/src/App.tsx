@@ -336,6 +336,7 @@ export default function App(): ReactNode {
                         onNewSession={(cwd) => void newShell(cwd)}
                         onCreateTask={launcher.createTaskFromTerminal}
                         onCloseSession={(id) => void closeSession(id)}
+                        onOpenTask={editTask}
                       />
                     </div>
                   </>
