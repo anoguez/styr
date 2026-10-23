@@ -248,6 +248,11 @@ watcher loop), runs no git, and lives in the shared service so `styr serve` gets
 In Progress, In Review, Done, `needs_spec`, implement/review chats, a pointer missing from `sessions`
 or a pinned template that runs both lanes.
 
+The status record is left alone, so the sidebar derives the rule instead: `agentRowsFor`
+(`renderer/lib/agentRows.ts`) lists a task only with an `agentSession` or an open tab in this
+workspace. After an unlink (hand-off or Start fresh next run) the row stays while its tab is open and
+goes when the tab closes; palette entries and status-bar counts follow the same rows.
+
 `planLaunch` also takes `resume` to reopen one specific past chat, bare, for reading back.
 
 `planLaunch` takes `withPrompt` and `fresh`. Orchestrate sets `withPrompt` always — `--resume`
