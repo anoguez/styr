@@ -65,7 +65,7 @@ jobs:
 
   # The Styr server bundles for remote workspaces, one per Linux arch, built inside Debian bookworm
   # (glibc 2.36) by server-bundle.yml, the same workflow CI runs on every PR. They are built before
-  # the desktop app, which carries their SHA-256s (build-macos).
+  # the desktop apps, which carry their SHA-256s (build-macos, build-windows, build-linux).
   build-server:
     needs: release-please
     if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
@@ -260,129 +260,150 @@ jobs:
         if: ${{ always() }}
         run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
 
-  # The Windows build is disabled until the installer has been tested more. To turn it back on,
-  # uncomment this job and add `build-windows` back to `publish` (its `needs` and its `if`).
-  # # Unsigned for now (no Windows certificate): Windows shows a SmartScreen prompt on first run.
-  # build-windows:
-  #   needs: release-please
-  #   if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
-  #   runs-on: windows-latest
-  #   # Holds STYR_TERMINAL_PACKAGES_TOKEN; see build-macos.
-  #   environment: release
-  #   permissions:
-  #     contents: write
-  #   env:
-  #     TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
-  #   defaults:
-  #     run:
-  #       shell: bash
-  #   steps:
-  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-  #       with:
-  #         ref: ${{ env.TAG }}
-  #
-  #     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-  #       with:
-  #         node-version: 24
-  #         cache: yarn
-  #
-  #     # postinstall skips the native rebuild on Windows: node-pty and better-sqlite3 load their
-  #     # N-API prebuilds (see scripts/postinstall.mjs).
-  #     - run: yarn install --frozen-lockfile
-  #
-  #     # Styr Terminal (experimental): as in build-macos — pinned in native-terminal.lock.json, the
-  #     # token only in the protected `release` environment, skipped without it. Windows has no
-  #     # codesign step, so nothing verifies the vendored binary's signature after packaging; the
-  #     # lock's SHA-256 check in the fetch is the only check.
-  #     - name: Fetch Styr Terminal (optional)
-  #       run: node scripts/fetch-native-terminal.mjs
-  #       env:
-  #         STYR_TERMINAL_TOKEN: ${{ secrets.STYR_TERMINAL_PACKAGES_TOKEN }}
-  #
-  #     - run: yarn build
-  #
-  #     - name: Package
-  #       run: yarn electron-builder --win --x64 -c.npmRebuild=false --publish never
-  #
-  #     - name: Keep the build as a workflow artifact
-  #       if: ${{ env.TAG == '' }}
-  #       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-  #       with:
-  #         name: styr-windows
-  #         path: |
-  #           dist/Styr-Setup-*.exe
-  #           dist/latest.yml
-  #
-  #     - name: Upload to release
-  #       if: ${{ env.TAG != '' }}
-  #       # The installer, its blockmap and latest.yml are the Windows update feed. Named, not `*.exe`:
-  #       # electron-builder can leave its intermediate uninstaller exe in dist/.
-  #       run: gh release upload "$TAG" dist/Styr-Setup-*.exe dist/Styr-Setup-*.exe.blockmap dist/latest.yml --clobber
-  #       env:
-  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # Unsigned for now (no Windows certificate): Windows shows a SmartScreen prompt on first run.
+  build-windows:
+    needs: [release-please, build-server]
+    if: ${{ always() && needs.build-server.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
+    runs-on: windows-latest
+    # Holds STYR_TERMINAL_PACKAGES_TOKEN; see build-macos.
+    environment: release
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
 
-  # The Linux build is disabled until the .deb and AppImage have been tested more. To turn it back
-  # on, uncomment this job and add `build-linux` back to `publish` (its `needs` and its `if`).
-  # # Also what runs under WSL2 (WSLg) on Windows. Builds on Linux, because node-pty ships no Linux
-  # # prebuild and is compiled against Electron here by postinstall.
-  # build-linux:
-  #   needs: release-please
-  #   if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
-  #   runs-on: ubuntu-latest
-  #   # Holds STYR_TERMINAL_PACKAGES_TOKEN; see build-macos.
-  #   environment: release
-  #   permissions:
-  #     contents: write
-  #   env:
-  #     TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
-  #   steps:
-  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-  #       with:
-  #         ref: ${{ env.TAG }}
-  #
-  #     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-  #       with:
-  #         node-version: 24
-  #         cache: yarn
-  #
-  #     - run: yarn install --frozen-lockfile
-  #
-  #     # Styr Terminal (experimental): as in build-macos. ubuntu-latest is x64, the only Linux
-  #     # target pinned; the binary needs glibc 2.35 or later on the user's machine.
-  #     - name: Fetch Styr Terminal (optional)
-  #       run: node scripts/fetch-native-terminal.mjs
-  #       env:
-  #         STYR_TERMINAL_TOKEN: ${{ secrets.STYR_TERMINAL_PACKAGES_TOKEN }}
-  #
-  #     - run: yarn build
-  #
-  #     - name: Package
-  #       run: yarn electron-builder --linux --x64 --publish never
-  #
-  #     - name: Keep the build as a workflow artifact
-  #       if: ${{ env.TAG == '' }}
-  #       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-  #       with:
-  #         name: styr-linux
-  #         path: |
-  #           dist/*.AppImage
-  #           dist/*.deb
-  #           dist/latest-linux.yml
-  #
-  #     - name: Upload to release
-  #       if: ${{ env.TAG != '' }}
-  #       # The AppImage and latest-linux.yml are the Linux update feed; the .deb is for apt installs.
-  #       run: gh release upload "$TAG" dist/*.AppImage dist/*.deb dist/latest-linux.yml --clobber
-  #       env:
-  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: yarn
+
+      # postinstall skips the native rebuild on Windows: node-pty and better-sqlite3 load their
+      # N-API prebuilds (see scripts/postinstall.mjs).
+      - run: yarn install --frozen-lockfile
+
+      # Styr Terminal (experimental): as in build-macos — pinned in native-terminal.lock.json, the
+      # token only in the protected `release` environment, skipped without it. Windows has no
+      # codesign step, so nothing verifies the vendored binary's signature after packaging; the
+      # lock's SHA-256 check in the fetch is the only check.
+      - name: Fetch Styr Terminal (optional)
+        run: node scripts/fetch-native-terminal.mjs
+        env:
+          STYR_TERMINAL_TOKEN: ${{ secrets.STYR_TERMINAL_PACKAGES_TOKEN }}
+
+      - run: yarn build
+
+      # The server bundles' SHA-256s go inside the app, as in build-macos: without them a remote
+      # workspace cannot set up its host.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: styr-server-linux-*
+          path: dist-server
+          merge-multiple: true
+      - run: node scripts/server-checksums.mjs app dist-server
+
+      - name: Package
+        run: yarn electron-builder --win --x64 -c.npmRebuild=false --publish never
+
+      - run: node scripts/verify-package.mjs win
+
+      - name: Keep the build as a workflow artifact
+        if: ${{ env.TAG == '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: styr-windows
+          path: |
+            dist/Styr-Setup-*.exe
+            dist/Styr-Setup-*.exe.blockmap
+            dist/latest.yml
+
+      - name: Upload to release
+        if: ${{ env.TAG != '' }}
+        # The installer, its blockmap and latest.yml are the Windows update feed. Named, not `*.exe`:
+        # electron-builder can leave its intermediate uninstaller exe in dist/.
+        run: gh release upload "$TAG" dist/Styr-Setup-*.exe dist/Styr-Setup-*.exe.blockmap dist/latest.yml --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Also what runs under WSL2 (WSLg) on Windows. Builds on Linux, because node-pty ships no Linux
+  # prebuild and is compiled against Electron here by postinstall. The compiled modules need the
+  # runner's glibc or newer, so this runs on the oldest Ubuntu: 22.04 (glibc 2.35), the floor
+  # Styr Terminal's linux-x64 binary needs too. scripts/verify-package.mjs enforces it.
+  build-linux:
+    needs: [release-please, build-server]
+    if: ${{ always() && needs.build-server.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created) }}
+    runs-on: ubuntu-22.04
+    # Holds STYR_TERMINAL_PACKAGES_TOKEN; see build-macos.
+    environment: release
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      # Styr Terminal (experimental): as in build-macos. x64 is the only Linux target pinned.
+      - name: Fetch Styr Terminal (optional)
+        run: node scripts/fetch-native-terminal.mjs
+        env:
+          STYR_TERMINAL_TOKEN: ${{ secrets.STYR_TERMINAL_PACKAGES_TOKEN }}
+
+      - run: yarn build
+
+      # The server bundles' SHA-256s go inside the app, as in build-macos.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: styr-server-linux-*
+          path: dist-server
+          merge-multiple: true
+      - run: node scripts/server-checksums.mjs app dist-server
+
+      - name: Package
+        run: yarn electron-builder --linux --x64 --publish never
+
+      - run: node scripts/verify-package.mjs linux
+
+      - name: Keep the build as a workflow artifact
+        if: ${{ env.TAG == '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: styr-linux
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/latest-linux.yml
+
+      - name: Upload to release
+        if: ${{ env.TAG != '' }}
+        # The AppImage and latest-linux.yml are the Linux update feed; the .deb is for apt installs.
+        run: gh release upload "$TAG" dist/*.AppImage dist/*.deb dist/latest-linux.yml --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # release-please creates the release as a draft (see release-please-config.json), so nothing is
-  # public — and installed copies see no new version — until every platform's files are attached,
-  # the server bundles, their SHA256SUMS and install.sh included.
-  # A failed build leaves the draft unpublished rather than a release with files missing.
+  # public — and installed copies see no new version — until every platform's files are attached
+  # (macOS, Windows and Linux, each with its update feed), the server bundles, their SHA256SUMS and
+  # install.sh included. If any one job fails the draft stays unpublished, never a release with a
+  # platform missing. To recover, run this workflow with the tag: it rebuilds every job, since the
+  # rebuilt server bundles have new hashes that every app must carry.
   publish:
-    needs: [release-please, build-macos, server-release]
-    if: ${{ always() && needs.build-macos.result == 'success' && needs.server-release.result == 'success' && (needs.release-please.outputs.tag_name || inputs.tag) != '' }}
+    needs: [release-please, build-macos, build-windows, build-linux, server-release]
+    if: ${{ always() && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && needs.build-linux.result == 'success' && needs.server-release.result == 'success' && (needs.release-please.outputs.tag_name || inputs.tag) != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -25,6 +25,8 @@ function task(id: string, extra: Partial<Task> = {}): Task {
     repoPath: '/repo',
     blockedBy: [],
     tags: [],
+    sessions: [],
+    activity: [],
     ...extra
   } as unknown as Task
 }
@@ -200,6 +202,24 @@ describe('Auto-run', () => {
     ])
     const started = h.sent.filter((s) => s.channel === 'orchestrate:autoStarted')
     expect(started.map((s) => s.payload)).toEqual([session('TASK-1'), session('TASK-2')])
+  })
+
+  it('marks its launches with their lane, which Dispatch now does not', async () => {
+    service.autoSet(true)
+    await vi.advanceTimersByTimeAsync(AUTO_DEBOUNCE_MS)
+    expect(h.launches.map((l) => l.options.dispatchLane)).toEqual(['implement', 'review'])
+    h.launches = []
+    await service.run()
+    expect(h.launches.map((l) => l.options.dispatchLane)).toEqual([undefined, undefined])
+  })
+
+  it('switching it on stamps when, which a Stop leaves alone', () => {
+    vi.setSystemTime(new Date('2026-03-04T05:06:07Z'))
+    service.autoSet(true)
+    expect(h.settings.autoDispatchSince).toBe('2026-03-04T05:06:07.000Z')
+    vi.setSystemTime(new Date('2026-03-05T00:00:00Z'))
+    service.autoSet(false)
+    expect(h.settings.autoDispatchSince).toBe('2026-03-04T05:06:07.000Z')
   })
 
   it('rejects a flag that is not a boolean', () => {

@@ -24,6 +24,17 @@ export interface TranscriptUsage {
  */
 export type TranscriptUsageReader = (lines: string) => TranscriptUsage[]
 
+/** What the MCP probe's shell run produced. */
+export interface McpProbeResult {
+  code: number | null
+  stdout: string
+  stderr: string
+}
+
+/** What a provider's CLI says about its `styr` MCP server. `entry` is the registered script path. */
+export type McpRegistration =
+  { state: 'missing' } | { state: 'registered'; entry: string } | { state: 'unknown' }
+
 export interface ProviderCommandInput {
   settings: Settings
   taskId: string
@@ -61,6 +72,12 @@ export interface AgentProvider {
   sessionTime(sessionId: string, homeRoot?: string): string | undefined
   /** The CLI's transcript of a conversation, one JSON record per line; undefined once it is gone. */
   transcriptPath(sessionId: string, homeRoot?: string): string | undefined
+  /**
+   * The transcripts of the subagents a conversation started (and theirs), listed afresh on each call:
+   * more appear while it runs. `transcript` is the conversation's own, from `transcriptPath`. Each is
+   * parsed with its own `transcriptUsageReader()`. Empty when it started none.
+   */
+  subagentTranscripts(sessionId: string, transcript: string, homeRoot?: string): string[]
   /** A fresh reader of the model calls in a transcript, for the Worklog. */
   transcriptUsageReader(): TranscriptUsageReader
   /** The command line that starts this CLI, as configured in Settings → Integrations. */
@@ -69,6 +86,15 @@ export interface AgentProvider {
   installCommand(platform: string): string
   /** The command a user runs once to give this CLI the board's MCP server. */
   mcpInstallCommand(serverEntry: string, syntax: ShellSyntax): string
+  /** The command that removes the `styr` server again, for re-registering a stale one. */
+  mcpRemoveCommand(syntax: ShellSyntax): string
+  /**
+   * The line that asks the CLI (`command`, flags included) about its `styr` MCP server. Read-only
+   * and quick: it must not health-check every other server.
+   */
+  mcpProbeCommand(command: string, syntax: ShellSyntax): string
+  /** Reads what `mcpProbeCommand` printed: no `styr` server, one at `entry`, or no telling. */
+  parseMcpRegistration(result: McpProbeResult): McpRegistration
   /**
    * Environment variables the CLI sets on its own processes to mark a running session. Styr strips
    * them from every terminal it opens, so an app started from inside such a session (`yarn dev` in

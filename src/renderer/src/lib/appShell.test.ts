@@ -4,6 +4,7 @@ import {
   appShellReducer as reduce,
   initialAppShell,
   runShortcutCommand,
+  runTrayCommand,
   type AppShellAction,
   type CommandPort
 } from './appShell.js'
@@ -170,5 +171,22 @@ describe('runShortcutCommand', () => {
     runShortcutCommand('terminalCopyOutput', fake)
     expect(fake.terminal).toHaveBeenCalledWith('terminalCopyOutput')
     expect(fake.actions).toEqual([])
+  })
+})
+
+describe('runTrayCommand', () => {
+  it('runs a view command as its shortcut does', () => {
+    const run = vi.fn()
+    runTrayCommand('quickTask', run, vi.fn())
+    runTrayCommand('viewInbox', run, vi.fn())
+    expect(run.mock.calls).toEqual([['quickTask'], ['viewInbox']])
+  })
+
+  it('asks before stopping Auto-run, whatever the window thinks its state is', () => {
+    const actions: AppShellAction[] = []
+    const run = vi.fn()
+    runTrayCommand('stopAutoRun', run, (action) => actions.push(action))
+    expect(run).not.toHaveBeenCalled()
+    expect(actions.reduce(reduce, initial).confirmAutoStop).toBe(true)
   })
 })

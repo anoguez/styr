@@ -37,6 +37,9 @@ interface Harness {
   /** What every broadcast sent, by channel, newest last. */
   sent: { channel: string; payload: unknown }[]
   rows: Task[]
+  /** Tasks of a workspace other than the default, read while it is pinned. */
+  otherRows: Record<string, Task[]>
+  pinned?: string
   statuses: AgentStatus[]
   background: AgentStatus[]
   sessions: TerminalSessionInfo[]
@@ -54,6 +57,7 @@ function harness(): Harness {
     calls: [],
     sent: [],
     rows: [task()],
+    otherRows: {},
     statuses: [status()],
     background: [],
     sessions: [],
@@ -94,7 +98,7 @@ function harness(): Harness {
     tasks: {
       query: () => h.rows,
       findTask: (id) => h.rows.find((row) => row.id === id),
-      getTask: (id) => h.rows.find((row) => row.id === id),
+      getTask: (id) => ((h.pinned && h.otherRows[h.pinned]) || h.rows).find((row) => row.id === id),
       updateTask: (id) => calls.push(`update ${id}`),
       addNote: () => undefined,
       createTask: (draft) => task({ ...draft, id: 'TASK-2' } as Partial<Task>),
@@ -104,9 +108,11 @@ function harness(): Harness {
     notifyTasks: () => calls.push('notifyTasks'),
     pinWorkspace: (ws, work) => {
       calls.push(`pin ${ws}`)
+      h.pinned = ws
       try {
         return work()
       } finally {
+        h.pinned = undefined
         calls.push('unpin')
       }
     },
@@ -286,6 +292,55 @@ describe('markAgentExited', () => {
   })
 })
 
+describe('markAgentExited archives Ask agent chats', () => {
+  const ask = (extra: Partial<Task> = {}) => task({ tags: ['ask'], ...extra })
+  const archived = () => h.calls.includes('archive TASK-1 true')
+
+  it('archives an in-progress ask, then notifies once', () => {
+    h.rows = [ask()]
+    service.markAgentExited('TASK-1', 'default')
+    expect(archived()).toBe(true)
+    expect(h.calls.filter((call) => call === 'notifyTasks')).toHaveLength(1)
+  })
+
+  it.each(['backlog', 'in_review', 'done'] as const)('keeps an ask in %s', (status) => {
+    h.rows = [ask({ status })]
+    service.markAgentExited('TASK-1', 'default')
+    expect(archived()).toBe(false)
+  })
+
+  it('keeps an ask whose tag was removed', () => {
+    h.rows = [task()]
+    service.markAgentExited('TASK-1', 'default')
+    expect(archived()).toBe(false)
+  })
+
+  it('keeps an already archived ask', () => {
+    h.rows = [ask({ archivedAt: '2026-01-01T00:00:00Z' })]
+    service.markAgentExited('TASK-1', 'default')
+    expect(archived()).toBe(false)
+  })
+
+  it('keeps asks when autoArchiveAsk is off', () => {
+    h.settings = { ...h.settings, autoArchiveAsk: false }
+    h.rows = [ask()]
+    service.markAgentExited('TASK-1', 'default')
+    expect(archived()).toBe(false)
+  })
+
+  it("never reads another workspace's task with the same id", () => {
+    h.rows = [ask()]
+    h.otherRows = { beta: [ask({ status: 'in_review' })] }
+    service.markAgentExited('TASK-1', 'beta')
+    expect(archived()).toBe(false)
+    h.otherRows = { beta: [ask()] }
+    h.rows = [ask({ status: 'done' })]
+    service.markAgentExited('TASK-1', 'beta')
+    expect(h.calls).toContain('pin beta')
+    expect(archived()).toBe(true)
+  })
+})
+
 describe('remove', () => {
   it('kills the live terminal, releases the monitor, clears the status, then the task file', () => {
     h.sessions = [{ id: 'live', taskId: 'TASK-1', workspaceId: 'default' } as TerminalSessionInfo]
@@ -350,7 +405,7 @@ describe('launch', () => {
 
 describe('previewPrompt', () => {
   it('renders the prompt a launch would send, from the task on the board', () => {
-    h.rows = [task({ contextFiles: [], blockedBy: [], activity: [] })]
+    h.rows = [task({ contextFiles: [], blockedBy: [], activity: [], questions: [] })]
     expect(service.previewPrompt('TASK-1')).toContain('TASK-1')
     expect(() => service.previewPrompt('TASK-9')).toThrow('Task TASK-9 not found')
   })

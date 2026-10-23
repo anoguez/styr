@@ -79,6 +79,16 @@ works on the next click. Windows PowerShell 5.1 and cmd are refused without runn
 command and install command come from the `AgentProvider`; the pure decision is in
 `core/agentCli.ts`; Settings → Agents shows the same check for the unsaved command and shell.
 
+**MCP setup.** Whether a provider has the Styr MCP server is `McpSetupReport` (`registered`,
+`stale`, `missing`, `unknown`). Each `AgentProvider` supplies `mcpProbeCommand` (`<cmd> mcp get
+styr`, read-only and fast, unlike `mcp list`, which health-checks every server),
+`parseMcpRegistration` and `mcpRemoveCommand`; `core/mcpSetup.ts` runs it through the terminal's
+interactive login shell and compares the registered script path with this host's `mcpEntry()`
+(case-insensitive on Windows; runner and env are ignored). A failed probe is `unknown`, never
+`missing`. `mcp get` shows one effective entry, so a project-scoped duplicate is not compared.
+Detection only: it never registers or repairs. A registration changed from outside after a
+`registered` answer is picked up on Re-check or restart.
+
 ## Launching Claude
 
 `src/core/launch.ts` builds the command. It lives in core, not `main/`, because it needs no Electron
@@ -164,6 +174,10 @@ the raw agent map instead is how the badge kept showing archived agents.
 Terminal exits are written to the agent file (`TerminalExit`) rather than held in memory, so a dead
 session does not come back as whatever it was doing when the app last closed.
 
+After recording the exit, `markAgentExited` (`host/agentsService.ts`) runs `archiveOnExit`: a planning run
+is archived, and so is an `ask`-tagged task still In Progress when `autoArchiveAsk` is on
+(`shouldArchiveOnExit`, see tasks.md → Ask agent). Never git, never a timer.
+
 `AgentsSidebar` lists any task that has an agent status _or_ an `agentSession`, so a chat you can
 resume is visible even before its first hook fires. `sortAgentRows` ranks waiting first.
 
@@ -214,6 +228,11 @@ open.
 live session, it returns what to start. All the selection rules live there so they can be tested
 without launching anything; `src/host/dispatchService.ts` only performs the launches.
 
+A lane's number is a hard ceiling: a task holds a slot in its current lane while its agent is `ready`,
+`working` or `waiting`. `ready` counts because a launch starts there and the next Auto-run pass runs
+before the agent turns `working`; `idle` and `exited` free the slot. An agent left `ready` forever
+holds its slot until stopped.
+
 `laneFor` mirrors `resolveTemplateFor` — readiness outranks status — so a task's lane always matches
 the template it will actually run. Change one and change the other.
 
@@ -237,6 +256,21 @@ lanes. A launch that is `fresh`, names a session or picks another template is le
 `Task.sessions` is the append-only chat history; `Task.agentSession` is which of them the next
 run continues. They look redundant but are not — Forget clears the pointer while keeping the
 history, and a fresh review appends without discarding the implementer's chat.
+
+**A spec hand-off unlinks the chat.** After every re-index, `notifyTasksChanged`
+(`host/tasksService.ts`) clears `agentSession` on any task that is Backlog + `readiness: ready`
+whose current chat is a spec run (`isSpecHandoff`, `core/specHandoff.ts`): the `Task.sessions` entry
+whose `templateId` (older entries: `label`) is the template `needs_spec` routes to. `sessions` is
+untouched, so the chat stays in the Agents tab, and the implement run that follows starts fresh with
+no manual "Start fresh next run". It is derived and idempotent (nothing qualifies once cleared, so no
+watcher loop), runs no git, and lives in the shared service so `styr serve` gets it too. No unlink for
+In Progress, In Review, Done, `needs_spec`, implement/review chats, a pointer missing from `sessions`
+or a pinned template that runs both lanes.
+
+The status record is left alone, so the sidebar derives the rule instead: `agentRowsFor`
+(`renderer/lib/agentRows.ts`) lists a task only with an `agentSession` or an open tab in this
+workspace. After an unlink (hand-off or Start fresh next run) the row stays while its tab is open and
+goes when the tab closes; palette entries and status-bar counts follow the same rows.
 
 `planLaunch` also takes `resume` to reopen one specific past chat, bare, for reading back.
 
@@ -284,19 +318,37 @@ wired in `src/host/dispatchService.ts`); the rules are pure in `core/autoDispatc
 - **Stop is the flag going off.** The flag is read before every launch, so a pass under way starts
   nothing further; running agents are never touched. The limit and failure pauses use the same path
   and report a reason (`AutoDispatchState.paused`, per workspace).
-- **Loop guard.** A launch does not always remove a task from the plan (a review leaves it In Review),
-  so the runner remembers `workspace:task → lane|status|readiness` in memory and does not start it
-  again until that changes. `pruneMemory` runs _before_ the plan is built and its `skip` set keeps
-  remembered tasks out of `planOrchestration`: left in, they take the lane's slot and starve the rest.
-- **Breaker.** `AUTO_LAUNCH_LIMIT` per rolling hour per workspace, and `AUTO_FAILURE_LIMIT`
-  consecutive failed launches, switch Auto-run off with a notification.
-- **Rework cap.** `tallyRework` (`core/autoDispatch.ts`) counts review→Backlog bounces per
-  `workspace:task` in memory, seen the way the loop guard sees changes: a remembered review-lane
-  launch whose task is now Backlog. At `AUTO_REWORK_LIMIT` (3) failed reviews the task joins the
-  plan's `skip` set and `reworkCapped` notifies once ("TASK-x failed review 3 times; it needs you")
-  and notes the task. Manual Dispatch and launches still start it — the Dispatch dialog warns
-  (`OrchestrationSummary.reworkHeld`). Only reviews Auto-run started are counted; the count drops
-  when the task reaches Done or is deleted, and switching Auto-run on clears every count.
+- **Survives a relaunch.** The guards below are read back from the task files on every pass, so a
+  relaunch (or a `styr serve` restart) does not reset them. A launch Auto-run makes records its lane
+  on the new history entry (`TaskSessionRef.dispatch`, from `LaunchOptions.dispatchLane`), and
+  `launchPatch` marks a review `sentBack` when an implementer is launched over it — the rework run
+  resumes the implementer, so it leaves no entry of its own. `orchestrate:autoSet(true)` stamps
+  `Settings.autoDispatchSince`. Only the consecutive-failure count and the pause reason stay in
+  memory.
+- **Loop guard.** A launch does not always remove a task from the plan (a review leaves it In Review).
+  `guardedByHistory` skips a task whose current chat Auto-run started in the lane the task is in
+  now, until the lane changes or another run takes over. The runner also remembers
+  `workspace:task → lane|status|readiness` in memory, for what leaves no entry (a failed launch, the
+  moment before the launch is written). `pruneMemory` runs _before_ the plan is built and both go in
+  its `skip` set: left in, a guarded task takes the lane's slot and starves the rest.
+- **Limits.** The three limits are the workspace setting `autoDispatchLimits`
+  (`launchesPerHour` 20, `failures` 3, `reviews` 3; ranges 1-200, 1-20, 1-20, no "no limit"
+  value), edited in Settings → Dispatch. The runner reads them through its `limits()` port once at
+  the start of each pass, so a change applies from the next pass and, because the hourly count
+  and the rework count are derived from the task files, to work already there.
+- **Breaker.** `launchesPerHour` per rolling hour per workspace, and `failures`
+  consecutive failed launches, switch Auto-run off with a notification. A runner's first pass in a
+  workspace starts the hour's count from the `dispatch` entries (`autoLaunchTimes`).
+- **Rework cap.** `reworkBounces` (`core/autoDispatch.ts`) walks the task's Auto-run reviews since
+  `autoDispatchSince`, newest first: a `sentBack` review, or the current review of a task back in
+  Backlog, is a bounce; the first review that is neither passed and ends the count. At
+  `reviews` (3) the task joins the plan's `skip` set (`reworkHeld`) and `reworkCapped`
+  notifies and notes the task ("TASK-x failed review 3 times; it needs you"). That note, dated after
+  the newest bounce, is how a later pass or a relaunched runner knows it was told (`unnotedCap`).
+  Manual Dispatch and launches still start it — the Dispatch dialog warns
+  (`OrchestrationSummary.reworkHeld`). Only reviews Auto-run started are counted. The hold ends when a review
+  passes (as one does before work lands), when Auto-run is switched on again or the task is
+  deleted; a Done task is never held, but one dragged to Done by hand and reopened still is.
 - **Fetch first.** Each pass awaits `beforePass` (the merged-work check below, at most 5s) before
   it reads the board, so a PR merged while the window was unfocused is Done before the plan is
   built, and what it blocked starts in the same pass.
@@ -316,7 +368,8 @@ wired in `src/host/dispatchService.ts`); the rules are pure in `core/autoDispatc
   button never stays lit with nothing left to stop. Their cards carry the "Picked up by Dispatch"
   chip (`dispatchingIds`, fed by manual runs and `orchestrate:autoStarted`) until the agent idles.
 - Auto-launched sessions reach the renderer through `orchestrate:autoStarted` (it adopts them like a
-  manual launch). Not built: the tray item and a Settings pane control.
+  manual launch). The tray can start and stop Auto-run too (stopping still asks, in the window; `ui.md`, Menu
+  bar). The switch itself stays in the Dispatch dialog and the tray; Settings → Dispatch holds the limits.
 
 ## Prompt routing
 

@@ -22,6 +22,18 @@ const task: Task = {
   orchestrate: false,
   useWorktree: true,
   worktreePath: '/projects/styr.worktrees/TASK-0042',
+  questions: [
+    {
+      id: 'q1',
+      askedAt: '2026-10-01T08:00:00.000Z',
+      askedBy: 'claude',
+      text: 'Copy contextFiles?\nAll of them?',
+      answer: 'Yes',
+      answeredAt: '2026-10-01T08:05:00.000Z',
+      answeredBy: 'owner'
+    },
+    { id: 'q2', askedAt: '2026-10-01T08:10:00.000Z', askedBy: 'claude', text: 'Open one' }
+  ],
   blockedBy: ['TASK-0007'],
   contextFiles: ['README.md'],
   promptTemplateId: 'code-review',
@@ -29,7 +41,15 @@ const task: Task = {
   model: 'gpt-6.1-sol',
   agentSession: { provider: 'codex', id: 'session-42' },
   sessions: [
-    { id: 'session-42', provider: 'codex', startedAt: '2026-10-01T08:00:00.000Z', label: 'Review' }
+    { id: 'session-41', provider: 'codex', startedAt: '2026-10-01T07:00:00.000Z', label: 'Build' },
+    {
+      id: 'session-42',
+      provider: 'codex',
+      startedAt: '2026-10-01T08:00:00.000Z',
+      label: 'Review',
+      dispatch: 'review',
+      sentBack: true
+    }
   ],
   externalRef: {
     provider: 'github',
@@ -271,5 +291,63 @@ describe('task Markdown', () => {
     const again = parseTaskMarkdown(serialiseTask(parsed), parsed.filePath)
     expect(again.activity).toEqual(parsed.activity)
     expect(serialiseTask(again)).toBe(serialiseTask(parsed))
+  })
+
+  describe('questions', () => {
+    const file = (questions: string): string =>
+      [
+        '---',
+        'id: TASK-0050',
+        'title: Ask',
+        'createdAt: 2026-10-01T07:00:00.000Z',
+        'updatedAt: 2026-10-01T07:00:00.000Z',
+        questions,
+        '---',
+        '',
+        'Body.'
+      ].join('\n')
+    const parse = (questions: string) =>
+      parseTaskMarkdown(file(questions), '/workspace/tasks/TASK-0050-ask.md')
+
+    it('reads a bare string as one open question and writes it back as a full entry', () => {
+      const parsed = parse('questions: ["Is X ok?"]')
+      expect(parsed.questions).toEqual([
+        { id: 'q1', askedAt: '2026-10-01T07:00:00.000Z', askedBy: 'unknown', text: 'Is X ok?' }
+      ])
+      const again = parseTaskMarkdown(serialiseTask(parsed), parsed.filePath)
+      expect(again.questions).toEqual(parsed.questions)
+      expect(serialiseTask(parsed)).toContain('askedBy: unknown')
+    })
+
+    it('fills in a missing id with the next free one and keeps ids that exist', () => {
+      const parsed = parse(
+        [
+          'questions:',
+          '  - text: First',
+          '  - id: q1',
+          '    text: Second',
+          '  - id: q1',
+          '    text: Dup'
+        ].join('\n')
+      )
+      expect(parsed.questions.map((question) => question.id)).toEqual(['q2', 'q1', 'q3'])
+    })
+
+    it('shows a hand-written answer as answered', () => {
+      const parsed = parse(['questions:', '  - text: Q?', '    answer: A.'].join('\n'))
+      expect(parsed.questions[0]).toMatchObject({ answer: 'A.', answeredBy: 'owner' })
+    })
+
+    it('drops entries with no text and never fails the file', () => {
+      for (const bad of [
+        'questions: 5',
+        'questions: [{id: q1}, null, [], "", {text: "  "}]',
+        'questions: {text: 7, extra: x}'
+      ]) {
+        expect(() => parse(bad)).not.toThrow()
+      }
+      expect(parse('questions: [{id: q1}, null, [], ""]').questions).toEqual([])
+      expect(parse('questions: {text: 7, extra: x}').questions).toHaveLength(1)
+    })
   })
 })

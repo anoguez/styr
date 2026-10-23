@@ -5,7 +5,7 @@ Moved from CLAUDE.md verbatim; read it before touching this area.
 ## Menu bar
 
 `src/main/tray.ts` mirrors agent state into the macOS menu bar, dock badge and notifications.
-`notifyAgentsChanged` in `ipc.ts` is the single update point.
+`notifyAgentsChanged` in `ipc.ts` is the single update point for the agent rows.
 
 The icon is inlined as base64 in the generated `src/main/trayIcon.ts` rather than shipped as a file,
 so there is no dev-versus-packaged path to get wrong — the asar path bugs earlier in this project
@@ -23,6 +23,28 @@ apart.
 
 `newlyWaiting` is exported and pure so the notify-once-per-transition rule can be tested without an
 Electron runtime.
+
+The menu itself is plain data from `trayMenu` (`src/main/trayMenu.ts`, no `electron` import, tested
+in `trayMenu.test.ts`); `tray.ts` keeps its latest inputs and rebuilds the whole menu whenever one
+of them changes — the agent model (`updateTray`), the window (`watchWindow`: show, hide, focus,
+blur, minimise, restore, closed) and Auto-run (`setTrayAutoRun`). There is no timer.
+
+- **Open Styr** shows only while the window is not in front (`windowInFront`). On macOS that means
+  focused: opening the status item's menu leaves the window key. On Windows and Linux, clicking the
+  tray takes focus first, so there it means on screen and not minimised. The "N more" row opens
+  Styr the same way, or is a disabled pointer to the agents sidebar while the window is in front.
+- **Quick add task…** and **Open Inbox** show the window and send `app:command`. The window takes
+  the request with `app:takeCommand` on mount and on each `app:command`, so a window the click had
+  to create still runs it, exactly once (`runTrayCommand` in `lib/appShell.ts`).
+- **Auto-run** is the active workspace's: Start goes straight through the routed
+  `orchestrate:autoSet`; Stop… opens `StopAutoRunDialog` in the window (`stopAutoRun`, not the
+  toggle, which a just-loaded window would read as off). After the breaker the reason row comes
+  from `AUTO_DISPATCH_PAUSE_LABELS`. `index.ts` follows `orchestrate:autoState` and re-reads the
+  state through the router on `settings:changed`, `workspaces:changed` and `remote:state`, tapping
+  `electronHost.broadcast` (`onBroadcast`), so a remote board behaves as a local one; a board that
+  cannot answer drops the section.
+- Accelerators come from the bindings through `menuAccelerator` (`core/shortcuts.ts`), set with
+  `registerAccelerator: false` so the renderer still handles the keys.
 
 ## Board layout
 
@@ -94,6 +116,36 @@ While the terminal is showing, the agents sidebar highlights the row owning the 
 (`selectedAgentTaskId` in `lib/agentRows.ts`) with an accent border and tint, distinct from the
 hover style, and scrolls it into view when the selection changes — so many tabs stay matchable to
 their cards.
+
+### Restoring tabs
+
+After a relaunch Styr offers to reopen the tabs of the last session (`restoreTabs`: `ask` shows a
+banner, `always` restores without it, `never` saves and offers nothing). The layout is
+`~/.styr/terminal-tabs.json` (under `CONFIG_DIR`, so `STYR_HOME` moves it): machine-local state, so
+not a setting, and not in the index, which must be rebuildable from task files. Losing it only means
+nothing is offered. `host/terminalTabs.ts` owns it; the pure part (entries, the split of what can
+be restored now, skip reasons, banner text) is `core/terminalLayout.ts`.
+
+The file is written synchronously on each tab change — a session created, a session exited, or the
+renderer reporting a new order or active tab through `terminal:setLayout` — never on output and with
+no timer. A shell is saved where it is now (`TerminalRuntimeState.cwd`), an agent tab by task,
+workspace and provider. Remote sessions, `replay` tabs and Ask / fork chats are not saved.
+`before-quit` calls `freezeTerminalLayout()` _before_ `killAllSessions()`: exits and reports after
+that are ignored, so quitting never saves an empty layout, while a tab closed by hand is removed as
+usual.
+
+On start the renderer asks `terminal:pendingLayout` and again whenever the active workspace
+changes. The offer counts shells plus the agent tabs of the **active** workspace; another
+workspace's agent tabs stay pending (resume needs its workspace active) and are offered when it is
+switched to. Pending entries stay in the file, before the live tabs, until answered, so a crash
+before answering still offers them. **Restore** (`terminal:restoreLayout`) opens the entries one at
+a time in saved order, after the open tabs; **Dismiss** forgets the shells and the workspace's
+entries. A shell is created by `createSession` in the current `settings.shell`; an agent tab goes
+through `restoreAgent` in `core/sessionLifecycle.ts`: the launch gate, then a bare resume of
+`task.agentSession` — no prompt, no status move, no task-file write. Whatever cannot come back (a
+folder or task gone, no saved chat, a disabled provider, a missing CLI or repo) is skipped and
+listed in the banner; the others still restore. An unparseable file or another version is ignored
+and overwritten by the next save.
 
 ### Task activity panel
 
@@ -183,6 +235,9 @@ task. Preferences is the first `SECTIONS` entry and the dialog's default section
 The window uses `titleBarStyle: 'hiddenInset'` with `trafficLightPosition` set to centre the lights
 in a 44px row, and the header pads left by 86px to clear them. Changing the header height means
 re-centring the lights — `y` is `(height / 2) - 7`.
+
+In native full screen the lights are hidden, so the header drops that padding to 12px
+(`useFullscreen`: the window fills the screen; no IPC channel needed).
 
 The browser harness has no traffic lights, so that left gap looks empty there. Alignment can only be
 judged in the real app.
@@ -314,6 +369,12 @@ read:
 - **PowerShell 7**: `-NoExit -EncodedCommand` (a command, so no execution policy refuses it) wraps
   `prompt` and PSReadLine's `PSConsoleHostReadLine`. A failed cmdlet reports exit 1, not a stale
   `$LASTEXITCODE`. Windows PowerShell 5.1 and cmd get none.
+- **Fix with agent** (block menu, failure bar, and the unbound `terminalFixLast` command, which does
+  nothing but say so when the last command did not fail) makes a `ready` Backlog task through
+  `taskFromTerminal` (`lib/terminalContext.ts`): ANSI-stripped output tail (6000 chars, with a note when
+  clipped, in a fence longer than any backtick run), and `repoPath` from the git root of the command's
+  directory (`repoForDirectory`, the same `terminal:gitContext` channel remote uses; default repo when
+  none). The notice then offers Launch and Open; nothing launches on its own.
 
 ## Terminal keys
 
@@ -347,7 +408,9 @@ them and send them to the shell.
 The header's Board/Inbox/Worklog switch (`⌃1`/`⌃2`/`⌃3`, the `viewBoard`/`viewInbox`/`viewWorklog` commands) swaps the board for
 `Inbox.tsx`: the same tasks regrouped as Needs you / Running / Up next / Done. The grouping is
 `buildInbox` in `core/inbox.ts` — pure, derived from tasks, agent states and the Orchestrate queue,
-and it writes nothing, so the two views cannot disagree. A working agent outranks `needs_spec`.
+and it writes nothing, so the two views cannot disagree. A working agent outranks `needs_spec` and a review, but not a waiting agent or an open question
+(`kind: 'question'`, see "MCP verbs" in `tasks.md`); a question has Send answer fields in the item and in
+the task dialog's Brief tab (`OpenQuestions`).
 Actions reuse the board's own handlers (launch, activate, changes, status update, archive); the
 inbox cannot answer a permission prompt, so a waiting agent's action is "Open terminal". The view
 is `App` state remembered in the renderer's `localStorage` (`styr:view`) — a per-machine convenience,
@@ -375,6 +438,15 @@ like the Inbox:
   already seen in an earlier session of the task (a fork's copied history) is not counted again.
   Tasks Done before the span are not read. `worklog:load` runs it on demand only, yielding between
   tasks — never from `notifyTasksChanged`.
+- A session's tokens include its subagents'. `AgentProvider.subagentTranscripts` lists their
+  transcripts again on every load (more appear while the session runs), and each is read the same
+  incremental way with its own reader, keyed by its real path so a symlinked one and its target are
+  parsed once; their calls count under the session that started them, on the days they ran. Claude
+  Code keeps them in `<session-id>/subagents/agent-*.jsonl` beside the session's transcript (the
+  Agent tool's `toolUseResult.usage` summary in the main transcript is not counted). Codex child
+  threads (guardian reviews, spawned agents, and theirs) are separate rollouts found by the
+  `parent_thread_id` in their first `session_meta` line; only the date folders from the parent's
+  onward are walked, and each file's first line is read once per process.
 - Tokens are input + output + cache writes; cache reads are left out, or every long conversation
   would read as millions of tokens. Claude Code writes one assistant message as several records
   sharing a `message.id`, so a message counts once. Codex reports running totals in `token_count`

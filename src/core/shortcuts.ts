@@ -58,6 +58,7 @@ export const SHORTCUT_LABELS: Record<ShortcutCommand, string> = {
   terminalRetry: 'Terminal: retry last command',
   terminalSplit: 'Terminal: split into a new tab here',
   terminalAskReview: 'Terminal: ask for a review of this task',
+  terminalFixLast: 'Terminal: fix the last failed command',
   terminalHandOff: 'Terminal: hand off to another agent',
   terminalCreatePr: 'Terminal: ask the agent to create a pull request',
   terminalActivity: 'Terminal: show or hide task activity',
@@ -102,6 +103,7 @@ export const SHORTCUT_SCOPES: Record<ShortcutCommand, ShortcutScope> = {
   terminalRetry: 'terminal',
   terminalSplit: 'terminal',
   terminalAskReview: 'terminal',
+  terminalFixLast: 'terminal',
   terminalHandOff: 'terminal',
   terminalCreatePr: 'terminal',
   terminalActivity: 'terminal',
@@ -234,6 +236,47 @@ export function formatAccelerator(accelerator: string): string {
 export function shortcutHint(bindings: ShortcutBindings, command: ShortcutCommand): string {
   const first = bindings[command][0]
   return first ? formatAccelerator(first) : ''
+}
+
+const ELECTRON_MODIFIERS: Record<string, string> = {
+  mod: 'CmdOrCtrl',
+  ctrl: 'Ctrl',
+  meta: 'Super',
+  alt: 'Alt',
+  shift: 'Shift'
+}
+
+const ELECTRON_KEYS: Record<string, string> = {
+  arrowup: 'Up',
+  arrowdown: 'Down',
+  arrowleft: 'Left',
+  arrowright: 'Right',
+  enter: 'Return',
+  escape: 'Escape',
+  ' ': 'Space'
+}
+
+/**
+ * A binding in Electron's accelerator syntax, for a native menu to show beside an item; undefined
+ * for a key Electron has no name for. Electron draws it the platform's way (⇧⌘N, Ctrl+Shift+N).
+ */
+export function electronAccelerator(accelerator: string): string | undefined {
+  const parts = accelerator.split('+')
+  const key = parts.pop() ?? ''
+  const modifiers = parts.map((part) => ELECTRON_MODIFIERS[part])
+  if (modifiers.some((modifier) => !modifier)) return undefined
+  const name =
+    ELECTRON_KEYS[key] ?? (/^[a-z0-9,./;'[\]\\`=-]$/.test(key) ? key.toUpperCase() : undefined)
+  return name ? [...modifiers, name].join('+') : undefined
+}
+
+/** A command's first binding as a native menu accelerator; undefined when it is unbound. */
+export function menuAccelerator(
+  bindings: ShortcutBindings,
+  command: ShortcutCommand
+): string | undefined {
+  const first = bindings[command][0]
+  return first ? electronAccelerator(first) : undefined
 }
 
 export function isReserved(accelerator: string): boolean {

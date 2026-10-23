@@ -2,10 +2,12 @@ import { z } from 'zod'
 import { AGENT_STATES } from './agentState.js'
 import {
   ANSI_COLOURS,
+  DEFAULT_AUTO_LIMITS,
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_TERMINAL_PALETTE,
   MAX_TASK_PRESETS,
+  ORCHESTRATION_LANES,
   REST_METHODS,
   SHORTCUT_COMMANDS,
   TASK_PRIORITIES,
@@ -83,7 +85,9 @@ export const taskSessionRefSchema = z.object({
   provider: z.enum(['claude', 'codex']).default('claude'),
   startedAt: z.string(),
   label: z.string(),
-  templateId: z.string().optional()
+  templateId: z.string().optional(),
+  dispatch: z.enum(ORCHESTRATION_LANES).optional(),
+  sentBack: z.literal(true).optional()
 })
 
 export const activityEntrySchema = z.object({
@@ -91,6 +95,18 @@ export const activityEntrySchema = z.object({
   author: z.string(),
   message: z.string()
 })
+
+export const taskQuestionSchema = z
+  .object({
+    id: z.string(),
+    askedAt: z.string(),
+    askedBy: z.string(),
+    text: z.string(),
+    answer: z.string().optional(),
+    answeredAt: z.string().optional(),
+    answeredBy: z.string().optional()
+  })
+  .strict()
 
 export const taskFrontmatterSchema = z.object({
   id: z.string(),
@@ -117,6 +133,7 @@ export const taskFrontmatterSchema = z.object({
   order: z.number().default(0),
   doneAt: z.string().optional(),
   archivedAt: z.string().optional(),
+  questions: z.array(taskQuestionSchema).default([]),
   createdAt: z.string(),
   updatedAt: z.string()
 })
@@ -176,6 +193,12 @@ export const orchestrationSchema = z.object({
   spec: z.number().int().min(0).max(20),
   implement: z.number().int().min(0).max(20),
   review: z.number().int().min(0).max(20)
+})
+
+export const autoDispatchLimitsSchema = z.object({
+  launchesPerHour: z.number().int().min(1).max(200),
+  failures: z.number().int().min(1).max(20),
+  reviews: z.number().int().min(1).max(20)
 })
 
 export const providerRoutingSchema = z.object({
@@ -259,12 +282,15 @@ export const settingsSchema = z.object({
   promptTemplates: z.array(promptTemplateSchema).default([]),
   promptRouting: promptRoutingSchema,
   orchestration: orchestrationSchema,
+  autoDispatchLimits: autoDispatchLimitsSchema.default(DEFAULT_AUTO_LIMITS),
   autoDispatch: z.boolean().default(false),
+  autoDispatchSince: z.string().optional(),
   theme: themeSchema,
   shortcuts: shortcutsSchema,
   updates: z
     .object({ checkAutomatically: z.boolean().default(true) })
     .default({ checkAutomatically: true }),
+  restoreTabs: z.enum(['ask', 'always', 'never']).default('ask'),
   experimental: z
     .object({
       externalSources: z.boolean().default(false),
@@ -299,6 +325,7 @@ export const settingsSchema = z.object({
       maxAgeDays: z.number().int().min(0).max(365).default(DEFAULT_DONE_CAP.maxAgeDays)
     })
     .default(DEFAULT_DONE_CAP),
+  autoArchiveAsk: z.boolean().default(true),
   sources: z.array(sourceConfigSchema).default([])
 })
 
@@ -306,6 +333,7 @@ const GLOBAL_KEY_MASK = {
   storageDir: true,
   activeWorkspaceId: true,
   updates: true,
+  restoreTabs: true,
   shortcuts: true,
   experimental: true
 } as const satisfies Record<GlobalSettingKey, true>
@@ -704,6 +732,16 @@ export const remoteAgentCliReportSchema = z.object({
   ]),
   problem: message,
   installCommand: line.optional()
+})
+
+export const remoteMcpSetupReportSchema = z.object({
+  provider,
+  state: z.enum(['registered', 'stale', 'missing', 'unknown']),
+  registeredEntry: line.optional(),
+  expectedEntry: line,
+  installCommand: message,
+  removeCommand: message.optional(),
+  problem: message
 })
 
 const remoteItemSchema = z.object({

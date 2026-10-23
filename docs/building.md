@@ -107,17 +107,20 @@ conventional commits:
    `feat:` commits bump the minor version (before 1.0), everything else the patch.
 2. Merging the release PR tags `vX.Y.Z` and creates the GitHub release **as a draft**, invisible
    to visitors and to the updater.
-3. A macOS runner builds, signs, notarises and verifies the app and attaches its files to the
-   draft. A final job publishes it once that succeeded. (The Windows and Linux build jobs are
-   commented out in `release.yml` for now; build those locally with `yarn package:win` and
-   `yarn package:linux`.)
-   A release only goes public once it is complete; if a build fails, the draft stays unpublished
-   and can be rebuilt with **Run workflow** and its tag.
+3. A macOS runner builds, signs, notarises and verifies the app; a Windows runner builds the
+   (unsigned) installer and an Ubuntu 22.04 runner the AppImage and `.deb`. Each checks its package
+   (`scripts/verify-package.mjs` on Windows and Linux) and attaches its files to the draft. A final
+   job publishes it once all of them, and the server bundles, succeeded.
+   A release only goes public once it is complete; if any one platform's build fails, the draft
+   stays unpublished and can be rebuilt with **Run workflow** and its tag. That rebuilds every
+   platform, not just the one that failed: the server bundles are rebuilt too, and every app must
+   carry the hashes of the bundles actually attached.
 
 Each release carries the DMG for people installing by hand, plus `Styr-x.y.z-arm64-mac.zip`, its
 `.blockmap` and `latest-mac.yml`: the update feed installed copies read through electron-updater.
-Once the Windows and Linux jobs are re-enabled, it will also carry `Styr-Setup-x.y.z.exe`, its
-`.blockmap` and `latest.yml`, and `Styr-x.y.z-x86_64.AppImage`, the `.deb` and `latest-linux.yml`.
+For Windows it carries `Styr-Setup-x.y.z.exe`, its `.blockmap` and `latest.yml`; for Linux
+`Styr-x.y.z-x86_64.AppImage`, `Styr-x.y.z-amd64.deb` and `latest-linux.yml`, which lists both (an
+AppImage replaces itself, a `.deb` install is updated through `dpkg`).
 The feed location comes from the `publish` block in `electron-builder.yml`. Because releases are
 published only after those files are attached, an installed copy never sees a release without them;
 if one ever lacks `latest-mac.yml` anyway (a release edited by hand), the app reports "up to date"

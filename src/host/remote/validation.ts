@@ -3,6 +3,7 @@ import {
   REMOTE_LIMITS,
   remoteAgentCliReportSchema,
   remoteAgentStatusSchema,
+  remoteMcpSetupReportSchema,
   remoteAutoStateSchema,
   remoteBoardSummarySchema,
   remoteBoundsProblem,
@@ -80,6 +81,11 @@ export const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   'tasks:note': task,
   'tasks:reorder': tasks,
   'tasks:archive': task,
+  'tasks:answerQuestion': z.object({
+    task,
+    delivery: z.enum(['queued', 'now', 'resume', 'recorded', 'failed']),
+    error: z.string().max(REMOTE_LIMITS.message).optional()
+  }),
   'tasks:delete': ignored,
   'tasks:forgetSession': task,
   'tasks:removeWorktree': task.nullable(),
@@ -94,6 +100,7 @@ export const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   'agents:list': z.array(remoteAgentStatusSchema).max(REMOTE_LIMITS.entries),
   'agents:remove': ignored,
   'agents:cliStatus': remoteAgentCliReportSchema,
+  'agents:mcpStatus': remoteMcpSetupReportSchema,
   'worklog:load': remoteWorklogSchema,
   'review:get': taskReviewSchema,
   'review:save': taskReviewSchema,

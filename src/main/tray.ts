@@ -1,47 +1,54 @@
 import { Menu, Notification, Tray, app, nativeImage } from 'electron'
+import type { BrowserWindow } from 'electron'
 import { linuxIconPath } from './appIcon.js'
-import {
-  AGENT_STATE_LABELS,
-  agentKey,
-  compareAgentStatus,
-  type AgentState,
-  type AgentStatus
-} from '@core/agentState.js'
+import { agentKey, type AgentState, type AgentStatus } from '@core/agentState.js'
+import type { ShortcutBindings, TrayCommand } from '@core/types.js'
 import { TRAY_ICON_1X, TRAY_ICON_2X } from './trayIcon.js'
+import {
+  trayMenu,
+  windowInFront,
+  type TrayAction,
+  type TrayAutoRun,
+  type TrayItem,
+  type TrayWindowState
+} from './trayMenu.js'
 
 export interface TrayHandlers {
   onShowWindow: () => void
   onActivateTask: (taskId: string, workspaceId?: string) => void
+  /** Shows the window and has it run `command` (`app:command`). */
+  onCommand: (command: TrayCommand) => void
+  onStartAutoRun: () => void
   onQuit: () => void
+  /** The shortcut bindings, read at each rebuild, for the items' accelerators. */
+  shortcuts: () => ShortcutBindings
 }
-
-const STATE_MARK: Record<AgentState, string> = {
-  waiting: '●',
-  working: '◐',
-  ready: '○',
-  idle: '✓',
-  exited: '·'
-}
-
-/** A menu bar list is for glancing at, not browsing — the rest live in the app's sidebar. */
-const MENU_LIMIT = 8
 
 let tray: Tray | null = null
 let handlers: TrayHandlers | null = null
 const lastState = new Map<string, AgentState>()
+
+/**
+ * Everything the menu is built from. Each input is replaced by its own event (agents, the window,
+ * Auto-run) and the whole menu is rebuilt from the latest of all of them — no timer.
+ */
+let agents: { statuses: AgentStatus[]; titles: Map<string, string> } = {
+  statuses: [],
+  titles: new Map()
+}
+let windowState: TrayWindowState = {
+  exists: false,
+  visible: false,
+  minimized: false,
+  focused: false
+}
+let autoRun: TrayAutoRun | null = null
 
 function icon(): Electron.NativeImage {
   const image = nativeImage.createFromDataURL(TRAY_ICON_1X)
   image.addRepresentation({ scaleFactor: 2, dataURL: TRAY_ICON_2X })
   image.setTemplateImage(true)
   return image
-}
-
-function labelFor(status: AgentStatus, titles: Map<string, string>): string {
-  const title = titles.get(agentKey(status)) ?? status.taskId
-  const trimmed = title.length > 46 ? `${title.slice(0, 45)}…` : title
-  const where = status.workspaceName ? `${status.workspaceName} · ` : ''
-  return `${STATE_MARK[status.state]}  ${where}${trimmed} — ${AGENT_STATE_LABELS[status.state]}`
 }
 
 /**
@@ -96,6 +103,7 @@ export function createTray(next: TrayHandlers): void {
     // the menu on click themselves, so no click handler.
     tray.setImage(nativeImage.createFromPath(linuxIconPath()).resize({ width: 22, height: 22 }))
   }
+  rebuildTrayMenu()
 }
 
 /**
@@ -109,11 +117,10 @@ export function updateTray(
   quiet: ReadonlySet<string> = new Set()
 ): void {
   notifyNewlyWaiting(statuses, titles, quiet)
+  agents = { statuses, titles }
   if (!tray) return
 
   const waiting = statuses.filter((status) => status.state === 'waiting')
-  const active = statuses.filter((status) => status.state !== 'exited')
-
   tray.setTitle(waiting.length > 0 ? ` ${waiting.length}` : '')
   tray.setToolTip(
     waiting.length > 0
@@ -121,38 +128,83 @@ export function updateTray(
       : 'Styr'
   )
   app.dock?.setBadge(waiting.length > 0 ? String(waiting.length) : '')
+  rebuildTrayMenu()
+}
 
-  const ranked = [...active].sort(compareAgentStatus)
-  const shown = ranked.slice(0, MENU_LIMIT)
-  const hidden = ranked.length - shown.length
+/** Auto-run of the active workspace, or null to leave the section out. */
+export function setTrayAutoRun(next: TrayAutoRun | null): void {
+  autoRun = next
+  rebuildTrayMenu()
+}
 
-  const agentItems: Electron.MenuItemConstructorOptions[] =
-    shown.length > 0
-      ? [
-          ...shown.map((status) => ({
-            label: labelFor(status, titles),
-            click: () => handlers?.onActivateTask(status.taskId, status.workspaceId)
-          })),
-          ...(hidden > 0
-            ? [
-                {
-                  label: `${hidden} more — open Styr`,
-                  click: () => handlers?.onShowWindow()
-                }
-              ]
-            : [])
-        ]
-      : [{ label: 'No agents running', enabled: false }]
+/**
+ * Follows a window's visibility, so "Open Styr" shows only while it is not in front. `closed`
+ * counts too: on macOS the app outlives its window.
+ */
+export function watchWindow(window: BrowserWindow): void {
+  const read = (): void => {
+    const gone = window.isDestroyed()
+    windowState = {
+      exists: !gone,
+      visible: !gone && window.isVisible(),
+      minimized: !gone && window.isMinimized(),
+      focused: !gone && window.isFocused()
+    }
+    rebuildTrayMenu()
+  }
+  window.on('show', read)
+  window.on('hide', read)
+  window.on('focus', read)
+  window.on('blur', read)
+  window.on('minimize', read)
+  window.on('restore', read)
+  window.on('closed', () => {
+    windowState = { exists: false, visible: false, minimized: false, focused: false }
+    rebuildTrayMenu()
+  })
+  read()
+}
 
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      ...agentItems,
-      { type: 'separator' },
-      { label: 'Open Styr', click: () => handlers?.onShowWindow() },
-      { type: 'separator' },
-      { label: 'Quit Styr', click: () => handlers?.onQuit() }
-    ])
-  )
+function run(action: TrayAction): void {
+  if (!handlers) return
+  switch (action.kind) {
+    case 'activate':
+      return handlers.onActivateTask(action.taskId, action.workspaceId)
+    case 'show':
+      return handlers.onShowWindow()
+    case 'command':
+      return handlers.onCommand(action.command)
+    case 'startAutoRun':
+      return handlers.onStartAutoRun()
+    case 'quit':
+      return handlers.onQuit()
+  }
+}
+
+function template(items: TrayItem[]): Electron.MenuItemConstructorOptions[] {
+  return items.map((entry) => {
+    if (entry.type === 'separator') return { type: 'separator' }
+    const { label, enabled, accelerator, action } = entry
+    return {
+      label,
+      enabled,
+      // Shown only: the renderer's shortcut system handles the key itself.
+      ...(accelerator ? { accelerator, registerAccelerator: false } : {}),
+      ...(action ? { click: () => run(action) } : {})
+    }
+  })
+}
+
+/** Rebuilds the menu from the latest inputs; cheap, so every input change calls it. */
+function rebuildTrayMenu(): void {
+  if (!tray || !handlers) return
+  const items = trayMenu({
+    ...agents,
+    inFront: windowInFront(windowState, process.platform),
+    autoRun,
+    bindings: handlers.shortcuts()
+  })
+  tray.setContextMenu(Menu.buildFromTemplate(template(items)))
 }
 
 export function destroyTray(): void {

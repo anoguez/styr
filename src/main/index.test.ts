@@ -43,16 +43,25 @@ vi.mock('electron', () => {
     shell: { openExternal: async () => {} }
   }
 })
-vi.mock('@core/settingsStore.js', () => ({ tasksDir: record('tasksDir') }))
+vi.mock('@core/settingsStore.js', () => ({
+  loadSettings: () => ({ activeWorkspaceId: 'ws', shortcuts: {} }),
+  tasksDir: record('tasksDir')
+}))
+vi.mock('@core/workspaces.js', () => ({ listWorkspaces: () => [] }))
+vi.mock('./electronHost.js', () => ({ onBroadcast: record('onBroadcast') }))
 vi.mock('@core/settingsMigration.js', () => ({ migrateLegacySettings: record('migrateSettings') }))
 vi.mock('./ipc.js', () => ({
+  autoRunState: () => new Promise(() => {}),
   broadcast: record('broadcast'),
   checkMergedOnFocus: record('checkMergedOnFocus'),
   markAgentExited: record('markAgentExited'),
   notifyAgentsChanged: record('notifyAgentsChanged'),
   notifyTasksChanged: record('notifyTasksChanged'),
+  freezeTerminalLayout: record('freezeTerminalLayout'),
   registerIpcHandlers: record('registerIpcHandlers'),
+  sendWindowCommand: record('sendWindowCommand'),
   startAutoDispatch: record('startAutoDispatch'),
+  startAutoRunFromTray: async () => {},
   startRemoteWorkspaces: record('startRemoteWorkspaces'),
   stopRemoteWorkspaces: record('stopRemoteWorkspaces'),
   switchWorkspace: record('switchWorkspace')
@@ -83,7 +92,9 @@ vi.mock('./appIcon.js', () => ({ linuxIconPath: () => '' }))
 vi.mock('./mcpEntry.js', () => ({ syncAppImageMcp: record('syncAppImageMcp') }))
 vi.mock('./tray.js', () => ({
   createTray: record('createTray'),
-  destroyTray: record('destroyTray')
+  destroyTray: record('destroyTray'),
+  setTrayAutoRun: record('setTrayAutoRun'),
+  watchWindow: record('watchWindow')
 }))
 vi.mock('./updater.js', () => ({ initUpdater: record('initUpdater') }))
 vi.mock('./usage.js', () => ({ forgetContext: () => {}, initUsage: record('initUsage') }))
@@ -113,11 +124,13 @@ describe('start-up order', () => {
       'onTerminalRuntimeState',
       'onTerminalExit',
       'createTray',
+      'onBroadcast',
       'startWatching',
       'startWatchingAgents',
       'notifyAgentsChanged',
       'window:create',
       'window:on',
+      'watchWindow',
       'window:openHandler',
       'window:load',
       'initUpdater',

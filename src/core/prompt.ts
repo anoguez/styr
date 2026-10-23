@@ -1,4 +1,6 @@
 import { NOTE_TOOL, noteFallback } from './activityNote.js'
+import { ASK_LINE, REVIEW_LINE, REVIEW_LINE_PLAIN, SPLIT_LINE } from './boardTools.js'
+import { isOpen } from './questions.js'
 import {
   TASK_STATUSES,
   WORKTREE_BRANCH_PREFIX,
@@ -52,6 +54,22 @@ function contextBlock(files: string[]): string {
   ].join('\n')
 }
 
+/** What the owner has been asked and has answered, so a fresh or resumed agent sees both. */
+function questionsBlock(task: Task): string {
+  if (task.questions.length === 0) return ''
+  const indent = (text: string): string => text.trim().split('\n').join('\n   ')
+  const lines = task.questions.map((question) =>
+    isOpen(question)
+      ? `- ${question.id} (open): ${indent(question.text)}`
+      : `- ${question.id}: ${indent(question.text)}\n  Answer: ${indent(question.answer ?? '')}`
+  )
+  return [
+    '## Questions for the owner',
+    'Answered ones are decisions: follow them. Open ones are still waiting for the owner.',
+    ...lines
+  ].join('\n')
+}
+
 /**
  * How to move the task on the board. Rendered into every prompt rather than written into each
  * template, so a custom or older template cannot leave an agent with no way to report progress.
@@ -59,13 +77,12 @@ function contextBlock(files: string[]): string {
 function boardProtocol(task: Task, workspaceId?: string, plainFolder = false): string {
   const finish = plainFolder
     ? [
-        '- Set `status: in_review` once the result is ready for me to look at. Put the deliverable in the',
-        '  working directory, or give its path in an Activity note.',
+        ...REVIEW_LINE_PLAIN,
         '- Do not set `status: done` yourself: this is not a code change, so there is nothing to land.',
         '  I mark it done when I am happy with the result.'
       ]
     : [
-        '- Set `status: in_review` once the work is ready for me to look at.',
+        ...REVIEW_LINE,
         '- Set `status: done` only when the work has landed on the base branch (or I confirm it). Work',
         '  that is merely approved or committed on a branch stays `in_review`.',
         '- If you open a pull or merge request (any host), record its URL as `prUrl:` in the frontmatter so the card links to it.'
@@ -79,6 +96,8 @@ function boardProtocol(task: Task, workspaceId?: string, plainFolder = false): s
     '- Set `status: in_progress` as soon as you start working on it, writing its spec included.',
     ...finish,
     '- Set `readiness: ready` once the task is specified well enough to be worked on.',
+    ...ASK_LINE,
+    ...(task.readiness === 'needs_spec' ? SPLIT_LINE : []),
     '- If you finish writing a spec and stop, set `status: backlog` with `readiness: ready` so the task can be picked up.',
     `- Log progress notes with the ${NOTE_TOOL} (the task id and your note; it stamps the time and`,
     `  author). Only if you do not have that tool, ${noteFallback('the file')}.`,
@@ -120,6 +139,7 @@ export function buildPrompt(
     issue: task.externalRef?.url
       ? `This task is linked to an external issue: ${task.externalRef.url}`
       : '',
+    questions: questionsBlock(task),
     board: boardProtocol(task, workspaceId, options.plainFolder)
   }
   const values: Record<string, string> = {

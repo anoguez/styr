@@ -91,6 +91,8 @@ vi.mock('./diagnostics.js', () => ({
 }))
 vi.mock('./terminal/terminalEngines.js', () => ({ terminalEngineDiagnostics: () => undefined }))
 vi.mock('./terminal/ptyManager.js', () => ({
+  onTerminalCreated: () => {},
+  onTerminalExit: () => {},
   createSession: (options: Omit<TerminalSessionInfo, 'id'>) => {
     log(`createSession ${options.workspaceId} ${options.taskId}`)
     const session = { ...options, id: `s${sessions.length + 1}` } as TerminalSessionInfo

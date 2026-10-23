@@ -117,6 +117,19 @@ export function PreferencesSection({ draft, patch }: SectionProps): ReactNode {
         </Card>
         <Hint>Hidden tasks are not archived — Show all in the Done column brings them back.</Hint>
       </div>
+      <div className="flex flex-col gap-2.5">
+        <span className="text-[12px] font-semibold text-dim">Ask agent</span>
+        <Card>
+          <CardRow>
+            <SwitchRow
+              checked={draft.autoArchiveAsk}
+              onChange={(autoArchiveAsk) => patch({ autoArchiveAsk })}
+              label="Archive Ask agent chats when they end"
+              hint="Only while the task is still In Progress and tagged ask. Resume it from the Archive dialog; remove the tag to keep the card."
+            />
+          </CardRow>
+        </Card>
+      </div>
       <Field
         label="Working directory"
         hint="Where agents run and where + Shell opens. Blank uses the storage folder."
@@ -157,6 +170,27 @@ export function PreferencesSection({ draft, patch }: SectionProps): ReactNode {
           className={`${inputBase} h-8 w-60 px-2.5 font-mono text-[11.5px]`}
           value={draft.shell}
           onChange={(event) => patch({ shell: event.target.value })}
+        />
+      </Field>
+      <Field
+        label="Restore terminal tabs"
+        hint={
+          draft.restoreTabs === 'always'
+            ? 'After a relaunch, the tabs of your last session reopen on their own. Agent tabs resume their chat and send nothing.'
+            : draft.restoreTabs === 'never'
+              ? 'Styr does not remember your terminal tabs, and offers nothing after a relaunch.'
+              : 'After a relaunch, a banner offers to reopen the tabs of your last session. Agent tabs resume their chat and send nothing.'
+        }
+      >
+        <Segmented
+          label="Restore terminal tabs"
+          value={draft.restoreTabs}
+          onChange={(restoreTabs) => patch({ restoreTabs })}
+          options={[
+            { value: 'ask', label: 'Ask' },
+            { value: 'always', label: 'Always' },
+            { value: 'never', label: 'Never' }
+          ]}
         />
       </Field>
       <Field

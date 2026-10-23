@@ -155,6 +155,7 @@ export function boardSummaryLabel(summary: WorkspaceBoardSummary | undefined): s
   if (!summary) return ''
   const parts: [number, string][] = [
     [summary.waiting, 'waiting on you'],
+    [summary.question, summary.question === 1 ? 'question' : 'questions'],
     [summary.review, 'in review'],
     [summary.spec, summary.spec === 1 ? 'needs spec' : 'need spec'],
     [summary.running, 'running'],

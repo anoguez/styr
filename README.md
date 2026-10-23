@@ -1,7 +1,7 @@
 # Styr
 
 [![Latest release](https://img.shields.io/github/v/release/anoguez/styr)](https://github.com/anoguez/styr/releases/latest)
-![Test coverage](https://img.shields.io/badge/coverage-89.14%25-brightgreen)
+![Test coverage](https://img.shields.io/badge/coverage-89.49%25-brightgreen)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/noguez)
 
 **An agentic IDE built around a kanban board.** Write tasks, and Styr launches a coding agent (Claude Code
@@ -98,8 +98,17 @@ Then:
 4. **Settings → Integrations**: copy the `claude mcp add styr …` or `codex mcp add styr …` command for your provider and run it once, so agents
    can query and create tasks.
 
-To install it as an app instead, download the signed DMG (macOS) from
-[Releases](https://github.com/anoguez/styr/releases), or build one yourself (see
+To install it as an app instead, download it from
+[Releases](https://github.com/anoguez/styr/releases):
+
+- **macOS** (Apple silicon): the signed, notarised `Styr-<version>-arm64.dmg`.
+- **Windows** (x64): `Styr-Setup-<version>.exe`, a per-user installer. It is not code-signed yet, so
+  SmartScreen shows **Windows protected your PC** on first run: **More info → Run anyway**.
+- **Linux** (x64, also WSL2 on Windows 11): `Styr-<version>-x86_64.AppImage` (needs FUSE 2,
+  `libfuse2t64` on Ubuntu 24.04) or `Styr-<version>-amd64.deb` (`sudo apt install ./Styr-*.deb`, then
+  run `styr`). Both need glibc 2.35 or newer: Ubuntu 22.04+, Debian 12+.
+
+Every copy updates itself from the same releases. Or build one yourself (see
 [Building and packaging](docs/building.md); `yarn package:win` on Windows, `yarn package:linux` on
 Linux or WSL2).
 

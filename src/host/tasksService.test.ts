@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { shippedSettings } from '@core/config.js'
 import type { Task, TaskFilter } from '@core/types.js'
 import { createTasksService, type TasksService, type TasksServicePorts } from './tasksService.js'
 
@@ -40,11 +41,15 @@ function harness(): Harness {
         calls.push(`archive ${id} ${archived}`)
         return task({ id })
       },
+      answerQuestion: (id) => task({ id }),
       deleteTask: (id) => calls.push(`delete ${id}`),
       removeWorktree: (t) => calls.push(`removeWorktree ${t.id}`),
       brokenTaskFiles: () => [{ filePath: '/tasks/bad.md', reason: 'no frontmatter' }]
     },
+    settings: () => shippedSettings(),
     requestLanding: () => calls.push('landing'),
+    route: () => ({ route: 'fresh' }),
+    deliver: () => Promise.resolve(),
     observeTasks: (tasks) => calls.push(`observe ${tasks.length}`),
     recordNotifyDuration: (ms) => calls.push(`time ${typeof ms}`),
     requestAutoRun: () => calls.push('autoRun'),
@@ -121,5 +126,33 @@ describe('writes', () => {
     h.rows = [task({ repoPath: '/repo', worktreePath: '/wt' })]
     service.removeWorktree('TASK-1')
     expect(h.calls.slice(0, 2)).toEqual(['removeWorktree TASK-1', 'update TASK-1 worktreePath'])
+  })
+})
+
+describe('spec hand-off', () => {
+  const handedBack = (): Task =>
+    task({
+      status: 'backlog',
+      readiness: 'ready',
+      sessions: [
+        { id: 'c1', provider: 'claude', startedAt: 'x', label: 'Spec', templateId: 'spec' }
+      ],
+      agentSession: { provider: 'claude', id: 'c1' }
+    } as Partial<Task>)
+
+  it('clears the pointer of a spec run handed back, with one write and a second sync', () => {
+    h.rows = [handedBack()]
+    service.notifyTasksChanged()
+    expect(h.calls.filter((call) => call.startsWith('update'))).toEqual([
+      'update TASK-1 agentSession'
+    ])
+    expect(h.calls.filter((call) => call === 'sync')).toHaveLength(2)
+  })
+
+  it('writes nothing once the pointer is gone, or when nothing qualifies', () => {
+    h.rows = [{ ...handedBack(), agentSession: undefined }, task({ status: 'in_progress' })]
+    service.notifyTasksChanged()
+    expect(h.calls.some((call) => call.startsWith('update'))).toBe(false)
+    expect(h.calls.filter((call) => call === 'sync')).toHaveLength(1)
   })
 })

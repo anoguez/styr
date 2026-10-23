@@ -20,7 +20,7 @@ function activity(counts: Partial<Record<AgentState, number>>, review = 0): Work
 }
 
 function summary(counts: Partial<WorkspaceBoardSummary>): WorkspaceBoardSummary {
-  return { needs: 0, running: 0, next: 0, waiting: 0, review: 0, spec: 0, ...counts }
+  return { needs: 0, running: 0, next: 0, waiting: 0, question: 0, review: 0, spec: 0, ...counts }
 }
 
 describe('backgroundBadge', () => {
@@ -149,6 +149,9 @@ describe('boardSummaryLabel', () => {
       boardSummaryLabel(summary({ needs: 4, waiting: 1, review: 2, spec: 1, running: 3, next: 4 }))
     ).toBe('1 waiting on you · 2 in review · 1 needs spec · 3 running · 4 up next')
     expect(boardSummaryLabel(summary({ needs: 2, spec: 2 }))).toBe('2 need spec')
+    expect(boardSummaryLabel(summary({ needs: 3, waiting: 1, question: 2 }))).toBe(
+      '1 waiting on you · 2 questions'
+    )
   })
 
   it('says so when nothing is open, and is empty when the board could not be read', () => {

@@ -20,6 +20,7 @@ import {
   getTask,
   reorderTasks,
   setArchived,
+  answerQuestion,
   updateTask
 } from '@core/taskStore.js'
 import { fetchAndSettle, settleLandedTasks } from './landing.js'
@@ -40,7 +41,7 @@ import {
   unlinkTask
 } from './sourceSync.js'
 import { sourceProviders } from '@core/sources/index.js'
-import type { TaskStatus } from '@core/types.js'
+import type { AutoDispatchState, TaskStatus, TrayCommand } from '@core/types.js'
 import { diskWorklogSources } from '@core/worklogSources.js'
 import { createAgentsService, diskAgentStore, diskGit } from '@host/agentsService.js'
 import { createDispatchService, diskDispatchSettings, realClock } from '@host/dispatchService.js'
@@ -51,6 +52,8 @@ import { createTasksService } from '@host/tasksService.js'
 import { createWorklogService } from '@host/worklogService.js'
 import { createReviewService, diskReviewStore } from '@host/reviewService.js'
 import { listDirectories } from '@host/directories.js'
+import { createTerminalTabsService, diskTabsStore } from '@host/terminalTabs.js'
+import { listWorkspaces } from '@core/workspaces.js'
 import {
   createWorkspacesService,
   diskWorkspaceStore,
@@ -64,6 +67,8 @@ import {
   findSessionByTask,
   killSession,
   listSessions,
+  onTerminalCreated,
+  onTerminalExit,
   resizeSession,
   sessionBacklog,
   terminalRuntimeState,
@@ -74,6 +79,7 @@ import { CodexMonitor, prepareCodex } from './codexMonitor.js'
 import { agentPrompts, publishAgentConversation } from './usage.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
+import { mcpSetupStatus } from './mcpSetup.js'
 import { bindGlobalSettingsSave, remoteRouter, routedIpcMain, startRemote } from './remote.js'
 import { isWebLink } from './windowSecurity.js'
 
@@ -104,6 +110,7 @@ const tasksService = createTasksService({
     addNote,
     reorderTasks,
     setArchived,
+    answerQuestion,
     deleteTask: (taskId) => {
       deleteTask(taskId)
       reviewService.forget(taskId)
@@ -111,7 +118,10 @@ const tasksService = createTasksService({
     removeWorktree: (task) => gitService.checkout(task).removeWorktree(),
     brokenTaskFiles
   },
+  settings: () => loadSettings(),
   requestLanding: () => requestLanding(),
+  route: (taskId) => agentsService.reviewRoute(taskId),
+  deliver: (taskId, message) => agentsService.deliverReview(taskId, message),
   observeTasks,
   recordNotifyDuration,
   requestAutoRun: () => dispatchService.requestAutoRun(),
@@ -189,6 +199,30 @@ const agentsService = createAgentsService({
   updateTray: (statuses, titles) => remoteRouter.localTrayChanged(statuses, titles),
   requestAutoRun: () => dispatchService.requestAutoRun()
 })
+
+/**
+ * The terminal tabs across a relaunch (`terminalTabs.ts`). A tab created or closed saves the layout;
+ * quitting freezes it first (`freezeTerminalLayout`), so killing the sessions saves nothing.
+ */
+const terminalTabs = createTerminalTabsService({
+  store: diskTabsStore,
+  settings: () => loadSettings(),
+  workspaceIds: () => listWorkspaces(loadSettings()).map((workspace) => workspace.id),
+  terminals: {
+    listSessions: () => listSessions().filter((session) => !session.host),
+    currentDirectory: (id) => terminalRuntimeState(id)?.cwd,
+    createShell: ({ cwd, title }) => createSession({ cwd, title, shell: loadSettings().shell })
+  },
+  agents: { restoreAgent: (taskId) => agentsService.restoreAgent(taskId) },
+  directoryExists: existsSync,
+  now: () => new Date().toISOString()
+})
+onTerminalCreated(() => terminalTabs.changed())
+onTerminalExit(() => terminalTabs.changed())
+
+export function freezeTerminalLayout(): void {
+  terminalTabs.freeze()
+}
 
 export function agentStatuses(): AgentStatus[] {
   return agentsService.agentStatuses()
@@ -315,6 +349,30 @@ export function startAutoDispatch(): void {
   dispatchService.startAutoRun()
 }
 
+/** Auto-run of the active workspace, for the tray: routed, so a remote board's server answers. */
+export async function autoRunState(): Promise<AutoDispatchState> {
+  return (await remoteRouter.invoke('orchestrate:autoState', [], () =>
+    dispatchService.autoState()
+  )) as AutoDispatchState
+}
+
+/** The tray's Start Auto-run, routed like the renderer's switch. Stopping asks in the window. */
+export async function startAutoRunFromTray(): Promise<void> {
+  await remoteRouter.invoke('orchestrate:autoSet', [true], () => dispatchService.autoSet(true))
+}
+
+/**
+ * The tray's request for the window (`app:command`). It is held until the renderer takes it, so a
+ * window that is still loading — created by the click — runs it once it has mounted, and a live
+ * one runs it at once; either way exactly once.
+ */
+let pendingCommand: TrayCommand | null = null
+
+export function sendWindowCommand(command: TrayCommand): void {
+  pendingCommand = command
+  broadcast('app:command')
+}
+
 export function registerIpcHandlers(): void {
   initSourceSync({
     onTasksChanged: notifyTasksChanged,
@@ -377,6 +435,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('tasks:archive', (_event, id: string, archived: boolean) =>
     tasksService.archive(id, archived)
   )
+  ipcMain.handle('tasks:answerQuestion', (_event, id: string, questionId: string, answer: string) =>
+    tasksService.answerQuestion(id, questionId, answer)
+  )
   ipcMain.handle('tasks:delete', (_event, id: string) => tasksService.delete(id))
 
   ipcMain.handle('tasks:reveal', (_event, id: string) => {
@@ -412,6 +473,12 @@ export function registerIpcHandlers(): void {
       color: String(background),
       symbolColor: String(symbols)
     })
+  })
+
+  ipcMain.handle('app:takeCommand', () => {
+    const command = pendingCommand
+    pendingCommand = null
+    return command
   })
 
   ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') =>
@@ -452,6 +519,10 @@ export function registerIpcHandlers(): void {
     'agents:cliStatus',
     (_event, provider: 'claude' | 'codex', command: string, shell: string) =>
       agentCliStatus({ provider, command: String(command ?? ''), shell: String(shell ?? '') })
+  )
+
+  ipcMain.handle('agents:mcpStatus', (_event, provider: 'claude' | 'codex', fresh?: boolean) =>
+    mcpSetupStatus({ provider, fresh: fresh === true })
   )
 
   ipcMain.handle('settings:pickApp', async (event) => {
@@ -515,7 +586,19 @@ export function registerIpcHandlers(): void {
   ipcMain.on('terminal:resize', (_event, id: string, cols: number, rows: number) =>
     resizeSession(id, cols, rows)
   )
-  ipcMain.handle('terminal:kill', (_event, id: string) => killSession(id))
+  ipcMain.handle('terminal:kill', (_event, id: string) => {
+    killSession(id)
+    terminalTabs.changed()
+  })
+  ipcMain.on('terminal:setLayout', (_event, ids: unknown, activeId: unknown) =>
+    terminalTabs.setLayout(
+      z.array(z.string()).max(500).catch([]).parse(ids),
+      typeof activeId === 'string' ? activeId : null
+    )
+  )
+  ipcMain.handle('terminal:pendingLayout', () => terminalTabs.offer())
+  ipcMain.handle('terminal:restoreLayout', () => terminalTabs.restore())
+  ipcMain.handle('terminal:dismissLayout', () => terminalTabs.dismiss())
   ipcMain.handle('terminal:list', () => listSessions())
   ipcMain.handle('terminal:backlog', (_event, id: string) => sessionBacklog(id))
   ipcMain.handle('terminal:runtimeState', (_event, id: string) => terminalRuntimeState(id))

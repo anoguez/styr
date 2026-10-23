@@ -1,4 +1,4 @@
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -116,13 +116,20 @@ describe('transcriptSources', () => {
   const file = join(dir, 's1.jsonl')
   const line = (at: number, tokens: number): string => `${JSON.stringify({ at, tokens })}\n`
 
-  /** A provider whose transcript is `file`, counting lookups and the text it is handed. */
-  function fake() {
-    const seen = { lookups: 0, parsed: [] as string[] }
+  /**
+   * A provider whose transcript is `file` and whose subagents are `listed`, counting lookups and the
+   * text it is handed.
+   */
+  function fake(listed: () => string[] = () => []) {
+    const seen = { lookups: 0, parsed: [] as string[], listedFor: [] as string[] }
     const ports = transcriptSources(() => ({
       transcriptPath: (id) => {
         seen.lookups++
         return id === 's1' ? file : undefined
+      },
+      subagentTranscripts: (id, transcript) => {
+        seen.listedFor.push(`${id} ${transcript}`)
+        return listed()
       },
       transcriptUsageReader: () => (text) => {
         seen.parsed.push(text)
@@ -167,5 +174,83 @@ describe('transcriptSources', () => {
     rmSync(file)
     expect(usage()).toBeUndefined()
     expect(seen.lookups).toBe(2)
+  })
+
+  describe('subagents', () => {
+    const subDir = join(dir, 'subagents')
+    mkdirSync(subDir, { recursive: true })
+    const a = join(subDir, 'agent-a.jsonl')
+    const b = join(subDir, 'agent-b.jsonl')
+
+    it("appends each subagent's calls to the session's, listing them again on every load", () => {
+      writeFileSync(file, line(1, 10))
+      writeFileSync(a, line(2, 20))
+      rmSync(b, { force: true })
+      const listed = [a]
+      const { seen, usage } = fake(() => listed)
+      expect(usage()).toEqual([
+        { at: 1, tokens: 10 },
+        { at: 2, tokens: 20 }
+      ])
+      expect(seen.listedFor).toEqual([`s1 ${file}`])
+
+      // A subagent started since, and one that grew: each read from where it was left.
+      writeFileSync(b, line(3, 30))
+      listed.push(b)
+      appendFileSync(a, line(4, 40))
+      expect(usage()).toEqual([
+        { at: 1, tokens: 10 },
+        { at: 2, tokens: 20 },
+        { at: 4, tokens: 40 },
+        { at: 3, tokens: 30 }
+      ])
+      expect(seen.parsed).toEqual([line(1, 10), line(2, 20), line(4, 40), line(3, 30)])
+      expect(seen.listedFor).toHaveLength(2)
+    })
+
+    it('reads a symlinked subagent and its target once', () => {
+      writeFileSync(file, line(1, 10))
+      writeFileSync(a, line(2, 20))
+      const link = join(dir, 'agent-link.jsonl')
+      rmSync(link, { force: true })
+      symlinkSync(a, link)
+      const { seen, usage } = fake(() => [a, link])
+      expect(usage()).toEqual([
+        { at: 1, tokens: 10 },
+        { at: 2, tokens: 20 },
+        { at: 2, tokens: 20 }
+      ])
+      expect(seen.parsed).toEqual([line(1, 10), line(2, 20)])
+    })
+
+    it('drops a subagent deleted between loads', () => {
+      writeFileSync(file, line(1, 10))
+      writeFileSync(a, line(2, 20))
+      const listed = [a]
+      const { usage } = fake(() => listed)
+      expect(usage()).toHaveLength(2)
+      rmSync(a)
+      listed.length = 0
+      expect(usage()).toEqual([{ at: 1, tokens: 10 }])
+    })
+
+    it('keeps what was read of a listed subagent that is gone', () => {
+      writeFileSync(file, line(1, 10))
+      writeFileSync(a, line(2, 20))
+      const { usage } = fake(() => [a])
+      usage()
+      rmSync(a)
+      expect(usage()).toEqual([
+        { at: 1, tokens: 10 },
+        { at: 2, tokens: 20 }
+      ])
+    })
+
+    it('looks for no subagents of a transcript that is gone', () => {
+      rmSync(file, { force: true })
+      const { seen, usage } = fake(() => [a])
+      expect(usage()).toBeUndefined()
+      expect(seen.listedFor).toEqual([])
+    })
   })
 })

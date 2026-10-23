@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { AgentStatus } from '@core/agentState.js'
-import { AUTO_REWORK_LIMIT } from '@core/autoDispatch.js'
+import { reworkCappedMessage } from '@core/autoDispatch.js'
 import { createAutoDispatch } from '@core/autoDispatchRunner.js'
 import type { LaunchOptions } from '@core/launch.js'
 import { planOrchestration, providerForLane, type OrchestrationPlan } from '@core/orchestrate.js'
@@ -99,19 +99,28 @@ export function createDispatchService(ports: DispatchServicePorts) {
   }
 
   /** Starts one planned task the way Dispatch does, whether a person or Auto-run asked. */
-  function dispatchTask(task: Task, lane: OrchestrationLane): Promise<TerminalSessionInfo> {
+  function dispatchTask(
+    task: Task,
+    lane: OrchestrationLane,
+    auto = false
+  ): Promise<TerminalSessionInfo> {
     return ports.launch(task.id, {
       withPrompt: true,
       fresh: lane === 'review',
-      provider: providerForLane(settings.load(), lane)
+      provider: providerForLane(settings.load(), lane),
+      ...(auto ? { dispatchLane: lane } : {})
     })
   }
 
-  /** The flag is a workspace setting, so it is written to the active workspace's own file. */
+  /**
+   * The flag is a workspace setting, so it is written to the active workspace's own file. Switching
+   * it on stamps `autoDispatchSince`, which releases the tasks held after failed reviews.
+   */
   function writeAutoDispatchFlag(on: boolean): void {
     const current = settings.load()
     if (current.autoDispatch === on) return
-    settings.saveWorkspace({ ...current, autoDispatch: on }, current.activeWorkspaceId)
+    const since = on ? { autoDispatchSince: new Date(clock.now()).toISOString() } : {}
+    settings.saveWorkspace({ ...current, autoDispatch: on, ...since }, current.activeWorkspaceId)
     ports.broadcast('settings:changed', settings.load())
   }
 
@@ -119,11 +128,13 @@ export function createDispatchService(ports: DispatchServicePorts) {
     enabled: () => settings.load().autoDispatch,
     setEnabled: writeAutoDispatchFlag,
     workspaceId: () => settings.load().activeWorkspaceId,
+    since: () => settings.load().autoDispatchSince,
+    limits: () => settings.load().autoDispatchLimits,
     beforePass: checkForMergedWorkBriefly,
     snapshot: (skip) => ({ plan: buildPlan(skip), tasks: ports.tasks.query() }),
     launch: async (task, lane) => {
       // The renderer only learns of sessions it asked for, so tell it about this one.
-      ports.broadcast('orchestrate:autoStarted', await dispatchTask(task, lane))
+      ports.broadcast('orchestrate:autoStarted', await dispatchTask(task, lane, true))
     },
     noteFailure: (task, error) => {
       const message = error instanceof Error ? error.message : String(error)
@@ -133,8 +144,8 @@ export function createDispatchService(ports: DispatchServicePorts) {
         // The task may have been deleted meanwhile; there is nothing to note it on.
       }
     },
-    reworkCapped: (task) => {
-      const message = `${task.id} failed review ${AUTO_REWORK_LIMIT} times; it needs you.`
+    reworkCapped: (task, limit) => {
+      const message = reworkCappedMessage(task.id, limit)
       try {
         ports.tasks.addNote(
           task.id,

@@ -23,6 +23,11 @@ export function useTerminalSessions() {
     (sessions: TerminalSessionInfo[]) => dispatch({ type: 'merge', sessions }),
     []
   )
+  const restore = useCallback(
+    (sessions: TerminalSessionInfo[], activeId?: string) =>
+      dispatch({ type: 'restore', sessions, activeId }),
+    []
+  )
   const select = useCallback((id: string) => dispatch({ type: 'select', id }), [])
   const reorder = useCallback((ids: string[]) => dispatch({ type: 'reorder', ids }), [])
   const toggleTerminal = useCallback(() => dispatch({ type: 'toggleTerminal' }), [])
@@ -31,7 +36,12 @@ export function useTerminalSessions() {
     dispatch({ type: 'remove', id })
   }, [])
 
-  const { sessions } = state
+  const { sessions, activeSession } = state
+  // The main process saves the layout; it needs the order and the active tab only from here.
+  const ids = sessions.map((session) => session.id).join(',')
+  useEffect(() => {
+    window.api.terminal.setLayout(ids ? ids.split(',') : [], activeSession)
+  }, [ids, activeSession])
   /** Focuses the task's open tab; false when it has none, so the caller can launch one. */
   const activateForTask = useCallback(
     (taskId: string, workspaceId: string): boolean => {
@@ -43,7 +53,17 @@ export function useTerminalSessions() {
     [sessions]
   )
 
-  return { ...state, adopt, merge, select, reorder, toggleTerminal, close, activateForTask }
+  return {
+    ...state,
+    adopt,
+    merge,
+    restore,
+    select,
+    reorder,
+    toggleTerminal,
+    close,
+    activateForTask
+  }
 }
 
 /**

@@ -14,6 +14,7 @@ const github = SECTIONS.find((section) => section.id === 'source-github')!
 const settings = (overrides: Partial<Settings> = {}): Settings =>
   ({
     doneCap: { maxCount: 20, maxAgeDays: 0 },
+    autoArchiveAsk: true,
     shell: '',
     theme: { base: '#000000' },
     shortcuts: {},

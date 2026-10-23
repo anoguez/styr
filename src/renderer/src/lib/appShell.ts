@@ -1,4 +1,4 @@
-import type { ShortcutCommand, Task } from '@core/types.js'
+import type { ShortcutCommand, Task, TrayCommand } from '@core/types.js'
 import type { AgentRow } from './agentRows.js'
 import type { SectionId } from '../components/settings/sections.js'
 import type { PaletteMode } from './paletteMode.js'
@@ -159,6 +159,20 @@ export interface CommandPort {
 }
 
 /** Runs one shortcut command, from a key or the palette: the only place commands are handled. */
+/**
+ * The tray's request (`app:command`). Stop opens the confirmation directly: the toggle would read
+ * a just-loaded window's Auto-run as off and start it instead.
+ */
+export function runTrayCommand(
+  command: TrayCommand,
+  run: (command: ShortcutCommand) => void,
+  dispatch: (action: AppShellAction) => void
+): void {
+  if (command === 'stopAutoRun')
+    return dispatch({ type: 'set', toggle: 'confirmAutoStop', open: true })
+  run(command)
+}
+
 export function runShortcutCommand(command: ShortcutCommand, port: CommandPort): void {
   if (isTerminalCommand(command)) return port.terminal(command)
   const { dispatch } = port

@@ -15,13 +15,14 @@ export const SECTIONS = [
     keys: [
       'taskDefaults',
       'doneCap',
+      'autoArchiveAsk',
       'defaultRepoPath',
       'shell',
       'openFilesWith',
       'worktreeLocation'
     ],
     words:
-      'done cap archive hide limit worktree location node_modules directory shell terminal orchestrate default preferences open editor app markdown'
+      'done cap archive ask agent chats hide limit worktree location node_modules directory shell terminal orchestrate default preferences open editor app markdown'
   },
   {
     id: 'agents',
@@ -92,8 +93,8 @@ export const SECTIONS = [
     label: 'Dispatch',
     scope: 'workspace',
     blurb: 'Which agent picks up each kind of work, and how many run at once.',
-    keys: ['orchestration'],
-    words: 'slots lanes parallel concurrency'
+    keys: ['orchestration', 'autoDispatchLimits'],
+    words: 'slots lanes parallel concurrency limits breaker safety'
   },
   {
     id: 'theme',

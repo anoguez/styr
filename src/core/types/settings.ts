@@ -1,6 +1,7 @@
 import type { SourceConfig } from '../sources/types.js'
 import type { ThemeSettings } from '../types.js'
 import type {
+  AutoDispatchLimits,
   OrchestrationCapacity,
   OrchestrationLane,
   PromptRouting,
@@ -31,6 +32,7 @@ export const SHORTCUT_COMMANDS = [
   'terminalRetry',
   'terminalSplit',
   'terminalAskReview',
+  'terminalFixLast',
   'terminalHandOff',
   'terminalCreatePr',
   'terminalActivity',
@@ -46,6 +48,13 @@ export const SHORTCUT_COMMANDS = [
 ] as const
 
 export type ShortcutCommand = (typeof SHORTCUT_COMMANDS)[number]
+
+/**
+ * What the tray menu asks the window to do (`app:command`). Stopping Auto-run is its own command
+ * rather than `toggleAutoDispatch`: a window that has just loaded does not know Auto-run is on yet,
+ * and the toggle would start it instead of asking to stop it.
+ */
+export type TrayCommand = 'quickTask' | 'viewInbox' | 'stopAutoRun'
 
 /**
  * Accelerators per command. A list rather than one string so a command can keep an alternate —
@@ -77,6 +86,7 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   terminalRetry: ['mod+r'],
   terminalSplit: ['mod+d'],
   terminalAskReview: [],
+  terminalFixLast: [],
   terminalHandOff: [],
   terminalCreatePr: [],
   terminalActivity: ['mod+shift+a'],
@@ -97,6 +107,11 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
  * walk up the tree (Node's `node_modules` lookup) find the main checkout's installed dependencies.
  */
 export type WorktreeLocation = 'beside' | 'inside'
+
+/** `ask` offers the last session's tabs in a banner; `always` reopens them; `never` saves nothing. */
+export type RestoreTabsMode = 'ask' | 'always' | 'never'
+
+export const RESTORE_TABS_MODES: readonly RestoreTabsMode[] = ['ask', 'always', 'never']
 
 export interface Settings {
   /** Where the app keeps its own data. Workspaces live inside it; the default one is its root. */
@@ -125,15 +140,26 @@ export interface Settings {
   promptTemplates: PromptTemplate[]
   promptRouting: PromptRouting
   orchestration: OrchestrationCapacity
+  /** Auto-run's safety limits; a change applies from the next pass. */
+  autoDispatchLimits: AutoDispatchLimits
   /** Auto-run: keep starting eligible work as slots free up. Off until the user turns it on. */
   autoDispatch: boolean
+  /**
+   * When Auto-run was last switched on (ISO time). Failed reviews before it no longer hold a task:
+   * switching on is the person saying "go".
+   */
+  autoDispatchSince?: string
   theme: ThemeSettings
   shortcuts: ShortcutBindings
   updates: UpdateSettings
+  /** Whether the terminal tabs of the last session are offered after a relaunch. */
+  restoreTabs: RestoreTabsMode
   experimental: ExperimentalSettings
   taskDefaults: TaskDefaults
   taskPresets: TaskPreset[]
   doneCap: DoneCap
+  /** Archive an Ask agent task when its terminal exits while it is still In Progress. */
+  autoArchiveAsk: boolean
   sources: SourceConfig[]
 }
 
@@ -144,6 +170,7 @@ export const GLOBAL_SETTING_KEYS = [
   'storageDir',
   'activeWorkspaceId',
   'updates',
+  'restoreTabs',
   'shortcuts',
   'experimental'
 ] as const satisfies readonly (keyof Settings)[]
@@ -169,11 +196,14 @@ export const WORKSPACE_SETTING_KEYS = [
   'promptTemplates',
   'promptRouting',
   'orchestration',
+  'autoDispatchLimits',
   'autoDispatch',
+  'autoDispatchSince',
   'theme',
   'taskDefaults',
   'taskPresets',
   'doneCap',
+  'autoArchiveAsk',
   'sources'
 ] as const satisfies readonly (keyof Settings)[]
 

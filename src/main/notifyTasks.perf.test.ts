@@ -39,6 +39,8 @@ vi.mock('electron', () => ({
 vi.mock('./tray.js', () => ({ updateTray: () => {} }))
 vi.mock('./terminal/terminalEngines.js', () => ({ terminalEngineDiagnostics: () => undefined }))
 vi.mock('./terminal/ptyManager.js', () => ({
+  onTerminalCreated: () => {},
+  onTerminalExit: () => {},
   createSession: () => ({}) as TerminalSessionInfo,
   findSessionByTask: () => undefined,
   killSession: () => {},

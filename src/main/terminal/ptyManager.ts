@@ -16,6 +16,7 @@ const terminals = createTerminalsService({
 
 export const {
   onTerminalData,
+  onTerminalCreated,
   onTerminalExit,
   onTerminalRuntimeState,
   createSession,

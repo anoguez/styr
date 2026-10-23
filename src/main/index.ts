@@ -1,15 +1,21 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, shell } from 'electron'
-import { tasksDir } from '@core/settingsStore.js'
+import { loadSettings, tasksDir } from '@core/settingsStore.js'
+import { listWorkspaces } from '@core/workspaces.js'
+import type { AutoDispatchState } from '@core/types.js'
 import { migrateLegacySettings } from '@core/settingsMigration.js'
 import {
+  autoRunState,
   broadcast,
   checkMergedOnFocus,
+  freezeTerminalLayout,
   markAgentExited,
   notifyAgentsChanged,
   notifyTasksChanged,
   registerIpcHandlers,
+  sendWindowCommand,
   startAutoDispatch,
+  startAutoRunFromTray,
   startRemoteWorkspaces,
   stopRemoteWorkspaces,
   switchWorkspace
@@ -28,7 +34,8 @@ import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
 import { linuxIconPath } from './appIcon.js'
 import { guardNavigation, openHandler } from './windowSecurity.js'
 import { syncAppImageMcp } from './mcpEntry.js'
-import { createTray, destroyTray } from './tray.js'
+import { onBroadcast } from './electronHost.js'
+import { createTray, destroyTray, setTrayAutoRun, watchWindow } from './tray.js'
 import { initUpdater } from './updater.js'
 import { forgetContext, initUsage } from './usage.js'
 
@@ -89,6 +96,46 @@ function installWindowsMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+/** The active workspace's name, remote stubs included, for the tray's Auto-run row. */
+function activeWorkspaceName(): string {
+  const settings = loadSettings()
+  const active = listWorkspaces(settings).find(
+    (workspace) => workspace.id === settings.activeWorkspaceId
+  )
+  return active?.name ?? 'this workspace'
+}
+
+/** Bumped by every read, so a slow answer about the workspace switched away from is dropped. */
+let autoRunRead = 0
+
+/** Re-reads Auto-run for the tray; a board that cannot answer (a host is down) drops the section. */
+function refreshTrayAutoRun(): void {
+  const read = ++autoRunRead
+  autoRunState().then(
+    (state) =>
+      read === autoRunRead && setTrayAutoRun({ workspaceName: activeWorkspaceName(), state }),
+    () => read === autoRunRead && setTrayAutoRun(null)
+  )
+}
+
+/** The tray follows what the windows are told, as `useAutoDispatch` does in the renderer. */
+function followBroadcastsInTray(): void {
+  onBroadcast((channel, payload) => {
+    switch (channel) {
+      case 'orchestrate:autoState':
+        autoRunRead++
+        return setTrayAutoRun({
+          workspaceName: activeWorkspaceName(),
+          state: payload as AutoDispatchState
+        })
+      case 'settings:changed':
+      case 'workspaces:changed':
+      case 'remote:state':
+        return refreshTrayAutoRun()
+    }
+  })
+}
+
 function showWindow(): void {
   const [existing] = BrowserWindow.getAllWindows()
   const window = existing ?? createWindow()
@@ -128,6 +175,7 @@ function createWindow(): BrowserWindow {
   })
 
   window.on('ready-to-show', () => window.show())
+  watchWindow(window)
   window.webContents.setWindowOpenHandler(openHandler((url) => void shell.openExternal(url)))
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -194,8 +242,19 @@ app.whenReady().then(() => {
       }
       broadcast('tasks:activate', taskId)
     },
-    onQuit: () => app.quit()
+    onCommand: (command) => {
+      showWindow()
+      sendWindowCommand(command)
+    },
+    onStartAutoRun: () =>
+      void startAutoRunFromTray().catch((error: unknown) =>
+        console.error('Styr could not start Auto-run:', error)
+      ),
+    onQuit: () => app.quit(),
+    shortcuts: () => loadSettings().shortcuts
   })
+  followBroadcastsInTray()
+  refreshTrayAutoRun()
 
   startWatching(() => notifyTasksChanged())
   startWatchingAgents(() => notifyAgentsChanged())
@@ -220,6 +279,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   destroyTray()
   stopRemoteWorkspaces()
+  freezeTerminalLayout()
   killAllSessions()
   void stopWatching()
   closeIndex()

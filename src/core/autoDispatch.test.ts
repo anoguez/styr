@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { shippedSettings } from './config.js'
 import {
-  AUTO_LAUNCH_LIMIT,
-  AUTO_REWORK_LIMIT,
+  autoLaunchTimes,
   decideAutoRun,
+  guardedByHistory,
   memoryKey,
   pruneMemory,
-  tallyRework
+  reworkBounces,
+  reworkCappedMessage,
+  reworkHeld,
+  unnotedCap
 } from './autoDispatch.js'
 import { planOrchestration } from './orchestrate.js'
-import type { Task } from './types.js'
+import { DEFAULT_AUTO_LIMITS, type Task, type TaskSessionRef } from './types.js'
+
+const LIMITS = DEFAULT_AUTO_LIMITS
 
 function task(extra: Partial<Task> = {}): Task {
   return {
@@ -25,6 +30,8 @@ function task(extra: Partial<Task> = {}): Task {
     orchestrate: true,
     repoPath: '/repo',
     filePath: '/tasks/TASK-1.md',
+    sessions: [],
+    activity: [],
     order: 0,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
@@ -32,14 +39,26 @@ function task(extra: Partial<Task> = {}): Task {
   } as unknown as Task
 }
 
-function decide(tasks: Task[], memory = new Map<string, string>(), history: number[] = []) {
+function decide(
+  tasks: Task[],
+  memory = new Map<string, string>(),
+  history: number[] = [],
+  limit = LIMITS.launchesPerHour
+) {
   const pruned = pruneMemory(tasks, 'w', memory)
   const plan = planOrchestration(shippedSettings(), tasks, {
     liveTaskIds: new Set(),
     agents: new Map(),
     skip: pruned.skip
   })
-  return decideAutoRun({ plan, workspaceId: 'w', memory: pruned.memory, history, now: 10_000_000 })
+  return decideAutoRun({
+    plan,
+    workspaceId: 'w',
+    memory: pruned.memory,
+    history,
+    now: 10_000_000,
+    limit
+  })
 }
 
 describe('decideAutoRun', () => {
@@ -79,60 +98,151 @@ describe('decideAutoRun', () => {
   })
 
   it('stops at the hourly limit and asks to pause', () => {
-    const history = Array.from({ length: AUTO_LAUNCH_LIMIT - 1 }, () => 9_999_000)
+    const history = Array.from({ length: LIMITS.launchesPerHour - 1 }, () => 9_999_000)
     const tasks = [task(), task({ id: 'TASK-2', order: 1 })]
     const decision = decide(tasks, new Map(), history)
     expect(decision.launch).toHaveLength(1)
     expect(decision.pause).toBe('limit')
   })
 
+  it('takes the hourly limit from its input', () => {
+    const tasks = [task(), task({ id: 'TASK-2', order: 1 })]
+    const history = [9_999_000, 9_999_000]
+    expect(decide(tasks, new Map(), history, 2).pause).toBe('limit')
+    expect(decide(tasks, new Map(), history, 2).launch).toHaveLength(0)
+    expect(decide(tasks, new Map(), [9_999_000], 2).launch).toHaveLength(1)
+    expect(decide(tasks, new Map(), history, 3).launch).toHaveLength(1)
+  })
+
   it('does not count launches older than an hour', () => {
-    const history = Array.from({ length: AUTO_LAUNCH_LIMIT }, () => 1)
+    const history = Array.from({ length: LIMITS.launchesPerHour }, () => 1)
     const decision = decide([task()], new Map(), history)
     expect(decision.launch).toHaveLength(1)
     expect(decision.pause).toBeUndefined()
   })
 })
 
-describe('tallyRework', () => {
-  const reviewed = new Map([[memoryKey('w', 'TASK-1'), 'review|in_review|ready']])
+/** A history entry started at minute `minute` of the day; Auto-run's when `dispatch` is set. */
+function entry(id: string, minute: number, extra: Partial<TaskSessionRef> = {}): TaskSessionRef {
+  const startedAt = new Date(Date.UTC(2026, 0, 1, 0, minute)).toISOString()
+  return { id, provider: 'claude', startedAt, label: id, ...extra }
+}
 
-  it('counts a review Auto-run started that came back to Backlog', () => {
-    const tally = tallyRework([task()], 'w', reviewed, new Map())
-    expect(tally.counts.get('w:TASK-1')).toBe(1)
-    expect(tally.capped).toEqual([])
-    expect(tally.held).toEqual(new Set())
+const review = (id: string, minute: number, extra: Partial<TaskSessionRef> = {}) =>
+  entry(id, minute, { dispatch: 'review', ...extra })
+
+/** Two reviews sent back and a third whose task is back in Backlog: three failed reviews. */
+function capped(extra: Partial<Task> = {}): Task {
+  return task({
+    agentSession: { provider: 'claude', id: 'r3' },
+    sessions: [
+      entry('impl', 1),
+      review('r1', 2, { sentBack: true }),
+      review('r2', 3, { sentBack: true }),
+      review('r3', 4)
+    ],
+    ...extra
+  })
+}
+
+describe('reworkBounces', () => {
+  it('counts sent-back reviews and the current review of a task back in Backlog', () => {
+    expect(reworkBounces(capped(), undefined).map((e) => e.id)).toEqual(['r3', 'r2', 'r1'])
+    expect(reworkHeld([capped()], undefined, 3)).toEqual(new Set(['TASK-1']))
   })
 
-  it('ignores a review still in progress, an implement run, and a legacy In Progress bounce', () => {
-    expect(tallyRework([task({ status: 'in_review' })], 'w', reviewed, new Map()).counts.size).toBe(
-      0
-    )
-    expect(
-      tallyRework([task({ status: 'in_progress' })], 'w', reviewed, new Map()).counts.size
-    ).toBe(0)
-    const implemented = new Map([[memoryKey('w', 'TASK-1'), 'implement|backlog|ready']])
-    expect(tallyRework([task()], 'w', implemented, new Map()).counts.size).toBe(0)
+  it('does not count the current review while the task is still In Review', () => {
+    expect(reworkBounces(capped({ status: 'in_review' }), undefined)).toHaveLength(0)
   })
 
-  it('caps at the limit, reporting the task only on the pass that reached it', () => {
-    const before = new Map([['w:TASK-1', AUTO_REWORK_LIMIT - 1]])
-    const reached = tallyRework([task()], 'w', reviewed, before)
-    expect(reached.capped.map((t) => t.id)).toEqual(['TASK-1'])
-    expect(reached.held).toEqual(new Set(['TASK-1']))
-    const later = tallyRework([task()], 'w', new Map(), reached.counts)
-    expect(later.capped).toEqual([])
-    expect(later.held).toEqual(new Set(['TASK-1']))
+  it('counts a bounce once, before and after an implementer is launched over it', () => {
+    const picked = capped({
+      status: 'in_progress',
+      agentSession: { provider: 'claude', id: 'impl' },
+      sessions: capped().sessions.map((e) => (e.id === 'r3' ? { ...e, sentBack: true } : e))
+    })
+    expect(reworkBounces(picked, undefined)).toHaveLength(LIMITS.reviews)
   })
 
-  it('starts over once the task is Done or gone, and keeps other workspaces', () => {
-    const counts = new Map([
-      ['w:TASK-1', AUTO_REWORK_LIMIT],
-      ['w:TASK-2', 1],
-      ['other:TASK-1', 2]
+  it('starts over after a review that passed', () => {
+    const t = capped({
+      sessions: [review('r0', 0, { sentBack: true }), review('pass', 1), ...capped().sessions]
+    })
+    expect(reworkBounces(t, undefined)).toHaveLength(3)
+    const later = capped({
+      sessions: [...capped().sessions.slice(0, 3), review('pass', 3), review('r3', 4)]
+    })
+    expect(reworkBounces(later, undefined).map((e) => e.id)).toEqual(['r3'])
+  })
+
+  it('ignores reviews a person started, and those before Auto-run was switched on', () => {
+    const manual = capped({
+      sessions: capped().sessions.map((e) => (e.id === 'r1' ? { ...e, dispatch: undefined } : e))
+    })
+    expect(reworkHeld([manual], undefined, 3)).toEqual(new Set())
+    const since = new Date(Date.UTC(2026, 0, 1, 0, 2)).toISOString()
+    expect(reworkBounces(capped(), since).map((e) => e.id)).toEqual(['r3', 'r2'])
+  })
+
+  it('holds at the limit it is given', () => {
+    expect(reworkHeld([capped()], undefined, 4)).toEqual(new Set())
+    expect(reworkHeld([capped()], undefined, 2)).toEqual(new Set(['TASK-1']))
+    expect(reworkCappedMessage('TASK-1', 2)).toBe('TASK-1 failed review 2 times; it needs you.')
+  })
+
+  it('holds nothing that is Done', () => {
+    expect(reworkHeld([capped({ status: 'done' })], undefined, 3)).toEqual(new Set())
+  })
+})
+
+describe('unnotedCap', () => {
+  it('names the newest failed review until the capped note is written after it', () => {
+    expect(unnotedCap(capped(), undefined, 3)?.id).toBe('r3')
+    const note = (minute: number) => ({
+      at: new Date(Date.UTC(2026, 0, 1, 0, minute)).toISOString(),
+      author: 'styr',
+      message: `${reworkCappedMessage('TASK-1', 3)} Auto-run no longer starts it.`
+    })
+    expect(unnotedCap(capped({ activity: [note(5)] }), undefined, 3)).toBeUndefined()
+    // A note from an earlier cap, before Auto-run was switched on again, is not this one.
+    expect(unnotedCap(capped({ activity: [note(3)] }), undefined, 3)?.id).toBe('r3')
+    expect(unnotedCap(task(), undefined, 3)).toBeUndefined()
+  })
+})
+
+describe('guardedByHistory', () => {
+  it('guards a task whose current chat Auto-run started in the lane it is in now', () => {
+    const reviewed = task({
+      status: 'in_review',
+      agentSession: { provider: 'claude', id: 'r' },
+      sessions: [review('r', 1)]
+    })
+    expect(guardedByHistory(reviewed)).toBe(true)
+    // Sent back: the implement lane is a new run.
+    expect(guardedByHistory({ ...reviewed, status: 'backlog' })).toBe(false)
+  })
+
+  it('does not guard a chat a person started, or a task with no chat', () => {
+    const manual = task({
+      status: 'in_review',
+      agentSession: { provider: 'claude', id: 'r' },
+      sessions: [entry('r', 1)]
+    })
+    expect(guardedByHistory(manual)).toBe(false)
+    expect(guardedByHistory(task())).toBe(false)
+  })
+})
+
+describe('autoLaunchTimes', () => {
+  it('lists Auto-run launches of the past hour, oldest first', () => {
+    const now = Date.UTC(2026, 0, 1, 1, 30)
+    const tasks = [
+      task({ sessions: [entry('old', 20, { dispatch: 'implement' }), review('b', 80)] }),
+      task({ sessions: [entry('manual', 70), entry('a', 40 + 35, { dispatch: 'spec' })] })
+    ]
+    expect(autoLaunchTimes(tasks, now)).toEqual([
+      Date.UTC(2026, 0, 1, 1, 15),
+      Date.UTC(2026, 0, 1, 1, 20)
     ])
-    const tally = tallyRework([task({ status: 'done' })], 'w', new Map(), counts)
-    expect([...tally.counts]).toEqual([['other:TASK-1', 2]])
-    expect(tally.held).toEqual(new Set())
   })
 })

@@ -1,6 +1,9 @@
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { syntaxFor } from '../shell.js'
-import { codexCommand, codexTranscriptUsage } from './codex.js'
+import { codexCommand, codexSubagentTranscripts, codexTranscriptUsage } from './codex.js'
 
 const settings = { codexCommand: 'codex', codexApprovalReviewer: 'user' as const }
 
@@ -139,5 +142,63 @@ describe('codexTranscriptUsage', () => {
       { at: Date.parse('2026-10-13T09:00:00Z'), tokens: 2100 },
       { at: Date.parse('2026-10-13T09:01:00Z'), tokens: 5200 }
     ])
+  })
+})
+
+describe('codexSubagentTranscripts', () => {
+  const home = mkdtempSync(join(tmpdir(), 'styr-codex-home-'))
+  const sessions = join(home, '.codex', 'sessions')
+  const meta = (id: string, source: unknown, parent?: string): string =>
+    JSON.stringify({
+      timestamp: '2026-10-13T09:00:00Z',
+      type: 'session_meta',
+      payload: {
+        id,
+        parent_thread_id: parent,
+        source,
+        base_instructions: { text: 'x'.repeat(70000) }
+      }
+    })
+  const rollout = (date: string, id: string, first: string): string => {
+    const dir = join(sessions, date)
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, `rollout-${date.replaceAll('/', '-')}T09-00-00-${id}.jsonl`)
+    writeFileSync(file, first)
+    return file
+  }
+
+  const parent = rollout('2026/10/13', 'p', `${meta('p', 'cli')}\n`)
+  const guardian = rollout(
+    '2026/10/13',
+    'g',
+    `${meta('g', { subagent: { other: 'guardian' } }, 'p')}\n`
+  )
+  const spawned = rollout(
+    '2026/10/14',
+    's',
+    `${meta('s', { subagent: { thread_spawn: { depth: 1 } } }, 'p')}\n{"type":"event_msg"}\n`
+  )
+  const grandchild = rollout(
+    '2026/11/02',
+    'gc',
+    `${meta('gc', { subagent: { thread_spawn: { depth: 2 } } }, 's')}\n`
+  )
+  rollout('2026/10/13', 'u', `${meta('u', 'cli')}\n`)
+  // Names the parent, but dated before it: never walked.
+  rollout('2026/10/12', 'old', `${meta('old', { subagent: { other: 'guardian' } }, 'p')}\n`)
+  rollout('2025/12/31', 'older', `${meta('older', { subagent: { other: 'guardian' } }, 'p')}\n`)
+
+  it('finds guardian and spawned children and theirs, from the parent date on', () => {
+    expect(codexSubagentTranscripts('p', parent, home)).toEqual([guardian, spawned, grandchild])
+  })
+
+  it('reads again a first line that was not complete yet', () => {
+    const late = join(sessions, '2026/10/15', 'rollout-late.jsonl')
+    mkdirSync(join(sessions, '2026/10/15'), { recursive: true })
+    const line = meta('late', { subagent: { other: 'guardian' } }, 'p')
+    writeFileSync(late, line.slice(0, 100))
+    expect(codexSubagentTranscripts('p', parent, home)).not.toContain(late)
+    appendFileSync(late, `${line.slice(100)}\n`)
+    expect(codexSubagentTranscripts('p', parent, home)).toContain(late)
   })
 })

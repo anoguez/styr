@@ -42,7 +42,7 @@ export interface WorkspacesActivity {
 
 /** A workspace's Inbox group sizes, with "Needs you" broken down by why. */
 export type WorkspaceBoardSummary = Record<Exclude<InboxGroup, 'done'>, number> &
-  Record<'waiting' | 'review' | 'spec', number>
+  Record<'waiting' | 'question' | 'review' | 'spec', number>
 
 /**
  * What names a task's worktree and branch. Task ids are per workspace, so two workspaces can both

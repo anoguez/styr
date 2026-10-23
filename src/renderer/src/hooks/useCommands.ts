@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { commandEnabled, commandForEvent } from '@core/shortcuts.js'
 import type { ShortcutCommand, TerminalSessionInfo } from '@core/types.js'
 import type { CommandEntry } from '../components/CommandPalette.js'
-import { runShortcutCommand, type AppShellAction } from '../lib/appShell.js'
+import { runShortcutCommand, runTrayCommand, type AppShellAction } from '../lib/appShell.js'
 import {
   buildCommandEntries,
   type PaletteActions,
@@ -74,6 +74,26 @@ export function useCommands({
       close
     ]
   )
+
+  // The tray's request, taken on mount (a window it had to create) and on each `app:command`. Read
+  // through a ref, so a new `runCommand` never re-subscribes and drops a request in flight.
+  const trayRun = useRef({ runCommand, dispatch })
+  trayRun.current = { runCommand, dispatch }
+  useEffect(() => {
+    let current = true
+    const take = (): void => {
+      void window.api.app.takeCommand().then((command) => {
+        if (!current || !command) return
+        runTrayCommand(command, trayRun.current.runCommand, trayRun.current.dispatch)
+      })
+    }
+    take()
+    const off = window.api.app.onCommand(take)
+    return () => {
+      current = false
+      off()
+    }
+  }, [])
 
   const { bindings } = palette
   useEffect(() => {
