@@ -15,6 +15,7 @@ function task(extra: Partial<Task> = {}): Task {
     tags: [],
     blockedBy: [],
     contextFiles: [],
+    questions: [],
     orchestrate: true,
     repoPath: '/repo',
     filePath: '/tasks/TASK-1.md',

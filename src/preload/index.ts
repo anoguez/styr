@@ -29,6 +29,7 @@ import type {
   SourceSyncState,
   SourceTarget,
   SyncPreview,
+  AnswerResult,
   Task,
   TaskDraft,
   TaskFilter,
@@ -85,6 +86,8 @@ const api = {
       ipcRenderer.invoke('tasks:reorder', status, orderedIds),
     archive: (id: string, archived: boolean): Promise<Task> =>
       ipcRenderer.invoke('tasks:archive', id, archived),
+    answerQuestion: (id: string, questionId: string, answer: string): Promise<AnswerResult> =>
+      ipcRenderer.invoke('tasks:answerQuestion', id, questionId, answer),
     remove: (id: string): Promise<void> => ipcRenderer.invoke('tasks:delete', id),
     forgetSession: (id: string): Promise<Task> => ipcRenderer.invoke('tasks:forgetSession', id),
     removeWorktree: (id: string): Promise<Task | null> =>

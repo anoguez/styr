@@ -29,6 +29,7 @@ const task = (id: string, extra: Partial<Task> = {}): Task =>
     tags: [],
     blockedBy: [],
     activity: [],
+    questions: [],
     order: 0,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',

@@ -16,6 +16,7 @@ import {
   getTask,
   reorderTasks,
   setArchived,
+  answerQuestion,
   updateTask
 } from '@core/taskStore.js'
 import type { AgentStatus } from '@core/agentState.js'
@@ -139,6 +140,7 @@ export function createServerHost(ports: ServerHostPorts) {
       addNote,
       reorderTasks,
       setArchived,
+      answerQuestion,
       deleteTask: (taskId) => {
         deleteTask(taskId)
         reviewService.forget(taskId)
@@ -148,6 +150,8 @@ export function createServerHost(ports: ServerHostPorts) {
     },
     settings: () => loadSettings(),
     requestLanding: () => requestLanding(),
+    route: (taskId) => agentsService.reviewRoute(taskId),
+    deliver: (taskId, message) => agentsService.deliverReview(taskId, message),
     observeTasks: sources.observeTasks,
     recordNotifyDuration: diagnostics.recordNotifyDuration,
     requestAutoRun: () => dispatchService.requestAutoRun(),
@@ -299,6 +303,9 @@ export function createServerHost(ports: ServerHostPorts) {
     ),
     'tasks:archive': channel(z.tuple([str, z.boolean()]), (id, archived) =>
       tasksService.archive(id, archived)
+    ),
+    'tasks:answerQuestion': channel(z.tuple([str, str, str]), (id, questionId, answer) =>
+      tasksService.answerQuestion(id, questionId, answer)
     ),
     'tasks:delete': channel(z.tuple([str]), (id) => tasksService.delete(id)),
     'tasks:forgetSession': channel(z.tuple([str]), (id) => tasksService.forgetSession(id)),

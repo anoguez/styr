@@ -65,6 +65,8 @@ export interface Task {
   doneAt?: string
   /** Set while the task is archived: off the board, still on disk. Independent of status. */
   archivedAt?: string
+  /** Questions an agent put to the owner. Changed only by `askQuestion` / `answerQuestion`. */
+  questions: TaskQuestion[]
   createdAt: string
   updatedAt: string
   filePath: string
@@ -102,17 +104,42 @@ export interface ExternalRef {
   syncedBodyHash?: string
 }
 
+/** A question for the owner (`ask_owner`). Open while it has no `answer`. */
+export interface TaskQuestion {
+  id: string
+  askedAt: string
+  askedBy: string
+  text: string
+  answer?: string
+  answeredAt?: string
+  answeredBy?: string
+}
+
+/**
+ * What became of an answer to a question: the route it took to the agent (`queued` at its next
+ * stop, `now`, `resume` the chat), `recorded` when there is no chat to send it to (the agent reads
+ * it from the prompt on its next launch), or `failed` — recorded, but the delivery threw.
+ */
+export type AnswerDelivery = 'queued' | 'now' | 'resume' | 'recorded' | 'failed'
+
+export interface AnswerResult {
+  task: Task
+  delivery: AnswerDelivery
+  /** Why the delivery failed; set only then. */
+  error?: string
+}
+
 export interface ActivityEntry {
   at: string
   author: string
   message: string
 }
 
-export type TaskDraft = Partial<Omit<Task, 'filePath' | 'format' | 'activity'>> &
+export type TaskDraft = Partial<Omit<Task, 'filePath' | 'format' | 'activity' | 'questions'>> &
   Pick<Task, 'title'>
 
 export type TaskPatch = Partial<
-  Omit<Task, 'id' | 'filePath' | 'format' | 'activity' | 'createdAt' | 'archivedAt'>
+  Omit<Task, 'id' | 'filePath' | 'format' | 'activity' | 'createdAt' | 'archivedAt' | 'questions'>
 >
 
 export interface TaskFilter {

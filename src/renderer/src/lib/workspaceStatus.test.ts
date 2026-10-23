@@ -20,7 +20,7 @@ function activity(counts: Partial<Record<AgentState, number>>, review = 0): Work
 }
 
 function summary(counts: Partial<WorkspaceBoardSummary>): WorkspaceBoardSummary {
-  return { needs: 0, running: 0, next: 0, waiting: 0, review: 0, spec: 0, ...counts }
+  return { needs: 0, running: 0, next: 0, waiting: 0, question: 0, review: 0, spec: 0, ...counts }
 }
 
 describe('backgroundBadge', () => {

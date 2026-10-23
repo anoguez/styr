@@ -350,7 +350,7 @@ describe('launch', () => {
 
 describe('previewPrompt', () => {
   it('renders the prompt a launch would send, from the task on the board', () => {
-    h.rows = [task({ contextFiles: [], blockedBy: [], activity: [] })]
+    h.rows = [task({ contextFiles: [], blockedBy: [], activity: [], questions: [] })]
     expect(service.previewPrompt('TASK-1')).toContain('TASK-1')
     expect(() => service.previewPrompt('TASK-9')).toThrow('Task TASK-9 not found')
   })
