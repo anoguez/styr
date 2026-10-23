@@ -15,9 +15,36 @@ export interface TerminalContext {
 const MAX_TITLE = 80
 const MAX_TEXT = 6000
 
-function clip(text: string): string {
-  const trimmed = text.trim()
-  return trimmed.length > MAX_TEXT ? `…${trimmed.slice(-MAX_TEXT)}` : trimmed
+// eslint-disable-next-line no-control-regex
+const ANSI = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g
+
+/** The output as plain text, clipped to its tail; `clipped` says whether the head was dropped. */
+function clip(text: string): { text: string; clipped: boolean } {
+  const trimmed = text.replace(ANSI, '').trim()
+  return trimmed.length > MAX_TEXT
+    ? { text: trimmed.slice(-MAX_TEXT), clipped: true }
+    : { text: trimmed, clipped: false }
+}
+
+/** A fence longer than any run of backticks in the text, so the output cannot close it early. */
+function fenceFor(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length))
+  return '`'.repeat(Math.max(3, longest + 1))
+}
+
+/**
+ * The repository a task from a terminal should work in: the git root of the directory the command
+ * ran in, else the default repository (the draft applies it when this is undefined). Never throws.
+ */
+export async function repoForDirectory(
+  cwd: string,
+  gitContext: (path: string) => Promise<{ root: string | null }>
+): Promise<string | undefined> {
+  try {
+    return (await gitContext(cwd)).root ?? undefined
+  } catch {
+    return undefined
+  }
 }
 
 function shortTitle(text: string): string {
@@ -55,10 +82,14 @@ export function taskFromTerminal(
   const lines = [intro[kind], '', `Directory: \`${context.cwd}\``]
   if (context.command) lines.push(`Command: \`${context.command}\``)
   if (context.exitCode !== undefined) lines.push(`Exit code: ${context.exitCode}`)
-  lines.push('', '```', clip(context.text) || '(no output captured)', '```')
+  const output = clip(context.text)
+  const fence = fenceFor(output.text)
+  if (output.clipped) lines.push('', `(output trimmed to the last ${MAX_TEXT} characters)`)
+  lines.push('', fence, output.text || '(no output captured)', fence)
   return {
     title: shortTitle(verbs[kind]),
     description: lines.join('\n'),
-    ...(kind === 'ask' ? { tags: ['ask'], ready: true } : {})
+    ...(kind === 'ask' ? { tags: ['ask'], ready: true } : {}),
+    ...(kind === 'fix' ? { ready: true } : {})
   }
 }

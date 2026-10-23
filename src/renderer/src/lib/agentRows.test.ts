@@ -28,12 +28,31 @@ describe('agentRowsFor', () => {
       ['D', status('idle')],
       ['E', status('waiting')]
     ])
-    const rows = agentRowsFor(tasks, shown, [], 'default')
+    const sessions = [{ id: 's', taskId: 'A', workspaceId: 'default' }] as TerminalSessionInfo[]
+    const rows = agentRowsFor(tasks, shown, sessions, 'default')
     expect(rows.map((row) => row.task.id)).toEqual(['A', 'B'])
   })
 
+  it('drops a task with a stale status, no chat and no tab; keeps it while a tab is open', () => {
+    const shown = new Map([['A', status('idle')]])
+    expect(agentRowsFor([task('A')], shown, [], 'default')).toEqual([])
+    const open = [{ id: 's', taskId: 'A', workspaceId: 'default' }] as TerminalSessionInfo[]
+    expect(agentRowsFor([task('A')], shown, open, 'default')).toHaveLength(1)
+    const other = [{ id: 's', taskId: 'A', workspaceId: 'other' }] as TerminalSessionInfo[]
+    expect(agentRowsFor([task('A')], shown, other, 'default')).toEqual([])
+  })
+
+  it('keeps a task with a linked chat when its tab is closed', () => {
+    const linked = task('A', { agentSession: { provider: 'claude', id: 'x' } } as Partial<Task>)
+    expect(agentRowsFor([linked], new Map([['A', status('idle')]]), [], 'default')).toHaveLength(1)
+  })
+
   it('puts agents with a status first, waiting ahead of working', () => {
-    const tasks = [task('A'), task('B'), task('C', { agentSession: {} } as Partial<Task>)]
+    const tasks = [
+      task('A', { agentSession: {} } as Partial<Task>),
+      task('B', { agentSession: {} } as Partial<Task>),
+      task('C', { agentSession: {} } as Partial<Task>)
+    ]
     const shown = new Map([
       ['A', status('working')],
       ['B', status('waiting')]
@@ -62,7 +81,8 @@ describe('boardSummary', () => {
       task('B'),
       task('C', { status: 'done' })
     ]
-    const rows = agentRowsFor(tasks, new Map([['B', status('working')]]), [], 'default')
+    const sessions = [{ id: 's', taskId: 'B', workspaceId: 'default' }] as TerminalSessionInfo[]
+    const rows = agentRowsFor(tasks, new Map([['B', status('working')]]), sessions, 'default')
     expect(boardSummary(board(tasks), rows)).toBe('2 tasks · 1 needs a spec · 1 running')
   })
 

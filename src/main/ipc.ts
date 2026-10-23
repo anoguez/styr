@@ -19,6 +19,7 @@ import {
   getTask,
   reorderTasks,
   setArchived,
+  answerQuestion,
   updateTask
 } from '@core/taskStore.js'
 import { fetchAndSettle, settleLandedTasks } from './landing.js'
@@ -77,6 +78,7 @@ import { CodexMonitor, prepareCodex } from './codexMonitor.js'
 import { agentPrompts, publishAgentConversation } from './usage.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
+import { mcpSetupStatus } from './mcpSetup.js'
 import { bindGlobalSettingsSave, remoteRouter, routedIpcMain, startRemote } from './remote.js'
 import { isWebLink } from './windowSecurity.js'
 
@@ -107,6 +109,7 @@ const tasksService = createTasksService({
     addNote,
     reorderTasks,
     setArchived,
+    answerQuestion,
     deleteTask: (taskId) => {
       deleteTask(taskId)
       reviewService.forget(taskId)
@@ -116,6 +119,8 @@ const tasksService = createTasksService({
   },
   settings: () => loadSettings(),
   requestLanding: () => requestLanding(),
+  route: (taskId) => agentsService.reviewRoute(taskId),
+  deliver: (taskId, message) => agentsService.deliverReview(taskId, message),
   observeTasks,
   recordNotifyDuration,
   requestAutoRun: () => dispatchService.requestAutoRun(),
@@ -429,6 +434,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('tasks:archive', (_event, id: string, archived: boolean) =>
     tasksService.archive(id, archived)
   )
+  ipcMain.handle('tasks:answerQuestion', (_event, id: string, questionId: string, answer: string) =>
+    tasksService.answerQuestion(id, questionId, answer)
+  )
   ipcMain.handle('tasks:delete', (_event, id: string) => tasksService.delete(id))
 
   ipcMain.handle('tasks:reveal', (_event, id: string) => {
@@ -503,6 +511,10 @@ export function registerIpcHandlers(): void {
     'agents:cliStatus',
     (_event, provider: 'claude' | 'codex', command: string, shell: string) =>
       agentCliStatus({ provider, command: String(command ?? ''), shell: String(shell ?? '') })
+  )
+
+  ipcMain.handle('agents:mcpStatus', (_event, provider: 'claude' | 'codex', fresh?: boolean) =>
+    mcpSetupStatus({ provider, fresh: fresh === true })
   )
 
   ipcMain.handle('settings:pickApp', async (event) => {

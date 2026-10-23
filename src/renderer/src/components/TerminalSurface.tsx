@@ -13,6 +13,7 @@ import {
 import { onTerminalCommand, type TerminalCommand } from '../lib/terminalCommands.js'
 import {
   firstLine,
+  repoForDirectory,
   taskFromTerminal,
   type TerminalContext,
   type TerminalTaskKind
@@ -175,6 +176,8 @@ export function TerminalSurface({
   onFullscreenChange,
   onSplit,
   onCreateTask,
+  onLaunchTask,
+  onOpenTaskById,
   activity,
   children
 }: {
@@ -208,6 +211,10 @@ export function TerminalSurface({
   onSplit?: (cwd: string) => void
   /** Hand terminal output to an agent as a new task; resolves to the task id. */
   onCreateTask?: (request: TerminalTaskRequest) => Promise<string>
+  /** Start an agent on a task this terminal just created. */
+  onLaunchTask?: (taskId: string) => Promise<void>
+  /** Show a task this terminal just created on the board. */
+  onOpenTaskById?: (taskId: string) => void
   /**
    * The task's floating activity panel, when it is showing. The terminal narrows to leave it room,
    * so nothing it prints sits underneath.
@@ -226,6 +233,8 @@ export function TerminalSurface({
     branch: null
   })
   const [notice, setNotice] = useState<string>()
+  // A task this terminal just made, offered with Launch and Open until the notice is dismissed.
+  const [created, setCreated] = useState<string>()
   const [layout, setLayout] = useState<BlockLayout | null>(null)
   // The native engine is showing its own block list, which draws commands itself.
   const [blockList, setBlockList] = useState(false)
@@ -254,6 +263,12 @@ export function TerminalSurface({
     const timer = setTimeout(() => setNotice(undefined), 4000)
     return () => clearTimeout(timer)
   }, [notice])
+
+  useEffect(() => {
+    if (!created) return
+    const timer = setTimeout(() => setCreated(undefined), 10000)
+    return () => clearTimeout(timer)
+  }, [created])
 
   const write = useCallback(
     (data: string) => window.api.terminal.write(session.id, data),
@@ -297,22 +312,21 @@ export function TerminalSurface({
       context?: TerminalContext
     ): Promise<void> => {
       if (!onCreateTask) return
-      const request: TerminalTaskRequest = taskFromTerminal(
-        kind,
-        context ?? (await contextFor(preferSelection))
-      )
+      const resolved = context ?? (await contextFor(preferSelection))
+      const request: TerminalTaskRequest = taskFromTerminal(kind, resolved)
       if (kind === 'ask') Object.assign(request, { launch: true, repoPath: git.root ?? undefined })
+      else request.repoPath = await repoForDirectory(resolved.cwd, window.api.terminal.gitContext)
       setSelection(null)
       try {
         const id = await onCreateTask(request)
-        setNotice(
-          request.launch ? `Asking the agent in ${id}` : `Created ${id} — find it in Backlog`
-        )
+        if (request.launch) setNotice(`Asking the agent in ${id}`)
+        else if (onLaunchTask || onOpenTaskById) setCreated(id)
+        else setNotice(`Created ${id} — find it in Backlog`)
       } catch (reason) {
         setNotice(reason instanceof Error ? reason.message : 'Could not create the task')
       }
     },
-    [contextFor, onCreateTask, git.root]
+    [contextFor, onCreateTask, onLaunchTask, onOpenTaskById, git.root]
   )
 
   // The context is captured when the prompt opens: focusing its field can clear the selection.
@@ -450,8 +464,13 @@ export function TerminalSurface({
     block.readOutput
       ? block.readOutput()
       : ((await handle.current?.lines(block.startLine + 1, block.endLine)) ?? '')
+  // The directory a block ran in is only recorded for the last command; older blocks use the current one.
+  const blockCwd = (block: ActionBlock): string => {
+    const last = runtime?.lastCommand
+    return last && last.command === block.command && last.cwd ? last.cwd : cwd
+  }
   const contextOfBlock = async (block: ActionBlock): Promise<TerminalContext> => ({
-    cwd,
+    cwd: blockCwd(block),
     command: block.command,
     exitCode: block.exitCode,
     text: await outputOf(block)
@@ -488,6 +507,9 @@ export function TerminalSurface({
           return retry()
         case 'terminalSplit':
           return onSplit?.(cwd)
+        case 'terminalFixLast':
+          if (failed) return void sendToAgent('fix', true)
+          return setNotice('The last command did not fail')
         case 'terminalAskReview':
           return void askReview()
         case 'terminalHandOff':
@@ -501,6 +523,7 @@ export function TerminalSurface({
     canChange,
     canHandOff,
     sendToAgent,
+    failed,
     openAsk,
     handOffWork,
     askReview,
@@ -625,6 +648,40 @@ export function TerminalSurface({
               onSubmit={(question) => void submitAsk(question)}
               onCancel={closeAsk}
             />
+          ) : null}
+          {created ? (
+            <div
+              role="status"
+              className="absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-md border border-edge-strong bg-panel px-2.5 py-1 text-[11.5px] text-ink shadow-xl"
+            >
+              <span>Created {created}</span>
+              {onLaunchTask ? (
+                <button
+                  type="button"
+                  className="font-medium text-accent-ink hover:underline"
+                  onClick={() => {
+                    setCreated(undefined)
+                    void onLaunchTask(created).catch((reason: unknown) =>
+                      setNotice(reason instanceof Error ? reason.message : 'Could not launch')
+                    )
+                  }}
+                >
+                  Launch
+                </button>
+              ) : null}
+              {onOpenTaskById ? (
+                <button
+                  type="button"
+                  className="font-medium text-accent-ink hover:underline"
+                  onClick={() => {
+                    setCreated(undefined)
+                    onOpenTaskById(created)
+                  }}
+                >
+                  Open
+                </button>
+              ) : null}
+            </div>
           ) : null}
           {notice ? (
             <div

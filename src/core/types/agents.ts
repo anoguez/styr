@@ -97,6 +97,28 @@ export type AgentCliStatus =
   | { state: 'failed'; detail: string }
   | { state: 'unsupported_shell' }
 
+/**
+ * Whether the Styr MCP server is registered with an agent CLI and points at this install.
+ * `unknown` is a probe that could not tell (CLI missing, unsupported shell, timeout, odd output);
+ * it is never reported as `missing`.
+ */
+export type McpSetupState = 'registered' | 'stale' | 'missing' | 'unknown'
+
+export interface McpSetupReport {
+  provider: 'claude' | 'codex'
+  state: McpSetupState
+  /** The script path the provider has registered, when it has a `styr` server. */
+  registeredEntry?: string
+  /** This host's MCP entry: what a registration should point at. */
+  expectedEntry: string
+  /** The command that registers the server, for the fix-it text. */
+  installCommand: string
+  /** The command that removes a stale registration first, when there is one. */
+  removeCommand?: string
+  /** One sentence on what is wrong; empty when registered. */
+  problem: string
+}
+
 /** One agent CLI check, with what it ran and, when it is not ready, what to do about it. */
 export interface AgentCliReport {
   provider: 'claude' | 'codex'

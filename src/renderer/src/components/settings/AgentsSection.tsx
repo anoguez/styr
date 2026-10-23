@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { withModel } from '@core/agentModel.js'
 import { AGENT_MODEL_EXAMPLES, AGENT_PROVIDER_LABELS } from '@core/types.js'
 import { AgentCliStatus } from '../AgentCliStatus.js'
+import { McpSetupStatus } from '../McpSetup.js'
 import { CloseIcon } from '../icons.js'
 import { Button, Card, Chip, Hint, Segmented, Switch, inputBase } from '../ui.js'
 import { withProvider } from './draft.js'
@@ -243,6 +244,7 @@ export function AgentsSection({ draft, patch }: SectionProps): ReactNode {
                         {copied === provider.id ? 'Copied' : 'Copy'}
                       </Button>
                     </div>
+                    <McpSetupStatus provider={provider.id} />
                     <Hint>
                       Run once in a terminal, then start a new {provider.label} session. It lets the
                       agent read and move tasks on the board from anywhere. Registered once for

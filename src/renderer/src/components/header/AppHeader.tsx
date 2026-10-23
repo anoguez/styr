@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { AppInfo, UpdateState } from '@core/types.js'
 import { IS_MAC } from '../../lib/platform.js'
+import { useFullscreen } from '../../lib/useFullscreen.js'
 import { Chip } from '../ui.js'
 
 /**
@@ -22,9 +23,11 @@ export function AppHeader({
   /** A Dispatch run or Auto-run is going: a sweep runs along the bar's bottom edge. */
   live: boolean
 }): ReactNode {
+  // Full screen hides the traffic lights, so the brand moves to the left edge.
+  const fullscreen = useFullscreen()
   return (
     <header
-      className={`relative flex h-[44px] shrink-0 items-center gap-3 border-b border-edge bg-chrome [-webkit-app-region:drag] ${IS_MAC ? 'pl-[86px] pr-3' : 'flex-row-reverse pl-3 pr-[150px]'}`}
+      className={`relative flex h-[44px] shrink-0 items-center gap-3 border-b border-edge bg-chrome [-webkit-app-region:drag] ${IS_MAC ? `${fullscreen ? 'pl-3' : 'pl-[86px]'} pr-3` : 'flex-row-reverse pl-3 pr-[150px]'}`}
     >
       {/* On macOS these wrappers are `contents`: no box, so the bar lays out exactly as before. */}
       <div className={IS_MAC ? 'contents' : 'flex min-w-0 flex-row-reverse items-center gap-3'}>

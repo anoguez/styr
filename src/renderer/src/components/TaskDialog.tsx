@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { indexTasks, openBlockers } from '@core/blocking.js'
 import {
   AGENT_PROVIDER_SHORT_LABELS,
+  type AnswerResult,
   type Settings,
   type Task,
   type TaskPreset
@@ -17,6 +18,7 @@ import {
 } from '../lib/taskForm.js'
 import { Button, Modal } from './ui.js'
 import { BriefTab } from './task/BriefTab.js'
+import { McpSetupNotice, useMcpSetup } from './McpSetup.js'
 import { TaskFooter } from './task/TaskFooter.js'
 import { TaskHeader } from './task/TaskHeader.js'
 import { TaskSidebar } from './task/TaskSidebar.js'
@@ -32,7 +34,9 @@ export function TaskDialog({
   settings,
   onClose,
   onLaunch,
+  onOpenSettings,
   onResumeSession,
+  onAnswered,
   onShowChanges,
   presetId,
   onSavePresets
@@ -45,8 +49,12 @@ export function TaskDialog({
   presetId?: string
   onSavePresets: (presets: TaskPreset[]) => Promise<void>
   onClose: () => void
+  /** Opens Settings → Integrations, from the warning about missing Styr tools. */
+  onOpenSettings: () => void
   onLaunch: (taskId: string, templateId?: string, provider?: 'claude' | 'codex') => void
   onResumeSession: (taskId: string, sessionId: string) => void
+  /** An answer to one of the task's questions was saved and sent. */
+  onAnswered: (result: AnswerResult) => void
   onShowChanges: (task: Task) => void
 }): ReactNode {
   const startPreset = task ? undefined : settings.taskPresets.find((p) => p.id === presetId)
@@ -62,6 +70,9 @@ export function TaskDialog({
   // A new task is created by the first save (the prompt preview needs one); later saves must
   // update that record instead of creating a duplicate.
   const [saved, setSaved] = useState<Task | null>(task)
+
+  // The provider "Save and start" would use; the check never delays the dialog or the launch.
+  const mcp = useMcpSetup(form.provider, form.status !== 'done')
 
   const patch = (changes: Partial<TaskForm>): void =>
     setForm((current) => ({ ...current, ...changes }))
@@ -183,6 +194,8 @@ export function TaskDialog({
                   description={form.description}
                   contextFiles={form.contextFiles}
                   repoPath={form.repoPath}
+                  task={task ? (allTasks.find((other) => other.id === task.id) ?? task) : null}
+                  onAnswered={onAnswered}
                   onChange={patch}
                 />
               ) : null}
@@ -222,6 +235,7 @@ export function TaskDialog({
             />
           </div>
 
+          <McpSetupNotice report={mcp} onOpenSettings={onOpenSettings} />
           <TaskFooter
             task={task}
             openFilesWith={settings.openFilesWith}

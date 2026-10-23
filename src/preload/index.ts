@@ -7,6 +7,7 @@ import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type { TerminalBenchRecord } from '../core/terminalBench.js'
 import type {
   AgentCliReport,
+  McpSetupReport,
   AppInfo,
   AutoDispatchState,
   BrokenSettingsFile,
@@ -29,6 +30,7 @@ import type {
   SourceSyncState,
   SourceTarget,
   SyncPreview,
+  AnswerResult,
   Task,
   TaskDraft,
   TaskFilter,
@@ -85,6 +87,8 @@ const api = {
       ipcRenderer.invoke('tasks:reorder', status, orderedIds),
     archive: (id: string, archived: boolean): Promise<Task> =>
       ipcRenderer.invoke('tasks:archive', id, archived),
+    answerQuestion: (id: string, questionId: string, answer: string): Promise<AnswerResult> =>
+      ipcRenderer.invoke('tasks:answerQuestion', id, questionId, answer),
     remove: (id: string): Promise<void> => ipcRenderer.invoke('tasks:delete', id),
     forgetSession: (id: string): Promise<Task> => ipcRenderer.invoke('tasks:forgetSession', id),
     removeWorktree: (id: string): Promise<Task | null> =>
@@ -278,6 +282,9 @@ const api = {
       command: string,
       shell: string
     ): Promise<AgentCliReport> => ipcRenderer.invoke('agents:cliStatus', provider, command, shell),
+    /** Whether the provider's CLI has the Styr MCP server at this install; `fresh` skips the cache. */
+    mcpSetupStatus: (provider: 'claude' | 'codex', fresh?: boolean): Promise<McpSetupReport> =>
+      ipcRenderer.invoke('agents:mcpStatus', provider, fresh),
     pickApp: (): Promise<string | null> => ipcRenderer.invoke('settings:pickApp'),
     onChanged: (handler: (settings: Settings) => void): (() => void) =>
       subscribe('settings:changed', handler as (...args: never[]) => void)

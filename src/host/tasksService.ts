@@ -26,6 +26,7 @@ export interface TasksServicePorts extends Pick<HostPorts, 'broadcast'> {
     | 'addNote'
     | 'reorderTasks'
     | 'setArchived'
+    | 'answerQuestion'
     | 'deleteTask'
     | 'removeWorktree'
   > & { brokenTaskFiles(): { filePath: string; reason: string }[] }
@@ -34,6 +35,9 @@ export interface TasksServicePorts extends Pick<HostPorts, 'broadcast'> {
    * runs git off the main thread and re-indexes itself when it writes.
    */
   requestLanding(): void
+  /** Delivers an answer to the task's agent: the routes of Request changes (`agentsService`). */
+  route: TaskWritePorts['route']
+  deliver: TaskWritePorts['deliver']
   /** Hands the board to the external-source observer. */
   observeTasks(tasks: Task[]): void
   /** Feeds the Performance panel. */
@@ -86,6 +90,8 @@ export function createTasksService(ports: TasksServicePorts) {
   const writes = createTaskWrites({
     ...store,
     findTask: index.find,
+    route: ports.route,
+    deliver: ports.deliver,
     notifyTasks: notifyTasksChanged,
     notifyAgents: ports.notifyAgents
   })

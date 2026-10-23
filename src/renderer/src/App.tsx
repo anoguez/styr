@@ -7,6 +7,7 @@ import {
   DEFAULT_THEME,
   globalSettingsFor,
   workspaceSettingsFor,
+  type AnswerResult,
   type AppInfo,
   type ReviewSent,
   type Task,
@@ -37,6 +38,7 @@ import { SettingsDialog } from './components/SettingsDialog.js'
 import type { SectionId } from './components/settings/sections.js'
 import { StatusBar } from './components/StatusBar.js'
 import { TaskDialog } from './components/TaskDialog.js'
+import { AnswerSentToast } from './components/task/AnswerSentToast.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
 import { Button } from './components/ui.js'
 import { NewWorkspaceDialog, WorkspaceSwitcher } from './components/WorkspaceSwitcher.js'
@@ -111,6 +113,8 @@ export default function App(): ReactNode {
   useRemoteSessions(remote, terminals.merge)
   const tabRestore = useTabRestore(activeWorkspaceId, terminals.restore)
   const [terminalExpanded, setTerminalExpanded] = useState(false)
+  /** An answer to an agent's question just went out: the toast that says where it went. */
+  const [answered, setAnswered] = useState<AnswerResult | null>(null)
   /** Request changes just went out: the toast that confirms it after the dialog closed. */
   const [reviewSent, setReviewSent] = useState<{ sent: ReviewSent; task: Task } | null>(null)
   const { height: terminalHeight, startResize } = useTerminalHeight(terminalOpen)
@@ -278,6 +282,7 @@ export default function App(): ReactNode {
                       onShowChanges={showChanges}
                       onMove={(task, status) => void window.api.tasks.update(task.id, { status })}
                       onArchive={toggleArchived}
+                      onAnswered={setAnswered}
                     />
                   ) : (
                     <Board
@@ -343,6 +348,10 @@ export default function App(): ReactNode {
                         onReorder={terminals.reorder}
                         onNewSession={(cwd) => void newShell(cwd)}
                         onCreateTask={launcher.createTaskFromTerminal}
+                        onLaunchTask={(id) => launcher.launchAgent(id)}
+                        onOpenTaskById={(id) =>
+                          void window.api.tasks.get(id).then((task) => task && editTask(task))
+                        }
                         onCloseSession={(id) => void closeSession(id)}
                         onOpenTask={editTask}
                       />
@@ -451,6 +460,10 @@ export default function App(): ReactNode {
               <QuickTaskDialog
                 settings={settings}
                 onPlan={launcher.planTasks}
+                onOpenSettings={() => {
+                  toggle('quickAdd', false)
+                  openSettings('agents')
+                }}
                 onClose={() => toggle('quickAdd', false)}
               />
             ) : null}
@@ -469,10 +482,12 @@ export default function App(): ReactNode {
                   })
                 }
                 onClose={() => dispatch({ type: 'closeTask' })}
+                onOpenSettings={() => openSettings('agents')}
                 onLaunch={(taskId, templateId, provider) =>
                   void launchAgent(taskId, templateId, provider)
                 }
                 onResumeSession={launcher.resumeSession}
+                onAnswered={setAnswered}
                 onShowChanges={showChanges}
               />
             ) : null}
@@ -490,6 +505,10 @@ export default function App(): ReactNode {
                   setReviewSent({ sent, task: changesTask })
                 }}
               />
+            ) : null}
+
+            {answered ? (
+              <AnswerSentToast result={answered} onDismiss={() => setAnswered(null)} />
             ) : null}
 
             {reviewSent ? (

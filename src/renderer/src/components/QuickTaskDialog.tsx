@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { formatAccelerator } from '@core/shortcuts.js'
 import { filterPresets, leadingPreset, parseSlashQuery, quickTaskDraft } from '@core/taskPreset.js'
 import { TASK_READINESS_LABELS, type Settings, type TaskPreset } from '@core/types.js'
+import { McpSetupNotice, useMcpSetup } from './McpSetup.js'
 import { Button, inputBase } from './ui.js'
 
 const ENTER = formatAccelerator('enter')
@@ -16,10 +17,13 @@ const PROVIDER_NAMES = { claude: 'Claude Code', codex: 'Codex' } as const
 export function QuickTaskDialog({
   settings,
   onPlan,
+  onOpenSettings,
   onClose
 }: {
   settings: Settings
   onPlan: (request: string, preset?: TaskPreset) => Promise<void>
+  /** Opens Settings → Integrations, from the warning about missing Styr tools. */
+  onOpenSettings: () => void
   onClose: () => void
 }): ReactNode {
   const [title, setTitle] = useState('')
@@ -30,6 +34,8 @@ export function QuickTaskDialog({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  // ⌘↵ plans on the default provider; the check never delays the dialog or the launch.
+  const mcp = useMcpSetup(settings.defaultProvider)
 
   const query = preset ? null : parseSlashQuery(title)
   const matches = useMemo(
@@ -215,6 +221,7 @@ export function QuickTaskDialog({
             )}
           </ul>
         ) : null}
+        <McpSetupNotice report={mcp} onOpenSettings={onOpenSettings} />
         <div className="mt-3 flex items-center justify-between gap-3">
           <p
             className={`min-w-0 truncate px-1 text-[11.5px] ${error ? 'text-danger' : 'text-faint'}`}

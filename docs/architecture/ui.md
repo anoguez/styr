@@ -236,6 +236,9 @@ The window uses `titleBarStyle: 'hiddenInset'` with `trafficLightPosition` set t
 in a 44px row, and the header pads left by 86px to clear them. Changing the header height means
 re-centring the lights — `y` is `(height / 2) - 7`.
 
+In native full screen the lights are hidden, so the header drops that padding to 12px
+(`useFullscreen`: the window fills the screen; no IPC channel needed).
+
 The browser harness has no traffic lights, so that left gap looks empty there. Alignment can only be
 judged in the real app.
 
@@ -359,6 +362,12 @@ read:
 - **PowerShell 7**: `-NoExit -EncodedCommand` (a command, so no execution policy refuses it) wraps
   `prompt` and PSReadLine's `PSConsoleHostReadLine`. A failed cmdlet reports exit 1, not a stale
   `$LASTEXITCODE`. Windows PowerShell 5.1 and cmd get none.
+- **Fix with agent** (block menu, failure bar, and the unbound `terminalFixLast` command, which does
+  nothing but say so when the last command did not fail) makes a `ready` Backlog task through
+  `taskFromTerminal` (`lib/terminalContext.ts`): ANSI-stripped output tail (6000 chars, with a note when
+  clipped, in a fence longer than any backtick run), and `repoPath` from the git root of the command's
+  directory (`repoForDirectory`, the same `terminal:gitContext` channel remote uses; default repo when
+  none). The notice then offers Launch and Open; nothing launches on its own.
 
 ## Terminal keys
 
@@ -392,7 +401,9 @@ them and send them to the shell.
 The header's Board/Inbox/Worklog switch (`⌃1`/`⌃2`/`⌃3`, the `viewBoard`/`viewInbox`/`viewWorklog` commands) swaps the board for
 `Inbox.tsx`: the same tasks regrouped as Needs you / Running / Up next / Done. The grouping is
 `buildInbox` in `core/inbox.ts` — pure, derived from tasks, agent states and the Orchestrate queue,
-and it writes nothing, so the two views cannot disagree. A working agent outranks `needs_spec`.
+and it writes nothing, so the two views cannot disagree. A working agent outranks `needs_spec` and a review, but not a waiting agent or an open question
+(`kind: 'question'`, see "MCP verbs" in `tasks.md`); a question has Send answer fields in the item and in
+the task dialog's Brief tab (`OpenQuestions`).
 Actions reuse the board's own handlers (launch, activate, changes, status update, archive); the
 inbox cannot answer a permission prompt, so a waiting agent's action is "Open terminal". The view
 is `App` state remembered in the renderer's `localStorage` (`styr:view`) — a per-machine convenience,
