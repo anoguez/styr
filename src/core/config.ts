@@ -149,6 +149,7 @@ export function shippedSettings(): Settings {
     taskDefaults: { orchestrate: true, useWorktree: false },
     taskPresets: DEFAULT_TASK_PRESETS,
     doneCap: DEFAULT_DONE_CAP,
+    autoArchiveAsk: true,
     sources: [],
     theme: DEFAULT_THEME,
     shortcuts: DEFAULT_SHORTCUTS,

@@ -117,6 +117,19 @@ export function PreferencesSection({ draft, patch }: SectionProps): ReactNode {
         </Card>
         <Hint>Hidden tasks are not archived — Show all in the Done column brings them back.</Hint>
       </div>
+      <div className="flex flex-col gap-2.5">
+        <span className="text-[12px] font-semibold text-dim">Ask agent</span>
+        <Card>
+          <CardRow>
+            <SwitchRow
+              checked={draft.autoArchiveAsk}
+              onChange={(autoArchiveAsk) => patch({ autoArchiveAsk })}
+              label="Archive Ask agent chats when they end"
+              hint="Only while the task is still In Progress and tagged ask. Resume it from the Archive dialog; remove the tag to keep the card."
+            />
+          </CardRow>
+        </Card>
+      </div>
       <Field
         label="Working directory"
         hint="Where agents run and where + Shell opens. Blank uses the storage folder."

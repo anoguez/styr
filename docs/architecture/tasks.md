@@ -136,6 +136,18 @@ directory since Claude keys transcripts by directory. It returns null when the s
 chat and the renderer falls back to the shell behaviour. The Codex fork path reuses
 `ThreadBindings.expect` and is untested against a real daemon.
 
+**Archived when the chat ends.** `markAgentExited` calls `archiveOnExit`, which asks the pure
+`shouldArchiveOnExit` (`core/archiveOnExit.ts`) inside one synchronous `pinWorkspace`, then
+archives through `setArchived` and notifies once. An ask is archived only if it still has the
+`ask` tag, is `in_progress` (In Review, Done or Backlog means someone moved it on), is not
+archived, and the workspace setting `autoArchiveAsk` (default on) is on. Removing the tag is the
+owner's "keep this". The task keeps its `sessions`, so the chat resumes from the Archive dialog,
+and exiting again re-archives it. Commits and title edits are deliberately not signals: asks share
+the repo and nothing stores a baseline. Planning runs use the same helper but archive whatever
+their status. `remove()` still skips it. On quit, `killAllSessions` kills the terminals, so an
+exit that reaches `markAgentExited` before the process ends archives its in-progress ask too;
+that is fine, the chat stays resumable.
+
 ## Task presets
 
 `Settings.taskPresets` (a workspace setting) are starting points for the New task dialog, called
@@ -152,7 +164,7 @@ at most one catch-up run and no new task while the previous one from that schedu
 same presets, the chosen one shows as a tag, and `quickTaskDraft` seeds the task from it (title is
 what was typed). ⌘↵ instead starts a **planning run**: a ready, non-worktree task tagged
 `quick-plan` (`planDraft`, `planningPrompt` in `core/planning.ts`) launched on the default provider
-to carry out the typed request (plus the chosen preset's prompt and defaults, via `planningPrompt(request, preset)`) with the Styr MCP tools in reach. The brief never assumes the request is about creating tasks; the typed request itself says so. `archivePlanRun` (`ipc.ts`) archives it when its
+to carry out the typed request (plus the chosen preset's prompt and defaults, via `planningPrompt(request, preset)`) with the Styr MCP tools in reach. The brief never assumes the request is about creating tasks; the typed request itself says so. `archiveOnExit` (`host/agentsService.ts`) archives it when its
 terminal exits, so no card is left. The dialog asks `agents:mcpStatus` for the default provider and warns inline (never
 blocks) when the Styr MCP server is missing or stale; the prompt still tells an agent that cannot
 see the tools to say so and print what it would have done as text. The New task dialog warns the
