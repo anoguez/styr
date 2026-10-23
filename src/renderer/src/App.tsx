@@ -457,9 +457,9 @@ export default function App(): ReactNode {
                 remoteHost={access.remote?.host}
                 onAutoStop={() => setAutoOn(false)}
                 onClose={() => toggle('confirmDispatch', false)}
-                onConfirm={(autoOn) => {
+                onConfirm={(autoOn, taskIds) => {
                   toggle('confirmDispatch', false)
-                  void dispatchRun.confirm(orchestration, autoOn)
+                  void dispatchRun.confirm(taskIds, autoOn)
                 }}
               />
             ) : null}

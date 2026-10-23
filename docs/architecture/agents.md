@@ -222,7 +222,16 @@ parent: they never add to a count, a badge, the tray, the Inbox, the sort order 
 
 `orchestrate:run` takes the task ids the confirmation dialog showed and intersects them with a
 fresh plan, so what starts is what the user agreed to even if the board changed while the dialog was
-open.
+open. The dialog's order is honoured: ids in the plan launch in the order given (ids not in it are
+ignored) and results come back in that order; without ids (Auto-run, MCP) it is plan order. Launches
+start in sequence without awaiting each other.
+
+The dialog's reorder and checkboxes are a **one-run override, never stored** — nothing reaches task
+files or settings, and Cancel discards it. Unchecking **skips without backfilling**: a skipped task
+frees no slot for another, so the list shown is what starts. Reorder is **launch sequence only**:
+the list is already capped by lane capacity, so it cannot change which tasks start, just the order
+they launch and their tabs open. Auto-run switched on with tasks unchecked warns that it will still
+pick them up. The pure merge of a refreshed plan is `lib/dispatchSelection.ts`.
 
 `src/core/orchestrate.ts` is a pure planner: given settings, tasks and the set of task ids holding a
 live session, it returns what to start. All the selection rules live there so they can be tested
