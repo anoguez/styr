@@ -214,6 +214,11 @@ open.
 live session, it returns what to start. All the selection rules live there so they can be tested
 without launching anything; `src/host/dispatchService.ts` only performs the launches.
 
+A lane's number is a hard ceiling: a task holds a slot in its current lane while its agent is `ready`,
+`working` or `waiting`. `ready` counts because a launch starts there and the next Auto-run pass runs
+before the agent turns `working`; `idle` and `exited` free the slot. An agent left `ready` forever
+holds its slot until stopped.
+
 `laneFor` mirrors `resolveTemplateFor` — readiness outranks status — so a task's lane always matches
 the template it will actually run. Change one and change the other.
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { shippedSettings } from './config.js'
 import { planOrchestration } from './orchestrate.js'
 import { buildPrompt } from './prompt.js'
+import type { AgentState } from './agentState.js'
 import type { Task } from './types.js'
 
 function task(extra: Partial<Task> = {}): Task {
@@ -60,6 +61,60 @@ describe('planOrchestration', () => {
   it('leaves an In Progress task alone even when it is ready', () => {
     const plan = planOrchestration(shippedSettings(), [task({ status: 'in_progress' })], context)
     expect(plan.dispatch).toEqual([])
+  })
+})
+
+describe('lane occupancy', () => {
+  const settings = () => ({
+    ...shippedSettings(),
+    orchestration: { spec: 3, implement: 0, review: 0 }
+  })
+  const specs = (n: number, extra: Partial<Task> = {}) =>
+    Array.from({ length: n }, (_, i) =>
+      task({ id: `TASK-${i + 1}`, readiness: 'needs_spec', order: i, ...extra })
+    )
+  const agentsFor = (ids: string[], state: AgentState) =>
+    new Map(ids.map((id) => [id, state] as const))
+
+  it('starts exactly the limit on the first pass', () => {
+    const plan = planOrchestration(settings(), specs(6), context)
+    expect(plan.dispatch).toHaveLength(3)
+  })
+
+  it('counts a ready agent against its lane', () => {
+    const running = specs(3, { status: 'in_progress' })
+    const waiting = specs(3).map((t, i) => ({ ...t, id: `TASK-${i + 10}` }))
+    const agents = agentsFor(['TASK-1', 'TASK-2', 'TASK-3'], 'ready')
+    const plan = planOrchestration(settings(), [...running, ...waiting], {
+      liveTaskIds: new Set(),
+      agents
+    })
+    expect(plan.occupied.spec).toBe(3)
+    expect(plan.dispatch).toEqual([])
+  })
+
+  it('frees a slot when an agent goes idle or exits', () => {
+    for (const state of ['idle', 'exited'] as const) {
+      const running = specs(3, { status: 'in_progress' })
+      const waiting = [task({ id: 'TASK-10', readiness: 'needs_spec' })]
+      const agents = agentsFor(['TASK-1', 'TASK-2', 'TASK-3'], 'ready')
+      agents.set('TASK-1', state)
+      const plan = planOrchestration(settings(), [...running, ...waiting], {
+        liveTaskIds: new Set(),
+        agents
+      })
+      expect(plan.dispatch.map((d) => d.task.id)).toEqual(['TASK-10'])
+    }
+  })
+
+  it('keeps lanes independent and a limit of 0 closed', () => {
+    const running = specs(3, { status: 'in_progress' })
+    const impl = task({ id: 'TASK-10' })
+    const agents = agentsFor(['TASK-1', 'TASK-2', 'TASK-3'], 'ready')
+    const open = { ...settings(), orchestration: { spec: 3, implement: 1, review: 0 } }
+    const ctx = { liveTaskIds: new Set<string>(), agents }
+    expect(planOrchestration(open, [...running, impl], ctx).dispatch).toHaveLength(1)
+    expect(planOrchestration(settings(), [...running, impl], ctx).dispatch).toEqual([])
   })
 })
 
