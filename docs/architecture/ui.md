@@ -236,6 +236,9 @@ The window uses `titleBarStyle: 'hiddenInset'` with `trafficLightPosition` set t
 in a 44px row, and the header pads left by 86px to clear them. Changing the header height means
 re-centring the lights — `y` is `(height / 2) - 7`.
 
+In native full screen the lights are hidden, so the header drops that padding to 12px
+(`useFullscreen`: the window fills the screen; no IPC channel needed).
+
 The browser harness has no traffic lights, so that left gap looks empty there. Alignment can only be
 judged in the real app.
 
