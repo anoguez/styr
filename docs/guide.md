@@ -469,6 +469,10 @@ the background and installs the next time you quit, so it never interrupts an ag
 one is waiting, the status bar shows **Restart to update to x.y.z**; restarting asks first if any
 terminals are open, since agents running in them stop (their chats can be resumed afterwards).
 
+It works the same way on every platform: the macOS app, the Windows installer and the Linux
+AppImage update in place. A `.deb` install updates too, but installing the new package needs
+administrator rights, so Linux asks for your password when it applies.
+
 **Settings → Updates** shows the current version and the updater's status, has a **Check for
 updates** button, and turns the automatic checks off. Running from source (`yarn dev`) never
 updates itself.
