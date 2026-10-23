@@ -7,6 +7,7 @@ import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type { TerminalBenchRecord } from '../core/terminalBench.js'
 import type {
   AgentCliReport,
+  McpSetupReport,
   AppInfo,
   AutoDispatchState,
   BrokenSettingsFile,
@@ -281,6 +282,9 @@ const api = {
       command: string,
       shell: string
     ): Promise<AgentCliReport> => ipcRenderer.invoke('agents:cliStatus', provider, command, shell),
+    /** Whether the provider's CLI has the Styr MCP server at this install; `fresh` skips the cache. */
+    mcpSetupStatus: (provider: 'claude' | 'codex', fresh?: boolean): Promise<McpSetupReport> =>
+      ipcRenderer.invoke('agents:mcpStatus', provider, fresh),
     pickApp: (): Promise<string | null> => ipcRenderer.invoke('settings:pickApp'),
     onChanged: (handler: (settings: Settings) => void): (() => void) =>
       subscribe('settings:changed', handler as (...args: never[]) => void)

@@ -37,6 +37,7 @@ export const ACTIVE_CHANNELS: ReadonlySet<string> = new Set([
   'agents:list',
   'agents:remove',
   'agents:cliStatus',
+  'agents:mcpStatus',
   'worklog:load',
   'review:get',
   'review:save',

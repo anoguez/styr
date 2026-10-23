@@ -120,6 +120,11 @@ src/core/  (types, schemas, taskStore, pure rules)
 - `agentCli.ts`: the agent CLI checks. `createAgentCliChecks(runShell)` gives `agentCliStatus`
   (Settings, always run) and `ensureAgentCli` (before a launch, remembering a CLI that was ready);
   `execFileShell` is the real shell runner. The decisions are `core/agentCli.ts`.
+- `mcpSetup.ts`: `createMcpSetupChecks(runShell, mcpEntry, loadSettings)` gives `mcpSetupStatus`
+  (`agents:mcpStatus`, routed to the server on a remote workspace). Remembers only `registered`
+  answers, keyed by platform, provider, shell, command and expected entry; `fresh` (Settings →
+  Re-check) bypasses and refreshes. Asked only by the Settings badge and the quick-add and New task
+  dialogs, never by `notifyTasksChanged`, a watcher or a timer. The decision is `core/mcpSetup.ts`.
 - `diagnostics.ts`: the Performance panel's sampling. `createDiagnostics` keeps the recent
   `notifyTasksChanged` durations and the event-loop histogram (sampled only between snapshots);
   its ports are `appPaths` and `processMetrics` (Electron's `app.getAppMetrics()` in main).

@@ -78,6 +78,7 @@ import { CodexMonitor, prepareCodex } from './codexMonitor.js'
 import { agentPrompts, publishAgentConversation } from './usage.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
+import { mcpSetupStatus } from './mcpSetup.js'
 import { bindGlobalSettingsSave, remoteRouter, routedIpcMain, startRemote } from './remote.js'
 import { isWebLink } from './windowSecurity.js'
 
@@ -510,6 +511,10 @@ export function registerIpcHandlers(): void {
     'agents:cliStatus',
     (_event, provider: 'claude' | 'codex', command: string, shell: string) =>
       agentCliStatus({ provider, command: String(command ?? ''), shell: String(shell ?? '') })
+  )
+
+  ipcMain.handle('agents:mcpStatus', (_event, provider: 'claude' | 'codex', fresh?: boolean) =>
+    mcpSetupStatus({ provider, fresh: fresh === true })
   )
 
   ipcMain.handle('settings:pickApp', async (event) => {

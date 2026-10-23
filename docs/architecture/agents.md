@@ -79,6 +79,16 @@ works on the next click. Windows PowerShell 5.1 and cmd are refused without runn
 command and install command come from the `AgentProvider`; the pure decision is in
 `core/agentCli.ts`; Settings → Agents shows the same check for the unsaved command and shell.
 
+**MCP setup.** Whether a provider has the Styr MCP server is `McpSetupReport` (`registered`,
+`stale`, `missing`, `unknown`). Each `AgentProvider` supplies `mcpProbeCommand` (`<cmd> mcp get
+styr`, read-only and fast, unlike `mcp list`, which health-checks every server),
+`parseMcpRegistration` and `mcpRemoveCommand`; `core/mcpSetup.ts` runs it through the terminal's
+interactive login shell and compares the registered script path with this host's `mcpEntry()`
+(case-insensitive on Windows; runner and env are ignored). A failed probe is `unknown`, never
+`missing`. `mcp get` shows one effective entry, so a project-scoped duplicate is not compared.
+Detection only: it never registers or repairs. A registration changed from outside after a
+`registered` answer is picked up on Re-check or restart.
+
 ## Launching Claude
 
 `src/core/launch.ts` builds the command. It lives in core, not `main/`, because it needs no Electron
