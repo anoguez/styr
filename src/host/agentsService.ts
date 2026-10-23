@@ -10,7 +10,7 @@ import {
 import type { AgentConversation } from '@core/agentConversation.js'
 import type { AgentStatus } from '@core/agentState.js'
 import { renderPrompt, workingDirFor } from '@core/launch.js'
-import { isPlanRun } from '@core/planning.js'
+import { shouldArchiveOnExit } from '@core/archiveOnExit.js'
 import type { ThreadUpdate } from '@core/providers/codexProtocol.js'
 import {
   createSessionLifecycle,
@@ -231,22 +231,26 @@ export function createAgentsService(ports: AgentsServicePorts) {
       return
     }
     store.recordAgentEvent(workspaceId, taskId, 'TerminalExit')
-    archivePlanRun(taskId, workspaceId)
+    archiveOnExit(taskId, workspaceId)
     notifyAgentsChanged()
   }
 
-  /** A ⌘↵ planning run leaves no card behind: its throwaway task is archived when the session ends. */
-  function archivePlanRun(taskId: string, workspaceId: string): void {
+  /**
+   * A ⌘↵ planning run leaves no card behind, and an Ask agent chat that is still In Progress goes to
+   * the Archive (`shouldArchiveOnExit`). Checked and archived in one synchronous pin, so the task
+   * is the one of `workspaceId`; the chat stays resumable.
+   */
+  function archiveOnExit(taskId: string, workspaceId: string): void {
     try {
       const archived = ports.pinWorkspace(workspaceId, () => {
         const task = tasks.getTask(taskId)
-        if (!task || !isPlanRun(task) || task.archivedAt) return false
+        if (!task || !shouldArchiveOnExit(task, store.loadSettings())) return false
         tasks.setArchived(taskId, true)
         return true
       })
       if (archived) ports.notifyTasks()
     } catch (error) {
-      console.error('Could not archive the planning run:', error)
+      console.error('Could not archive the finished task:', error)
     }
   }
 

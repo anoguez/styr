@@ -304,6 +304,7 @@ export const settingsSchema = z.object({
       maxAgeDays: z.number().int().min(0).max(365).default(DEFAULT_DONE_CAP.maxAgeDays)
     })
     .default(DEFAULT_DONE_CAP),
+  autoArchiveAsk: z.boolean().default(true),
   sources: z.array(sourceConfigSchema).default([])
 })
 

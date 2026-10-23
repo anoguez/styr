@@ -164,6 +164,10 @@ the raw agent map instead is how the badge kept showing archived agents.
 Terminal exits are written to the agent file (`TerminalExit`) rather than held in memory, so a dead
 session does not come back as whatever it was doing when the app last closed.
 
+After recording the exit, `markAgentExited` (`host/agentsService.ts`) runs `archiveOnExit`: a planning run
+is archived, and so is an `ask`-tagged task still In Progress when `autoArchiveAsk` is on
+(`shouldArchiveOnExit`, see tasks.md → Ask agent). Never git, never a timer.
+
 `AgentsSidebar` lists any task that has an agent status _or_ an `agentSession`, so a chat you can
 resume is visible even before its first hook fires. `sortAgentRows` ranks waiting first.
 

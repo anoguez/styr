@@ -153,6 +153,8 @@ export interface Settings {
   taskDefaults: TaskDefaults
   taskPresets: TaskPreset[]
   doneCap: DoneCap
+  /** Archive an Ask agent task when its terminal exits while it is still In Progress. */
+  autoArchiveAsk: boolean
   sources: SourceConfig[]
 }
 
@@ -195,6 +197,7 @@ export const WORKSPACE_SETTING_KEYS = [
   'taskDefaults',
   'taskPresets',
   'doneCap',
+  'autoArchiveAsk',
   'sources'
 ] as const satisfies readonly (keyof Settings)[]
 
