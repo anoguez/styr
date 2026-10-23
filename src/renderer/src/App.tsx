@@ -456,6 +456,10 @@ export default function App(): ReactNode {
               <QuickTaskDialog
                 settings={settings}
                 onPlan={launcher.planTasks}
+                onOpenSettings={() => {
+                  toggle('quickAdd', false)
+                  openSettings('agents')
+                }}
                 onClose={() => toggle('quickAdd', false)}
               />
             ) : null}
@@ -474,6 +478,7 @@ export default function App(): ReactNode {
                   })
                 }
                 onClose={() => dispatch({ type: 'closeTask' })}
+                onOpenSettings={() => openSettings('agents')}
                 onLaunch={(taskId, templateId, provider) =>
                   void launchAgent(taskId, templateId, provider)
                 }

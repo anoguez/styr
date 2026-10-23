@@ -153,8 +153,10 @@ same presets, the chosen one shows as a tag, and `quickTaskDraft` seeds the task
 what was typed). ⌘↵ instead starts a **planning run**: a ready, non-worktree task tagged
 `quick-plan` (`planDraft`, `planningPrompt` in `core/planning.ts`) launched on the default provider
 to carry out the typed request (plus the chosen preset's prompt and defaults, via `planningPrompt(request, preset)`) with the Styr MCP tools in reach. The brief never assumes the request is about creating tasks; the typed request itself says so. `archivePlanRun` (`ipc.ts`) archives it when its
-terminal exits, so no card is left. Nothing detects a missing MCP setup; the prompt tells the agent
-to say so and print what it would have done as text.
+terminal exits, so no card is left. The dialog asks `agents:mcpStatus` for the default provider and warns inline (never
+blocks) when the Styr MCP server is missing or stale; the prompt still tells an agent that cannot
+see the tools to say so and print what it would have done as text. The New task dialog warns the
+same way for the provider "Save and start" would use (`components/McpSetup.tsx`).
 
 ## Done cap and archive
 

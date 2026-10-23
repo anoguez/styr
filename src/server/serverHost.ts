@@ -23,6 +23,7 @@ import type { AgentStatus } from '@core/agentState.js'
 import { globalSettingsFor, type TerminalOutput } from '@core/types.js'
 import { diskWorklogSources } from '@core/worklogSources.js'
 import { createAgentCliChecks, execFileShell } from '@host/agentCli.js'
+import { createMcpSetupChecks } from '@host/mcpSetup.js'
 import { createAgentsService, diskAgentStore, diskGit } from '@host/agentsService.js'
 import { CodexMonitor, prepareCodex } from '@host/codexMonitor.js'
 import { createDiagnostics } from '@host/diagnostics.js'
@@ -130,6 +131,7 @@ export function createServerHost(ports: ServerHostPorts) {
   })
   const sources = createSourceSync(diskSourceSyncStore)
   const cli = createAgentCliChecks(execFileShell)
+  const mcpSetup = createMcpSetupChecks(execFileShell, ports.mcpEntry, () => loadSettings())
 
   const tasksService = createTasksService({
     broadcast,
@@ -325,6 +327,9 @@ export function createServerHost(ports: ServerHostPorts) {
       z.tuple([provider, z.string().optional(), z.string().optional()]),
       (cliProvider, command, shell) =>
         cli.agentCliStatus({ provider: cliProvider, command: command ?? '', shell: shell ?? '' })
+    ),
+    'agents:mcpStatus': channel(z.tuple([provider, z.boolean().optional()]), (mcpProvider, fresh) =>
+      mcpSetup.mcpSetupStatus({ provider: mcpProvider, fresh: fresh === true })
     ),
     'worklog:load': channel(z.tuple([z.unknown(), z.unknown()]), (from, to) =>
       worklogService.load(from, to)

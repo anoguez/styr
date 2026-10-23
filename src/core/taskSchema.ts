@@ -725,6 +725,16 @@ export const remoteAgentCliReportSchema = z.object({
   installCommand: line.optional()
 })
 
+export const remoteMcpSetupReportSchema = z.object({
+  provider,
+  state: z.enum(['registered', 'stale', 'missing', 'unknown']),
+  registeredEntry: line.optional(),
+  expectedEntry: line,
+  installCommand: message,
+  removeCommand: message.optional(),
+  problem: message
+})
+
 const remoteItemSchema = z.object({
   id: short,
   url: line,
