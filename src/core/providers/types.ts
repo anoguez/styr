@@ -61,6 +61,12 @@ export interface AgentProvider {
   sessionTime(sessionId: string, homeRoot?: string): string | undefined
   /** The CLI's transcript of a conversation, one JSON record per line; undefined once it is gone. */
   transcriptPath(sessionId: string, homeRoot?: string): string | undefined
+  /**
+   * The transcripts of the subagents a conversation started (and theirs), listed afresh on each call:
+   * more appear while it runs. `transcript` is the conversation's own, from `transcriptPath`. Each is
+   * parsed with its own `transcriptUsageReader()`. Empty when it started none.
+   */
+  subagentTranscripts(sessionId: string, transcript: string, homeRoot?: string): string[]
   /** A fresh reader of the model calls in a transcript, for the Worklog. */
   transcriptUsageReader(): TranscriptUsageReader
   /** The command line that starts this CLI, as configured in Settings → Integrations. */

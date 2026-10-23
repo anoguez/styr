@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -138,5 +138,50 @@ describe('claudeTranscriptUsage', () => {
       { at: Date.parse('2026-10-13T09:00:00Z'), tokens: 142, id: 'm1' },
       { at: Date.parse('2026-10-13T09:02:00Z'), tokens: 110, id: 'm2' }
     ])
+  })
+})
+
+describe('claudeTranscriptUsage of an Agent tool result', () => {
+  it("ignores the subagent's usage summary the main transcript carries", () => {
+    const record = JSON.stringify({
+      type: 'user',
+      timestamp: '2026-10-13T09:05:00Z',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'done' }]
+      },
+      toolUseResult: {
+        status: 'completed',
+        agentId: 'a440',
+        totalTokens: 48210,
+        usage: {
+          input_tokens: 4,
+          cache_creation_input_tokens: 1200,
+          cache_read_input_tokens: 47000,
+          output_tokens: 6
+        }
+      }
+    })
+    expect(claudeTranscriptUsage(record)).toEqual([])
+  })
+})
+
+describe('claude subagentTranscripts', () => {
+  const project = join(mkdtempSync(join(tmpdir(), 'styr-claude-home-')), '.claude', 'projects', 'p')
+  const transcript = join(project, 'sid.jsonl')
+
+  it("lists the session's subagent transcripts, sorted", () => {
+    const dir = join(project, 'sid', 'subagents')
+    mkdirSync(dir, { recursive: true })
+    for (const name of ['agent-b.jsonl', 'agent-a.jsonl', 'agent-a.meta.json'])
+      writeFileSync(join(dir, name), '')
+    expect(claudeProvider.subagentTranscripts('sid', transcript)).toEqual([
+      join(dir, 'agent-a.jsonl'),
+      join(dir, 'agent-b.jsonl')
+    ])
+  })
+
+  it('is empty for a session that started none', () => {
+    expect(claudeProvider.subagentTranscripts('other', join(project, 'other.jsonl'))).toEqual([])
   })
 })
