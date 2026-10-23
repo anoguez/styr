@@ -343,7 +343,11 @@ claude mcp add styr --scope user -- node /path/to/styr/out/main/mcp/index.mjs
 ```
 
 Tools: `list_tasks`, `get_task`, `create_task`, `update_task`, `set_task_status`, `add_task_note`,
-`delete_task`. `create_task` and `update_task` both take `contextFiles`, so Claude can attach
+`delete_task`, and three that say what an agent means to do: `split_task` (break a task into
+children, with the parent becoming their blocked umbrella), `request_review` (move to In Review with a
+handoff summary, the `## Handoff` section of the task) and `ask_owner` (a question that shows in your
+Inbox under Needs you; answer it there or in the task dialog and the answer goes back to the agent).
+Each also works by editing the task file. `create_task` and `update_task` both take `contextFiles`, so Claude can attach
 files it finds to a task. `list_tasks` filters on `readiness`, and `update_task` sets it — that is how a
 specking session promotes a task from `needs_spec` to `ready` when it is done. Notes are attributed to `claude` unless `STYR_MCP_AUTHOR` says otherwise.
 

@@ -392,7 +392,9 @@ them and send them to the shell.
 The header's Board/Inbox/Worklog switch (`⌃1`/`⌃2`/`⌃3`, the `viewBoard`/`viewInbox`/`viewWorklog` commands) swaps the board for
 `Inbox.tsx`: the same tasks regrouped as Needs you / Running / Up next / Done. The grouping is
 `buildInbox` in `core/inbox.ts` — pure, derived from tasks, agent states and the Orchestrate queue,
-and it writes nothing, so the two views cannot disagree. A working agent outranks `needs_spec`.
+and it writes nothing, so the two views cannot disagree. A working agent outranks `needs_spec` and a review, but not a waiting agent or an open question
+(`kind: 'question'`, see "MCP verbs" in `tasks.md`); a question has Send answer fields in the item and in
+the task dialog's Brief tab (`OpenQuestions`).
 Actions reuse the board's own handlers (launch, activate, changes, status update, archive); the
 inbox cannot answer a permission prompt, so a waiting agent's action is "Open terminal". The view
 is `App` state remembered in the renderer's `localStorage` (`styr:view`) — a per-machine convenience,

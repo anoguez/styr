@@ -149,6 +149,9 @@ describe('boardSummaryLabel', () => {
       boardSummaryLabel(summary({ needs: 4, waiting: 1, review: 2, spec: 1, running: 3, next: 4 }))
     ).toBe('1 waiting on you · 2 in review · 1 needs spec · 3 running · 4 up next')
     expect(boardSummaryLabel(summary({ needs: 2, spec: 2 }))).toBe('2 need spec')
+    expect(boardSummaryLabel(summary({ needs: 3, waiting: 1, question: 2 }))).toBe(
+      '1 waiting on you · 2 questions'
+    )
   })
 
   it('says so when nothing is open, and is empty when the board could not be read', () => {
