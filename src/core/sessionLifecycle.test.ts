@@ -174,7 +174,7 @@ describe('launchPatch', () => {
   const plan = { provider: 'claude' as const, worktreePath: '/wt' }
 
   it('advances Backlog and records the worktree', () => {
-    expect(launchPatch(settings, task(), plan, undefined)).toEqual({
+    expect(launchPatch(settings, task(), plan)).toEqual({
       status: 'in_progress',
       worktreePath: '/wt'
     })
@@ -182,21 +182,27 @@ describe('launchPatch', () => {
 
   it('records the branch a new worktree was cut from when none was chosen', () => {
     const cut = { ...plan, worktreeBase: 'release/1.1.0' }
-    expect(launchPatch(settings, task(), cut, undefined)).toMatchObject({
+    expect(launchPatch(settings, task(), cut)).toMatchObject({
       baseBranch: 'release/1.1.0'
     })
-    expect(launchPatch(settings, task({ baseBranch: 'main' }), cut, undefined)).not.toHaveProperty(
+    expect(launchPatch(settings, task({ baseBranch: 'main' }), cut)).not.toHaveProperty(
       'baseBranch'
     )
   })
 
   it('leaves other statuses and a matching worktree alone', () => {
     const t = task({ status: 'in_review', worktreePath: '/wt' })
-    expect(launchPatch(settings, t, plan, undefined)).toEqual({})
+    expect(launchPatch(settings, t, plan)).toEqual({})
   })
 
   it('records the session as pointer and history, labelled by the sessionLabel', () => {
-    const patch = launchPatch(settings, task(), plan, undefined, 'abc', 'Fork of X', () => 'NOW')
+    const patch = launchPatch(
+      settings,
+      task(),
+      plan,
+      { sessionId: 'abc', sessionLabel: 'Fork of X' },
+      () => 'NOW'
+    )
     expect(patch.agentSession).toEqual({ provider: 'claude', id: 'abc' })
     expect(patch.sessions).toEqual([
       {
@@ -215,7 +221,65 @@ describe('launchPatch', () => {
       agentSession: { provider: 'claude', id: 'abc' },
       sessions: [{ id: 'abc', provider: 'claude', startedAt: 'x', label: 'y' }]
     } as Partial<Task>)
-    expect(launchPatch(settings, t, { provider: 'claude' }, undefined, 'abc')).toEqual({})
+    expect(launchPatch(settings, t, { provider: 'claude' }, { sessionId: 'abc' })).toEqual({})
+  })
+
+  it('marks a session Auto-run started with its lane, and only that one', () => {
+    const auto = launchPatch(settings, task(), plan, { sessionId: 'a', dispatchLane: 'implement' })
+    expect(auto.sessions?.[0]).toMatchObject({ id: 'a', dispatch: 'implement' })
+    expect(
+      launchPatch(settings, task(), plan, { sessionId: 'm' }).sessions?.[0]
+    ).not.toHaveProperty('dispatch')
+  })
+
+  describe('a review that asked for fixes', () => {
+    const review = {
+      id: 'rev',
+      provider: 'claude' as const,
+      startedAt: 'x',
+      label: 'Review the work',
+      templateId: 'code-review',
+      dispatch: 'review' as const
+    }
+    const implementer = { id: 'impl', provider: 'claude' as const, startedAt: 'w', label: 'I' }
+    const bounced = (overrides: Partial<Task> = {}): Task =>
+      task({
+        agentSession: { provider: 'claude', id: 'rev' },
+        sessions: [implementer, review],
+        ...overrides
+      } as Partial<Task>)
+
+    it('is marked sent back when the rework resumes the implementer', () => {
+      const patch = launchPatch(settings, bounced(), plan, { sessionId: 'impl' })
+      expect(patch.agentSession).toEqual({ provider: 'claude', id: 'impl' })
+      expect(patch.sessions).toEqual([implementer, { ...review, sentBack: true }])
+    })
+
+    it('is marked sent back when a fresh implementer starts, which is added after it', () => {
+      const patch = launchPatch(settings, bounced(), plan, { sessionId: 'new' }, () => 'NOW')
+      expect(patch.sessions?.map((entry) => [entry.id, entry.sentBack])).toEqual([
+        ['impl', undefined],
+        ['rev', true],
+        ['new', undefined]
+      ])
+    })
+
+    it('is a manual review too, told apart by its template', () => {
+      const manual = bounced({ sessions: [implementer, { ...review, dispatch: undefined }] })
+      expect(
+        launchPatch(settings, manual, plan, { sessionId: 'impl' }).sessions?.[1]
+      ).toMatchObject({ sentBack: true })
+    })
+
+    it('is not marked when the review itself is resumed, or the task is still In Review', () => {
+      expect(launchPatch(settings, bounced(), plan, { sessionId: 'rev' })).not.toHaveProperty(
+        'sessions'
+      )
+      const inReview = bounced({ status: 'in_review' })
+      expect(launchPatch(settings, inReview, plan, { sessionId: 'new2' }).sessions?.[1]).toBe(
+        review
+      )
+    })
   })
 })
 

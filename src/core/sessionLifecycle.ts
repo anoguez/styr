@@ -17,6 +17,7 @@ import type { ThreadUpdate } from './providers/codexProtocol.js'
 import { TaskLaunchGate } from './taskLaunchGate.js'
 import {
   WORKTREE_BRANCH_PREFIX,
+  type OrchestrationLane,
   type Settings,
   type Task,
   type TaskDraft,
@@ -135,16 +136,25 @@ export interface SessionPorts {
   writeHandoff(fileName: string, content: string): string
 }
 
+/** What a launch records about its run in the task's history. */
+export interface LaunchRun {
+  templateId?: string
+  /** Unset while a fresh Codex thread waits for its id: nothing about the session is written yet. */
+  sessionId?: string
+  sessionLabel?: string
+  /** Auto-run started it, in this lane (`TaskSessionRef.dispatch`). */
+  dispatchLane?: OrchestrationLane
+}
+
 /** The board changes a launch makes to its task, as data. Pure; `sessionLabel` is not the renderer's. */
 export function launchPatch(
   settings: Settings,
   task: Task,
   plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase'>,
-  templateId: string | undefined,
-  sessionId?: string,
-  sessionLabel?: string,
+  run: LaunchRun = {},
   now: () => string = () => new Date().toISOString()
 ): TaskPatch {
+  const { templateId, sessionId, sessionLabel, dispatchLane } = run
   const patch: TaskPatch = {}
   if (task.status === 'backlog') patch.status = 'in_progress'
   if (plan.worktreePath && task.worktreePath !== plan.worktreePath) {
@@ -157,19 +167,34 @@ export function launchPatch(
   if (task.agentSession?.id !== sessionId || task.agentSession?.provider !== plan.provider) {
     patch.agentSession = { provider: plan.provider, id: sessionId }
   }
-  if (!task.sessions.some((entry) => entry.id === sessionId)) {
+  let sessions = task.sessions
+  // An implementer launched over the reviewer's chat: that review asked for fixes. Recorded here,
+  // because the rework run resumes the implementer and so adds no history entry of its own.
+  const current = task.agentSession && task.sessions.find((e) => e.id === task.agentSession?.id)
+  if (
+    current &&
+    current.id !== sessionId &&
+    !current.sentBack &&
+    laneFor(task) === 'implement' &&
+    (current.dispatch === 'review' || isReviewSession(settings, task, current))
+  ) {
+    sessions = sessions.map((entry) => (entry === current ? { ...entry, sentBack: true } : entry))
+  }
+  if (!sessions.some((entry) => entry.id === sessionId)) {
     const template = resolveTemplateFor(settings, task, templateId)
-    patch.sessions = [
-      ...task.sessions,
+    sessions = [
+      ...sessions,
       {
         id: sessionId,
         provider: plan.provider,
         startedAt: now(),
         label: sessionLabel ?? template.name,
-        templateId: template.id
+        templateId: template.id,
+        ...(dispatchLane ? { dispatch: dispatchLane } : {})
       }
     ]
   }
+  if (sessions !== task.sessions) patch.sessions = sessions
   return patch
 }
 
@@ -236,8 +261,8 @@ export function reworkLaunch(
 }
 
 export function createSessionLifecycle(ports: SessionPorts) {
-  /** The template a fresh Codex launch used, for labelling its history entry once the id arrives. */
-  const pendingTemplates = new Map<string, string | undefined>()
+  /** What a fresh Codex launch records once its thread id arrives: its template, whether Auto-run. */
+  const pendingRuns = new Map<string, Omit<LaunchRun, 'sessionId'>>()
   const gate = new TaskLaunchGate()
 
   /**
@@ -249,13 +274,11 @@ export function createSessionLifecycle(ports: SessionPorts) {
     workspaceId: string,
     taskId: string,
     plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase' | 'warning'>,
-    templateId: string | undefined,
-    sessionId?: string,
-    sessionLabel?: string
+    run: LaunchRun
   ): void {
     const active = workspaceId === ports.settings().activeWorkspaceId
     const write = (task: Task): boolean => {
-      const patch = launchPatch(ports.settings(), task, plan, templateId, sessionId, sessionLabel)
+      const patch = launchPatch(ports.settings(), task, plan, run)
       const changed = Object.keys(patch).length > 0
       if (changed) ports.updateTask(task.id, patch)
       if (plan.warning) ports.addNote(task.id, 'styr', plan.warning)
@@ -292,10 +315,9 @@ export function createSessionLifecycle(ports: SessionPorts) {
         workspaceId,
         taskId,
         { provider: 'codex' },
-        pendingTemplates.get(key),
-        update.boundSessionId
+        { ...pendingRuns.get(key), sessionId: update.boundSessionId }
       )
-      pendingTemplates.delete(key)
+      pendingRuns.delete(key)
     }
     ports.notifyAgents()
   }
@@ -344,18 +366,19 @@ export function createSessionLifecycle(ports: SessionPorts) {
     // A fresh Codex thread is created by the TUI, so its id is only known once the daemon announces
     // it; the monitor saves it then. Every other session has its id up front.
     const awaitingThreadId = plan.provider === 'codex' && !plan.resumed
-    saveLaunchMetadata(
-      workspaceId,
-      task.id,
-      plan,
-      options.templateId,
-      awaitingThreadId ? undefined : plan.sessionId,
-      options.sessionLabel
-    )
+    const run: LaunchRun = {
+      templateId: options.templateId,
+      sessionLabel: options.sessionLabel,
+      dispatchLane: options.dispatchLane
+    }
+    saveLaunchMetadata(workspaceId, task.id, plan, {
+      ...run,
+      sessionId: awaitingThreadId ? undefined : plan.sessionId
+    })
 
     if (socketPath) {
       if (awaitingThreadId) {
-        pendingTemplates.set(key, options.templateId)
+        pendingRuns.set(key, run)
         await ports.monitor.expect(socketPath, key, plan.cwd)
       } else await ports.monitor.watch(socketPath, key, plan.sessionId)
     }
@@ -391,7 +414,7 @@ export function createSessionLifecycle(ports: SessionPorts) {
       return session
     } catch (error) {
       ports.monitor.release(key)
-      pendingTemplates.delete(key)
+      pendingRuns.delete(key)
       throw error
     }
   }

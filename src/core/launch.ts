@@ -8,7 +8,7 @@ import { buildPrompt, resolveTemplateFor } from './prompt.js'
 import { providerById, providerFor } from './providers/index.js'
 import { shellQuote } from './shell.js'
 import { resolveShell } from './platformShell.js'
-import type { Settings, Task } from './types.js'
+import type { OrchestrationLane, Settings, Task } from './types.js'
 
 export { shellQuote }
 
@@ -110,6 +110,8 @@ export interface LaunchOptions {
    * with `templateId` or `promptPreface`, which shape a template this replaces.
    */
   prompt?: string
+  /** Auto-run is starting it in this lane; recorded on the session's history entry. */
+  dispatchLane?: OrchestrationLane
 }
 
 export function planLaunch(

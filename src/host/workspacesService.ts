@@ -184,7 +184,8 @@ export function createWorkspacesService(ports: WorkspacesServicePorts) {
       // A new board starts with Auto-run off whatever the one it was copied from does.
       const created = store.createWorkspace(settings, String(name), {
         ...workspaceSettingsFor(settings),
-        autoDispatch: false
+        autoDispatch: false,
+        autoDispatchSince: undefined
       })
       session.switchWorkspace(created.id)
       return overview()

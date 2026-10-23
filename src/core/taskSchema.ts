@@ -6,6 +6,7 @@ import {
   DEFAULT_SHORTCUTS,
   DEFAULT_TERMINAL_PALETTE,
   MAX_TASK_PRESETS,
+  ORCHESTRATION_LANES,
   REST_METHODS,
   SHORTCUT_COMMANDS,
   TASK_PRIORITIES,
@@ -83,7 +84,9 @@ export const taskSessionRefSchema = z.object({
   provider: z.enum(['claude', 'codex']).default('claude'),
   startedAt: z.string(),
   label: z.string(),
-  templateId: z.string().optional()
+  templateId: z.string().optional(),
+  dispatch: z.enum(ORCHESTRATION_LANES).optional(),
+  sentBack: z.literal(true).optional()
 })
 
 export const activityEntrySchema = z.object({
@@ -260,6 +263,7 @@ export const settingsSchema = z.object({
   promptRouting: promptRoutingSchema,
   orchestration: orchestrationSchema,
   autoDispatch: z.boolean().default(false),
+  autoDispatchSince: z.string().optional(),
   theme: themeSchema,
   shortcuts: shortcutsSchema,
   updates: z

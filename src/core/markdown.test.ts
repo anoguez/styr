@@ -29,7 +29,15 @@ const task: Task = {
   model: 'gpt-6.1-sol',
   agentSession: { provider: 'codex', id: 'session-42' },
   sessions: [
-    { id: 'session-42', provider: 'codex', startedAt: '2026-10-01T08:00:00.000Z', label: 'Review' }
+    { id: 'session-41', provider: 'codex', startedAt: '2026-10-01T07:00:00.000Z', label: 'Build' },
+    {
+      id: 'session-42',
+      provider: 'codex',
+      startedAt: '2026-10-01T08:00:00.000Z',
+      label: 'Review',
+      dispatch: 'review',
+      sentBack: true
+    }
   ],
   externalRef: {
     provider: 'github',

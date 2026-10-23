@@ -104,6 +104,24 @@ describe('saving settings', () => {
     expect(loaded.config.loadSettings().activeWorkspaceId).toBe('default')
   })
 
+  it('keeps Auto-run and when it was switched on from disk, whatever a stale dialog sends', async () => {
+    const { config } = await modules()
+    const stale = config.loadSettings()
+    config.saveWorkspaceSettings(
+      { ...stale, autoDispatch: true, autoDispatchSince: '2026-03-04T05:06:07.000Z' },
+      'default'
+    )
+    config.persistSettings({
+      workspaceId: 'default',
+      workspace: workspaceSettingsFor({ ...stale, shell: '/bin/fish' }),
+      global: globalSettingsFor(stale)
+    })
+    const saved = config.loadSettings()
+    expect(saved.shell).toBe('/bin/fish')
+    expect(saved.autoDispatch).toBe(true)
+    expect(saved.autoDispatchSince).toBe('2026-03-04T05:06:07.000Z')
+  })
+
   it('refuses a workspace that does not exist', async () => {
     const { config } = await modules()
     expect(() => saveFromDialog(config, 'gone', { shell: '/bin/fish' })).toThrow('does not exist')

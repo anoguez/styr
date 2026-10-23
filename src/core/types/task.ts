@@ -1,3 +1,5 @@
+import type { OrchestrationLane } from './agents.js'
+
 export const TASK_STATUSES = ['backlog', 'in_progress', 'in_review', 'done'] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number]
 
@@ -77,6 +79,10 @@ export interface TaskSessionRef {
   label: string
   /** The prompt template the run started with. Older entries have only the `label`. */
   templateId?: string
+  /** Set when Auto-run started this session, in that lane. Absent for a person's launch. */
+  dispatch?: OrchestrationLane
+  /** On a review: an implementer was launched over it, so the review asked for fixes. */
+  sentBack?: true
 }
 
 export interface ExternalRef {

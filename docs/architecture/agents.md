@@ -284,19 +284,32 @@ wired in `src/host/dispatchService.ts`); the rules are pure in `core/autoDispatc
 - **Stop is the flag going off.** The flag is read before every launch, so a pass under way starts
   nothing further; running agents are never touched. The limit and failure pauses use the same path
   and report a reason (`AutoDispatchState.paused`, per workspace).
-- **Loop guard.** A launch does not always remove a task from the plan (a review leaves it In Review),
-  so the runner remembers `workspace:task → lane|status|readiness` in memory and does not start it
-  again until that changes. `pruneMemory` runs _before_ the plan is built and its `skip` set keeps
-  remembered tasks out of `planOrchestration`: left in, they take the lane's slot and starve the rest.
+- **Survives a relaunch.** The guards below are read back from the task files on every pass, so a
+  relaunch (or a `styr serve` restart) does not reset them. A launch Auto-run makes records its lane
+  on the new history entry (`TaskSessionRef.dispatch`, from `LaunchOptions.dispatchLane`), and
+  `launchPatch` marks a review `sentBack` when an implementer is launched over it — the rework run
+  resumes the implementer, so it leaves no entry of its own. `orchestrate:autoSet(true)` stamps
+  `Settings.autoDispatchSince`. Only the consecutive-failure count and the pause reason stay in
+  memory.
+- **Loop guard.** A launch does not always remove a task from the plan (a review leaves it In Review).
+  `guardedByHistory` skips a task whose current chat Auto-run started in the lane the task is in
+  now, until the lane changes or another run takes over. The runner also remembers
+  `workspace:task → lane|status|readiness` in memory, for what leaves no entry (a failed launch, the
+  moment before the launch is written). `pruneMemory` runs _before_ the plan is built and both go in
+  its `skip` set: left in, a guarded task takes the lane's slot and starves the rest.
 - **Breaker.** `AUTO_LAUNCH_LIMIT` per rolling hour per workspace, and `AUTO_FAILURE_LIMIT`
-  consecutive failed launches, switch Auto-run off with a notification.
-- **Rework cap.** `tallyRework` (`core/autoDispatch.ts`) counts review→Backlog bounces per
-  `workspace:task` in memory, seen the way the loop guard sees changes: a remembered review-lane
-  launch whose task is now Backlog. At `AUTO_REWORK_LIMIT` (3) failed reviews the task joins the
-  plan's `skip` set and `reworkCapped` notifies once ("TASK-x failed review 3 times; it needs you")
-  and notes the task. Manual Dispatch and launches still start it — the Dispatch dialog warns
-  (`OrchestrationSummary.reworkHeld`). Only reviews Auto-run started are counted; the count drops
-  when the task reaches Done or is deleted, and switching Auto-run on clears every count.
+  consecutive failed launches, switch Auto-run off with a notification. A runner's first pass in a
+  workspace starts the hour's count from the `dispatch` entries (`autoLaunchTimes`).
+- **Rework cap.** `reworkBounces` (`core/autoDispatch.ts`) walks the task's Auto-run reviews since
+  `autoDispatchSince`, newest first: a `sentBack` review, or the current review of a task back in
+  Backlog, is a bounce; the first review that is neither passed and ends the count. At
+  `AUTO_REWORK_LIMIT` (3) the task joins the plan's `skip` set (`reworkHeld`) and `reworkCapped`
+  notifies and notes the task ("TASK-x failed review 3 times; it needs you"). That note, dated after
+  the newest bounce, is how a later pass or a relaunched runner knows it was told (`unnotedCap`).
+  Manual Dispatch and launches still start it — the Dispatch dialog warns
+  (`OrchestrationSummary.reworkHeld`). Only reviews Auto-run started are counted. The hold ends when a review
+  passes (as one does before work lands), when Auto-run is switched on again or the task is
+  deleted; a Done task is never held, but one dragged to Done by hand and reopened still is.
 - **Fetch first.** Each pass awaits `beforePass` (the merged-work check below, at most 5s) before
   it reads the board, so a PR merged while the window was unfocused is Done before the plan is
   built, and what it blocked starts in the same pass.

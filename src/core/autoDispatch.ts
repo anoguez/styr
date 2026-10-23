@@ -1,4 +1,9 @@
-import { AUTO_REWORK_LIMIT, type OrchestrationLane, type Task } from './types.js'
+import {
+  AUTO_REWORK_LIMIT,
+  type OrchestrationLane,
+  type Task,
+  type TaskSessionRef
+} from './types.js'
 import type { OrchestrationPlan } from './orchestrate.js'
 import { laneFor } from './orchestrate.js'
 
@@ -84,47 +89,87 @@ export function decideAutoRun(input: AutoRunInput): AutoRunDecision {
 
 export { AUTO_REWORK_LIMIT }
 
-/** `workspace:task` → how many reviews Auto-run started came back asking for fixes. Memory only. */
-export type ReworkCounts = ReadonlyMap<string, number>
+/*
+ * What Auto-run must remember across a relaunch is read back from the task files, from the marks
+ * a launch leaves on `sessions:` (`dispatch`, `sentBack`) and `Settings.autoDispatchSince`. The
+ * runner's own memory only covers what leaves no entry: a failed launch, a resumed chat.
+ */
 
-export interface ReworkTally {
-  counts: Map<string, number>
-  /** Tasks that reached the limit on this pass, to notify about once. */
-  capped: Task[]
-  /** Every task at or over the limit: Auto-run leaves them out of the plan. */
-  held: Set<string>
+function startedMs(entry: TaskSessionRef): number {
+  return Date.parse(entry.startedAt)
+}
+
+function after(entry: TaskSessionRef, since: string | undefined): boolean {
+  return since === undefined || !(startedMs(entry) <= Date.parse(since))
 }
 
 /**
- * Counts review→Backlog bounces. A bounce is seen as `pruneMemory` would see it: a task Auto-run
- * started in the review lane is now in Backlog, so the reviewer asked for fixes. Call it with the
- * memory from before pruning. A task that reaches Done, or is gone, starts over from zero.
+ * The reviews Auto-run started that asked for fixes, newest first, since Auto-run was switched on.
+ * A bounce is a review an implementer was launched over (`sentBack`), or the task's current
+ * review chat while the task is back in Backlog and nobody has picked it up yet. The first review
+ * that is neither passed, and ends the run: a task that passed review starts over.
  */
-export function tallyRework(
-  tasks: readonly Task[],
-  workspaceId: string,
-  memory: AutoMemory,
-  previous: ReworkCounts
-): ReworkTally {
-  const prefix = `${workspaceId}:`
-  const byKey = new Map(tasks.map((task) => [memoryKey(workspaceId, task.id), task]))
-  const counts = new Map<string, number>()
-  for (const [key, count] of previous) {
-    const task = byKey.get(key)
-    if (!key.startsWith(prefix) || (task && task.status !== 'done')) counts.set(key, count)
+export function reworkBounces(task: Task, since: string | undefined): TaskSessionRef[] {
+  const bounces: TaskSessionRef[] = []
+  for (const entry of [...task.sessions].reverse()) {
+    if (entry.dispatch !== 'review' || !after(entry, since)) continue
+    const pending = entry.id === task.agentSession?.id && task.status === 'backlog'
+    if (!entry.sentBack && !pending) break
+    bounces.push(entry)
   }
-  const capped: Task[] = []
-  for (const [key, signature] of memory) {
-    const task = byKey.get(key)
-    if (!task || !signature.startsWith('review|') || task.status !== 'backlog') continue
-    const count = (counts.get(key) ?? 0) + 1
-    counts.set(key, count)
-    if (count === AUTO_REWORK_LIMIT) capped.push(task)
-  }
-  const held = new Set<string>()
-  for (const [key, count] of counts) {
-    const task = byKey.get(key)
-    if (task && count >= AUTO_REWORK_LIMIT) held.add(task.id)
-  }
-  return { counts, capped, held }
+  return bounces
+}
+
+/** Tasks that failed review `AUTO_REWORK_LIMIT` times: Auto-run leaves them out of the plan. */
+export function reworkHeld(tasks: readonly Task[], since: string | undefined): Set<string> {
+  return new Set(
+    tasks
+      .filter((task) => task.status !== 'done')
+      .filter((task) => reworkBounces(task, since).length >= AUTO_REWORK_LIMIT)
+      .map((task) => task.id)
+  )
+}
+
+/** The note (and notification) for a task that reached the cap; its start is how it is found again. */
+export function reworkCappedMessage(taskId: string): string {
+  return `${taskId} failed review ${AUTO_REWORK_LIMIT} times; it needs you.`
+}
+
+/**
+ * The newest failed review of a held task that has not been noted yet, or nothing: the capped
+ * note, dated after that review started, is the record that the person was told.
+ */
+export function unnotedCap(task: Task, since: string | undefined): TaskSessionRef | undefined {
+  const bounces = reworkBounces(task, since)
+  const [newest] = bounces
+  if (!newest || bounces.length < AUTO_REWORK_LIMIT) return undefined
+  const prefix = reworkCappedMessage(task.id)
+  const noted = task.activity.some(
+    (entry) =>
+      entry.author === 'styr' &&
+      entry.message.startsWith(prefix) &&
+      !(Date.parse(entry.at) < startedMs(newest))
+  )
+  return noted ? undefined : newest
+}
+
+/**
+ * Whether the task's current chat is one Auto-run started in the lane the task is in now: that run
+ * already happened on this state (a finished review left it In Review, a spec stopped early), so it
+ * is not started again until the task changes lane or another run takes over.
+ */
+export function guardedByHistory(task: Task): boolean {
+  const pointer = task.agentSession
+  const current = pointer && task.sessions.find((entry) => entry.id === pointer.id)
+  return current?.dispatch === laneFor(task)
+}
+
+/** When Auto-run started the sessions recorded in the past hour, oldest first. */
+export function autoLaunchTimes(tasks: readonly Task[], now: number): number[] {
+  return tasks
+    .flatMap((task) => task.sessions)
+    .filter((entry) => entry.dispatch !== undefined)
+    .map(startedMs)
+    .filter((at) => now - at < AUTO_LAUNCH_WINDOW_MS)
+    .sort((a, b) => a - b)
 }

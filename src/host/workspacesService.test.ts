@@ -62,7 +62,9 @@ function harness(): Harness {
       },
       listWorkspaces: () => h.workspaces,
       createWorkspace: (settings, name, seed) => {
-        calls.push(`create ${name} autoDispatch=${seed.autoDispatch}`)
+        calls.push(
+          `create ${name} autoDispatch=${seed.autoDispatch} since=${seed.autoDispatchSince}`
+        )
         const created = { id: name.toLowerCase(), name } as WorkspaceInfo
         h.workspaces = [...h.workspaces, created]
         return created
@@ -134,9 +136,9 @@ describe('switch', () => {
 
 describe('create, rename and delete', () => {
   it('creates with Auto-run off and switches to the new workspace', () => {
-    h.settings = { ...h.settings, autoDispatch: true }
+    h.settings = { ...h.settings, autoDispatch: true, autoDispatchSince: '2026-01-01T00:00:00Z' }
     const overview = service.create('Beta')
-    expect(h.calls[0]).toBe('create Beta autoDispatch=false')
+    expect(h.calls[0]).toBe('create Beta autoDispatch=false since=undefined')
     expect(h.calls).toContain('saveActive beta')
     expect(overview.activeId).toBe('beta')
   })

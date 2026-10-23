@@ -3,9 +3,13 @@ import type { OrchestrationPlan } from './orchestrate.js'
 import {
   AUTO_FAILURE_LIMIT,
   AUTO_LAUNCH_WINDOW_MS,
+  autoLaunchTimes,
   decideAutoRun,
+  guardedByHistory,
+  memoryKey,
   pruneMemory,
-  tallyRework
+  reworkHeld,
+  unnotedCap
 } from './autoDispatch.js'
 
 export const AUTO_DEBOUNCE_MS = 750
@@ -15,6 +19,8 @@ export interface AutoDispatchPorts {
   enabled(): boolean
   setEnabled(on: boolean): void
   workspaceId(): string
+  /** When Auto-run was last switched on in the active workspace (`Settings.autoDispatchSince`). */
+  since(): string | undefined
   /**
    * Runs before each pass reads the board: the fetch that lets a merged PR land first. Bounded and
    * best-effort — it resolves (never rejects) whether or not the remote answered.
@@ -56,7 +62,8 @@ export interface AutoDispatch {
 export function createAutoDispatch(ports: AutoDispatchPorts): AutoDispatch {
   let memory: ReadonlyMap<string, string> = new Map()
   const history = new Map<string, number[]>()
-  let rework: ReadonlyMap<string, number> = new Map()
+  /** Caps notified in this run, until their note shows up in the task file: `key@review start`. */
+  const notified = new Set<string>()
   let held: ReadonlySet<string> = new Set()
   let heldIn = ''
   let failures = 0
@@ -121,14 +128,22 @@ export function createAutoDispatch(ports: AutoDispatchPorts): AutoDispatch {
       const now = ports.now()
       // Task states are read once, so the memory is pruned against the same view the plan sees.
       const first = ports.snapshot(new Set())
-      const tally = tallyRework(first.tasks, workspaceId, memory, rework)
-      rework = tally.counts
-      held = tally.held
+      const since = ports.since()
+      held = reworkHeld(first.tasks, since)
       heldIn = workspaceId
-      for (const task of tally.capped) ports.reworkCapped(task)
+      for (const task of first.tasks) {
+        const review = held.has(task.id) ? unnotedCap(task, since) : undefined
+        const key = `${memoryKey(workspaceId, task.id)}@${review?.startedAt}`
+        if (!review || notified.has(key)) continue
+        notified.add(key)
+        ports.reworkCapped(task)
+      }
       const pruned = pruneMemory(first.tasks, workspaceId, memory)
-      const skip = new Set([...pruned.skip, ...tally.held])
+      const guarded = first.tasks.filter(guardedByHistory).map((task) => task.id)
+      const skip = new Set([...pruned.skip, ...guarded, ...held])
       const { plan } = skip.size > 0 ? ports.snapshot(skip) : first
+      // A relaunched runner starts from the launches the files record for the past hour.
+      if (!history.has(workspaceId)) history.set(workspaceId, autoLaunchTimes(first.tasks, now))
       const past = (history.get(workspaceId) ?? []).filter((at) => now - at < AUTO_LAUNCH_WINDOW_MS)
       const decision = decideAutoRun({
         plan,
@@ -178,8 +193,8 @@ export function createAutoDispatch(ports: AutoDispatchPorts): AutoDispatch {
     if (ports.enabled()) {
       paused = undefined
       failures = 0
-      // Switching it on is the person saying "go": tasks held after failed reviews get another try.
-      rework = new Map()
+      // Switching it on is the person saying "go": `autoDispatchSince` releases tasks held after
+      // failed reviews, and the next pass recomputes the rest.
       held = new Set()
       graceUntil = 0
       request()
