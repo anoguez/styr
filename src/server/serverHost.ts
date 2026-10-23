@@ -146,6 +146,7 @@ export function createServerHost(ports: ServerHostPorts) {
       removeWorktree: (task) => gitService.checkout(task).removeWorktree(),
       brokenTaskFiles
     },
+    settings: () => loadSettings(),
     requestLanding: () => requestLanding(),
     observeTasks: sources.observeTasks,
     recordNotifyDuration: diagnostics.recordNotifyDuration,

@@ -110,6 +110,7 @@ const tasksService = createTasksService({
     removeWorktree: (task) => gitService.checkout(task).removeWorktree(),
     brokenTaskFiles
   },
+  settings: () => loadSettings(),
   requestLanding: () => requestLanding(),
   observeTasks,
   recordNotifyDuration,

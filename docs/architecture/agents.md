@@ -238,6 +238,16 @@ lanes. A launch that is `fresh`, names a session or picks another template is le
 run continues. They look redundant but are not — Forget clears the pointer while keeping the
 history, and a fresh review appends without discarding the implementer's chat.
 
+**A spec hand-off unlinks the chat.** After every re-index, `notifyTasksChanged`
+(`host/tasksService.ts`) clears `agentSession` on any task that is Backlog + `readiness: ready`
+whose current chat is a spec run (`isSpecHandoff`, `core/specHandoff.ts`): the `Task.sessions` entry
+whose `templateId` (older entries: `label`) is the template `needs_spec` routes to. `sessions` is
+untouched, so the chat stays in the Agents tab, and the implement run that follows starts fresh with
+no manual "Start fresh next run". It is derived and idempotent (nothing qualifies once cleared, so no
+watcher loop), runs no git, and lives in the shared service so `styr serve` gets it too. No unlink for
+In Progress, In Review, Done, `needs_spec`, implement/review chats, a pointer missing from `sessions`
+or a pinned template that runs both lanes.
+
 `planLaunch` also takes `resume` to reopen one specific past chat, bare, for reading back.
 
 `planLaunch` takes `withPrompt` and `fresh`. Orchestrate sets `withPrompt` always — `--resume`
