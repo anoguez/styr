@@ -54,6 +54,7 @@ interface Session {
 }
 
 type DataListener = (id: string, output: TerminalOutput) => void
+type CreatedListener = (info: TerminalSessionInfo) => void
 type ExitListener = (id: string, exitCode: number) => void
 type RuntimeListener = (state: TerminalRuntimeState) => void
 
@@ -70,6 +71,7 @@ export function createTerminalsService(ports: TerminalsPorts) {
   const exitedTaskIds = new Map<string, { taskId: string; workspaceId?: string }>()
   const dataListeners = new Set<DataListener>()
   const exitListeners = new Set<ExitListener>()
+  const createdListeners = new Set<CreatedListener>()
   const runtimeListeners = new Set<RuntimeListener>()
   const exitedRuntimeStates = new Map<string, TerminalRuntimeState>()
 
@@ -103,6 +105,10 @@ export function createTerminalsService(ports: TerminalsPorts) {
 
   function onTerminalData(listener: DataListener): void {
     dataListeners.add(listener)
+  }
+
+  function onTerminalCreated(listener: CreatedListener): void {
+    createdListeners.add(listener)
   }
 
   function onTerminalExit(listener: ExitListener): void {
@@ -159,6 +165,7 @@ export function createTerminalsService(ports: TerminalsPorts) {
     })
 
     if (options.command) child.write(`${options.command}\r`)
+    for (const listener of createdListeners) listener(info)
     return info
   }
 
@@ -214,6 +221,7 @@ export function createTerminalsService(ports: TerminalsPorts) {
 
   return {
     onTerminalData,
+    onTerminalCreated,
     onTerminalExit,
     onTerminalRuntimeState,
     createSession,

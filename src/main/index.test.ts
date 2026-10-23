@@ -57,6 +57,7 @@ vi.mock('./ipc.js', () => ({
   markAgentExited: record('markAgentExited'),
   notifyAgentsChanged: record('notifyAgentsChanged'),
   notifyTasksChanged: record('notifyTasksChanged'),
+  freezeTerminalLayout: record('freezeTerminalLayout'),
   registerIpcHandlers: record('registerIpcHandlers'),
   sendWindowCommand: record('sendWindowCommand'),
   startAutoDispatch: record('startAutoDispatch'),

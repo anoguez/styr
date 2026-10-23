@@ -11,6 +11,7 @@ import {
 import type { LaunchOptions, LaunchPlan } from './launch.js'
 import { laneFor, providerForLane } from './orchestrate.js'
 import { resolveTemplateFor } from './prompt.js'
+import { agentSkip } from './terminalLayout.js'
 import { createPullRequestPrompt } from './pullRequest.js'
 import { providerById } from './providers/index.js'
 import type { ThreadUpdate } from './providers/codexProtocol.js'
@@ -126,6 +127,8 @@ export interface SessionPorts {
   /** Refuses (throws) when Codex cannot be monitored; otherwise gives the control socket. */
   prepareCodex(command: string, shell: string): Promise<string>
   planLaunch(settings: Settings, task: Task, options: LaunchOptions): LaunchPlan
+  /** Whether a folder exists; a restore skips a tab whose checkout is gone. */
+  directoryExists(path: string): boolean
 
   git: {
     branch(cwd: string): string | undefined
@@ -417,6 +420,90 @@ export function createSessionLifecycle(ports: SessionPorts) {
       pendingRuns.delete(key)
       throw error
     }
+  }
+
+  /**
+   * Brings back a task's agent tab after a relaunch: its saved chat, resumed bare. Nothing is sent
+   * and nothing is written (no status move, no history entry, no `saveLaunchMetadata`), and a task
+   * with no chat to resume is refused rather than started fresh. Goes through the launch gate, so a
+   * task that already has a tab gets that tab back. Throws, starting with the task id, when the tab
+   * cannot be restored.
+   */
+  async function restoreOne(taskId: string): Promise<TerminalSessionInfo> {
+    const task = ports.findTask(taskId)
+    const ref = task?.agentSession
+    const reason = agentSkip(
+      taskId,
+      task ?? null,
+      Boolean(ref && providerById(ref.provider).sessionExists(ref.id))
+    )
+    if (reason || !task || !ref) throw new Error(reason ?? `${taskId} no longer exists`)
+
+    const settings = ports.settings()
+    const workspaceId = settings.activeWorkspaceId
+    if (!settings.enabledProviders.includes(ref.provider)) {
+      throw new Error(
+        `${ref.provider === 'codex' ? 'Codex' : 'Claude Code'} is disabled in Settings → Integrations.`
+      )
+    }
+    await ports.ensureAgentCli(ref.provider, settings)
+    const socketPath =
+      ref.provider === 'codex'
+        ? await ports.prepareCodex(settings.codexCommand, settings.shell)
+        : undefined
+    if (ports.settings().activeWorkspaceId !== workspaceId) {
+      throw new Error('The workspace changed while the agent was starting.')
+    }
+
+    const plan = ports.planLaunch(settings, task, {
+      resume: ref.id,
+      provider: ref.provider,
+      withPrompt: false
+    })
+    if (!plan.resumed) throw new Error(`${taskId} has no saved chat`)
+    if (!ports.directoryExists(plan.cwd)) throw new Error(`${plan.cwd} no longer exists`)
+
+    const key = monitorKey(workspaceId, task.id)
+    if (socketPath) await ports.monitor.watch(socketPath, key, plan.sessionId)
+    try {
+      const session = ports.createSession({
+        cwd: plan.cwd,
+        shell: settings.shell,
+        title: task.title,
+        taskId: task.id,
+        workspaceId,
+        provider: plan.provider,
+        command: plan.command,
+        env: {
+          STYR_TASK_ID: task.id,
+          STYR_WORKSPACE_ID: workspaceId,
+          STYR_SESSION_ID: plan.sessionId
+        }
+      })
+      if (plan.provider === 'codex') {
+        ports.recordAgentEvent(workspaceId, task.id, 'SessionStart')
+        ports.notifyAgents()
+      }
+      return session
+    } catch (error) {
+      ports.monitor.release(key)
+      throw error
+    }
+  }
+
+  function restoreAgent(taskId: string): Promise<TerminalSessionInfo> {
+    const workspaceId = ports.settings().activeWorkspaceId
+    return gate.startOrReuse(
+      monitorKey(workspaceId, taskId),
+      () => ports.findSessionByTask(taskId, workspaceId),
+      () =>
+        restoreOne(taskId).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error)
+          throw new Error(message.startsWith(taskId) ? message : `${taskId}: ${message}`, {
+            cause: error
+          })
+        })
+    )
   }
 
   /**
@@ -731,6 +818,7 @@ export function createSessionLifecycle(ports: SessionPorts) {
 
   return {
     startForTask,
+    restoreAgent,
     recordCodexUpdate,
     askForPullRequest,
     askReview,

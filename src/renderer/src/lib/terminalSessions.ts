@@ -11,6 +11,8 @@ export type TerminalSessionsAction =
   /** Sessions found later (a remote host connected): added after the open tabs, none replaced. */
   | { type: 'merge'; sessions: TerminalSessionInfo[] }
   | { type: 'adopt'; session: TerminalSessionInfo }
+  /** A restore finished: its tabs join after the open ones, the saved active one is focused. */
+  | { type: 'restore'; sessions: TerminalSessionInfo[]; activeId?: string }
   | { type: 'remove'; id: string }
   | { type: 'select'; id: string }
   | { type: 'reorder'; ids: string[] }
@@ -58,6 +60,19 @@ export function terminalSessionsReducer(
         activeSession: action.session.id,
         terminalOpen: true
       }
+    case 'restore': {
+      if (action.sessions.length === 0) return state
+      const open = new Set(state.sessions.map((session) => session.id))
+      const added = action.sessions.filter((session) => !open.has(session.id))
+      const ids = new Set(action.sessions.map((session) => session.id))
+      const focus = action.activeId ?? action.sessions[action.sessions.length - 1]?.id
+      return {
+        sessions: [...state.sessions, ...added],
+        // A tab the launch gate handed back (already open) can be the saved active one too.
+        activeSession: focus && (ids.has(focus) || open.has(focus)) ? focus : state.activeSession,
+        terminalOpen: true
+      }
+    }
     case 'remove': {
       const sessions = state.sessions.filter((session) => session.id !== action.id)
       if (state.activeSession !== action.id) return { ...state, sessions }

@@ -160,6 +160,27 @@ export function PreferencesSection({ draft, patch }: SectionProps): ReactNode {
         />
       </Field>
       <Field
+        label="Restore terminal tabs"
+        hint={
+          draft.restoreTabs === 'always'
+            ? 'After a relaunch, the tabs of your last session reopen on their own. Agent tabs resume their chat and send nothing.'
+            : draft.restoreTabs === 'never'
+              ? 'Styr does not remember your terminal tabs, and offers nothing after a relaunch.'
+              : 'After a relaunch, a banner offers to reopen the tabs of your last session. Agent tabs resume their chat and send nothing.'
+        }
+      >
+        <Segmented
+          label="Restore terminal tabs"
+          value={draft.restoreTabs}
+          onChange={(restoreTabs) => patch({ restoreTabs })}
+          options={[
+            { value: 'ask', label: 'Ask' },
+            { value: 'always', label: 'Always' },
+            { value: 'never', label: 'Never' }
+          ]}
+        />
+      </Field>
+      <Field
         label="Open files with"
         hint="App that opens task files and folders. System default uses whatever the operating system has set for the file type."
       >

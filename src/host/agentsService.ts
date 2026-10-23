@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathsInWorkspace, workspaceDir } from '@core/config.js'
 import {
@@ -213,6 +213,7 @@ export function createAgentsService(ports: AgentsServicePorts) {
     ensureAgentCli: ports.ensureAgentCli,
     prepareCodex: ports.prepareCodex,
     planLaunch: ports.planLaunch,
+    directoryExists: existsSync,
     git: ports.git,
     writeHandoff: store.writeHandoff
   })
@@ -308,6 +309,7 @@ export function createAgentsService(ports: AgentsServicePorts) {
     resume,
     previewPrompt,
     launch: lifecycle.startForTask,
+    restoreAgent: lifecycle.restoreAgent,
     askForPullRequest: lifecycle.askForPullRequest,
     askReview: lifecycle.askReview,
     askFork: lifecycle.askFork,

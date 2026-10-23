@@ -29,6 +29,25 @@ describe('terminalSessionsReducer', () => {
     expect(next.activeSession).toBe('a')
   })
 
+  it('restores tabs after the open ones, focusing the saved active tab and opening the panel', () => {
+    const state = { ...withTabs('x'), activeSession: 'x' }
+    const next = reduce(state, {
+      type: 'restore',
+      sessions: [session('a'), session('b'), session('c')],
+      activeId: 'b'
+    })
+    expect(next.sessions.map((tab) => tab.id)).toEqual(['x', 'a', 'b', 'c'])
+    expect(next).toMatchObject({ activeSession: 'b', terminalOpen: true })
+  })
+
+  it('restores nothing when every tab was skipped, and never doubles an open tab', () => {
+    const state = withTabs('x')
+    expect(reduce(state, { type: 'restore', sessions: [] })).toBe(state)
+    const again = reduce(state, { type: 'restore', sessions: [session('x')], activeId: 'x' })
+    expect(again.sessions.map((tab) => tab.id)).toEqual(['x'])
+    expect(again.activeSession).toBe('x')
+  })
+
   it('load keeps the current active tab, else takes the first', () => {
     const loaded = [session('a'), session('b')]
     expect(reduce(initialTerminalSessions, { type: 'load', sessions: loaded }).activeSession).toBe(

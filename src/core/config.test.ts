@@ -71,6 +71,15 @@ describe('setting keys', () => {
   })
 })
 
+describe('restoreTabs', () => {
+  it('is an app-level setting that asks by default and rejects an unknown mode', () => {
+    expect(GLOBAL_SETTING_KEYS).toContain('restoreTabs')
+    expect(WORKSPACE_SETTING_KEYS).not.toContain('restoreTabs')
+    expect(settingsSchema.shape.restoreTabs.parse(undefined)).toBe('ask')
+    expect(settingsSchema.shape.restoreTabs.safeParse('sometimes').success).toBe(false)
+  })
+})
+
 describe('saving settings', () => {
   it('keeps app-level keys in config.json and workspace keys in the workspace folder', async () => {
     const { config } = await modules()

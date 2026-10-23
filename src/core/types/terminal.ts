@@ -75,3 +75,23 @@ export interface TerminalRuntimeState {
   lastExitCode?: number
   terminated?: boolean
 }
+
+/** What a relaunch can bring back of the last session's tabs, for the banner (`terminal:pendingLayout`). */
+export interface TabsOffer {
+  /** Tabs that can be restored now: shells, plus agent tabs of the active workspace. */
+  tabs: number
+  /** How many of those are agent tabs. */
+  agents: number
+  /** `restoreTabs: always`: restore without asking. */
+  auto: boolean
+}
+
+/** What a restore did (`terminal:restoreLayout`). */
+export interface TabsRestoreResult {
+  /** The tabs now open, in their saved order. */
+  sessions: TerminalSessionInfo[]
+  /** The tab that was active when the last session ended, if it was restored. */
+  activeId?: string
+  /** Why a tab was not brought back, one line each. */
+  skipped: string[]
+}

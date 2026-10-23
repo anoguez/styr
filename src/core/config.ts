@@ -137,6 +137,7 @@ export function shippedSettings(): Settings {
     orchestration: { spec: 1, implement: 2, review: 1 },
     autoDispatch: false,
     updates: { checkAutomatically: true },
+    restoreTabs: 'ask',
     experimental: {
       externalSources: false,
       nativeTerminal: false,
