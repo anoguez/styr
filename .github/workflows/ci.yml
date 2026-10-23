@@ -63,6 +63,13 @@ jobs:
           node-version: 24
           cache: yarn
 
+      # Electron's postinstall downloads its binary (~100 MB); keep it between runs. The lockfile
+      # pins the Electron version, so it is the key.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+
       - run: yarn install --frozen-lockfile
 
       # Builds, then runs the smoke test against `out/` on a virtual display.

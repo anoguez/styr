@@ -45,6 +45,15 @@ jobs:
       # No scripts: the server never loads the Electron-ABI native builds, and needs no Electron.
       # scripts/server-bundle.mjs installs node-pty and better-sqlite3 for its own Node, then runs
       # the bundle with its own Node and native modules (its self-check), failing the job if not.
+      # The container has no setup-node, so no yarn cache: keep it here, per arch (the runners differ).
+      - id: yarn-cache
+        run: echo "dir=$(yarn cache dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: yarn-${{ matrix.arch }}-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-${{ matrix.arch }}-
+
       - run: yarn install --frozen-lockfile --ignore-scripts
       - run: yarn build:server
       - run: node scripts/server-bundle.mjs
