@@ -269,6 +269,7 @@ export const settingsSchema = z.object({
   updates: z
     .object({ checkAutomatically: z.boolean().default(true) })
     .default({ checkAutomatically: true }),
+  restoreTabs: z.enum(['ask', 'always', 'never']).default('ask'),
   experimental: z
     .object({
       externalSources: z.boolean().default(false),
@@ -310,6 +311,7 @@ const GLOBAL_KEY_MASK = {
   storageDir: true,
   activeWorkspaceId: true,
   updates: true,
+  restoreTabs: true,
   shortcuts: true,
   experimental: true
 } as const satisfies Record<GlobalSettingKey, true>

@@ -29,6 +29,8 @@ import { Worklog } from './components/worklog/Worklog.js'
 import { OrchestrateDialog, StopAutoRunDialog } from './components/OrchestrateDialog.js'
 import { PerformanceDialog } from './components/PerformanceDialog.js'
 import { ProblemsBanner } from './components/ProblemsBanner.js'
+import { RestoreTabsBanner } from './components/RestoreTabsBanner.js'
+import { useTabRestore } from './hooks/useTabRestore.js'
 import { QuickTaskDialog } from './components/QuickTaskDialog.js'
 import { RemoveAgentDialog } from './components/RemoveAgentDialog.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
@@ -107,6 +109,7 @@ export default function App(): ReactNode {
   const terminals = useTerminalSessions()
   const { sessions, activeSession, terminalOpen, adopt: adoptSession } = terminals
   useRemoteSessions(remote, terminals.merge)
+  const tabRestore = useTabRestore(activeWorkspaceId, terminals.restore)
   const [terminalExpanded, setTerminalExpanded] = useState(false)
   /** Request changes just went out: the toast that confirms it after the dialog closed. */
   const [reviewSent, setReviewSent] = useState<{ sent: ReviewSent; task: Task } | null>(null)
@@ -250,6 +253,7 @@ export default function App(): ReactNode {
             />
 
             <ProblemsBanner problems={problems} />
+            <RestoreTabsBanner restore={tabRestore} />
 
             <div className="flex min-h-0 flex-1">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col">

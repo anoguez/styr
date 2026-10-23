@@ -137,6 +137,7 @@ function harness(): Harness {
       release: (key) => calls.push(`release ${key}`)
     },
     ensureAgentCli: async () => undefined,
+    directoryExists: () => true,
     prepareCodex: async () => '/sock',
     planLaunch: (_settings, t, options) => (
       launches.push(options),
@@ -537,6 +538,109 @@ describe('startForTask', () => {
     })
     await createSessionLifecycle(h.ports).startForTask('TASK-1')
     expect(h.calls).toContain('note TASK-1 styr no worktree')
+  })
+})
+
+describe('restoreAgent', () => {
+  /** A task with a saved chat, and a plan that resumes it. */
+  function restorable(extra: Partial<Task> = {}) {
+    const h = harness()
+    h.tasks.set(
+      'TASK-1',
+      task({
+        status: 'in_review',
+        agentSession: { provider: 'claude', id: 'saved-chat' },
+        ...extra
+      })
+    )
+    h.ports.planLaunch = (_settings, _task, options) => (
+      h.launches.push(options),
+      {
+        provider: options.provider ?? 'claude',
+        command: 'agent --resume',
+        cwd: '/repo',
+        sessionId: 'saved-chat',
+        resumed: true
+      }
+    )
+    return h
+  }
+
+  it('resumes the saved chat bare and writes nothing to the task', async () => {
+    const h = restorable()
+    const info = await createSessionLifecycle(h.ports).restoreAgent('TASK-1')
+    expect(info.taskId).toBe('TASK-1')
+    expect(h.launches).toEqual([{ resume: 'saved-chat', provider: 'claude', withPrompt: false }])
+    expect(h.calls).toEqual(['session TASK-1 claude'])
+    expect(h.tasks.get('TASK-1')?.status).toBe('in_review')
+  })
+
+  it('focuses the task’s open tab instead of opening a second one', async () => {
+    const h = restorable()
+    h.sessions.push(session({ id: 'live' }))
+    const info = await createSessionLifecycle(h.ports).restoreAgent('TASK-1')
+    expect(info.id).toBe('live')
+    expect(h.calls).toEqual([])
+  })
+
+  it('watches a Codex chat and records SessionStart, like a resumed launch', async () => {
+    const h = restorable({ agentSession: { provider: 'codex', id: 'saved-chat' } })
+    await createSessionLifecycle(h.ports).restoreAgent('TASK-1')
+    expect(h.calls).toEqual([
+      'watch default:TASK-1 saved-chat',
+      'session TASK-1 codex',
+      'event default:TASK-1 SessionStart',
+      'notifyAgents'
+    ])
+  })
+
+  it('skips a task with no saved chat rather than starting a fresh agent', async () => {
+    const none = restorable({ agentSession: undefined })
+    await expect(createSessionLifecycle(none.ports).restoreAgent('TASK-1')).rejects.toThrow(
+      'TASK-1 has no saved chat'
+    )
+    const gone = restorable({ agentSession: { provider: 'claude', id: 'deleted-chat' } })
+    await expect(createSessionLifecycle(gone.ports).restoreAgent('TASK-1')).rejects.toThrow(
+      'no saved chat'
+    )
+    expect(none.calls).toEqual([])
+    expect(none.launches).toEqual([])
+  })
+
+  it('skips a deleted, done or archived task', async () => {
+    const h = restorable()
+    await expect(createSessionLifecycle(h.ports).restoreAgent('NOPE')).rejects.toThrow(
+      'NOPE no longer exists'
+    )
+    h.tasks.set('TASK-1', { ...h.tasks.get('TASK-1')!, status: 'done' })
+    await expect(createSessionLifecycle(h.ports).restoreAgent('TASK-1')).rejects.toThrow(
+      'done or archived'
+    )
+    expect(h.calls).toEqual([])
+  })
+
+  it('skips with the refusal of a disabled provider or a missing CLI', async () => {
+    const h = restorable()
+    h.ports.ensureAgentCli = async () => {
+      throw new Error('Claude Code (`claude`) was not found.')
+    }
+    await expect(createSessionLifecycle(h.ports).restoreAgent('TASK-1')).rejects.toThrow(
+      'TASK-1: Claude Code (`claude`) was not found.'
+    )
+    h.settings = { ...h.settings, enabledProviders: ['codex'] }
+    await expect(createSessionLifecycle(h.ports).restoreAgent('TASK-1')).rejects.toThrow(
+      'Claude Code is disabled'
+    )
+    expect(h.calls).toEqual([])
+  })
+
+  it('skips a task whose checkout is gone', async () => {
+    const h = restorable()
+    h.ports.directoryExists = () => false
+    await expect(createSessionLifecycle(h.ports).restoreAgent('TASK-1')).rejects.toThrow(
+      '/repo no longer exists'
+    )
+    expect(h.calls).toEqual([])
   })
 })
 

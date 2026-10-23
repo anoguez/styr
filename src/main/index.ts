@@ -8,6 +8,7 @@ import {
   autoRunState,
   broadcast,
   checkMergedOnFocus,
+  freezeTerminalLayout,
   markAgentExited,
   notifyAgentsChanged,
   notifyTasksChanged,
@@ -278,6 +279,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   destroyTray()
   stopRemoteWorkspaces()
+  freezeTerminalLayout()
   killAllSessions()
   void stopWatching()
   closeIndex()

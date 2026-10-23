@@ -40,6 +40,11 @@ const DESKTOP_ONLY = new Set([
   'terminal:openInCode',
   'terminal:revealDirectory',
   'terminal:openLink',
+  // The tabs of the last session are machine-local state of the desktop app (`terminalTabs.ts`).
+  'terminal:setLayout',
+  'terminal:pendingLayout',
+  'terminal:restoreLayout',
+  'terminal:dismissLayout',
   'settings:listApps',
   'settings:pickDirectory',
   'settings:pickApp',

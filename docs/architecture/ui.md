@@ -117,6 +117,36 @@ While the terminal is showing, the agents sidebar highlights the row owning the 
 hover style, and scrolls it into view when the selection changes — so many tabs stay matchable to
 their cards.
 
+### Restoring tabs
+
+After a relaunch Styr offers to reopen the tabs of the last session (`restoreTabs`: `ask` shows a
+banner, `always` restores without it, `never` saves and offers nothing). The layout is
+`~/.styr/terminal-tabs.json` (under `CONFIG_DIR`, so `STYR_HOME` moves it): machine-local state, so
+not a setting, and not in the index, which must be rebuildable from task files. Losing it only means
+nothing is offered. `host/terminalTabs.ts` owns it; the pure part (entries, the split of what can
+be restored now, skip reasons, banner text) is `core/terminalLayout.ts`.
+
+The file is written synchronously on each tab change — a session created, a session exited, or the
+renderer reporting a new order or active tab through `terminal:setLayout` — never on output and with
+no timer. A shell is saved where it is now (`TerminalRuntimeState.cwd`), an agent tab by task,
+workspace and provider. Remote sessions, `replay` tabs and Ask / fork chats are not saved.
+`before-quit` calls `freezeTerminalLayout()` _before_ `killAllSessions()`: exits and reports after
+that are ignored, so quitting never saves an empty layout, while a tab closed by hand is removed as
+usual.
+
+On start the renderer asks `terminal:pendingLayout` and again whenever the active workspace
+changes. The offer counts shells plus the agent tabs of the **active** workspace; another
+workspace's agent tabs stay pending (resume needs its workspace active) and are offered when it is
+switched to. Pending entries stay in the file, before the live tabs, until answered, so a crash
+before answering still offers them. **Restore** (`terminal:restoreLayout`) opens the entries one at
+a time in saved order, after the open tabs; **Dismiss** forgets the shells and the workspace's
+entries. A shell is created by `createSession` in the current `settings.shell`; an agent tab goes
+through `restoreAgent` in `core/sessionLifecycle.ts`: the launch gate, then a bare resume of
+`task.agentSession` — no prompt, no status move, no task-file write. Whatever cannot come back (a
+folder or task gone, no saved chat, a disabled provider, a missing CLI or repo) is skipped and
+listed in the banner; the others still restore. An unparseable file or another version is ignored
+and overwritten by the next save.
+
 ### Task activity panel
 
 A task session's terminal can show its task's activity log (`TerminalActivity.tsx`) floating over

@@ -43,6 +43,8 @@ import type {
   TerminalEngineAvailability,
   TerminalEngineDiagnostic,
   TerminalEngineEnvironment,
+  TabsOffer,
+  TabsRestoreResult,
   TerminalSessionInfo,
   TerminalOutput,
   TerminalRuntimeState,
@@ -329,6 +331,13 @@ const api = {
     resize: (id: string, cols: number, rows: number): void =>
       ipcRenderer.send('terminal:resize', id, cols, rows),
     kill: (id: string): Promise<void> => ipcRenderer.invoke('terminal:kill', id),
+    /** The tab order and the active tab, so the main process can save them for the next launch. */
+    setLayout: (ids: string[], activeId: string | null): void =>
+      ipcRenderer.send('terminal:setLayout', ids, activeId),
+    /** What the last session's tabs offer in the active workspace, or null when nothing waits. */
+    pendingLayout: (): Promise<TabsOffer | null> => ipcRenderer.invoke('terminal:pendingLayout'),
+    restoreLayout: (): Promise<TabsRestoreResult> => ipcRenderer.invoke('terminal:restoreLayout'),
+    dismissLayout: (): Promise<void> => ipcRenderer.invoke('terminal:dismissLayout'),
     onData: (handler: (payload: { id: string } & TerminalOutput) => void): (() => void) =>
       subscribe('terminal:data', handler as (...args: never[]) => void),
     onExit: (handler: (payload: { id: string; exitCode: number }) => void): (() => void) =>

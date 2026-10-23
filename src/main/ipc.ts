@@ -50,6 +50,8 @@ import { createTasksService } from '@host/tasksService.js'
 import { createWorklogService } from '@host/worklogService.js'
 import { createReviewService, diskReviewStore } from '@host/reviewService.js'
 import { listDirectories } from '@host/directories.js'
+import { createTerminalTabsService, diskTabsStore } from '@host/terminalTabs.js'
+import { listWorkspaces } from '@core/workspaces.js'
 import {
   createWorkspacesService,
   diskWorkspaceStore,
@@ -63,6 +65,8 @@ import {
   findSessionByTask,
   killSession,
   listSessions,
+  onTerminalCreated,
+  onTerminalExit,
   resizeSession,
   sessionBacklog,
   terminalRuntimeState,
@@ -189,6 +193,30 @@ const agentsService = createAgentsService({
   updateTray: (statuses, titles) => remoteRouter.localTrayChanged(statuses, titles),
   requestAutoRun: () => dispatchService.requestAutoRun()
 })
+
+/**
+ * The terminal tabs across a relaunch (`terminalTabs.ts`). A tab created or closed saves the layout;
+ * quitting freezes it first (`freezeTerminalLayout`), so killing the sessions saves nothing.
+ */
+const terminalTabs = createTerminalTabsService({
+  store: diskTabsStore,
+  settings: () => loadSettings(),
+  workspaceIds: () => listWorkspaces(loadSettings()).map((workspace) => workspace.id),
+  terminals: {
+    listSessions: () => listSessions().filter((session) => !session.host),
+    currentDirectory: (id) => terminalRuntimeState(id)?.cwd,
+    createShell: ({ cwd, title }) => createSession({ cwd, title, shell: loadSettings().shell })
+  },
+  agents: { restoreAgent: (taskId) => agentsService.restoreAgent(taskId) },
+  directoryExists: existsSync,
+  now: () => new Date().toISOString()
+})
+onTerminalCreated(() => terminalTabs.changed())
+onTerminalExit(() => terminalTabs.changed())
+
+export function freezeTerminalLayout(): void {
+  terminalTabs.freeze()
+}
 
 export function agentStatuses(): AgentStatus[] {
   return agentsService.agentStatuses()
@@ -538,7 +566,19 @@ export function registerIpcHandlers(): void {
   ipcMain.on('terminal:resize', (_event, id: string, cols: number, rows: number) =>
     resizeSession(id, cols, rows)
   )
-  ipcMain.handle('terminal:kill', (_event, id: string) => killSession(id))
+  ipcMain.handle('terminal:kill', (_event, id: string) => {
+    killSession(id)
+    terminalTabs.changed()
+  })
+  ipcMain.on('terminal:setLayout', (_event, ids: unknown, activeId: unknown) =>
+    terminalTabs.setLayout(
+      z.array(z.string()).max(500).catch([]).parse(ids),
+      typeof activeId === 'string' ? activeId : null
+    )
+  )
+  ipcMain.handle('terminal:pendingLayout', () => terminalTabs.offer())
+  ipcMain.handle('terminal:restoreLayout', () => terminalTabs.restore())
+  ipcMain.handle('terminal:dismissLayout', () => terminalTabs.dismiss())
   ipcMain.handle('terminal:list', () => listSessions())
   ipcMain.handle('terminal:backlog', (_event, id: string) => sessionBacklog(id))
   ipcMain.handle('terminal:runtimeState', (_event, id: string) => terminalRuntimeState(id))

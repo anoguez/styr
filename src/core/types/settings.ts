@@ -105,6 +105,11 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
  */
 export type WorktreeLocation = 'beside' | 'inside'
 
+/** `ask` offers the last session's tabs in a banner; `always` reopens them; `never` saves nothing. */
+export type RestoreTabsMode = 'ask' | 'always' | 'never'
+
+export const RESTORE_TABS_MODES: readonly RestoreTabsMode[] = ['ask', 'always', 'never']
+
 export interface Settings {
   /** Where the app keeps its own data. Workspaces live inside it; the default one is its root. */
   storageDir: string
@@ -142,6 +147,8 @@ export interface Settings {
   theme: ThemeSettings
   shortcuts: ShortcutBindings
   updates: UpdateSettings
+  /** Whether the terminal tabs of the last session are offered after a relaunch. */
+  restoreTabs: RestoreTabsMode
   experimental: ExperimentalSettings
   taskDefaults: TaskDefaults
   taskPresets: TaskPreset[]
@@ -156,6 +163,7 @@ export const GLOBAL_SETTING_KEYS = [
   'storageDir',
   'activeWorkspaceId',
   'updates',
+  'restoreTabs',
   'shortcuts',
   'experimental'
 ] as const satisfies readonly (keyof Settings)[]
