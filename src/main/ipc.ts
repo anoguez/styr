@@ -19,6 +19,7 @@ import {
   getTask,
   reorderTasks,
   setArchived,
+  answerQuestion,
   updateTask
 } from '@core/taskStore.js'
 import { fetchAndSettle, settleLandedTasks } from './landing.js'
@@ -107,6 +108,7 @@ const tasksService = createTasksService({
     addNote,
     reorderTasks,
     setArchived,
+    answerQuestion,
     deleteTask: (taskId) => {
       deleteTask(taskId)
       reviewService.forget(taskId)
@@ -116,6 +118,8 @@ const tasksService = createTasksService({
   },
   settings: () => loadSettings(),
   requestLanding: () => requestLanding(),
+  route: (taskId) => agentsService.reviewRoute(taskId),
+  deliver: (taskId, message) => agentsService.deliverReview(taskId, message),
   observeTasks,
   recordNotifyDuration,
   requestAutoRun: () => dispatchService.requestAutoRun(),
@@ -428,6 +432,9 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle('tasks:archive', (_event, id: string, archived: boolean) =>
     tasksService.archive(id, archived)
+  )
+  ipcMain.handle('tasks:answerQuestion', (_event, id: string, questionId: string, answer: string) =>
+    tasksService.answerQuestion(id, questionId, answer)
   )
   ipcMain.handle('tasks:delete', (_event, id: string) => tasksService.delete(id))
 

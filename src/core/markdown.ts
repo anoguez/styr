@@ -87,6 +87,66 @@ function normaliseBlockers(value: unknown): string[] {
   return [...new Set(ids)]
 }
 
+function textOf(value: unknown): string | undefined {
+  const text = typeof value === 'number' || typeof value === 'boolean' ? String(value) : value
+  return typeof text === 'string' && text.trim() ? text.trim() : undefined
+}
+
+function stampOf(value: unknown): string | undefined {
+  return value instanceof Date ? value.toISOString() : textOf(value)
+}
+
+/**
+ * A hand-written `questions:` list. A bare string is an open question; missing parts are filled in
+ * (next free `qN`, the file's `updatedAt`, `unknown`); an entry with no text, or one that is not a
+ * string or a map, is dropped. It never fails the file.
+ */
+function normaliseQuestions(value: unknown, fallbackAt: string): unknown[] {
+  const items = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value]
+  const used = new Set<string>()
+  for (const item of items) {
+    const id = item && typeof item === 'object' ? textOf((item as Record<string, unknown>).id) : ''
+    if (id) used.add(id)
+  }
+  let next = 1
+  const freeId = (): string => {
+    while (used.has(`q${next}`)) next++
+    const id = `q${next}`
+    used.add(id)
+    return id
+  }
+  const seen = new Set<string>()
+  const out: unknown[] = []
+  for (const item of items) {
+    const entry: Record<string, unknown> =
+      typeof item === 'string' || typeof item === 'number'
+        ? { text: item }
+        : item && typeof item === 'object' && !Array.isArray(item)
+          ? (item as Record<string, unknown>)
+          : {}
+    const text = textOf(entry.text)
+    if (!text) continue
+    let id = textOf(entry.id)
+    if (!id || seen.has(id)) id = freeId()
+    seen.add(id)
+    const answer = textOf(entry.answer)
+    out.push({
+      id,
+      askedAt: stampOf(entry.askedAt) ?? fallbackAt,
+      askedBy: textOf(entry.askedBy) ?? 'unknown',
+      text,
+      ...(answer
+        ? {
+            answer,
+            answeredAt: stampOf(entry.answeredAt) ?? fallbackAt,
+            answeredBy: textOf(entry.answeredBy) ?? 'owner'
+          }
+        : {})
+    })
+  }
+  return out
+}
+
 function tolerate(data: Record<string, unknown>): Record<string, unknown> {
   const out = { ...data }
   for (const field of TOKEN_FIELDS) {
@@ -96,6 +156,12 @@ function tolerate(data: Record<string, unknown>): Record<string, unknown> {
   if ('model' in out) out.model = normaliseModel(out.model)
   for (const field of TIMESTAMP_FIELDS) {
     if (out[field] instanceof Date) out[field] = out[field].toISOString()
+  }
+  if ('questions' in out) {
+    out.questions = normaliseQuestions(
+      out.questions,
+      stampOf(out.updatedAt) ?? new Date(0).toISOString()
+    )
   }
   return out
 }
@@ -129,6 +195,7 @@ export function serialiseTask(task: Task): string {
     order: task.order,
     ...(task.doneAt ? { doneAt: task.doneAt } : {}),
     ...(task.archivedAt ? { archivedAt: task.archivedAt } : {}),
+    ...(task.questions.length > 0 ? { questions: task.questions } : {}),
     createdAt: task.createdAt,
     updatedAt: task.updatedAt
   })

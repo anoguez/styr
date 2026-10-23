@@ -4,7 +4,18 @@ import { z } from 'zod'
 import { indexTasks, openBlockers } from '@core/blocking.js'
 import { pinWorkspace } from '@core/config.js'
 import { adapterFor, currentSources, runCommand, writableSource } from '@core/sources/index.js'
-import { addNote, createTask, deleteTask, getTask, listTasks, updateTask } from '@core/taskStore.js'
+import { openQuestions } from '@core/questions.js'
+import { requestReview, taskHandoff } from '@core/reviewRequest.js'
+import { MAX_SPLIT_CHILDREN, splitTask } from '@core/taskSplit.js'
+import {
+  addNote,
+  askQuestion,
+  createTask,
+  deleteTask,
+  getTask,
+  listTasks,
+  updateTask
+} from '@core/taskStore.js'
 import { TASK_ID_RE } from '@core/taskSchema.js'
 import { TASK_PRIORITIES, TASK_READINESS, TASK_STATUSES, type Task } from '@core/types.js'
 
@@ -39,6 +50,8 @@ function summarise(task: Task, open: string[] = blockedByOpen(task)): Record<str
     blockedByOpen: open,
     prUrl: task.prUrl,
     contextFiles: task.contextFiles,
+    questions: task.questions,
+    openQuestions: openQuestions(task).length,
     updatedAt: task.updatedAt,
     filePath: task.filePath
   }
@@ -88,13 +101,20 @@ server.registerTool(
   'get_task',
   {
     title: 'Get task',
-    description: 'Fetch one task including its full description and activity log.',
+    description:
+      'Fetch one task including its full description, activity log, questions and the latest ' +
+      'handoff (the `## Handoff` section, when there is one).',
     inputSchema: { id: z.string() }
   },
   async ({ id }) => {
     const task = getTask(id)
     return task
-      ? json({ ...task, blockedByOpen: blockedByOpen(task) })
+      ? json({
+          ...task,
+          blockedByOpen: blockedByOpen(task),
+          openQuestions: openQuestions(task).length,
+          handoff: taskHandoff(task) ?? null
+        })
       : json({ error: `Task ${id} not found` })
   }
 )
@@ -177,6 +197,87 @@ server.registerTool(
   async ({ id, status, note }) => {
     const task = updateTask(id, { status })
     return json(summarise(note ? addNote(task.id, AUTHOR, note) : task))
+  }
+)
+
+server.registerTool(
+  'split_task',
+  {
+    title: 'Split task',
+    description:
+      'Break a task that is too big for one change into smaller ones: creates the children in ' +
+      'Backlog (inheriting the repo, worktree, base branch, provider and project) and turns the ' +
+      'parent into a blocked umbrella that waits for all of them. Use `after` (0-based indexes of ' +
+      'earlier children in this call) to order the children; `blockedBy` is for existing tasks. ' +
+      'Invalid input writes nothing.',
+    inputSchema: {
+      id: z.string().describe('The task to split'),
+      children: z
+        .array(
+          z.object({
+            title: z.string().min(1),
+            description: z.string().optional(),
+            priority: z.enum(TASK_PRIORITIES).optional(),
+            tags: z.array(z.string()).optional(),
+            readiness: z.enum(TASK_READINESS).optional(),
+            after: z.array(z.number().int().min(0)).optional(),
+            blockedBy: blockedByInput
+          })
+        )
+        .min(1)
+        .max(MAX_SPLIT_CHILDREN)
+    }
+  },
+  async ({ id, children }) => {
+    const { parent, children: made } = splitTask(id, children, AUTHOR)
+    return json({ ...summarise(parent), children: made.map((child) => summarise(child)) })
+  }
+)
+
+server.registerTool(
+  'request_review',
+  {
+    title: 'Request review',
+    description:
+      'Hand the task to the owner for review: moves it to In Review with a handoff summary. ' +
+      'Prefer this to set_task_status in_review. Say what changed and how to check it; call it ' +
+      'again after changes were requested to replace the handoff.',
+    inputSchema: {
+      id: z.string(),
+      summary: z.object({
+        changed: z.string().trim().min(1).describe('What changed'),
+        why: z.string().optional(),
+        verify: z.string().trim().min(1).describe('How the owner can check it'),
+        openQuestions: z.string().optional(),
+        notes: z.string().optional()
+      }),
+      prUrl: z.string().optional().describe('The pull/merge request, if one is open')
+    }
+  },
+  async ({ id, summary, prUrl }) => {
+    const { task, openQuestions: open } = requestReview({ id, summary, prUrl, author: AUTHOR })
+    return json({ ...summarise(task), openQuestions: open })
+  }
+)
+
+server.registerTool(
+  'ask_owner',
+  {
+    title: 'Ask the owner',
+    description:
+      'Ask the owner a question you cannot decide yourself. It shows in their Inbox and the ' +
+      'answer is sent back to you. Carry on with whatever does not depend on it, or stop and say ' +
+      'you are waiting. Does not change the status.',
+    inputSchema: {
+      id: z.string(),
+      question: z.string().trim().min(1),
+      context: z.string().optional().describe('Background the owner needs to answer')
+    }
+  },
+  async ({ id, question, context }) => {
+    const text = context?.trim() ? `${question.trim()}\n\n${context.trim()}` : question
+    const { task, questionId } = askQuestion(id, AUTHOR, text)
+    return json({ questionId, openQuestions: openQuestions(task).length })
   }
 )
 

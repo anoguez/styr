@@ -5,18 +5,25 @@ import { useBoardAccess } from '../../lib/remoteStatus.js'
 import { FileIcon, PlusIcon } from '../icons.js'
 import { GHOST_BTN, RemoveButton } from './fields.js'
 import { PathBrowse } from '../PathBrowse.js'
+import { OpenQuestions } from './OpenQuestions.js'
+import type { AnswerResult, Task } from '@core/types.js'
 
 /** The task's markdown description and the files whose paths go into its prompt. */
 export function BriefTab({
   description,
   contextFiles,
   repoPath,
+  task,
+  onAnswered,
   onChange
 }: {
   description: string
   contextFiles: string[]
   /** Where the file picker opens. */
   repoPath: string
+  /** The saved task, for its open questions; none for a new one. */
+  task?: Task | null
+  onAnswered?: (result: AnswerResult) => void
   onChange: (changes: { description?: string; contextFiles?: string[] }) => void
 }): ReactNode {
   // Files dragged in from Finder or an editor anywhere on the tab attach like picked ones.
@@ -65,6 +72,7 @@ export function BriefTab({
         onChange={(event) => onChange({ description: event.target.value })}
         className="min-h-60 w-full flex-1 resize-none rounded-[10px] border border-edge bg-chrome px-3.5 py-3 font-mono text-[12px] leading-[1.65] text-ink outline-none placeholder:text-faint focus:border-accent"
       />
+      {task && onAnswered ? <OpenQuestions task={task} onAnswered={onAnswered} /> : null}
       <div
         className={`-m-2 flex flex-col gap-2 rounded-[10px] border border-dashed p-2 ${
           dragging ? 'border-accent bg-accent/10' : 'border-transparent'

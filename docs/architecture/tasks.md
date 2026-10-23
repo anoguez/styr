@@ -169,3 +169,45 @@ IPC) — it is deliberately not in `TaskPatch`. It is orthogonal to status, drop
 board, `isAgentArchived` and Orchestrate, and keeps the file. The Archive dialog (palette: "View
 archive") lists archived tasks and unarchives them. The age cap does not auto-archive, so the board
 never rewrites files on a timer.
+
+## MCP verbs
+
+Three intent-level tools on the MCP server (`src/mcp/index.ts`), each a thin call into `src/core/`
+that writes only through `taskStore`, and each with a file-only form an agent without the server
+(or a hand edit) produces. `boardProtocol` in `prompt.ts` names the tool first and the file edit as
+the fallback (`core/boardTools.ts`). `set_task_status` and `update_task` are unchanged.
+
+- **`split_task`** (`core/taskSplit.ts`). Validates everything first (parent exists, not Done or
+  archived; `after` indexes point at _earlier_ siblings; `blockedBy` ids exist and none waits on the
+  parent), so bad input writes nothing; then creates the children in order and turns the parent into a
+  **blocked umbrella**: `blockedBy` gains every child, `orchestrate: false` (Dispatch never picks it up,
+  before or after the children are Done) and a `## Split into` list. Children inherit the parent's
+  repo, worktree, base branch, provider, model, context files and orchestrate. A child create that
+  throws deletes the children made so far (best effort, not a transaction). The parent's status is left
+  alone; once its children are Done it is an ordinary unblocked task the owner closes. File-only form:
+  create the files and edit `blockedBy`.
+- **`request_review`** (`core/reviewRequest.ts`; not `handoff.ts`, which the renderer imports and
+  must stay node-free). Writes a replaceable `## Handoff` section, sets `in_review` (and `prUrl`) in one
+  `updateTask`, adds a note, and returns the open question count. `changed` and `verify` are required.
+  `getSection(description, 'Handoff')` (`core/sections.ts`, pure) reads the tool's section and a
+  hand-written one alike. Sections are `## ` lines matched case-insensitively and run to the next `## `;
+  headings inside code fences do not count.
+- **`ask_owner`** (`taskStore.askQuestion`). Questions are the frontmatter list `Task.questions`
+  (`id`, `askedAt`, `askedBy`, `text`, and `answer`/`answeredAt`/`answeredBy` once answered). They are
+  not in `TaskPatch`: they change only through `askQuestion` / `answerQuestion`, each with its note in
+  the same write, so `update_task` cannot clobber an answer. At most 20 are open. `markdown.ts`
+  normalises hand-written entries (a bare string is a question; ids, `askedAt` and `askedBy` are filled
+  in; entries with no text are dropped) and never fails the file. The index keeps them in a JSON column.
+
+**Inbox.** An open question is `kind: 'question'` in Needs you, ranked after `waiting` and before the
+rest. It outranks a _working_ agent — a deliberate change of "a working agent outranks everything" —
+so a question to the owner never hides under Running. A waiting agent still wins the kind. A Done or
+archived task is not listed; its questions stay in the file. `summariseInbox` counts `question`.
+
+**Answering.** `tasks:answerQuestion(taskId, questionId, answer)` → `taskWrites.answerQuestion`
+records the answer, then delivers it through the Request changes routes (`reviewRoute` /
+`deliverReview`): queued at the agent's next stop, now, or by resuming its chat. A task with no chat
+(`fresh`) is not launched; the answer is recorded and `buildPrompt`'s `## Questions for the owner`
+block shows it on the next launch. A failed delivery keeps the answer and reports `failed`; an answered
+question is refused, so it is never sent twice. The task's status is not moved. A hand-written
+`answer:` shows as answered with nothing delivered.

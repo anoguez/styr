@@ -80,6 +80,11 @@ export const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   'tasks:note': task,
   'tasks:reorder': tasks,
   'tasks:archive': task,
+  'tasks:answerQuestion': z.object({
+    task,
+    delivery: z.enum(['queued', 'now', 'resume', 'recorded', 'failed']),
+    error: z.string().max(REMOTE_LIMITS.message).optional()
+  }),
   'tasks:delete': ignored,
   'tasks:forgetSession': task,
   'tasks:removeWorktree': task.nullable(),

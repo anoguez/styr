@@ -95,6 +95,18 @@ export const activityEntrySchema = z.object({
   message: z.string()
 })
 
+export const taskQuestionSchema = z
+  .object({
+    id: z.string(),
+    askedAt: z.string(),
+    askedBy: z.string(),
+    text: z.string(),
+    answer: z.string().optional(),
+    answeredAt: z.string().optional(),
+    answeredBy: z.string().optional()
+  })
+  .strict()
+
 export const taskFrontmatterSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -120,6 +132,7 @@ export const taskFrontmatterSchema = z.object({
   order: z.number().default(0),
   doneAt: z.string().optional(),
   archivedAt: z.string().optional(),
+  questions: z.array(taskQuestionSchema).default([]),
   createdAt: z.string(),
   updatedAt: z.string()
 })

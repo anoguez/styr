@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { indexTasks, openBlockers } from '@core/blocking.js'
 import {
   AGENT_PROVIDER_SHORT_LABELS,
+  type AnswerResult,
   type Settings,
   type Task,
   type TaskPreset
@@ -33,6 +34,7 @@ export function TaskDialog({
   onClose,
   onLaunch,
   onResumeSession,
+  onAnswered,
   onShowChanges,
   presetId,
   onSavePresets
@@ -47,6 +49,8 @@ export function TaskDialog({
   onClose: () => void
   onLaunch: (taskId: string, templateId?: string, provider?: 'claude' | 'codex') => void
   onResumeSession: (taskId: string, sessionId: string) => void
+  /** An answer to one of the task's questions was saved and sent. */
+  onAnswered: (result: AnswerResult) => void
   onShowChanges: (task: Task) => void
 }): ReactNode {
   const startPreset = task ? undefined : settings.taskPresets.find((p) => p.id === presetId)
@@ -183,6 +187,8 @@ export function TaskDialog({
                   description={form.description}
                   contextFiles={form.contextFiles}
                   repoPath={form.repoPath}
+                  task={task ? (allTasks.find((other) => other.id === task.id) ?? task) : null}
+                  onAnswered={onAnswered}
                   onChange={patch}
                 />
               ) : null}
