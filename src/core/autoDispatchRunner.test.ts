@@ -8,7 +8,8 @@ import {
 import { reworkCappedMessage } from './autoDispatch.js'
 import { planOrchestration } from './orchestrate.js'
 import { launchPatch } from './sessionLifecycle.js'
-import type { AgentState, Task, TaskSessionRef } from './types.js'
+import type { AgentState } from './agentState.js'
+import type { Task, TaskSessionRef } from './types.js'
 
 function task(id: string, order = 0): Task {
   return {

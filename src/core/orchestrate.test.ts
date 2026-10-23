@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { shippedSettings } from './config.js'
 import { planOrchestration } from './orchestrate.js'
 import { buildPrompt } from './prompt.js'
-import type { AgentState, Task } from './types.js'
+import type { AgentState } from './agentState.js'
+import type { Task } from './types.js'
 
 function task(extra: Partial<Task> = {}): Task {
   return {
