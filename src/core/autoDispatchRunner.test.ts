@@ -8,7 +8,7 @@ import {
 import { reworkCappedMessage } from './autoDispatch.js'
 import { planOrchestration } from './orchestrate.js'
 import { launchPatch } from './sessionLifecycle.js'
-import type { Task, TaskSessionRef } from './types.js'
+import type { AgentState, Task, TaskSessionRef } from './types.js'
 
 function task(id: string, order = 0): Task {
   return {
@@ -41,6 +41,8 @@ function setup(
     beforePass?: () => void
     /** Sessions end as soon as they start, so a task can be started again. */
     sessionsEnd?: boolean
+    /** Agent state of every task launched so far (a fresh launch is `ready`, never `working`). */
+    launchedState?: AgentState
     /**
      * Launches and capped notes are written to the tasks as the real ports write them to the
      * files, so a second runner can be built over the same tasks.
@@ -76,7 +78,9 @@ function setup(
     snapshot: (skip) => ({
       plan: planOrchestration(shippedSettings(), tasks, {
         liveTaskIds: new Set(options.sessionsEnd ? [] : launched),
-        agents: new Map(),
+        agents: new Map(
+          options.launchedState ? launched.map((id) => [id, options.launchedState!]) : []
+        ),
         skip
       }),
       tasks
@@ -360,5 +364,19 @@ describe('createAutoDispatch', () => {
     const fresh = setup({ tasks: [...older, task('A')], clock: now })
     await pass(fresh)
     expect(fresh.launched).toEqual(['A'])
+  })
+
+  it('never launches past a lane limit while launched agents are still ready', async () => {
+    const t = setup({
+      tasks: [task('A'), task('B', 1), task('C', 2), task('D', 3), task('E', 4)],
+      sessionsEnd: true,
+      launchedState: 'ready'
+    })
+    for (let i = 0; i < 5; i += 1) {
+      t.runner.request()
+      await t.advance(AUTO_DEBOUNCE_MS)
+    }
+    // Implementation capacity is 2 in the shipped settings.
+    expect(t.launched).toEqual(['A', 'B'])
   })
 })
