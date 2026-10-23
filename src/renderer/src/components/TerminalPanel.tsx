@@ -161,6 +161,8 @@ export function TerminalPanel({
   onNewSession,
   onCloseSession,
   onCreateTask,
+  onLaunchTask,
+  onOpenTaskById,
   onAskReview,
   onAskFork,
   onOpenTask
@@ -187,6 +189,8 @@ export function TerminalPanel({
   onNewSession: (cwd?: string) => void
   onCloseSession: (id: string) => void
   onCreateTask: (request: TerminalTaskRequest) => Promise<string>
+  onLaunchTask: (taskId: string) => Promise<void>
+  onOpenTaskById: (taskId: string) => void
   onAskReview: (taskId: string) => Promise<void>
   onAskFork: (sessionId: string, question: string) => Promise<boolean>
   /** Open a task in the task dialog, from its activity panel. */
@@ -390,6 +394,8 @@ export function TerminalPanel({
                   onFullscreenChange={setSessionFullscreen}
                   onSplit={onNewSession}
                   onCreateTask={onCreateTask}
+                  onLaunchTask={onLaunchTask}
+                  onOpenTaskById={onOpenTaskById}
                   taskStatus={
                     session.taskId && session.workspaceId === workspaces.activeId
                       ? taskStates.get(session.taskId)?.status

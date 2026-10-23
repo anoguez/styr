@@ -343,6 +343,10 @@ export default function App(): ReactNode {
                         onReorder={terminals.reorder}
                         onNewSession={(cwd) => void newShell(cwd)}
                         onCreateTask={launcher.createTaskFromTerminal}
+                        onLaunchTask={(id) => launcher.launchAgent(id)}
+                        onOpenTaskById={(id) =>
+                          void window.api.tasks.get(id).then((task) => task && editTask(task))
+                        }
                         onCloseSession={(id) => void closeSession(id)}
                         onOpenTask={editTask}
                       />
