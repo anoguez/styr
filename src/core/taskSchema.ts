@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { AGENT_STATES } from './agentState.js'
 import {
   ANSI_COLOURS,
+  DEFAULT_AUTO_LIMITS,
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_TERMINAL_PALETTE,
@@ -194,6 +195,12 @@ export const orchestrationSchema = z.object({
   review: z.number().int().min(0).max(20)
 })
 
+export const autoDispatchLimitsSchema = z.object({
+  launchesPerHour: z.number().int().min(1).max(200),
+  failures: z.number().int().min(1).max(20),
+  reviews: z.number().int().min(1).max(20)
+})
+
 export const providerRoutingSchema = z.object({
   spec: z.enum(['claude', 'codex']).default('claude'),
   implement: z.enum(['claude', 'codex']).default('claude'),
@@ -275,6 +282,7 @@ export const settingsSchema = z.object({
   promptTemplates: z.array(promptTemplateSchema).default([]),
   promptRouting: promptRoutingSchema,
   orchestration: orchestrationSchema,
+  autoDispatchLimits: autoDispatchLimitsSchema.default(DEFAULT_AUTO_LIMITS),
   autoDispatch: z.boolean().default(false),
   autoDispatchSince: z.string().optional(),
   theme: themeSchema,

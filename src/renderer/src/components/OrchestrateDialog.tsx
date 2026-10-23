@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react'
 import {
-  AUTO_REWORK_LIMIT,
   ORCHESTRATION_LANES,
   ORCHESTRATION_LANE_LABELS,
   type AutoDispatchState,
@@ -11,6 +10,7 @@ import { formatAccelerator } from '@core/shortcuts.js'
 
 export function OrchestrateDialog({
   summary,
+  reviewLimit,
   auto,
   remoteHost,
   onAutoStop,
@@ -18,6 +18,8 @@ export function OrchestrateDialog({
   onClose
 }: {
   summary: OrchestrationSummary
+  /** The workspace's failed-review cap (`autoDispatchLimits.reviews`). */
+  reviewLimit: number
   auto: AutoDispatchState
   /** Set for a remote workspace: Auto-run runs on that host, for the workspace it shows. */
   remoteHost?: string
@@ -48,7 +50,7 @@ export function OrchestrateDialog({
       ? `${summary.missingWorkingDir} skipped — no working directory`
       : '',
     summary.reworkHeld.length > 0
-      ? `${summary.reworkHeld.join(', ')} failed review ${AUTO_REWORK_LIMIT} times — Auto-run leaves ${summary.reworkHeld.length === 1 ? 'it' : 'them'} to you; this run starts ${summary.reworkHeld.length === 1 ? 'it' : 'them'} anyway`
+      ? `${summary.reworkHeld.join(', ')} failed review ${reviewLimit} times — Auto-run leaves ${summary.reworkHeld.length === 1 ? 'it' : 'them'} to you; this run starts ${summary.reworkHeld.length === 1 ? 'it' : 'them'} anyway`
       : ''
   ].filter(Boolean)
 

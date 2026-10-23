@@ -1,7 +1,12 @@
-import type { AutoDispatchPause, AutoDispatchState, OrchestrationLane, Task } from './types.js'
+import type {
+  AutoDispatchLimits,
+  AutoDispatchPause,
+  AutoDispatchState,
+  OrchestrationLane,
+  Task
+} from './types.js'
 import type { OrchestrationPlan } from './orchestrate.js'
 import {
-  AUTO_FAILURE_LIMIT,
   AUTO_LAUNCH_WINDOW_MS,
   autoLaunchTimes,
   decideAutoRun,
@@ -21,6 +26,8 @@ export interface AutoDispatchPorts {
   workspaceId(): string
   /** When Auto-run was last switched on in the active workspace (`Settings.autoDispatchSince`). */
   since(): string | undefined
+  /** The active workspace's safety limits (`Settings.autoDispatchLimits`), read once per pass. */
+  limits(): AutoDispatchLimits
   /**
    * Runs before each pass reads the board: the fetch that lets a merged PR land first. Bounded and
    * best-effort — it resolves (never rejects) whether or not the remote answered.
@@ -31,8 +38,8 @@ export interface AutoDispatchPorts {
   launch(task: Task, lane: OrchestrationLane): Promise<void>
   /** A launch failed; the task is not retried until it changes state. */
   noteFailure(task: Task, error: unknown): void
-  /** A task failed review `AUTO_REWORK_LIMIT` times; Auto-run no longer starts it. */
-  reworkCapped(task: Task): void
+  /** A task failed review `AutoDispatchLimits.reviews` times; Auto-run no longer starts it. */
+  reworkCapped(task: Task, limit: number): void
   /** Auto-run switched itself off. */
   paused(reason: AutoDispatchPause): void
   stateChanged(state: AutoDispatchState): void
@@ -124,19 +131,21 @@ export function createAutoDispatch(ports: AutoDispatchPorts): AutoDispatch {
       // A merged PR moves its task to Done here, so what it blocked is in this pass's plan.
       await ports.beforePass()
       if (!ports.enabled()) return
+      // One read for the whole pass: a limit changed mid-pass applies from the next one.
+      const limits = ports.limits()
       const workspaceId = ports.workspaceId()
       const now = ports.now()
       // Task states are read once, so the memory is pruned against the same view the plan sees.
       const first = ports.snapshot(new Set())
       const since = ports.since()
-      held = reworkHeld(first.tasks, since)
+      held = reworkHeld(first.tasks, since, limits.reviews)
       heldIn = workspaceId
       for (const task of first.tasks) {
-        const review = held.has(task.id) ? unnotedCap(task, since) : undefined
+        const review = held.has(task.id) ? unnotedCap(task, since, limits.reviews) : undefined
         const key = `${memoryKey(workspaceId, task.id)}@${review?.startedAt}`
         if (!review || notified.has(key)) continue
         notified.add(key)
-        ports.reworkCapped(task)
+        ports.reworkCapped(task, limits.reviews)
       }
       const pruned = pruneMemory(first.tasks, workspaceId, memory)
       const guarded = first.tasks.filter(guardedByHistory).map((task) => task.id)
@@ -150,7 +159,8 @@ export function createAutoDispatch(ports: AutoDispatchPorts): AutoDispatch {
         workspaceId,
         memory: pruned.memory,
         history: past,
-        now
+        now,
+        limit: limits.launchesPerHour
       })
       memory = decision.memory
       for (const { task, lane } of decision.launch) {
@@ -164,7 +174,7 @@ export function createAutoDispatch(ports: AutoDispatchPorts): AutoDispatch {
         } catch (error) {
           failures += 1
           ports.noteFailure(task, error)
-          if (failures >= AUTO_FAILURE_LIMIT) {
+          if (failures >= limits.failures) {
             failures = 0
             return stopBecause('failures')
           }

@@ -4,6 +4,7 @@ import { defaultShell } from './platformShell.js'
 import { NOTE_TOOL, noteFallback } from './activityNote.js'
 import { REVIEW_TOOL } from './boardTools.js'
 import {
+  DEFAULT_AUTO_LIMITS,
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_TASK_PRESETS,
@@ -137,6 +138,7 @@ export function shippedSettings(): Settings {
       { id: 'followup', name: 'Follow up', template: FOLLOWUP_TEMPLATE }
     ],
     orchestration: { spec: 1, implement: 2, review: 1 },
+    autoDispatchLimits: { ...DEFAULT_AUTO_LIMITS },
     autoDispatch: false,
     updates: { checkAutomatically: true },
     restoreTabs: 'ask',

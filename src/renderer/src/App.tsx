@@ -424,6 +424,7 @@ export default function App(): ReactNode {
             {shell.confirmDispatch && orchestration ? (
               <OrchestrateDialog
                 summary={orchestration}
+                reviewLimit={settings.autoDispatchLimits.reviews}
                 auto={dispatchRun.auto}
                 remoteHost={access.remote?.host}
                 onAutoStop={() => setAutoOn(false)}
