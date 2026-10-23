@@ -9,6 +9,8 @@ files:
   # `styr serve` ships as its own bundle for the remote machine (docs/architecture/remote.md).
   - '!out/server/**'
   - package.json
+  # Read by the post-update "What's new" dialog, so it works offline (docs/architecture/releases.md).
+  - CHANGELOG.md
 # The OFL requires the licence to travel with the bundled wordmark font.
 extraResources:
   - from: node_modules/@fontsource/unbounded/LICENSE

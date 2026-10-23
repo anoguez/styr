@@ -274,6 +274,13 @@ a component.
 The title bar is `components/header/`: `AppHeader` lays out three slots and mirrors them off macOS,
 filled with `BrandMark`, `WorkspaceSwitcher`, `ViewTabs` and `DispatchButton`.
 
+**What's new.** `WhatsNewDialog` (`shell.whatsNew`, `WhatsNewRequest`) opens from four places:
+`useWhatsNewOnLaunch` once after a packaged build first runs a newer version (it waits until no other
+modal is open), the palette's "What's new in x" (packaged builds only), the title-bar version
+(Settings → Updates while an update is pending), and, in Incoming mode, the status bar's "Restart to
+update" when release notes were fetched, plus a button in Settings → Updates. Rules in
+`docs/architecture/releases.md`.
+
 `TaskDialog` is the same shape: it holds the form and composes `components/task/` (`TaskHeader` with the status pill, the
 tabs in `TaskTabs`/`BriefTab`, `TaskSidebar` with its Properties, Agent and Workspace groups, `TaskFooter`). It follows the Claude Design file "Styr Task Dialog v3". Its rules are in
 `lib/taskForm.ts`. Context files can be dropped anywhere on the Brief tab as well as picked with

@@ -53,11 +53,13 @@ export function AppHeader({
 export function BrandMark({
   appInfo,
   update,
-  onOpenUpdates
+  onOpenUpdates,
+  onOpenWhatsNew
 }: {
   appInfo: AppInfo | null
   update: UpdateState | null
   onOpenUpdates: () => void
+  onOpenWhatsNew: () => void
 }): ReactNode {
   const newVersion =
     update?.kind === 'ready' || update?.kind === 'downloading' ? update.version : undefined
@@ -101,9 +103,11 @@ export function BrandMark({
           title={
             newVersion
               ? `Styr ${newVersion} is ${update?.kind === 'ready' ? 'ready to install' : 'downloading'} — open Settings`
-              : 'Updates'
+              : appInfo.isPackaged
+                ? `What's new in ${appInfo.version}`
+                : 'Updates'
           }
-          onClick={onOpenUpdates}
+          onClick={newVersion || !appInfo.isPackaged ? onOpenUpdates : onOpenWhatsNew}
         >
           v{appInfo.version}
         </button>

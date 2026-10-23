@@ -1,9 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net } from 'electron'
 // electron-updater defines `autoUpdater` with a getter, which Node's ESM loader cannot see as a
 // named export of a CommonJS module, so it has to come off the default export.
 import electronUpdater from 'electron-updater'
 import { loadSettings } from '@core/settingsStore.js'
 import type { UpdateState } from '@core/types.js'
+import { createReleaseNotes } from './releaseNotes.js'
 import { listSessions } from './terminal/ptyManager.js'
 
 const { autoUpdater } = electronUpdater
@@ -14,6 +15,7 @@ const LAUNCH_DELAY_MS = 5_000
 const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 let state: UpdateState = { kind: 'unsupported' }
+const releaseNotes = createReleaseNotes((url, init) => net.fetch(url, init))
 
 function setState(next: UpdateState): void {
   state = next
@@ -89,6 +91,10 @@ export function initUpdater(): void {
     return state
   })
   ipcMain.handle('updates:install', () => install())
+  // Only the cached body: the fetch runs once a version is discovered and never blocks the state.
+  ipcMain.handle('updates:notes', (_event, version: string) =>
+    typeof version === 'string' ? releaseNotes.get(version) : null
+  )
 
   // A dev build has no update feed and must never replace itself.
   if (!app.isPackaged) return
@@ -104,6 +110,7 @@ export function initUpdater(): void {
   )
   autoUpdater.on('update-available', (info) => {
     pendingVersion = info.version
+    void releaseNotes.load(info.version)
     setState({ kind: 'downloading', version: info.version, percent: 0 })
   })
   autoUpdater.on('download-progress', (progress) =>
@@ -113,7 +120,15 @@ export function initUpdater(): void {
       percent: Math.round(progress.percent)
     })
   )
-  autoUpdater.on('update-downloaded', (info) => setState({ kind: 'ready', version: info.version }))
+  autoUpdater.on('update-downloaded', (info) => {
+    // The state goes first; the notes follow best-effort. Sending the state again once they have
+    // settled tells the renderer to ask for them.
+    setState({ kind: 'ready', version: info.version })
+    void releaseNotes.load(info.version).then(() => {
+      for (const window of BrowserWindow.getAllWindows())
+        window.webContents.send('updates:state', state)
+    })
+  })
   autoUpdater.on('error', (error) => {
     if (state.kind === 'ready') return
     setState(

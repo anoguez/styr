@@ -1,4 +1,5 @@
 import { existsSync, readdirSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { execFile, spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -457,6 +458,13 @@ export function registerIpcHandlers(): void {
     })
   )
   ipcMain.handle('diagnostics:stop', () => stopSampling())
+  ipcMain.handle('app:changelog', async () => {
+    try {
+      return await readFile(join(app.getAppPath(), 'CHANGELOG.md'), 'utf8')
+    } catch {
+      return null
+    }
+  })
   ipcMain.handle('app:info', () => ({ isPackaged: app.isPackaged, version: app.getVersion() }))
   ipcMain.on('app:titleBarColors', (event, background: string, symbols: string) => {
     // macOS draws traffic lights, not an overlay; Windows and Linux both use the overlay.

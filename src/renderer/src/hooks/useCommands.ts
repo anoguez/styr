@@ -122,7 +122,8 @@ export function useCommands({
     activeWorkspaceId,
     workspaceNames,
     terminalOpen,
-    agentsOpen
+    agentsOpen,
+    whatsNewVersion
   } = palette
   const { switchWorkspace, archiveTask, launchAgent, activateTask } = actions
   const entries = useMemo(
@@ -143,7 +144,8 @@ export function useCommands({
           workspaceNames,
           terminalOpen,
           agentsOpen,
-          autoRunOn
+          autoRunOn,
+          whatsNewVersion
         },
         {
           dispatch,
@@ -172,6 +174,7 @@ export function useCommands({
       terminalOpen,
       agentsOpen,
       autoRunOn,
+      whatsNewVersion,
       dispatch,
       runCommand,
       switchWorkspace,
