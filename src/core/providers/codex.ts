@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import type { ShellSyntax } from '../shell.js'
 import type { Settings } from '../types.js'
 import type { AgentProvider, TranscriptUsage, TranscriptUsageReader } from './types.js'
@@ -20,6 +20,125 @@ function sessionFiles(path: string): string[] {
 
 export function codexTranscript(id: string, root = homedir()): string | undefined {
   return sessionFiles(sessionDirectory(root)).find((file) => file.includes(id))
+}
+
+/** A rollout's own thread id and the thread that started it, from its `session_meta` line. */
+interface RolloutThread {
+  id?: string
+  parent?: string
+}
+
+/**
+ * Each rollout's thread, by file. A `session_meta` line is written once and never changes, so a file
+ * is read for it at most once per process — once its first line is complete.
+ */
+const rolloutThreads = new Map<string, RolloutThread | null>()
+
+/** The first line of `file`, or undefined while it is still being written. */
+function firstLine(file: string): string | undefined {
+  const chunk = Buffer.alloc(64 * 1024)
+  const parts: Buffer[] = []
+  const descriptor = openSync(file, 'r')
+  try {
+    for (let offset = 0; ;) {
+      const got = readSync(descriptor, chunk, 0, chunk.length, offset)
+      if (got === 0) return undefined
+      const end = chunk.subarray(0, got).indexOf(0x0a)
+      if (end >= 0) {
+        parts.push(Buffer.from(chunk.subarray(0, end)))
+        return Buffer.concat(parts).toString('utf8')
+      }
+      parts.push(Buffer.from(chunk.subarray(0, got)))
+      offset += got
+    }
+  } finally {
+    closeSync(descriptor)
+  }
+}
+
+function rolloutThread(file: string): RolloutThread | null {
+  const known = rolloutThreads.get(file)
+  if (known !== undefined) return known
+  let line: string | undefined
+  try {
+    line = firstLine(file)
+  } catch {
+    return null
+  }
+  if (line === undefined) return null
+  let thread: RolloutThread | null = null
+  try {
+    const record = JSON.parse(line) as {
+      type?: string
+      payload?: { id?: string; parent_thread_id?: string }
+    }
+    if (record.type === 'session_meta')
+      thread = { id: record.payload?.id, parent: record.payload?.parent_thread_id }
+  } catch {
+    // Not a rollout; never one later either.
+  }
+  rolloutThreads.set(file, thread)
+  return thread
+}
+
+function sortedEntries(dir: string): string[] {
+  try {
+    return readdirSync(dir).sort()
+  } catch {
+    return []
+  }
+}
+
+/**
+ * The rollouts in the date folders (`YYYY/MM/DD`) from `from`'s onward; all of them when `from`
+ * is not dated.
+ */
+function rolloutsFrom(sessions: string, from: readonly string[]): string[] {
+  const files: string[] = []
+  const walk = (dir: string, depth: number, after: boolean): void => {
+    for (const name of sortedEntries(dir)) {
+      const path = join(dir, name)
+      if (depth === 3) {
+        if (name.endsWith('.jsonl')) files.push(path)
+        continue
+      }
+      const bound = from[depth]
+      if (!after && bound !== undefined && name < bound) continue
+      walk(path, depth + 1, after || bound === undefined || name > bound)
+    }
+  }
+  walk(sessions, 0, false)
+  return files
+}
+
+/**
+ * The child threads a Codex thread started, and theirs: rollouts whose `session_meta` names it (or
+ * one of them) as `parent_thread_id` — guardian reviews and spawned agents alike. A child never
+ * starts before its parent, so only the date folders from the parent rollout's onward are walked.
+ */
+export function codexSubagentTranscripts(
+  sessionId: string,
+  transcript: string,
+  root = homedir()
+): string[] {
+  const sessions = sessionDirectory(root)
+  const parts = relative(sessions, transcript).split(sep)
+  const dated = parts.length === 4 && parts.slice(0, 3).every((part) => /^\d+$/.test(part))
+  const candidates = rolloutsFrom(sessions, dated ? parts.slice(0, 3) : [])
+    .filter((file) => file !== transcript)
+    .map((file) => ({ file, thread: rolloutThread(file) }))
+  const threads = new Set([sessionId])
+  const children = new Set<string>()
+  for (let grew = true; grew;) {
+    grew = false
+    for (const { file, thread } of candidates) {
+      if (children.has(file) || !thread?.parent || !threads.has(thread.parent)) continue
+      children.add(file)
+      if (thread.id) threads.add(thread.id)
+      grew = true
+    }
+  }
+  return candidates.map(({ file }) => file).filter((file) => children.has(file))
 }
 
 interface CodexTokenCount {
@@ -121,6 +240,7 @@ export const codexProvider: AgentProvider = {
   },
   sessionExists: (id, root) => codexTranscript(id, root) !== undefined,
   transcriptPath: codexTranscript,
+  subagentTranscripts: codexSubagentTranscripts,
   transcriptUsageReader: codexUsageReader,
   sessionTime: (id, root) => {
     const file = codexTranscript(id, root)

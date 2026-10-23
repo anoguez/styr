@@ -390,6 +390,15 @@ like the Inbox:
   already seen in an earlier session of the task (a fork's copied history) is not counted again.
   Tasks Done before the span are not read. `worklog:load` runs it on demand only, yielding between
   tasks — never from `notifyTasksChanged`.
+- A session's tokens include its subagents'. `AgentProvider.subagentTranscripts` lists their
+  transcripts again on every load (more appear while the session runs), and each is read the same
+  incremental way with its own reader, keyed by its real path so a symlinked one and its target are
+  parsed once; their calls count under the session that started them, on the days they ran. Claude
+  Code keeps them in `<session-id>/subagents/agent-*.jsonl` beside the session's transcript (the
+  Agent tool's `toolUseResult.usage` summary in the main transcript is not counted). Codex child
+  threads (guardian reviews, spawned agents, and theirs) are separate rollouts found by the
+  `parent_thread_id` in their first `session_meta` line; only the date folders from the parent's
+  onward are walked, and each file's first line is read once per process.
 - Tokens are input + output + cache writes; cache reads are left out, or every long conversation
   would read as millions of tokens. Claude Code writes one assistant message as several records
   sharing a `message.id`, so a message counts once. Codex reports running totals in `token_count`
