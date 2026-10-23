@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.39.0](https://github.com/anoguez/styr/compare/v0.38.0...v0.39.0) (2026-10-23)
+
+
+### Features
+
+* archive Ask agent tasks when their session ends ([#213](https://github.com/anoguez/styr/issues/213)) ([905191c](https://github.com/anoguez/styr/commit/905191c606a79cfae55329f17e742105657f07b6))
+* Auto-run safety limits as workspace settings ([#209](https://github.com/anoguez/styr/issues/209)) ([896926f](https://github.com/anoguez/styr/commit/896926f26d424a7e9d6d45175b58a9de2c0040a0))
+* detect whether the Styr MCP server is set up for each provider ([#210](https://github.com/anoguez/styr/issues/210)) ([793659e](https://github.com/anoguez/styr/commit/793659e9c8afd04d04b7ee1a660cbbcc198c7c26))
+* Fix with agent sets the repo from the command's directory and offers Launch ([#212](https://github.com/anoguez/styr/issues/212)) ([c606d56](https://github.com/anoguez/styr/commit/c606d564175f8cd0666cd54f504d83fffa30751b))
+* What's new after an update and in the update prompt ([#211](https://github.com/anoguez/styr/issues/211)) ([919055f](https://github.com/anoguez/styr/commit/919055f1c10108799e829a6fa83e3b59045f1373))
+
+
+### Bug Fixes
+
+* align the header to the left in macOS full screen ([#206](https://github.com/anoguez/styr/issues/206)) ([ae6c3e9](https://github.com/anoguez/styr/commit/ae6c3e9397e62fc43795187f55e4d6d0d62b611e))
+* unpack the Styr Terminal tarball with relative paths so Windows Git Bash tar works ([#205](https://github.com/anoguez/styr/issues/205)) ([4a153e5](https://github.com/anoguez/styr/commit/4a153e5540ac4d09bc2b457ac34d0d20ddb3a074))
+
 ## [0.38.0](https://github.com/anoguez/styr/compare/v0.37.2...v0.38.0) (2026-10-23)
 
 
