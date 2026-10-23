@@ -124,7 +124,9 @@ async function main() {
   try {
     const archive = join(work, 'package.tgz')
     writeFileSync(archive, tarball)
-    const untar = spawnSync('tar', ['-xzf', archive, '-C', work], { stdio: 'inherit' })
+    // Relative paths, run from `work`: on Windows the `tar` first on PATH can be Git Bash's GNU tar,
+    // which reads the `C:` of an absolute path as a remote host ("Cannot connect to C").
+    const untar = spawnSync('tar', ['-xzf', 'package.tgz'], { cwd: work, stdio: 'inherit' })
     if (untar.status !== 0) throw new Error('could not unpack the tarball')
     checkPackage(join(work, 'package'), lock, pin.binary)
     keepOnlyBinary(join(work, 'package'), pin.binary)
