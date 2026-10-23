@@ -129,6 +129,7 @@ export function createDispatchService(ports: DispatchServicePorts) {
     setEnabled: writeAutoDispatchFlag,
     workspaceId: () => settings.load().activeWorkspaceId,
     since: () => settings.load().autoDispatchSince,
+    limits: () => settings.load().autoDispatchLimits,
     beforePass: checkForMergedWorkBriefly,
     snapshot: (skip) => ({ plan: buildPlan(skip), tasks: ports.tasks.query() }),
     launch: async (task, lane) => {
@@ -143,8 +144,8 @@ export function createDispatchService(ports: DispatchServicePorts) {
         // The task may have been deleted meanwhile; there is nothing to note it on.
       }
     },
-    reworkCapped: (task) => {
-      const message = reworkCappedMessage(task.id)
+    reworkCapped: (task, limit) => {
+      const message = reworkCappedMessage(task.id, limit)
       try {
         ports.tasks.addNote(
           task.id,

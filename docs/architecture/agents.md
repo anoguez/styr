@@ -331,13 +331,18 @@ wired in `src/host/dispatchService.ts`); the rules are pure in `core/autoDispatc
   `workspace:task → lane|status|readiness` in memory, for what leaves no entry (a failed launch, the
   moment before the launch is written). `pruneMemory` runs _before_ the plan is built and both go in
   its `skip` set: left in, a guarded task takes the lane's slot and starves the rest.
-- **Breaker.** `AUTO_LAUNCH_LIMIT` per rolling hour per workspace, and `AUTO_FAILURE_LIMIT`
+- **Limits.** The three limits are the workspace setting `autoDispatchLimits`
+  (`launchesPerHour` 20, `failures` 3, `reviews` 3; ranges 1-200, 1-20, 1-20, no "no limit"
+  value), edited in Settings → Dispatch. The runner reads them through its `limits()` port once at
+  the start of each pass, so a change applies from the next pass and, because the hourly count
+  and the rework count are derived from the task files, to work already there.
+- **Breaker.** `launchesPerHour` per rolling hour per workspace, and `failures`
   consecutive failed launches, switch Auto-run off with a notification. A runner's first pass in a
   workspace starts the hour's count from the `dispatch` entries (`autoLaunchTimes`).
 - **Rework cap.** `reworkBounces` (`core/autoDispatch.ts`) walks the task's Auto-run reviews since
   `autoDispatchSince`, newest first: a `sentBack` review, or the current review of a task back in
   Backlog, is a bounce; the first review that is neither passed and ends the count. At
-  `AUTO_REWORK_LIMIT` (3) the task joins the plan's `skip` set (`reworkHeld`) and `reworkCapped`
+  `reviews` (3) the task joins the plan's `skip` set (`reworkHeld`) and `reworkCapped`
   notifies and notes the task ("TASK-x failed review 3 times; it needs you"). That note, dated after
   the newest bounce, is how a later pass or a relaunched runner knows it was told (`unnotedCap`).
   Manual Dispatch and launches still start it — the Dispatch dialog warns
@@ -364,7 +369,7 @@ wired in `src/host/dispatchService.ts`); the rules are pure in `core/autoDispatc
   chip (`dispatchingIds`, fed by manual runs and `orchestrate:autoStarted`) until the agent idles.
 - Auto-launched sessions reach the renderer through `orchestrate:autoStarted` (it adopts them like a
   manual launch). The tray can start and stop Auto-run too (stopping still asks, in the window; `ui.md`, Menu
-  bar). Not built: a Settings pane control.
+  bar). The switch itself stays in the Dispatch dialog and the tray; Settings → Dispatch holds the limits.
 
 ## Prompt routing
 

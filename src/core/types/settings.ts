@@ -1,6 +1,7 @@
 import type { SourceConfig } from '../sources/types.js'
 import type { ThemeSettings } from '../types.js'
 import type {
+  AutoDispatchLimits,
   OrchestrationCapacity,
   OrchestrationLane,
   PromptRouting,
@@ -139,6 +140,8 @@ export interface Settings {
   promptTemplates: PromptTemplate[]
   promptRouting: PromptRouting
   orchestration: OrchestrationCapacity
+  /** Auto-run's safety limits; a change applies from the next pass. */
+  autoDispatchLimits: AutoDispatchLimits
   /** Auto-run: keep starting eligible work as slots free up. Off until the user turns it on. */
   autoDispatch: boolean
   /**
@@ -193,6 +196,7 @@ export const WORKSPACE_SETTING_KEYS = [
   'promptTemplates',
   'promptRouting',
   'orchestration',
+  'autoDispatchLimits',
   'autoDispatch',
   'autoDispatchSince',
   'theme',

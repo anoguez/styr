@@ -6,6 +6,7 @@ import {
   AUTO_STARTUP_GRACE_MS
 } from './autoDispatchRunner.js'
 import { reworkCappedMessage } from './autoDispatch.js'
+import { DEFAULT_AUTO_LIMITS, type AutoDispatchLimits } from './types.js'
 import { planOrchestration } from './orchestrate.js'
 import { launchPatch } from './sessionLifecycle.js'
 import type { AgentState } from './agentState.js'
@@ -38,6 +39,8 @@ function setup(
     tasks?: Task[]
     enabled?: boolean
     failLaunch?: boolean
+    /** Launches of these tasks fail. */
+    failIds?: string[]
     onLaunch?: () => void
     beforePass?: () => void
     /** Sessions end as soon as they start, so a task can be started again. */
@@ -52,12 +55,17 @@ function setup(
     /** `Settings.autoDispatchSince`. */
     since?: string
     clock?: number
+    /** `Settings.autoDispatchLimits`, per workspace; changeable between passes. */
+    limits?: AutoDispatchLimits
+    onLimitsRead?: () => void
   } = {}
 ) {
   let clock = options.clock ?? 0
   let since = options.since
   let enabled = options.enabled ?? true
   let workspace = 'w'
+  let limits = options.limits ?? DEFAULT_AUTO_LIMITS
+  let limitReads = 0
   const timers: { at: number; run: () => void; id: number }[] = []
   let nextId = 0
   const launched: string[] = []
@@ -65,6 +73,7 @@ function setup(
   const states: unknown[] = []
   const notes: string[] = []
   const capped: string[] = []
+  const cappedAt: number[] = []
   const calls: string[] = []
   const tasks = options.tasks ?? [task('A'), task('B', 1), task('C', 2)]
   const runner = createAutoDispatch({
@@ -72,6 +81,12 @@ function setup(
     setEnabled: (on) => (enabled = on),
     workspaceId: () => workspace,
     since: () => since,
+    limits: () => {
+      limitReads += 1
+      const read = limits
+      options.onLimitsRead?.()
+      return read
+    },
     beforePass: async () => {
       calls.push('beforePass')
       options.beforePass?.()
@@ -87,7 +102,7 @@ function setup(
       tasks
     }),
     launch: async (t, lane) => {
-      if (options.failLaunch) throw new Error('boom')
+      if (options.failLaunch || options.failIds?.includes(t.id)) throw new Error('boom')
       calls.push(`launch ${t.id} ${lane}`)
       launched.push(t.id)
       if (options.writeFiles) {
@@ -108,13 +123,14 @@ function setup(
       options.onLaunch?.()
     },
     noteFailure: (t) => notes.push(t.id),
-    reworkCapped: (t) => {
+    reworkCapped: (t, limit) => {
       capped.push(t.id)
+      cappedAt.push(limit)
       if (options.writeFiles) {
         const note = {
           at: new Date(clock).toISOString(),
           author: 'styr',
-          message: reworkCappedMessage(t.id)
+          message: reworkCappedMessage(t.id, limit)
         }
         t.activity = [...t.activity, note]
       }
@@ -150,6 +166,7 @@ function setup(
     states,
     notes,
     capped,
+    cappedAt,
     calls,
     tasks,
     timers,
@@ -160,7 +177,9 @@ function setup(
       since = new Date(clock).toISOString()
       runner.enabledChanged()
     },
-    setWorkspace: (id: string) => (workspace = id)
+    setWorkspace: (id: string) => (workspace = id),
+    setLimits: (next: AutoDispatchLimits) => (limits = next),
+    limitReads: () => limitReads
   }
 }
 
@@ -379,5 +398,139 @@ describe('createAutoDispatch', () => {
     }
     // Implementation capacity is 2 in the shipped settings.
     expect(t.launched).toEqual(['A', 'B'])
+  })
+
+  describe('limits', () => {
+    const limits = (extra: Partial<AutoDispatchLimits>): AutoDispatchLimits => ({
+      ...DEFAULT_AUTO_LIMITS,
+      ...extra
+    })
+
+    // Two implementers and a reviewer fit the shipped capacity: three eligible tasks.
+    const three = (): Task[] => [
+      task('A'),
+      task('B', 1),
+      { ...task('C', 2), status: 'in_review' } as Task
+    ]
+
+    it('does not start the third eligible task at 2 an hour and pauses with `limit`', async () => {
+      const t = setup({ tasks: three(), limits: limits({ launchesPerHour: 2 }) })
+      await pass(t)
+      expect(t.launched).toHaveLength(2)
+      expect(t.paused).toEqual(['limit'])
+    })
+
+    it('starts all three at the default', async () => {
+      const t = setup({ tasks: three() })
+      await pass(t)
+      expect(t.launched).toHaveLength(3)
+      expect(t.paused).toEqual([])
+    })
+
+    it('pauses with `failures` after the configured consecutive failures', async () => {
+      const t = setup({ failLaunch: true, limits: limits({ failures: 2 }) })
+      await pass(t)
+      expect(t.notes).toEqual(['A', 'B'])
+      expect(t.paused).toEqual(['failures'])
+    })
+
+    it('a success in between resets the failure count', async () => {
+      // Fail A, succeed B, fail C: never two in a row.
+      const t = setup({
+        tasks: [task('A'), task('B', 1), task('C', 2)],
+        limits: limits({ failures: 2 }),
+        failIds: ['A', 'C']
+      })
+      await pass(t)
+      await pass(t)
+      expect(t.notes).toEqual(['A', 'C'])
+      expect(t.paused).toEqual([])
+    })
+
+    it('holds a task at two failed reviews, says 2, and releases it when raised to 3', async () => {
+      const a = { ...task('A'), status: 'in_review' } as Task
+      const t = setup({
+        tasks: [a],
+        sessionsEnd: true,
+        writeFiles: true,
+        clock: 1_000,
+        limits: limits({ reviews: 2 })
+      })
+      for (let round = 0; round < 2; round += 1) {
+        await pass(t)
+        a.status = 'backlog'
+        await pass(t)
+        if (round < 1) a.status = 'in_review'
+      }
+      expect(t.capped).toEqual(['A'])
+      expect(t.cappedAt).toEqual([2])
+      expect(t.runner.held()).toEqual(new Set(['A']))
+
+      t.setLimits(limits({ reviews: 3 }))
+      await pass(t)
+      expect(t.runner.held()).toEqual(new Set())
+      expect(t.calls.at(-1)).toBe('launch A implement')
+    })
+
+    it('a new runner over the same files respects the setting', async () => {
+      const a = { ...task('A'), status: 'in_review' } as Task
+      const first = setup({
+        tasks: [a],
+        sessionsEnd: true,
+        writeFiles: true,
+        clock: 1_000,
+        limits: limits({ reviews: 2 })
+      })
+      for (let round = 0; round < 2; round += 1) {
+        await pass(first)
+        a.status = 'backlog'
+        await pass(first)
+        if (round < 1) a.status = 'in_review'
+      }
+      const second = setup({
+        tasks: [a],
+        sessionsEnd: true,
+        clock: 5_000,
+        limits: limits({ reviews: 2 })
+      })
+      await pass(second)
+      expect(second.runner.held()).toEqual(new Set(['A']))
+      expect(second.launched).toEqual([])
+      const third = setup({ tasks: [a], sessionsEnd: true, clock: 5_000 })
+      await pass(third)
+      expect(third.runner.held()).toEqual(new Set())
+    })
+
+    it('reads the limits once per pass and again on the next', async () => {
+      const ref: { t?: ReturnType<typeof setup> } = {}
+      const t = setup({
+        tasks: [task('A'), task('B', 1), task('C', 2)],
+        limits: limits({ launchesPerHour: 1 }),
+        // Changed while the pass is under way: it must not apply to this pass.
+        onLimitsRead: () => ref.t?.setLimits(limits({ launchesPerHour: 20 }))
+      })
+      ref.t = t
+      await pass(t)
+      expect(t.limitReads()).toBe(1)
+      expect(t.launched).toEqual(['A'])
+      expect(t.paused).toEqual(['limit'])
+    })
+
+    it('each workspace gets its own limits', async () => {
+      const tight = setup({
+        tasks: [task('A'), task('B', 1)],
+        limits: limits({ launchesPerHour: 1 })
+      })
+      const loose = setup({
+        tasks: [task('A'), task('B', 1)],
+        limits: limits({ launchesPerHour: 5 })
+      })
+      await pass(tight)
+      await pass(loose)
+      expect(tight.launched).toEqual(['A'])
+      expect(tight.paused).toEqual(['limit'])
+      expect(loose.launched).toEqual(['A', 'B'])
+      expect(loose.paused).toEqual([])
+    })
   })
 })

@@ -1,17 +1,9 @@
-import {
-  AUTO_REWORK_LIMIT,
-  type OrchestrationLane,
-  type Task,
-  type TaskSessionRef
-} from './types.js'
+import { type OrchestrationLane, type Task, type TaskSessionRef } from './types.js'
 import type { OrchestrationPlan } from './orchestrate.js'
 import { laneFor } from './orchestrate.js'
 
-/** Auto launches allowed per rolling hour and workspace before Auto-run switches itself off. */
-export const AUTO_LAUNCH_LIMIT = 20
+/** The window the per-hour launch limit (`AutoDispatchLimits.launchesPerHour`) counts over. */
 export const AUTO_LAUNCH_WINDOW_MS = 60 * 60 * 1000
-/** Consecutive failed launches before Auto-run switches itself off. */
-export const AUTO_FAILURE_LIMIT = 3
 
 /**
  * What Auto-run remembers it started, `workspace:task` → the state it started it in. A launch does
@@ -67,6 +59,8 @@ export interface AutoRunInput {
   /** Timestamps (ms) of earlier auto launches in this workspace. */
   history: readonly number[]
   now: number
+  /** Launches allowed per rolling hour (`AutoDispatchLimits.launchesPerHour`). */
+  limit: number
 }
 
 export interface AutoRunDecision {
@@ -78,16 +72,14 @@ export interface AutoRunDecision {
 
 /** Which of the plan's tasks Auto-run starts now: the hourly launch limit, then remember them. */
 export function decideAutoRun(input: AutoRunInput): AutoRunDecision {
-  const { plan, workspaceId, history, now } = input
+  const { plan, workspaceId, history, now, limit } = input
   const memory = new Map(input.memory)
   const recent = history.filter((at) => now - at < AUTO_LAUNCH_WINDOW_MS).length
-  const budget = Math.max(0, AUTO_LAUNCH_LIMIT - recent)
+  const budget = Math.max(0, limit - recent)
   const launch = plan.dispatch.slice(0, budget)
   for (const { task } of launch) memory.set(memoryKey(workspaceId, task.id), launchSignature(task))
   return { launch, memory, ...(plan.dispatch.length > budget ? { pause: 'limit' as const } : {}) }
 }
-
-export { AUTO_REWORK_LIMIT }
 
 /*
  * What Auto-run must remember across a relaunch is read back from the task files, from the marks
@@ -120,30 +112,38 @@ export function reworkBounces(task: Task, since: string | undefined): TaskSessio
   return bounces
 }
 
-/** Tasks that failed review `AUTO_REWORK_LIMIT` times: Auto-run leaves them out of the plan. */
-export function reworkHeld(tasks: readonly Task[], since: string | undefined): Set<string> {
+/** Tasks that failed review `limit` times: Auto-run leaves them out of the plan. */
+export function reworkHeld(
+  tasks: readonly Task[],
+  since: string | undefined,
+  limit: number
+): Set<string> {
   return new Set(
     tasks
       .filter((task) => task.status !== 'done')
-      .filter((task) => reworkBounces(task, since).length >= AUTO_REWORK_LIMIT)
+      .filter((task) => reworkBounces(task, since).length >= limit)
       .map((task) => task.id)
   )
 }
 
 /** The note (and notification) for a task that reached the cap; its start is how it is found again. */
-export function reworkCappedMessage(taskId: string): string {
-  return `${taskId} failed review ${AUTO_REWORK_LIMIT} times; it needs you.`
+export function reworkCappedMessage(taskId: string, limit: number): string {
+  return `${taskId} failed review ${limit} times; it needs you.`
 }
 
 /**
  * The newest failed review of a held task that has not been noted yet, or nothing: the capped
  * note, dated after that review started, is the record that the person was told.
  */
-export function unnotedCap(task: Task, since: string | undefined): TaskSessionRef | undefined {
+export function unnotedCap(
+  task: Task,
+  since: string | undefined,
+  limit: number
+): TaskSessionRef | undefined {
   const bounces = reworkBounces(task, since)
   const [newest] = bounces
-  if (!newest || bounces.length < AUTO_REWORK_LIMIT) return undefined
-  const prefix = reworkCappedMessage(task.id)
+  if (!newest || bounces.length < limit) return undefined
+  const prefix = reworkCappedMessage(task.id, limit)
   const noted = task.activity.some(
     (entry) =>
       entry.author === 'styr' &&

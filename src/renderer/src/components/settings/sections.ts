@@ -93,8 +93,8 @@ export const SECTIONS = [
     label: 'Dispatch',
     scope: 'workspace',
     blurb: 'Which agent picks up each kind of work, and how many run at once.',
-    keys: ['orchestration'],
-    words: 'slots lanes parallel concurrency'
+    keys: ['orchestration', 'autoDispatchLimits'],
+    words: 'slots lanes parallel concurrency limits breaker safety'
   },
   {
     id: 'theme',

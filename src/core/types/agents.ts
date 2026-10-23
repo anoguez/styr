@@ -50,8 +50,22 @@ export const AUTO_DISPATCH_PAUSE_LABELS: Record<AutoDispatchPause, string> = {
 }
 
 /** What Orchestrate would do, without the task objects the renderer does not need. */
-/** Failed reviews (review → Backlog) after which Auto-run stops starting a task: it needs a person. */
-export const AUTO_REWORK_LIMIT = 3
+/** Auto-run's safety limits, a workspace setting. */
+export interface AutoDispatchLimits {
+  /** Auto launches per rolling hour before Auto-run switches itself off. */
+  launchesPerHour: number
+  /** Consecutive failed launches before Auto-run switches itself off. */
+  failures: number
+  /** Failed reviews (review → Backlog) after which Auto-run stops starting a task: it needs a person. */
+  reviews: number
+}
+
+/** What a workspace gets until it changes them. */
+export const DEFAULT_AUTO_LIMITS: AutoDispatchLimits = {
+  launchesPerHour: 20,
+  failures: 3,
+  reviews: 3
+}
 
 export interface OrchestrationSummary {
   dispatch: {
