@@ -35,6 +35,7 @@ import { SettingsDialog } from './components/SettingsDialog.js'
 import type { SectionId } from './components/settings/sections.js'
 import { StatusBar } from './components/StatusBar.js'
 import { TaskDialog } from './components/TaskDialog.js'
+import { WhatsNewDialog } from './components/WhatsNewDialog.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
 import { Button } from './components/ui.js'
 import { NewWorkspaceDialog, WorkspaceSwitcher } from './components/WorkspaceSwitcher.js'
@@ -51,7 +52,8 @@ import { useTasks } from './hooks/useTasks.js'
 import { useTerminalHeight } from './hooks/useTerminalHeight.js'
 import { useRemoteSessions, useTerminalSessions } from './hooks/useTerminalSessions.js'
 import { useTheme } from './hooks/useTheme.js'
-import { useUpdates } from './hooks/useUpdates.js'
+import { useReleaseNotes, useUpdates } from './hooks/useUpdates.js'
+import { useWhatsNewOnLaunch } from './hooks/useWhatsNewOnLaunch.js'
 import { useRemote } from './hooks/useRemote.js'
 import { useWorkspaces } from './hooks/useWorkspaces.js'
 import { agentRowsFor, boardSummary, selectedAgentTaskId } from './lib/agentRows.js'
@@ -97,6 +99,7 @@ export default function App(): ReactNode {
     void engineChoice().availability()
   }, [])
   const update = useUpdates()
+  const releaseNotes = useReleaseNotes(update)
 
   const [shell, dispatch] = useAppShell(activeWorkspaceId)
   const { agentsOpen, taskDialog, changes: changesTask, removingAgent } = shell
@@ -104,6 +107,21 @@ export default function App(): ReactNode {
   const worklogOn = settings?.experimental.worklog ?? false
   const view = shell.view === 'worklog' && !worklogOn ? 'board' : shell.view
   const taskOpen = taskDialog.mode !== 'closed'
+  // Anything that covers the board: What's new never opens over it.
+  const modalOpen =
+    taskOpen ||
+    changesTask !== null ||
+    removingAgent !== null ||
+    shell.settings !== null ||
+    shell.palette !== null ||
+    shell.quickAdd ||
+    shell.archive ||
+    shell.performance ||
+    shell.newWorkspace ||
+    shell.confirmDispatch ||
+    shell.confirmAutoStop ||
+    shell.whatsNew !== null
+  useWhatsNewOnLaunch(appInfo, modalOpen, dispatch)
   const terminals = useTerminalSessions()
   const { sessions, activeSession, terminalOpen, adopt: adoptSession } = terminals
   useRemoteSessions(remote, terminals.merge)
@@ -178,7 +196,8 @@ export default function App(): ReactNode {
       activeWorkspaceId,
       workspaceNames,
       terminalOpen,
-      agentsOpen
+      agentsOpen,
+      whatsNewVersion: appInfo?.isPackaged ? appInfo.version : undefined
     },
     actions: { switchWorkspace: switchTo, archiveTask, launchAgent: launch, activateTask }
   })
@@ -206,6 +225,9 @@ export default function App(): ReactNode {
                     appInfo={appInfo}
                     update={update}
                     onOpenUpdates={() => openSettings('updates')}
+                    onOpenWhatsNew={() =>
+                      dispatch({ type: 'whatsNew', request: { mode: 'installed' } })
+                    }
                   />
                   <WorkspaceSwitcher
                     overview={overview}
@@ -374,7 +396,13 @@ export default function App(): ReactNode {
               onToggleAgents={() => runCommand('toggleAgents')}
               onToggleTerminal={() => runCommand('toggleTerminal')}
               onOpenSettings={() => openSettings()}
-              onInstallUpdate={() => void window.api.updates.install()}
+              onInstallUpdate={() =>
+                // Read the notes before relaunching when there are any; the native confirm for open
+                // terminals still applies once Restart is clicked.
+                releaseNotes
+                  ? dispatch({ type: 'whatsNew', request: { mode: 'incoming' } })
+                  : void window.api.updates.install()
+              }
             />
 
             {shell.newWorkspace ? (
@@ -509,6 +537,31 @@ export default function App(): ReactNode {
                   setReviewSent(null)
                 }}
                 onDismiss={() => setReviewSent(null)}
+              />
+            ) : null}
+
+            {shell.whatsNew?.mode === 'installed' && appInfo ? (
+              <WhatsNewDialog
+                mode="installed"
+                version={appInfo.version}
+                since={shell.whatsNew.since}
+                onClose={() => dispatch({ type: 'whatsNew', request: null })}
+              />
+            ) : null}
+
+            {shell.whatsNew?.mode === 'incoming' &&
+            (update?.kind === 'ready' || update?.kind === 'downloading') ? (
+              <WhatsNewDialog
+                mode="incoming"
+                version={update.version}
+                notes={releaseNotes}
+                ready={update.kind === 'ready'}
+                onRestart={() =>
+                  void window.api.updates.install().then((restarting) => {
+                    if (restarting) dispatch({ type: 'whatsNew', request: null })
+                  })
+                }
+                onClose={() => dispatch({ type: 'whatsNew', request: null })}
               />
             ) : null}
 

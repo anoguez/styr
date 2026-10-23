@@ -85,6 +85,18 @@ describe('buildCommandEntries', () => {
     expect(act.runCommand).toHaveBeenCalledWith('newShell')
   })
 
+  it("offers What's new only for a packaged build", () => {
+    const act = actions()
+    expect(byId(buildCommandEntries(source(), act), 'view:whatsNew')).toBeUndefined()
+    const entry = byId(
+      buildCommandEntries(source({ whatsNewVersion: '0.38.0' }), act),
+      'view:whatsNew'
+    )
+    expect(entry?.label).toBe("What's new in 0.38.0")
+    entry!.run()
+    expect(act.dispatch).toHaveBeenCalledWith({ type: 'whatsNew', request: { mode: 'installed' } })
+  })
+
   it('opens a new task from each preset', () => {
     const act = actions()
     const entries = buildCommandEntries(

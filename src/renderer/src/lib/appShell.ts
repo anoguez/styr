@@ -4,6 +4,9 @@ import type { SectionId } from '../components/settings/sections.js'
 import type { PaletteMode } from './paletteMode.js'
 import { isTerminalCommand, type TerminalCommand } from './terminalCommands.js'
 
+/** The What's new dialog: this version's notes (or those since `since`), or an update's notes. */
+export type WhatsNewRequest = { mode: 'installed'; since?: string } | { mode: 'incoming' }
+
 export type View = 'board' | 'inbox' | 'worklog'
 
 /** The New task / edit dialog: a new task may start from a preset picked in the palette. */
@@ -30,6 +33,7 @@ export interface AppShellState extends Record<Toggle, boolean> {
   settings: { section?: SectionId } | null
   changes: Task | null
   removingAgent: AgentRow | null
+  whatsNew: WhatsNewRequest | null
   /** Where New workspace starts: this computer, or Remote host (Settings → Remote hosts, the palette). */
   newWorkspaceMode: 'local' | 'remote'
 }
@@ -43,6 +47,7 @@ export function initialAppShell(view: View): AppShellState {
     settings: null,
     changes: null,
     removingAgent: null,
+    whatsNew: null,
     quickAdd: false,
     archive: false,
     performance: false,
@@ -71,6 +76,7 @@ export type AppShellAction =
   | { type: 'newWorkspace'; mode: 'local' | 'remote' }
   | { type: 'showChanges'; task: Task | null }
   | { type: 'confirmRemoveAgent'; row: AgentRow | null }
+  | { type: 'whatsNew'; request: WhatsNewRequest | null }
   | { type: 'openArchived'; task: Task }
   /** Esc closes the dialogs that have no Esc handling of their own. */
   | { type: 'escape' }
@@ -116,6 +122,8 @@ export function appShellReducer(state: AppShellState, action: AppShellAction): A
       return { ...state, changes: action.task }
     case 'confirmRemoveAgent':
       return { ...state, removingAgent: action.row }
+    case 'whatsNew':
+      return { ...state, whatsNew: action.request }
     case 'openArchived':
       return { ...state, archive: false, taskDialog: { mode: 'edit', task: action.task } }
     case 'escape':
@@ -128,7 +136,8 @@ export function appShellReducer(state: AppShellState, action: AppShellAction): A
         switcher: false,
         newWorkspace: false,
         archive: false,
-        changes: null
+        changes: null,
+        whatsNew: null
       }
   }
 }

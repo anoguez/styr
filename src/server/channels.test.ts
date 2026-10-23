@@ -46,9 +46,11 @@ const DESKTOP_ONLY = new Set([
   'settings:pickFiles',
   'app:titleBarColors',
   'app:info',
+  'app:changelog',
   'updates:state',
   'updates:check',
   'updates:install',
+  'updates:notes',
   // The Styr Terminal engine runs where it draws, on the client, over the terminal data stream.
   'terminal:engineAvailability',
   'terminal:engineEnvironment',

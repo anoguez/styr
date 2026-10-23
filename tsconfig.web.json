@@ -15,6 +15,7 @@
     "src/core/agentModel.ts",
     "src/core/shortcuts.ts",
     "src/core/doneCap.ts",
+    "src/core/changelog.ts",
     "src/core/boardOrder.ts",
     "src/core/boardCounts.ts",
     "src/core/inbox.ts",

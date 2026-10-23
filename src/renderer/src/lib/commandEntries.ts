@@ -35,6 +35,8 @@ export interface PaletteSource {
   terminalOpen: boolean
   agentsOpen: boolean
   autoRunOn: boolean
+  /** The running version of a packaged build; absent in a dev build, which has no What's new. */
+  whatsNewVersion?: string
 }
 
 /** What the entries do when picked. */
@@ -115,6 +117,16 @@ export function buildCommandEntries(
       mode: 'command',
       keywords: 'workspace board remote host ssh server vm set up',
       run: () => dispatch({ type: 'newWorkspace', mode: 'remote' })
+    })
+  }
+  if (source.whatsNewVersion) {
+    entries.push({
+      id: 'view:whatsNew',
+      label: `What's new in ${source.whatsNewVersion}`,
+      group: 'Actions',
+      mode: 'command',
+      keywords: 'changelog release notes version update changes',
+      run: () => dispatch({ type: 'whatsNew', request: { mode: 'installed' } })
     })
   }
   entries.push({

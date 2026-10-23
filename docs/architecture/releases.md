@@ -13,6 +13,18 @@ running in the app. Keep it that way — an app that restarts itself mid-turn lo
 A dev build reports `unsupported` and never checks. A release without `latest-mac.yml` (published
 by hand, or older than the updater) is reported as current, not as an error.
 
+**What's new.** `WhatsNewDialog` shows release notes in two modes, and both render through the
+dependency-free `Markdown` component (React elements only, `http(s)` links only, raw HTML as text).
+After an update the notes come from the `CHANGELOG.md` bundled in the app (`files` in
+`electron-builder.yml`; `app:changelog` reads it from `app.getAppPath()`), because it works offline
+and matches the installed version exactly. `core/changelog.ts` parses release-please's format and
+`whatsNewToShow` decides what to open; the last version seen is `localStorage`
+`styr.whatsNew.seen`, a per-machine convenience that is not in `Settings`. Before installing, the
+notes are the GitHub release body (`releaseNotes.ts`, a best-effort `net.fetch` once per discovered
+version, 5 s timeout, any failure is silent), served by `updates:notes`, not electron-updater's
+`releaseNotes`, which is HTML. Neither path touches `UpdateState`, and nothing installs without a
+click on Restart. Both channels are desktop-only (`src/server/channels.test.ts`).
+
 electron-updater defines `autoUpdater` through a getter, which Node's ESM loader cannot see as a
 named export, so it is imported as the default export.
 

@@ -102,6 +102,8 @@ const api = {
     /** Read once at load; the renderer has no `process`. */
     platform: process.platform,
     info: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
+    /** The bundled CHANGELOG.md, or null when it cannot be read. */
+    changelog: (): Promise<string | null> => ipcRenderer.invoke('app:changelog'),
     /** Colours the native window controls drawn over the title bar (Windows only; a no-op elsewhere). */
     setTitleBarColors: (background: string, symbols: string): void =>
       ipcRenderer.send('app:titleBarColors', background, symbols),
@@ -113,6 +115,9 @@ const api = {
     check: (): Promise<UpdateState> => ipcRenderer.invoke('updates:check'),
     /** Resolves false when the user chose to wait for the next quit instead. */
     install: (): Promise<boolean> => ipcRenderer.invoke('updates:install'),
+    /** The GitHub release notes for a discovered version, once fetched; null until then. */
+    notes: (version: string): Promise<string | null> =>
+      ipcRenderer.invoke('updates:notes', version),
     onState: (handler: (state: UpdateState) => void): (() => void) =>
       subscribe('updates:state', handler as (...args: never[]) => void)
   },
