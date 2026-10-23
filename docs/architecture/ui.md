@@ -362,6 +362,12 @@ read:
 - **PowerShell 7**: `-NoExit -EncodedCommand` (a command, so no execution policy refuses it) wraps
   `prompt` and PSReadLine's `PSConsoleHostReadLine`. A failed cmdlet reports exit 1, not a stale
   `$LASTEXITCODE`. Windows PowerShell 5.1 and cmd get none.
+- **Fix with agent** (block menu, failure bar, and the unbound `terminalFixLast` command, which does
+  nothing but say so when the last command did not fail) makes a `ready` Backlog task through
+  `taskFromTerminal` (`lib/terminalContext.ts`): ANSI-stripped output tail (6000 chars, with a note when
+  clipped, in a fence longer than any backtick run), and `repoPath` from the git root of the command's
+  directory (`repoForDirectory`, the same `terminal:gitContext` channel remote uses; default repo when
+  none). The notice then offers Launch and Open; nothing launches on its own.
 
 ## Terminal keys
 

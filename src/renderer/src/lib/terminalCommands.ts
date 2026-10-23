@@ -8,6 +8,7 @@ export const TERMINAL_COMMANDS = [
   'terminalRetry',
   'terminalSplit',
   'terminalAskReview',
+  'terminalFixLast',
   'terminalHandOff',
   'terminalCreatePr',
   'terminalActivity'
