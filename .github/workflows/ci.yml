@@ -4,6 +4,12 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
 
+# A new push supersedes the run in flight for the same PR: its server bundles (two container builds
+# per push) and the rest of the jobs would only report on a commit that is already out of date.
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
