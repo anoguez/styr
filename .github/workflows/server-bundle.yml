@@ -33,6 +33,8 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     container: node:24-bookworm
+    # Normally about a minute; a stuck step should fail the PR, not hold it for the 6-hour default.
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
