@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, sep } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { SUBAGENT_EVENTS } from '../agentState.js'
 import { agentsDir, subagentsDir, supportDir } from '../agentStore.js'
@@ -19,6 +19,22 @@ function findTranscript(sessionId: string, root = homedir()): string | undefined
     if (existsSync(file)) return file
   }
   return undefined
+}
+
+/**
+ * Claude Code writes each subagent's transcript next to its session's, in
+ * `<session-id>/subagents/agent-<id>.jsonl` (with an `agent-<id>.meta.json` beside it).
+ */
+function subagentTranscripts(sessionId: string, transcript: string): string[] {
+  const dir = join(dirname(transcript), sessionId, 'subagents')
+  try {
+    return readdirSync(dir)
+      .filter((name) => name.endsWith('.jsonl'))
+      .sort()
+      .map((name) => join(dir, name))
+  } catch {
+    return []
+  }
 }
 
 interface ClaudeUsageRecord {
@@ -179,6 +195,7 @@ export const claudeProvider: AgentProvider = {
 
   sessionExists: (sessionId, homeRoot) => findTranscript(sessionId, homeRoot) !== undefined,
   transcriptPath: findTranscript,
+  subagentTranscripts,
   transcriptUsageReader: claudeUsageReader,
 
   sessionTime(sessionId, homeRoot) {
