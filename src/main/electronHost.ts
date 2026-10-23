@@ -1,10 +1,23 @@
 import { app, BrowserWindow, dialog, Notification, shell, type WebContents } from 'electron'
 import type { AppPaths, HostPorts, WindowPorts } from '@host/ports.js'
 
+type BroadcastListener = (channel: string, payload: unknown) => void
+const broadcastListeners = new Set<BroadcastListener>()
+
+/**
+ * Sees what reaches the windows, after the remote router has picked the active board's events —
+ * how the tray follows the same state the renderer shows without call sites of its own.
+ */
+export function onBroadcast(listener: BroadcastListener): () => void {
+  broadcastListeners.add(listener)
+  return () => broadcastListeners.delete(listener)
+}
+
 /** The host's ports, implemented by Electron for the desktop app. */
 export const electronHost: HostPorts = {
   broadcast(channel, payload) {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload)
+    for (const listener of broadcastListeners) listener(channel, payload)
   },
   notify(title, body) {
     if (Notification.isSupported()) new Notification({ title, body }).show()

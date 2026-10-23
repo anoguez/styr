@@ -48,6 +48,13 @@ export const SHORTCUT_COMMANDS = [
 export type ShortcutCommand = (typeof SHORTCUT_COMMANDS)[number]
 
 /**
+ * What the tray menu asks the window to do (`app:command`). Stopping Auto-run is its own command
+ * rather than `toggleAutoDispatch`: a window that has just loaded does not know Auto-run is on yet,
+ * and the toggle would start it instead of asking to stop it.
+ */
+export type TrayCommand = 'quickTask' | 'viewInbox' | 'stopAutoRun'
+
+/**
  * Accelerators per command. A list rather than one string so a command can keep an alternate —
  * the terminal panel answers to both Ctrl+` and Cmd+` — and so unbinding is an empty list rather
  * than a sentinel string.

@@ -46,6 +46,7 @@ import type {
   TerminalSessionInfo,
   TerminalOutput,
   TerminalRuntimeState,
+  TrayCommand,
   UpdateState,
   WorkspaceBoardSummary,
   WorkspaceOverview,
@@ -106,7 +107,11 @@ const api = {
     setTitleBarColors: (background: string, symbols: string): void =>
       ipcRenderer.send('app:titleBarColors', background, symbols),
     mcpCommand: (provider?: 'claude' | 'codex'): Promise<string> =>
-      ipcRenderer.invoke('app:mcpCommand', provider)
+      ipcRenderer.invoke('app:mcpCommand', provider),
+    /** The tray's pending request for the window, taken once (null when there is none). */
+    takeCommand: (): Promise<TrayCommand | null> => ipcRenderer.invoke('app:takeCommand'),
+    /** The tray has a request waiting: take it with `takeCommand`. */
+    onCommand: (handler: () => void): (() => void) => subscribe('app:command', handler)
   },
   updates: {
     state: (): Promise<UpdateState> => ipcRenderer.invoke('updates:state'),

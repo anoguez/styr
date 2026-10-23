@@ -3,7 +3,9 @@ import {
   acceleratorFor,
   commandEnabled,
   commandForEvent,
+  electronAccelerator,
   formatAccelerator,
+  menuAccelerator,
   isReserved,
   setPrimaryModifier,
   type ShortcutKeyEvent
@@ -116,5 +118,28 @@ describe('commandEnabled', () => {
     expect(commandEnabled('viewWorklog', off)).toBe(false)
     expect(commandEnabled('viewWorklog', { ...off, worklog: true })).toBe(true)
     expect(commandEnabled('viewInbox', off)).toBe(true)
+  })
+})
+
+describe('electronAccelerator', () => {
+  it('writes a binding in Electron’s syntax', () => {
+    expect(electronAccelerator('mod+shift+n')).toBe('CmdOrCtrl+Shift+N')
+    expect(electronAccelerator('ctrl+2')).toBe('Ctrl+2')
+    expect(electronAccelerator('meta+alt+k')).toBe('Super+Alt+K')
+    expect(electronAccelerator('mod+,')).toBe('CmdOrCtrl+,')
+    expect(electronAccelerator('mod+arrowup')).toBe('CmdOrCtrl+Up')
+    expect(electronAccelerator('mod+enter')).toBe('CmdOrCtrl+Return')
+    expect(electronAccelerator('escape')).toBe('Escape')
+    expect(electronAccelerator('mod+ ')).toBe('CmdOrCtrl+Space')
+  })
+
+  it('gives up on a key Electron has no name for', () => {
+    expect(electronAccelerator('mod+f13x')).toBeUndefined()
+    expect(electronAccelerator('hyper+n')).toBeUndefined()
+  })
+
+  it('shows a command’s first binding, and nothing when it is unbound', () => {
+    expect(menuAccelerator(DEFAULT_SHORTCUTS, 'quickTask')).toBe('CmdOrCtrl+Shift+N')
+    expect(menuAccelerator(DEFAULT_SHORTCUTS, 'toggleAutoDispatch')).toBeUndefined()
   })
 })

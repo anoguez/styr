@@ -46,6 +46,8 @@ const DESKTOP_ONLY = new Set([
   'settings:pickFiles',
   'app:titleBarColors',
   'app:info',
+  // The tray's request for this machine's window.
+  'app:takeCommand',
   'updates:state',
   'updates:check',
   'updates:install',

@@ -43,6 +43,12 @@ export interface AutoDispatchState {
   paused?: AutoDispatchPause
 }
 
+/** Why Auto-run switched itself off, short enough for a menu row (the tray). */
+export const AUTO_DISPATCH_PAUSE_LABELS: Record<AutoDispatchPause, string> = {
+  limit: 'Stopped itself: too many starts in an hour',
+  failures: 'Stopped itself: three launches in a row failed'
+}
+
 /** What Orchestrate would do, without the task objects the renderer does not need. */
 /** Failed reviews (review → Backlog) after which Auto-run stops starting a task: it needs a person. */
 export const AUTO_REWORK_LIMIT = 3

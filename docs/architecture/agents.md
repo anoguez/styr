@@ -329,7 +329,8 @@ wired in `src/host/dispatchService.ts`); the rules are pure in `core/autoDispatc
   button never stays lit with nothing left to stop. Their cards carry the "Picked up by Dispatch"
   chip (`dispatchingIds`, fed by manual runs and `orchestrate:autoStarted`) until the agent idles.
 - Auto-launched sessions reach the renderer through `orchestrate:autoStarted` (it adopts them like a
-  manual launch). Not built: the tray item and a Settings pane control.
+  manual launch). The tray can start and stop Auto-run too (stopping still asks, in the window; `ui.md`, Menu
+  bar). Not built: a Settings pane control.
 
 ## Prompt routing
 

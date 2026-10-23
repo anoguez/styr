@@ -5,7 +5,7 @@ Moved from CLAUDE.md verbatim; read it before touching this area.
 ## Menu bar
 
 `src/main/tray.ts` mirrors agent state into the macOS menu bar, dock badge and notifications.
-`notifyAgentsChanged` in `ipc.ts` is the single update point.
+`notifyAgentsChanged` in `ipc.ts` is the single update point for the agent rows.
 
 The icon is inlined as base64 in the generated `src/main/trayIcon.ts` rather than shipped as a file,
 so there is no dev-versus-packaged path to get wrong — the asar path bugs earlier in this project
@@ -23,6 +23,28 @@ apart.
 
 `newlyWaiting` is exported and pure so the notify-once-per-transition rule can be tested without an
 Electron runtime.
+
+The menu itself is plain data from `trayMenu` (`src/main/trayMenu.ts`, no `electron` import, tested
+in `trayMenu.test.ts`); `tray.ts` keeps its latest inputs and rebuilds the whole menu whenever one
+of them changes — the agent model (`updateTray`), the window (`watchWindow`: show, hide, focus,
+blur, minimise, restore, closed) and Auto-run (`setTrayAutoRun`). There is no timer.
+
+- **Open Styr** shows only while the window is not in front (`windowInFront`). On macOS that means
+  focused: opening the status item's menu leaves the window key. On Windows and Linux, clicking the
+  tray takes focus first, so there it means on screen and not minimised. The "N more" row opens
+  Styr the same way, or is a disabled pointer to the agents sidebar while the window is in front.
+- **Quick add task…** and **Open Inbox** show the window and send `app:command`. The window takes
+  the request with `app:takeCommand` on mount and on each `app:command`, so a window the click had
+  to create still runs it, exactly once (`runTrayCommand` in `lib/appShell.ts`).
+- **Auto-run** is the active workspace's: Start goes straight through the routed
+  `orchestrate:autoSet`; Stop… opens `StopAutoRunDialog` in the window (`stopAutoRun`, not the
+  toggle, which a just-loaded window would read as off). After the breaker the reason row comes
+  from `AUTO_DISPATCH_PAUSE_LABELS`. `index.ts` follows `orchestrate:autoState` and re-reads the
+  state through the router on `settings:changed`, `workspaces:changed` and `remote:state`, tapping
+  `electronHost.broadcast` (`onBroadcast`), so a remote board behaves as a local one; a board that
+  cannot answer drops the section.
+- Accelerators come from the bindings through `menuAccelerator` (`core/shortcuts.ts`), set with
+  `registerAccelerator: false` so the renderer still handles the keys.
 
 ## Board layout
 
