@@ -85,6 +85,9 @@ export async function launchStyr(
       errors.push(`console.${message.type()}: ${message.text()}`)
   })
   page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
+  // A fresh profile is welcomed by the setup wizard, which covers the board; these tests are
+  // about other features, and the smoke test walks the wizard itself.
+  await page.addInitScript(() => localStorage.setItem('styr.setup.seen', '1'))
   // The window may have run its start-up before the listeners above existed.
   await page.reload()
   await expect(page.getByRole('button', { name: 'New task', exact: true })).toBeVisible()

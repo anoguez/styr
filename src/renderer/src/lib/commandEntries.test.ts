@@ -97,6 +97,14 @@ describe('buildCommandEntries', () => {
     expect(act.dispatch).toHaveBeenCalledWith({ type: 'whatsNew', request: { mode: 'installed' } })
   })
 
+  it('reopens the setup wizard as Quick setup, not the welcome', () => {
+    const act = actions()
+    const entry = byId(buildCommandEntries(source(), act), 'view:setup')
+    expect(entry?.label).toBe('Quick setup…')
+    entry!.run()
+    expect(act.dispatch).toHaveBeenCalledWith({ type: 'setup', mode: 'quick' })
+  })
+
   it('opens a new task from each preset', () => {
     const act = actions()
     const entries = buildCommandEntries(

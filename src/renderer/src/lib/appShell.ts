@@ -2,6 +2,7 @@ import type { ShortcutCommand, Task, TrayCommand } from '@core/types.js'
 import type { AgentRow } from './agentRows.js'
 import type { SectionId } from '../components/settings/sections.js'
 import type { PaletteMode } from './paletteMode.js'
+import type { SetupMode } from './setupWizard.js'
 import { isTerminalCommand, type TerminalCommand } from './terminalCommands.js'
 
 /** The What's new dialog: this version's notes (or those since `since`), or an update's notes. */
@@ -34,6 +35,8 @@ export interface AppShellState extends Record<Toggle, boolean> {
   changes: Task | null
   removingAgent: AgentRow | null
   whatsNew: WhatsNewRequest | null
+  /** The setup wizard: the welcome on first run, or Quick setup from the palette. */
+  setup: SetupMode | null
   /** Where New workspace starts: this computer, or Remote host (Settings → Remote hosts, the palette). */
   newWorkspaceMode: 'local' | 'remote'
 }
@@ -48,6 +51,7 @@ export function initialAppShell(view: View): AppShellState {
     changes: null,
     removingAgent: null,
     whatsNew: null,
+    setup: null,
     quickAdd: false,
     archive: false,
     performance: false,
@@ -77,6 +81,7 @@ export type AppShellAction =
   | { type: 'showChanges'; task: Task | null }
   | { type: 'confirmRemoveAgent'; row: AgentRow | null }
   | { type: 'whatsNew'; request: WhatsNewRequest | null }
+  | { type: 'setup'; mode: SetupMode | null }
   | { type: 'openArchived'; task: Task }
   /** Esc closes the dialogs that have no Esc handling of their own. */
   | { type: 'escape' }
@@ -124,6 +129,8 @@ export function appShellReducer(state: AppShellState, action: AppShellAction): A
       return { ...state, removingAgent: action.row }
     case 'whatsNew':
       return { ...state, whatsNew: action.request }
+    case 'setup':
+      return { ...state, setup: action.mode, palette: null }
     case 'openArchived':
       return { ...state, archive: false, taskDialog: { mode: 'edit', task: action.task } }
     case 'escape':

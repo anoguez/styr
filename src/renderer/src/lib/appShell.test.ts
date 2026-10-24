@@ -38,6 +38,13 @@ function after(command: ShortcutCommand, overrides: Partial<CommandPort> = {}) {
 }
 
 describe('appShellReducer', () => {
+  it('opens and closes the setup wizard, closing the palette it was run from', () => {
+    const open = reduce({ ...initial, palette: 'command' }, { type: 'setup', mode: 'quick' })
+    expect(open.setup).toBe('quick')
+    expect(open.palette).toBeNull()
+    expect(reduce(open, { type: 'setup', mode: null }).setup).toBeNull()
+  })
+
   it('toggles the palette per mode: the same key closes it, the other switches', () => {
     const go = reduce(initial, { type: 'togglePalette', mode: 'go' })
     expect(go.palette).toBe('go')

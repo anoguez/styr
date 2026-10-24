@@ -174,6 +174,16 @@ test.afterAll(async () => {
 })
 
 test('smoke', async () => {
+  await test.step('a fresh profile is welcomed by the setup wizard, which can be skipped', async () => {
+    const wizard = page.getByRole('dialog', { name: 'Welcome to Styr' })
+    await expect(wizard).toBeVisible()
+    await wizard.getByRole('button', { name: /^Skip setup/ }).click()
+    await expect(wizard.getByRole('heading', { name: 'You’re ready' })).toBeVisible()
+    await wizard.getByRole('button', { name: /^Open board/ }).click()
+    await expect(wizard).toBeHidden()
+    expectNoErrors()
+  })
+
   await test.step('the board renders with no renderer errors', async () => {
     await page.waitForLoadState('domcontentloaded')
     for (const label of ['Backlog', 'In Progress', 'In Review', 'Done'])

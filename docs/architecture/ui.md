@@ -281,6 +281,16 @@ modal is open), the palette's "What's new in x" (packaged builds only), the titl
 update" when release notes were fetched, plus a button in Settings → Updates. Rules in
 `docs/architecture/releases.md`.
 
+**Setup wizard.** `components/setup/SetupWizard.tsx` (`shell.setup`, a `SetupMode`) is one dialog in two
+modes: "Welcome to Styr" on first run and "Quick setup" from the palette (`view:setup`), which also lets you
+pick any workspace. Steps: Workspace, Agents, Dispatch, Theme, Review (`lib/setupWizard.ts` holds the pure
+parts: presets, which step a key belongs to, the summary). It edits a draft of the same `Settings` keys as the
+Settings dialog, reusing its pieces (`AgentCliStatus`, `McpSetupStatus`, `LaneAgentSelect`, the theme
+presets), and writes once on the last step through `save`, then renames the workspace if its name changed;
+closing early saves nothing. `useSetupOnLaunch` opens the welcome once, when `styr.setup.seen` is unset, no
+repository is chosen and no board has a task; anyone else is just marked as seen. Never put a second list of
+settings in the wizard: a new step edits existing keys.
+
 `TaskDialog` is the same shape: it holds the form and composes `components/task/` (`TaskHeader` with the status pill, the
 tabs in `TaskTabs`/`BriefTab`, `TaskSidebar` with its Properties, Agent and Workspace groups, `TaskFooter`). It follows the Claude Design file "Styr Task Dialog v3". Its rules are in
 `lib/taskForm.ts`. Context files can be dropped anywhere on the Brief tab as well as picked with
