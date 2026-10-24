@@ -152,6 +152,7 @@ export function shippedSettings(): Settings {
     taskPresets: DEFAULT_TASK_PRESETS,
     doneCap: DEFAULT_DONE_CAP,
     autoArchiveAsk: true,
+    remoteAccess: false,
     sources: [],
     theme: DEFAULT_THEME,
     shortcuts: DEFAULT_SHORTCUTS,

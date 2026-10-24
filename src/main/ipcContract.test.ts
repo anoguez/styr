@@ -55,8 +55,17 @@ const main = MAIN_DIRS.flatMap(sourceFiles)
 const invoked = calls(preload, 'ipcRenderer.invoke')
 const sentFromPreload = calls(preload, 'ipcRenderer.send')
 const subscribed = calls(preload, 'subscribe')
-const handled = calls(main, 'ipcMain.handle')
-const listened = calls(main, 'ipcMain.on')
+// `ipc.ts` registers the shared table (`src/host/channelTable.ts`) in a loop, so its entries are
+// counted as handled (or listened on, for the one-way ones) where they are declared.
+const table = readFileSync(join(ROOT, 'src/host/channelTable.ts'), 'utf8')
+const tableCalls = (section: string): Call[] =>
+  [...section.matchAll(/^\s+'([a-z]+:[A-Za-z]+)': channel\(/gm)].map((match) => ({
+    channel: match[1] ?? '',
+    where: `src/host/channelTable.ts:${table.slice(0, table.indexOf(match[0])).split('\n').length}`
+  }))
+const sendAt = table.indexOf('const send: ChannelTable')
+const handled = [...calls(main, 'ipcMain.handle'), ...tableCalls(table.slice(0, sendAt))]
+const listened = [...calls(main, 'ipcMain.on'), ...tableCalls(table.slice(sendAt))]
 const pushed = [...calls(main, 'broadcast'), ...calls(main, 'webContents.send')]
 
 describe('IPC contract between preload and main', () => {
@@ -74,8 +83,10 @@ describe('IPC contract between preload and main', () => {
     // non-literal use of each; every subscription goes through it with a literal.
     expect(dynamicCalls(preload, 'ipcRenderer.on')).toHaveLength(1)
     expect(dynamicCalls(preload, 'subscribe')).toHaveLength(1)
-    expect(dynamicCalls(main, 'ipcMain.handle')).toEqual([])
-    expect(dynamicCalls(main, 'ipcMain.on')).toEqual([])
+    // The one non-literal registration of each is the loop over the shared table, whose
+    // channels `handled` and `listened` read from their declarations.
+    expect(dynamicCalls(main, 'ipcMain.handle')).toHaveLength(1)
+    expect(dynamicCalls(main, 'ipcMain.on')).toHaveLength(1)
   })
 
   it('has exactly one ipcMain.handle per channel', () => {

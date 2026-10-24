@@ -40,9 +40,9 @@ import {
   testRestSource,
   unlinkTask
 } from './sourceSync.js'
-import { sourceProviders } from '@core/sources/index.js'
-import type { AutoDispatchState, TaskStatus, TrayCommand } from '@core/types.js'
+import type { AutoDispatchState, TrayCommand } from '@core/types.js'
 import { diskWorklogSources } from '@core/worklogSources.js'
+import { createChannelTable } from '@host/channelTable.js'
 import { createAgentsService, diskAgentStore, diskGit } from '@host/agentsService.js'
 import { createDispatchService, diskDispatchSettings, realClock } from '@host/dispatchService.js'
 import { createGitService, diskRepoGit, nextTurn } from '@host/gitService.js'
@@ -51,7 +51,6 @@ import { createSettingsService, diskSettingsStore } from '@host/settingsService.
 import { createTasksService } from '@host/tasksService.js'
 import { createWorklogService } from '@host/worklogService.js'
 import { createReviewService, diskReviewStore } from '@host/reviewService.js'
-import { listDirectories } from '@host/directories.js'
 import { providerById } from '@core/providers/index.js'
 import { agentSkip } from '@core/terminalLayout.js'
 import { createTerminalTabsService, diskTabsStore } from '@host/terminalTabs.js'
@@ -74,11 +73,10 @@ import {
   resizeSession,
   sessionBacklog,
   terminalRuntimeState,
-  writeToSession,
-  type SpawnOptions
+  writeToSession
 } from './terminal/ptyManager.js'
 import { CodexMonitor, prepareCodex } from './codexMonitor.js'
-import { agentPrompts, publishAgentConversation } from './usage.js'
+import { agentPrompts, publishAgentConversation, usage } from './usage.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
 import { mcpSetupStatus } from './mcpSetup.js'
@@ -386,72 +384,83 @@ export function sendWindowCommand(command: TrayCommand): void {
   broadcast('app:command')
 }
 
+/**
+ * The channels the desktop shares with `styr serve` (`src/host/channelTable.ts`), over this
+ * process's services. The desktop-only handlers are below; the network listener
+ * (`networkAccess.ts`) answers these same entries.
+ */
+export const channelTable = createChannelTable({
+  // Arrows, so each module's binding is read when a channel runs: the main-process tests mock
+  // these modules with only what they use.
+  sources: {
+    ghStatus: () => ghStatus(),
+    sourceStates: () => sourceStates(),
+    testRestSource: (settings) => testRestSource(settings),
+    listSourceTargets: (id) => listSourceTargets(id),
+    syncSource: (id) => syncSource(id),
+    previewSource: (id) => previewSource(id),
+    applySource: (id, itemIds) => applySource(id, itemIds),
+    linkTask: (taskId, text) => linkTask(taskId, text),
+    unlinkTask: (taskId) => unlinkTask(taskId),
+    refreshTask: (taskId) => refreshTask(taskId)
+  },
+  tasksService,
+  gitService,
+  agentsService,
+  worklogService,
+  reviewService,
+  dispatchService,
+  settingsService,
+  workspacesService,
+  cli: { agentCliStatus: (options) => agentCliStatus(options) },
+  mcpSetup: { mcpSetupStatus: (options) => mcpSetupStatus(options) },
+  usage: {
+    claudeUsage: () => usage.claudeUsage(),
+    codexUsage: (terminalId) => usage.codexUsage(terminalId),
+    context: (terminalId) => usage.context(terminalId),
+    conversation: (terminalId) => usage.conversation(terminalId),
+    prompt: (terminalId, text) => usage.prompt(terminalId, text),
+    approval: (terminalId, approvalId, optionId) => usage.approval(terminalId, approvalId, optionId)
+  },
+  terminals: {
+    createSession: (options) => createSession(options),
+    listSessions: () => listSessions(),
+    sessionBacklog: (id) => sessionBacklog(id),
+    terminalRuntimeState: (id) => terminalRuntimeState(id),
+    writeToSession: (id, data) => writeToSession(id, data),
+    killSession: (id) => {
+      killSession(id)
+      terminalTabs.changed()
+    }
+  },
+  diagnostics: {
+    snapshot: () =>
+      takeSnapshot({
+        terminals: listSessions().length,
+        taskCount: queryTasks().length,
+        terminalEngine: terminalEngineDiagnostics()
+      }),
+    stop: () => stopSampling()
+  },
+  checkForMergedWork: () => checkForMergedWork()
+})
+
 export function registerIpcHandlers(): void {
   initSourceSync({
     onTasksChanged: notifyTasksChanged,
     onState: (states) => broadcast('sources:state', states)
   })
   restartSourcePolling()
-  ipcMain.handle('sources:providers', () => sourceProviders())
-  ipcMain.handle('sources:ghStatus', () => ghStatus())
-  ipcMain.handle('sources:state', () => sourceStates())
-  ipcMain.handle('sources:restTest', (_event, settings: unknown) => testRestSource(settings))
-  ipcMain.handle('sources:targets', (_event, sourceId: string) =>
-    listSourceTargets(String(sourceId))
-  )
-  ipcMain.handle('sources:sync', (_event, sourceId: string) => syncSource(String(sourceId)))
-  ipcMain.handle('sources:preview', (_event, sourceId: string) => previewSource(String(sourceId)))
-  ipcMain.handle('sources:apply', (_event, sourceId: string, itemIds: unknown) =>
-    applySource(String(sourceId), itemIds)
-  )
-  ipcMain.handle('sources:link', (_event, taskId: string, text: string) =>
-    linkTask(String(taskId), String(text))
-  )
-  ipcMain.handle('sources:unlink', (_event, taskId: string) => unlinkTask(String(taskId)))
-  ipcMain.handle('sources:refresh', (_event, taskId: string) => refreshTask(String(taskId)))
-  ipcMain.handle('tasks:list', (_event, filter: unknown) => tasksService.list(filter))
-  ipcMain.handle('tasks:get', (_event, id: string) => tasksService.get(id))
-  ipcMain.handle('tasks:problems', () => tasksService.problems())
-
-  ipcMain.handle('tasks:removeWorktree', (_event, taskId: string) =>
-    tasksService.removeWorktree(taskId)
-  )
-  ipcMain.handle('git:branches', (_event, repoPath: string) => gitService.branches(repoPath))
-  ipcMain.handle('git:taskDiff', (_event, taskId: unknown) => gitService.taskDiff(taskId))
-  ipcMain.handle('git:filePatch', (_event, taskId: unknown, path: unknown, full?: unknown) =>
-    gitService.filePatch(taskId, path, full)
-  )
-  ipcMain.handle('git:diffStats', () => gitService.diffStats())
-  ipcMain.handle('agents:list', () => agentStatuses())
-  ipcMain.handle('worklog:load', (_event, from: unknown, to: unknown) =>
-    worklogService.load(from, to)
-  )
-  ipcMain.handle('review:get', (_event, taskId: unknown) => reviewService.get(taskId))
-  ipcMain.handle('review:save', (_event, taskId: unknown, pending: unknown) =>
-    reviewService.save(taskId, pending)
-  )
-  ipcMain.handle('review:prepare', (_event, taskId: unknown) => reviewService.prepare(taskId))
-  ipcMain.handle('review:requestChanges', (_event, taskId: unknown, summary: unknown) =>
-    reviewService.requestChanges(taskId, summary)
-  )
-
-  ipcMain.handle('tasks:create', (_event, draft: unknown) => tasksService.create(draft))
-  ipcMain.handle('tasks:update', (_event, id: string, patch: unknown) =>
-    tasksService.update(id, patch)
-  )
-  ipcMain.handle('tasks:note', (_event, id: string, author: string, message: string) =>
-    tasksService.note(id, author, message)
-  )
-  ipcMain.handle('tasks:reorder', (_event, status: TaskStatus, orderedIds: string[]) =>
-    tasksService.reorder(status, orderedIds)
-  )
-  ipcMain.handle('tasks:archive', (_event, id: string, archived: boolean) =>
-    tasksService.archive(id, archived)
-  )
-  ipcMain.handle('tasks:answerQuestion', (_event, id: string, questionId: string, answer: string) =>
-    tasksService.answerQuestion(id, questionId, answer)
-  )
-  ipcMain.handle('tasks:delete', (_event, id: string) => tasksService.delete(id))
+  for (const [name, channel] of Object.entries(channelTable.invoke)) {
+    ipcMain.handle(name, (_event, ...args: unknown[]) =>
+      channel.run(...(channel.args.parse(args) as never[]))
+    )
+  }
+  for (const [name, channel] of Object.entries(channelTable.send)) {
+    ipcMain.on(name, (_event, ...args: unknown[]) =>
+      channel.run(...(channel.args.parse(args) as never[]))
+    )
+  }
 
   ipcMain.handle('tasks:reveal', (_event, id: string) => {
     const task = tasksService.get(id)
@@ -463,14 +472,6 @@ export function registerIpcHandlers(): void {
     if (task) void openPathWith(task.filePath)
   })
 
-  ipcMain.handle('diagnostics:snapshot', () =>
-    takeSnapshot({
-      terminals: listSessions().length,
-      taskCount: queryTasks().length,
-      terminalEngine: terminalEngineDiagnostics()
-    })
-  )
-  ipcMain.handle('diagnostics:stop', () => stopSampling())
   ipcMain.handle('app:changelog', async () => {
     try {
       return await readFile(join(app.getAppPath(), 'CHANGELOG.md'), 'utf8')
@@ -494,31 +495,6 @@ export function registerIpcHandlers(): void {
     return command
   })
 
-  ipcMain.handle('app:mcpCommand', (_event, provider?: 'claude' | 'codex') =>
-    settingsService.mcpCommand(provider)
-  )
-
-  ipcMain.handle('orchestrate:plan', () => dispatchService.plan())
-  ipcMain.handle('tasks:checkMerged', () => checkForMergedWork())
-
-  ipcMain.handle('orchestrate:run', (_event, taskIds?: string[]) => dispatchService.run(taskIds))
-  ipcMain.handle('orchestrate:autoState', () => dispatchService.autoState())
-  ipcMain.handle('orchestrate:autoSet', (_event, on: unknown) => dispatchService.autoSet(on))
-
-  ipcMain.handle('settings:get', (_event, workspaceId: unknown) => settingsService.get(workspaceId))
-  ipcMain.handle('settings:save', (_event, change: unknown) => settingsService.save(change))
-  ipcMain.handle('settings:brokenFiles', () => workspacesService.brokenSettingsFiles())
-
-  ipcMain.handle('workspaces:list', () => workspacesService.overview())
-  ipcMain.handle('workspaces:activity', () => workspacesService.activity())
-  ipcMain.handle('workspaces:boardSummary', () => workspacesService.boardSummaries())
-  ipcMain.handle('workspaces:switch', (_event, id: string) => workspacesService.switch(id))
-  ipcMain.handle('workspaces:create', (_event, name: string) => workspacesService.create(name))
-  ipcMain.handle('workspaces:rename', (_event, id: string, name: string) =>
-    workspacesService.rename(id, name)
-  )
-  ipcMain.handle('workspaces:delete', (_event, id: string) => workspacesService.delete(id))
-
   ipcMain.handle('settings:pickDirectory', async (event, current?: string) => {
     const picked = await electronWindows.showOpenDialog(event.sender, {
       properties: ['openDirectory', 'createDirectory'],
@@ -528,15 +504,6 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('settings:listApps', () => listInstalledApps())
-  ipcMain.handle(
-    'agents:cliStatus',
-    (_event, provider: 'claude' | 'codex', command: string, shell: string) =>
-      agentCliStatus({ provider, command: String(command ?? ''), shell: String(shell ?? '') })
-  )
-
-  ipcMain.handle('agents:mcpStatus', (_event, provider: 'claude' | 'codex', fresh?: boolean) =>
-    mcpSetupStatus({ provider, fresh: fresh === true })
-  )
 
   ipcMain.handle('settings:pickApp', async (event) => {
     const windows = process.platform === 'win32'
@@ -565,44 +532,9 @@ export function registerIpcHandlers(): void {
     return picked ?? []
   })
 
-  ipcMain.handle('terminal:create', (_event, options: SpawnOptions) =>
-    createSession({ ...options, shell: options.shell || loadSettings().shell })
-  )
-
-  /**
-   * Starting a session on a Backlog task moves it to In Progress. Only Backlog is unambiguous —
-   * launching on In Review is a review, and on Done a follow-up, neither of which is new work.
-   */
-  ipcMain.handle(
-    'terminal:launchAgent',
-    async (_event, taskId: string, templateId?: string, provider?: 'claude' | 'codex') =>
-      agentsService.launch(taskId, { templateId, provider })
-  )
-
-  ipcMain.handle('terminal:resumeSession', (_event, taskId: string, sessionId: string) =>
-    agentsService.resume(taskId, sessionId)
-  )
-
-  ipcMain.handle('tasks:forgetSession', (_event, taskId: string) =>
-    tasksService.forgetSession(taskId)
-  )
-
-  ipcMain.handle('agents:remove', (_event, taskId: unknown) =>
-    agentsService.remove(z.string().min(1).parse(taskId))
-  )
-
-  ipcMain.handle('terminal:previewPrompt', (_event, taskId: string, templateId?: string) =>
-    agentsService.previewPrompt(taskId, templateId)
-  )
-
-  ipcMain.on('terminal:write', (_event, id: string, data: string) => writeToSession(id, data))
   ipcMain.on('terminal:resize', (_event, id: string, cols: number, rows: number) =>
     resizeSession(id, cols, rows)
   )
-  ipcMain.handle('terminal:kill', (_event, id: string) => {
-    killSession(id)
-    terminalTabs.changed()
-  })
   ipcMain.on('terminal:setLayout', (_event, ids: unknown, activeId: unknown) =>
     terminalTabs.setLayout(
       z.array(z.string()).max(500).catch([]).parse(ids),
@@ -612,20 +544,6 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('terminal:pendingLayout', () => terminalTabs.offer())
   ipcMain.handle('terminal:restoreLayout', () => terminalTabs.restore())
   ipcMain.handle('terminal:dismissLayout', () => terminalTabs.dismiss())
-  ipcMain.handle('terminal:list', () => listSessions())
-  ipcMain.handle('terminal:backlog', (_event, id: string) => sessionBacklog(id))
-  ipcMain.handle('terminal:runtimeState', (_event, id: string) => terminalRuntimeState(id))
-  ipcMain.handle('terminal:createPr', (_event, taskId: string) =>
-    agentsService.askForPullRequest(taskId)
-  )
-  ipcMain.handle('terminal:askReview', (_event, taskId: string) => agentsService.askReview(taskId))
-  ipcMain.handle('terminal:askFork', (_event, sessionId: string, question: string) =>
-    agentsService.askFork(sessionId, String(question ?? ''))
-  )
-  ipcMain.handle('terminal:handOff', (_event, sessionId: string, output: string) =>
-    agentsService.handOff(sessionId, String(output ?? ''))
-  )
-  ipcMain.handle('terminal:gitContext', (_event, path: string) => gitService.gitContext(path))
   ipcMain.handle('terminal:openInCode', async (_event, path: string) => {
     const opened =
       process.platform === 'win32'
@@ -645,9 +563,6 @@ export function registerIpcHandlers(): void {
     // Only web links: a terminal can print any string, and openExternal would run other schemes.
     if (isWebLink(url)) void shell.openExternal(url)
   })
-  ipcMain.handle('terminal:listDirectories', (_event, path: string, includeFiles?: boolean) =>
-    listDirectories(path, includeFiles === true)
-  )
 }
 
 const appInfoCache = new Map<string, boolean>()
