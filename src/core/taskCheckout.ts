@@ -53,10 +53,13 @@ export interface TaskRepoCheckout {
 export function checkoutsOf(
   workspaceId: string,
   task: Pick<Task, 'id' | 'baseBranch'> &
-    Partial<Pick<Task, 'worktreePath' | 'useWorktree' | 'extraRepos'>> & { repoPath: string },
+    Partial<Pick<Task, 'worktreePath' | 'useWorktree'>> & {
+      repoPath: string
+      extraRepos?: readonly ExtraRepo[]
+    },
   location: WorktreeLocation = 'beside'
 ): TaskRepoCheckout[] {
-  const extras: ExtraRepo[] = task.useWorktree === false ? [] : (task.extraRepos ?? [])
+  const extras: readonly ExtraRepo[] = task.useWorktree === false ? [] : (task.extraRepos ?? [])
   const names = repoDisplayNames([task.repoPath, ...extras.map((extra) => extra.repoPath)])
   return [
     {

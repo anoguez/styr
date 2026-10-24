@@ -5,6 +5,7 @@ import {
   RemoteFetcher,
   reposAwaitingLanding,
   settleTasks,
+  taskRepoPaths,
   type LandingWrite
 } from '@core/landing.js'
 import { checkoutGit, type CheckoutGit } from '@core/taskCheckout.js'
@@ -116,7 +117,7 @@ export function createLanding(ports: LandingPorts) {
     const workspaceId = settings.activeWorkspaceId
     const tasks = ports
       .query()
-      .filter((task) => scope === 'all' || (task.repoPath && scope.has(task.repoPath)))
+      .filter((task) => scope === 'all' || taskRepoPaths(task).some((repo) => scope.has(repo)))
     const { writes, errors } = await settleTasks(tasks, {
       git: ports.git,
       cache,
@@ -161,7 +162,18 @@ export function createLanding(ports: LandingPorts) {
         ports.updateTask(write.taskId, { status: write.status })
         break
       case 'clearWorktree':
-        ports.updateTask(write.taskId, { worktreePath: undefined })
+        ports.updateTask(write.taskId, {
+          worktreePath: undefined,
+          // A multi-repo task forgets its extras' worktrees too, keeping their repositories.
+          ...(write.extras
+            ? {
+                extraRepos: (ports.find(write.taskId)?.extraRepos ?? []).map((extra) => ({
+                  ...extra,
+                  worktreePath: undefined
+                }))
+              }
+            : {})
+        })
         break
       case 'note':
         ports.addNote(write.taskId, 'styr', write.message)
