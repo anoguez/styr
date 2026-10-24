@@ -213,6 +213,12 @@ the fallback (`core/boardTools.ts`). `set_task_status` and `update_task` are unc
   normalises hand-written entries (a bare string is a question; ids, `askedAt` and `askedBy` are filled
   in; entries with no text are dropped) and never fails the file. The index keeps them in a JSON column.
 
+**Terminal first.** The owner is often in a maximised terminal, not the Inbox, so the prompt
+(`ASK_LINE`) tells the agent to put the question in the conversation as well as call `ask_owner`. An
+answer given there is recorded by the agent with `resolve_question` (`taskStore.answerQuestion`, the
+same write as the Inbox's Send answer), so the Inbox entry closes. The Inbox still lists the question
+until then.
+
 **Inbox.** An open question is `kind: 'question'` in Needs you, ranked after `waiting` and before the
 rest. It outranks a _working_ agent — a deliberate change of "a working agent outranks everything" —
 so a question to the owner never hides under Running. A waiting agent still wins the kind. A Done or

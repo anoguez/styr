@@ -3,6 +3,7 @@
 
 export const REVIEW_TOOL = '`request_review` on the styr MCP server'
 export const ASK_TOOL = '`ask_owner`'
+export const RESOLVE_TOOL = '`resolve_question`'
 export const SPLIT_TOOL = '`split_task`'
 
 /** Where a review request goes when the agent has no styr MCP server. */
@@ -23,8 +24,11 @@ export const REVIEW_LINE_PLAIN = [
 
 export const ASK_LINE = [
   `- If you need a decision from me that you cannot make yourself, call ${ASK_TOOL} (it shows in my`,
-  '  Inbox), then carry on with whatever does not depend on it, or stop and say you are waiting. Only',
-  '  if you do not have that tool, add the question under `questions:` in the frontmatter.'
+  '  Inbox) and also put the same question to me in this conversation, in plain text, because I',
+  '  usually work in the terminal and may not open the Inbox. Then carry on with whatever does not',
+  '  depend on it, or stop and say you are waiting. If I answer in the terminal, call',
+  `  ${RESOLVE_TOOL} with my answer so the Inbox entry closes. Only if you do not have the tools,`,
+  '  add the question under `questions:` in the frontmatter.'
 ]
 
 /** Offered only while the task is being specified, which is when a split is decided. */

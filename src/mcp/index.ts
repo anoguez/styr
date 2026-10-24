@@ -9,6 +9,7 @@ import { requestReview, taskHandoff } from '@core/reviewRequest.js'
 import { MAX_SPLIT_CHILDREN, splitTask } from '@core/taskSplit.js'
 import {
   addNote,
+  answerQuestion,
   askQuestion,
   createTask,
   deleteTask,
@@ -266,7 +267,8 @@ server.registerTool(
     title: 'Ask the owner',
     description:
       'Ask the owner a question you cannot decide yourself. It shows in their Inbox and the ' +
-      'answer is sent back to you. Carry on with whatever does not depend on it, or stop and say ' +
+      'answer is sent back to you. Also ask it in the conversation, since the owner may be in the ' +
+      'terminal rather than the Inbox; if they answer there, close it with resolve_question. Carry on with whatever does not depend on it, or stop and say ' +
       'you are waiting. Does not change the status.',
     inputSchema: {
       id: z.string(),
@@ -277,6 +279,21 @@ server.registerTool(
   async ({ id, question, context }) => {
     const text = context?.trim() ? `${question.trim()}\n\n${context.trim()}` : question
     const { task, questionId } = askQuestion(id, AUTHOR, text)
+    return json({ questionId, openQuestions: openQuestions(task).length })
+  }
+)
+
+server.registerTool(
+  'resolve_question',
+  {
+    title: 'Resolve a question',
+    description:
+      'Close an ask_owner question the owner answered in the conversation instead of the Inbox, ' +
+      'so it leaves their Inbox. Pass the owner’s answer as they gave it.',
+    inputSchema: { id: z.string(), questionId: z.string(), answer: z.string().trim().min(1) }
+  },
+  async ({ id, questionId, answer }) => {
+    const task = answerQuestion(id, questionId, answer)
     return json({ questionId, openQuestions: openQuestions(task).length })
   }
 )

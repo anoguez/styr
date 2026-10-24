@@ -26,6 +26,8 @@ describe('board protocol tools', () => {
     )
     expect(prompt).toContain('set `status: in_review`')
     expect(prompt).toContain('call `ask_owner`')
+    expect(prompt).toMatch(/also put the same question to me in this conversation/)
+    expect(prompt).toContain('`resolve_question`')
     expect(prompt).toContain('add the question under `questions:` in the frontmatter')
     expect(prompt).toContain('split it with `split_task`')
     expect(prompt).toMatch(/add\s+their ids to this task's `blockedBy`/)
