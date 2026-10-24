@@ -17,17 +17,20 @@ desktop main ──ssh -T host styr serve attach──▶ attach (stdio ↔ sock
 - **`src/server/` never imports `electron`**, nor anything under `src/main/`. ESLint enforces it,
   and `vite.server.config.mts` fails the build if anything it bundles resolves `electron`. Like
   `src/host/`, the server takes what the desktop gets from Electron as a port.
-- **One channel table, kept to `ipc.ts`.** The server answers the IPC channels under the same
-  names, with the same argument lists. `src/server/channels.test.ts` reads both from source and
-  fails when a channel is added to one and not the other. The desktop-only handlers (`host.md`,
-  What stays in `src/main/`) are listed there by name. When you add an IPC channel, add its line
-  to `serverHost.ts` too, or to that list if it acts on the desktop, and give it a route in the
-  client router (`src/host/remote/router.ts`: the active workspace's, a session's, or one the
-  router answers itself; the tables are `src/host/remote/channels.ts`). `channels.test.ts` fails
-  for a server channel with no route. Its answer (and any new broadcast the router acts on) also
-  needs a schema in `src/host/remote/validation.ts`; `validation.test.ts` fails without one (see
-  Trust boundary).
-- **Arguments are checked with zod at the boundary.** Each entry in `serverHost.ts` has a
+- **One channel table, shared with `ipc.ts`.** `src/host/channelTable.ts` holds the invoke and
+  send channels with their zod argument tuples. `ipc.ts` registers every entry with
+  `ipcMain.handle` / `ipcMain.on` (parsing the arguments the same way), and `serverHost.ts` and
+  the desktop's network listener (`remote-access.md`) answer the same entries through the hub, so
+  the hosts cannot drift. `src/server/channels.test.ts` and the IPC contract test read the table
+  from source. A handler that acts on the desktop (`host.md`, What stays in `src/main/`) stays in
+  `ipc.ts` and is listed by name in `channels.test.ts`. When you add an IPC channel, add its line
+  to the table, or keep it in `ipc.ts` and list it there, and give it a route in the client
+  router (`src/host/remote/router.ts`: the active workspace's, a session's, or one the router
+  answers itself; the tables are `src/host/remote/channels.ts`). `channels.test.ts` fails for a
+  server channel with no route. Its answer (and any new broadcast the router acts on) also needs a
+  schema in `src/host/remote/validation.ts`; `validation.test.ts` fails without one (see Trust
+  boundary).
+- **Arguments are checked with zod at the boundary.** Each entry in `channelTable.ts` has a
   `z.tuple` of its arguments, and the services parse their payloads with the existing schemas
   (`taskDraftSchema`, `settingsChangeSchema` …), as they do for IPC. A bad argument is an
   `Invalid params` error, never a throw inside a service.
@@ -52,7 +55,7 @@ desktop main ──ssh -T host styr serve attach──▶ attach (stdio ↔ sock
   `server:hello`. Requests go to the channel table, broadcasts go to every client, and
   `terminal:data` goes only to the clients attached to that terminal.
 - `src/server/serverHost.ts`: the host services wired as `ipc.ts` wires them, over Node ports, and
-  the channel table. `start()` is what `src/main/index.ts` does once the app is ready, minus the
+  the shared channel table over them. `start()` is what `src/main/index.ts` does once the app is ready, minus the
   window, tray and updater. The services are module singletons underneath (the index, the
   watchers), so one process hosts one server.
 - `src/server/socket.ts`: `listen` and `attach`.

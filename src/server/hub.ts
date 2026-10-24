@@ -1,17 +1,10 @@
 import { z } from 'zod'
 import { RPC_ERRORS, RpcError, RpcPeer } from '@host/rpc/jsonRpc.js'
+import type { ClientPolicy } from '@host/remoteAccess/gate.js'
 import type { TerminalOutput } from '@core/types.js'
 
-/**
- * One channel the server answers: the same name and arguments as the IPC channel, with a zod
- * schema for the argument list checked before `run` sees it.
- */
-export interface Channel {
-  args: z.ZodType<unknown[]>
-  run(...args: never[]): unknown
-}
-
-export type ChannelTable = Record<string, Channel>
+export type { Channel, ChannelTable } from '@host/channelTable.js'
+import type { ChannelTable } from '@host/channelTable.js'
 
 /** What `styr serve` reports to each client on attach, and from `server:info`. */
 export interface ServerInfo {
@@ -52,6 +45,8 @@ export interface HubPorts {
 interface Client {
   id: number
   peer: RpcPeer
+  /** Set for a client on the network: what it may call and see (`remoteAccess/gate.ts`). */
+  policy?: ClientPolicy
   /** Terminals this client is attached to: it receives their `terminal:data`. */
   attached: Set<string>
   /** The last size this client's view had for each terminal. */
@@ -75,13 +70,17 @@ export function createHub(ports: HubPorts) {
   const focus = new Map<string, Client>()
   let nextClientId = 1
 
-  function connect(write: (line: string) => void): {
+  function connect(
+    write: (line: string) => void,
+    policy?: ClientPolicy
+  ): {
     receive(chunk: Buffer | string): void
     close(): void
   } {
     const client: Client = {
       id: nextClientId++,
       peer: undefined as unknown as RpcPeer,
+      policy,
       attached: new Set(),
       sizes: new Map()
     }
@@ -104,6 +103,17 @@ export function createHub(ports: HubPorts) {
   }
 
   function request(client: Client, method: string, params: unknown[]): unknown {
+    client.policy?.check(method, params)
+    const result = handle(client, method, params)
+    const policy = client.policy
+    if (!policy) return result
+    // What the client may see of the answer: another workspace's rows are not for it.
+    return result instanceof Promise
+      ? result.then((value) => policy.result(method, params, value))
+      : policy.result(method, params, result)
+  }
+
+  function handle(client: Client, method: string, params: unknown[]): unknown {
     switch (method) {
       case 'server:info':
         return ports.info()
@@ -138,6 +148,12 @@ export function createHub(ports: HubPorts) {
   }
 
   function notification(client: Client, method: string, params: unknown[]): void {
+    try {
+      client.policy?.check(method, params)
+    } catch {
+      // A notification has no reply to carry the refusal; it is dropped.
+      return
+    }
     switch (method) {
       case 'terminal:focus': {
         const [id] = terminalArgs.parse(params)
@@ -194,14 +210,35 @@ export function createHub(ports: HubPorts) {
   }
 
   function broadcast(channel: string, payload?: unknown): void {
-    const params = payload === undefined ? [] : [payload]
-    for (const client of clients) client.peer.notify(channel, params)
+    for (const client of clients) {
+      const seen = client.policy ? client.policy.broadcast(channel, payload) : { payload }
+      if (!seen) continue
+      client.peer.notify(channel, seen.payload === undefined ? [] : [seen.payload])
+    }
+  }
+
+  /**
+   * Re-checks what network clients hold after the shared workspaces changed: terminals that are no
+   * longer theirs are detached (the PTYs keep running).
+   */
+  function refresh(): void {
+    for (const client of clients) {
+      if (!client.policy) continue
+      for (const id of [...client.attached]) {
+        if (client.policy.terminal(id)) continue
+        client.attached.delete(id)
+        client.sizes.delete(id)
+        if (focus.get(id) === client) focus.delete(id)
+      }
+    }
   }
 
   /** `terminal:data` goes only to the clients attached to that terminal. */
   function terminalData(id: string, output: TerminalOutput): void {
     for (const client of clients) {
-      if (client.attached.has(id)) client.peer.notify('terminal:data', [{ id, ...output }])
+      if (!client.attached.has(id)) continue
+      if (client.policy && !client.policy.terminal(id)) continue
+      client.peer.notify('terminal:data', [{ id, ...output }])
     }
   }
 
@@ -221,6 +258,7 @@ export function createHub(ports: HubPorts) {
   return {
     connect,
     broadcast,
+    refresh,
     terminalData,
     terminalExited,
     closeAll,

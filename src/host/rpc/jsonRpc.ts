@@ -50,7 +50,9 @@ export const RPC_ERRORS = {
   METHOD_NOT_FOUND: -32601,
   INVALID_PARAMS: -32602,
   INTERNAL: -32603,
-  HANDLER: -32000
+  HANDLER: -32000,
+  /** The call is not open to this client (a network client and a workspace that is not shared). */
+  FORBIDDEN: -32001
 } as const
 
 /**

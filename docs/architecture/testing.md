@@ -19,7 +19,8 @@ handler and the preload call together and the test stays green. The scan only se
 literals, and a test fails when a channel is named any other way. Keep channel names literal at the
 call site.
 
-The server's channel table is held to the same handlers by `src/server/channels.test.ts`, and the
+The shared channel table (`src/host/channelTable.ts`) is counted as handled by the contract test and
+held to the server's by `src/server/channels.test.ts`, and the
 smoke job also runs `styr serve`'s integration test under plain Node (see `remote.md`).
 
 ## Smoke test (`e2e/smoke.e2e.ts`)

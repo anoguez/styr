@@ -24,8 +24,13 @@ function matches(text: string, pattern: RegExp): string[] {
 const main = sourceFiles(join(ROOT, 'src/main'))
   .map((file) => readFileSync(file, 'utf8'))
   .join('\n')
-const desktop = new Set(matches(main, /ipcMain\.(?:handle|on)\(\s*'([^']+)'/g))
-const hostSource = readFileSync(join(ROOT, 'src/server/serverHost.ts'), 'utf8')
+// The shared table (`src/host/channelTable.ts`) is what both hosts answer; `ipc.ts` registers it
+// in a loop, so the desktop's channels are its literal handlers plus the table's.
+const hostSource = readFileSync(join(ROOT, 'src/host/channelTable.ts'), 'utf8')
+const desktop = new Set([
+  ...matches(main, /ipcMain\.(?:handle|on)\(\s*'([^']+)'/g),
+  ...matches(hostSource, /^\s+'([a-z]+:[A-Za-z]+)': channel\(/gm)
+])
 const server = new Set(matches(hostSource, /^\s+'([a-z]+:[A-Za-z]+)': channel\(/gm))
 /** Channels the hub answers itself (`hub.ts`), because the PTY size follows focus. */
 const HUB = new Set(['terminal:resize'])
@@ -73,6 +78,13 @@ const DESKTOP_ONLY = new Set([
   'terminal:nativeDetach',
   'terminal:nativeClearBlocks',
   'terminal:nativeReceived',
+  // Remote access: this computer's own listener and the devices paired with it
+  // (`src/main/networkAccess.ts`).
+  'access:state',
+  'access:configure',
+  'access:pair',
+  'access:cancelPair',
+  'access:revoke',
   // The client's own connections to remote hosts (`src/main/remote.ts`).
   'remote:state',
   'remote:retry',
@@ -99,6 +111,13 @@ describe('the server channel table', () => {
       (channel) => !server.has(channel) && !HUB.has(channel) && !DESKTOP_ONLY.has(channel)
     )
     expect(missing).toEqual([])
+  })
+
+  it('has the desktop register the shared table, and keep no second copy of its channels', () => {
+    const ipc = readFileSync(join(ROOT, 'src/main/ipc.ts'), 'utf8')
+    expect(ipc).toContain('channelTable.invoke')
+    const literal = new Set(matches(main, /ipcMain\.(?:handle|on)\(\s*'([^']+)'/g))
+    expect([...server].filter((channel) => literal.has(channel))).toEqual([])
   })
 
   it('answers no desktop-only channel, and nothing the desktop does not have', () => {

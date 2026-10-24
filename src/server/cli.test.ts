@@ -36,4 +36,33 @@ describe('parseServerArgs', () => {
     // `attach` is a subcommand, not an argument that may come later.
     expect(parseServerArgs(['serve', '--socket', '/s', 'attach']).command).toBe('invalid')
   })
+
+  it('listens on one address and pairs, with a default port', () => {
+    expect(parseServerArgs(['serve', '--listen', '100.64.0.3'])).toEqual({
+      command: 'serve',
+      listen: { address: '100.64.0.3', port: 7878 }
+    })
+    expect(parseServerArgs(['serve', '--listen=192.168.1.5:9000', '--pair'])).toEqual({
+      command: 'serve',
+      listen: { address: '192.168.1.5', port: 9000 },
+      pair: true
+    })
+    expect(parseServerArgs(['serve', '--listen', '[fd7a:115c:a1e0::1]:7000'])).toEqual({
+      command: 'serve',
+      listen: { address: 'fd7a:115c:a1e0::1', port: 7000 }
+    })
+    expect(parseServerArgs(['serve', '--listen', 'fd7a:115c:a1e0::1'])).toEqual({
+      command: 'serve',
+      listen: { address: 'fd7a:115c:a1e0::1', port: 7878 }
+    })
+  })
+
+  it('refuses --listen without an address, --pair without --listen, and attach with either', () => {
+    expect(parseServerArgs(['serve', '--listen']).command).toBe('invalid')
+    expect(parseServerArgs(['serve', '--pair'])).toEqual({
+      command: 'invalid',
+      message: '--pair needs --listen'
+    })
+    expect(parseServerArgs(['attach', '--listen', '127.0.0.1']).command).toBe('invalid')
+  })
 })
