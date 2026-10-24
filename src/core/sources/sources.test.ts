@@ -74,6 +74,7 @@ function task(over: Partial<Task> = {}): Task {
     orchestrate: true,
     useWorktree: false,
     extraRepos: [],
+    questions: [],
     blockedBy: [],
     contextFiles: [],
     sessions: [],

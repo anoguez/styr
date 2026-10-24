@@ -73,6 +73,11 @@ export interface OrchestrationContext {
   skip?: ReadonlySet<string>
 }
 
+/**
+ * States that hold a lane slot. `ready` counts: a launch starts there (`SessionStart`), and the next
+ * Auto-run pass runs before the agent turns `working`, so without it the lane looks empty again.
+ */
+const SLOT_STATES: ReadonlySet<AgentState> = new Set<AgentState>(['ready', 'working', 'waiting'])
 const BUSY_STATES: ReadonlySet<AgentState> = new Set<AgentState>(['working', 'waiting'])
 
 /**
@@ -94,7 +99,7 @@ export function planOrchestration(
   const occupied = emptyTally()
   for (const task of tasks) {
     const state = agents.get(task.id)
-    if (state && BUSY_STATES.has(state)) occupied[laneFor(task)] += 1
+    if (state && SLOT_STATES.has(state)) occupied[laneFor(task)] += 1
   }
 
   const byId = indexTasks(tasks)

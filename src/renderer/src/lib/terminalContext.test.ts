@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { firstLine, taskFromTerminal } from './terminalContext.js'
+import { firstLine, repoForDirectory, taskFromTerminal } from './terminalContext.js'
 
 describe('taskFromTerminal', () => {
   it('describes a failed command with its exit code and output', () => {
@@ -56,5 +56,61 @@ describe('taskFromTerminal ask', () => {
     const task = taskFromTerminal('explain', context)
     expect(task.title).toBe('Explain: pnpm test')
     expect(task.tags).toBeUndefined()
+  })
+})
+
+describe('taskFromTerminal fix', () => {
+  const context = { cwd: '/r', command: 'pnpm test', exitCode: 1, text: 'boom' }
+
+  it('is ready to dispatch, the other kinds still need a spec', () => {
+    expect(taskFromTerminal('fix', context).ready).toBe(true)
+    expect(taskFromTerminal('explain', context).ready).toBeUndefined()
+    expect(taskFromTerminal('output', context).ready).toBeUndefined()
+  })
+
+  it('uses a longer fence when the output has backticks', () => {
+    const task = taskFromTerminal('fix', { ...context, text: 'a ```code``` b' })
+    expect(task.description).toContain('````\na ```code``` b\n````')
+  })
+
+  it('notes clipped output and strips colour codes', () => {
+    const task = taskFromTerminal('fix', {
+      ...context,
+      text: `\x1b[31mred\x1b[0m${'a'.repeat(7000)}`
+    })
+    expect(task.description).toContain('(output trimmed to the last 6000 characters)')
+    expect(task.description).not.toContain('\x1b')
+    expect(
+      taskFromTerminal('fix', { ...context, text: '\x1b[31mred\x1b[0m' }).description
+    ).toContain('\nred\n')
+  })
+
+  it('handles a missing command and exit code', () => {
+    const task = taskFromTerminal('fix', { cwd: '/r', text: '' })
+    expect(task.title).toBe('Fix: terminal failure')
+    expect(task.description).not.toContain('Command:')
+    expect(task.description).not.toContain('Exit code')
+    expect(task.description).not.toContain('with exit code')
+  })
+})
+
+describe('repoForDirectory', () => {
+  it('returns the git root of the directory', async () => {
+    const seen: string[] = []
+    const root = await repoForDirectory('/repo/src', async (path) => {
+      seen.push(path)
+      return { root: '/repo' }
+    })
+    expect(root).toBe('/repo')
+    expect(seen).toEqual(['/repo/src'])
+  })
+
+  it('falls back to undefined outside a repo or when the lookup fails', async () => {
+    expect(await repoForDirectory('/tmp', async () => ({ root: null }))).toBeUndefined()
+    expect(
+      await repoForDirectory('/tmp', async () => {
+        throw new Error('gone')
+      })
+    ).toBeUndefined()
   })
 })

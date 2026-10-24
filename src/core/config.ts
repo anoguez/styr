@@ -2,7 +2,9 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { defaultShell } from './platformShell.js'
 import { NOTE_TOOL, noteFallback } from './activityNote.js'
+import { REVIEW_TOOL } from './boardTools.js'
 import {
+  DEFAULT_AUTO_LIMITS,
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_TASK_PRESETS,
@@ -77,7 +79,8 @@ const REVIEW_TEMPLATE = [
   `  ${noteFallback('{{filePath}}')}.`,
   '- If it does not pass, set `status: backlog` (keep `readiness: ready`) and list the required fixes',
   '  in that note. Backlog hands the task back to an implementer; do not fix it yourself.',
-  '- If there is no git repository, a pass means set `status: in_review` and say so: I mark it done.',
+  `- If there is no git repository, a pass means call ${REVIEW_TOOL} with your verdict and how to`,
+  '  verify it, and say so: I mark it done. Only if you do not have that tool, set `status: in_review`.',
   '- Otherwise, if it passes, `done` means the work has landed, not that it was approved. Find the base',
   '  branch (the remote default branch, else `main`/`master`, else the branch the main checkout',
   '  is on) and count the commits on this branch that are not on it, e.g.',
@@ -135,6 +138,7 @@ export function shippedSettings(): Settings {
       { id: 'followup', name: 'Follow up', template: FOLLOWUP_TEMPLATE }
     ],
     orchestration: { spec: 1, implement: 2, review: 1 },
+    autoDispatchLimits: { ...DEFAULT_AUTO_LIMITS },
     autoDispatch: false,
     updates: { checkAutomatically: true },
     restoreTabs: 'ask',
@@ -147,6 +151,7 @@ export function shippedSettings(): Settings {
     taskDefaults: { orchestrate: true, useWorktree: false },
     taskPresets: DEFAULT_TASK_PRESETS,
     doneCap: DEFAULT_DONE_CAP,
+    autoArchiveAsk: true,
     sources: [],
     theme: DEFAULT_THEME,
     shortcuts: DEFAULT_SHORTCUTS,

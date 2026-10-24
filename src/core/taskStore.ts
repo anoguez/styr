@@ -17,6 +17,7 @@ import {
   parseTaskMarkdown,
   serialiseTask
 } from './markdown.js'
+import { firstLine, MAX_OPEN_QUESTIONS, nextQuestionId, openQuestions } from './questions.js'
 import { tasksDir } from './settingsStore.js'
 import type { ActivityEntry, Task, TaskDraft, TaskFilter, TaskPatch, TaskStatus } from './types.js'
 
@@ -72,6 +73,7 @@ function adoptUnmanaged(raw: string, filePath: string, index: number): Task {
     contextFiles: [],
     description: raw.replace(/^#\s+.+$/m, '').trim(),
     activity: [],
+    questions: [],
     tags: [],
     order: index,
     createdAt: stamp,
@@ -207,6 +209,7 @@ export function createTask(draft: TaskDraft): Task {
     readiness: draft.readiness ?? 'ready',
     description: draft.description ?? '',
     activity: [],
+    questions: [],
     project: draft.project,
     tags: draft.tags ?? [],
     repoPath: draft.repoPath,
@@ -237,7 +240,8 @@ export function updateTask(id: string, patch: TaskPatch): Task {
   const all = listTasks()
   const task = all.find((candidate) => candidate.id === id)
   if (!task) throw new Error(`Task ${id} not found`)
-  const changes = { ...patch }
+  // Questions change only through askQuestion / answerQuestion, so a patch cannot clobber an answer.
+  const { questions: _questions, ...changes } = patch as TaskPatch & { questions?: unknown }
   if (patch.blockedBy) {
     changes.blockedBy = [...new Set(patch.blockedBy)]
     // Only a change is checked: a task saved with the cycle or typo a hand edit left must still save.
@@ -290,6 +294,61 @@ export function addNote(id: string, author: string, message: string): Task {
   if (!task) throw new Error(`Task ${id} not found`)
   const entry: ActivityEntry = { at: now(), author, message }
   return writeTask({ ...task, activity: [...task.activity, entry], updatedAt: now() })
+}
+
+/** Appends an open question and its note in one write. Status and readiness are left alone. */
+export function askQuestion(
+  id: string,
+  author: string,
+  text: string
+): { task: Task; questionId: string } {
+  const task = getTask(id)
+  if (!task) throw new Error(`Task ${id} not found`)
+  const body = text.trim()
+  if (!body) throw new Error('A question needs some text')
+  if (openQuestions(task).length >= MAX_OPEN_QUESTIONS)
+    throw new Error(
+      `${id} already has ${MAX_OPEN_QUESTIONS} open questions; wait for answers before asking more`
+    )
+  const stamp = now()
+  const questionId = nextQuestionId(task)
+  const saved = writeTask({
+    ...task,
+    questions: [...task.questions, { id: questionId, askedAt: stamp, askedBy: author, text: body }],
+    activity: [...task.activity, { at: stamp, author, message: `Asked: ${firstLine(body)}` }],
+    updatedAt: stamp
+  })
+  return { task: saved, questionId }
+}
+
+/** Records the owner's answer and a note. An answered question is refused, so it is sent only once. */
+export function answerQuestion(
+  id: string,
+  questionId: string,
+  answer: string,
+  answeredBy = 'owner'
+): Task {
+  const task = getTask(id)
+  if (!task) throw new Error(`Task ${id} not found`)
+  const question = task.questions.find((candidate) => candidate.id === questionId)
+  if (!question) throw new Error(`Question ${questionId} not found on ${id}`)
+  if (question.answer !== undefined) throw new Error(`Question ${questionId} is already answered`)
+  const body = answer.trim()
+  if (!body) throw new Error('An answer needs some text')
+  const stamp = now()
+  return writeTask({
+    ...task,
+    questions: task.questions.map((candidate) =>
+      candidate.id === questionId
+        ? { ...candidate, answer: body, answeredAt: stamp, answeredBy }
+        : candidate
+    ),
+    activity: [
+      ...task.activity,
+      { at: stamp, author: answeredBy, message: `Answered ${questionId}: ${firstLine(body)}` }
+    ],
+    updatedAt: stamp
+  })
 }
 
 export function deleteTask(id: string): void {

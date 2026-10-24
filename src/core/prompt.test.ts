@@ -1,71 +1,71 @@
 import { describe, expect, it } from 'vitest'
-import { buildPrompt, reposBlock, type PromptRepo } from './prompt.js'
+import { buildPrompt } from './prompt.js'
 import type { Task } from './types.js'
 
-const task: Task = {
-  id: 'TASK-0007',
-  title: 'Add a field',
+const base = {
+  id: 'TASK-0001',
+  title: 'Do it',
+  description: 'Spec',
   status: 'in_progress',
   priority: 'medium',
   readiness: 'ready',
-  description: 'Spec',
-  activity: [],
   tags: [],
-  repoPath: '/w/api.worktrees/x',
-  orchestrate: true,
-  useWorktree: true,
-  extraRepos: [],
-  blockedBy: [],
   contextFiles: [],
-  sessions: [],
-  order: 0,
-  createdAt: '',
-  updatedAt: '',
-  filePath: '/tasks/TASK-0007.md',
-  format: 'markdown'
-}
+  questions: [],
+  filePath: '/ws/tasks/TASK-0001.md',
+  repoPath: '/repo',
+  useWorktree: false
+} as unknown as Task
 
-const extra: PromptRepo = {
-  name: 'client',
-  path: '/w/client.worktrees/x',
-  baseBranch: 'release/2.x',
-  branch: 'styr/TASK-0007'
-}
-
-describe('multi-repo prompt', () => {
-  it('says nothing about repositories for a single-repo task', () => {
-    const prompt = buildPrompt('Do {{title}}', task, undefined, { primaryName: 'api' })
-    expect(prompt).not.toContain('Repositories')
-    expect(prompt).not.toContain('extraRepos')
-    expect(prompt).toContain('landed on the base branch')
-    expect(buildPrompt('{{repos}}|', task)).toContain('|')
+describe('board protocol tools', () => {
+  it('names the three tools first and the file edits as the fallback', () => {
+    const prompt = buildPrompt('Go', { ...base, readiness: 'needs_spec' })
+    expect(prompt).toContain('call `request_review` on the styr MCP server')
+    expect(prompt).toContain(
+      'Only if you do not have that tool, write a `## Handoff` section above'
+    )
+    expect(prompt).toContain('set `status: in_review`')
+    expect(prompt).toContain('call `ask_owner`')
+    expect(prompt).toContain('add the question under `questions:` in the frontmatter')
+    expect(prompt).toContain('split it with `split_task`')
+    expect(prompt).toMatch(/add\s+their ids to this task's `blockedBy`/)
   })
 
-  it('lists every other repo with path, base and branch', () => {
-    const prompt = buildPrompt('Do {{title}}', task, undefined, {
-      primaryName: 'api',
-      extraRepos: [extra]
-    })
-    expect(prompt).toContain('You started in `api` (the primary)')
-    expect(prompt).toContain('branch `styr/TASK-0007`')
-    expect(prompt).toContain('- client at /w/client.worktrees/x (base release/2.x)')
-    expect(prompt).toContain("every repository's branch has landed on its base")
-    expect(prompt).toMatch(/`prUrl:` on the matching\s+`extraRepos` entry/)
+  it('offers the split only while the task needs a spec', () => {
+    expect(buildPrompt('Go', base)).not.toContain('split_task')
   })
 
-  it('places the list where a template asks, and only once', () => {
-    const prompt = buildPrompt('Review:\n{{repos}}\nEnd', task, undefined, {
-      primaryName: 'api',
-      extraRepos: [extra]
-    })
-    expect(prompt.match(/This task spans several repositories/g)).toHaveLength(1)
-    expect(prompt.indexOf('Review:')).toBeLessThan(prompt.indexOf('spans several'))
-    expect(prompt.indexOf('spans several')).toBeLessThan(prompt.indexOf('End'))
-    // Per-repo Done and PR wording still applies.
-    expect(prompt).toContain('`extraRepos` entry')
+  it('keeps the file-edit lines, so an agent without the tools still works', () => {
+    const prompt = buildPrompt('Go', base)
+    expect(prompt).toContain('- Set `status: in_progress` as soon as you start')
+    expect(prompt).toContain('record it with `blockedBy: [TASK-xxxx]`')
   })
 
-  it('renders nothing for no extra repos', () => {
-    expect(reposBlock('api', [])).toBe('')
+  it('says where the deliverable is in a plain folder', () => {
+    const prompt = buildPrompt('Go', base, undefined, { plainFolder: true })
+    expect(prompt).toContain('call `request_review`')
+    expect(prompt).toContain('Put the deliverable in the working directory')
+    expect(prompt).not.toContain('landed on the base branch')
+  })
+})
+
+describe('questions for the owner', () => {
+  const asked = {
+    ...base,
+    questions: [
+      { id: 'q1', askedAt: 'a', askedBy: 'claude', text: 'Copy files?', answer: 'Yes, all.' },
+      { id: 'q2', askedAt: 'b', askedBy: 'claude', text: 'Which base?' }
+    ]
+  } as Task
+
+  it('lists answered and open questions, for any template', () => {
+    const prompt = buildPrompt('Custom {{id}}', asked)
+    expect(prompt).toContain('## Questions for the owner')
+    expect(prompt).toContain('- q1: Copy files?\n  Answer: Yes, all.')
+    expect(prompt).toContain('- q2 (open): Which base?')
+  })
+
+  it('renders nothing when there are none', () => {
+    expect(buildPrompt('Go', base)).not.toContain('Questions for the owner')
   })
 })

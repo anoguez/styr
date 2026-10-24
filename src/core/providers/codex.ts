@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import type { ShellSyntax } from '../shell.js'
 import type { Settings } from '../types.js'
+import { parseMcpGet } from './mcpGet.js'
 import type { AgentProvider, TranscriptUsage, TranscriptUsageReader } from './types.js'
 
 function sessionDirectory(root: string): string {
@@ -264,5 +265,8 @@ export const codexProvider: AgentProvider = {
   installCommand: () => 'npm install -g @openai/codex',
   mcpInstallCommand: (entry, syntax) =>
     `codex mcp add styr --env STYR_MCP_AUTHOR=codex -- node ${syntax.quote(entry)}`,
+  mcpRemoveCommand: () => 'codex mcp remove styr',
+  mcpProbeCommand: (command, syntax) => `${syntax.invoke(command)} mcp get styr`,
+  parseMcpRegistration: (result) => parseMcpGet(result, /^\s*args:\s*(.+)$/m),
   sessionEnvKeys: ['CODEX_THREAD_ID', 'CODEX_SESSION_ID']
 }

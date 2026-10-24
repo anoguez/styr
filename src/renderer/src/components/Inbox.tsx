@@ -9,10 +9,17 @@ import {
   type InboxGroup,
   type InboxItem
 } from '@core/inbox.js'
-import { TASK_STATUS_LABELS, type Task, type TaskPriority, type TaskStatus } from '@core/types.js'
+import {
+  TASK_STATUS_LABELS,
+  type AnswerResult,
+  type Task,
+  type TaskPriority,
+  type TaskStatus
+} from '@core/types.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
 import { STATUS_DOT } from '../lib/statusTone.js'
 import { timeAgo } from '../lib/timeAgo.js'
+import { OpenQuestions } from './task/OpenQuestions.js'
 import { Button, Chip, DiffStatButton } from './ui.js'
 
 const GROUP_DOT: Record<InboxGroup, string> = {
@@ -31,12 +38,14 @@ const PRIORITY_BAR: Record<TaskPriority, string> = {
 
 function itemDot(item: InboxItem): string {
   if (item.agent) return AGENT_TONE[shownAgentState(item.agent.state, item.task)]
-  if (item.kind === 'spec' || item.kind === 'blocked') return 'text-[var(--color-col-review-text)]'
+  if (item.kind === 'spec' || item.kind === 'blocked' || item.kind === 'question')
+    return 'text-[var(--color-col-review-text)]'
   if (item.kind === 'done') return 'text-[var(--color-col-done)]'
   return 'text-edge-strong'
 }
 
 function itemStatus(item: InboxItem): string {
+  if (item.kind === 'question') return 'Has a question'
   if (item.agent) return AGENT_STATE_LABELS[shownAgentState(item.agent.state, item.task)]
   if (item.kind === 'spec') return 'Needs a spec'
   if (item.kind === 'blocked') return 'Blocked'
@@ -52,6 +61,8 @@ export interface InboxHandlers {
   onShowChanges: (task: Task) => void
   onMove: (task: Task, status: TaskStatus) => void
   onArchive: (task: Task) => void
+  /** An answer to one of the task's questions was saved and sent. */
+  onAnswered: (result: AnswerResult) => void
 }
 
 interface InboxAction {
@@ -70,6 +81,8 @@ function actionsFor(
   const terminal: InboxAction = { label: 'Open terminal', run: () => h.onActivate(task) }
   const done: InboxAction = { label: 'Move to Done', run: () => h.onMove(task, 'done') }
   switch (item.kind) {
+    case 'question':
+      return { primary: open, secondary: [terminal] }
     case 'waiting':
     case 'running':
       return { primary: terminal, secondary: [open] }
@@ -161,6 +174,7 @@ function hintFor(group: InboxGroup, items: InboxItem[]): string {
       return (
         [
           count('waiting') > 0 ? plural(count('waiting'), 'permission') : '',
+          count('question') > 0 ? plural(count('question'), 'question') : '',
           count('review') > 0 ? plural(count('review'), 'review') : '',
           count('spec') > 0 ? plural(count('spec'), 'spec') : ''
         ]
@@ -217,7 +231,9 @@ function Row({
         </span>
         <span
           className={`truncate text-[11.5px] leading-[1.4] ${
-            item.kind === 'waiting' ? 'text-[var(--color-col-review-text)]' : 'text-dim'
+            item.kind === 'waiting' || item.kind === 'question'
+              ? 'text-[var(--color-col-review-text)]'
+              : 'text-dim'
           }`}
         >
           {item.reason}
@@ -302,7 +318,12 @@ function Detail({
           <span className={`text-[11.5px] font-medium ${itemDot(item)}`}>{itemStatus(item)}</span>
           <span className="ml-auto font-mono text-[10.5px] text-faint">{timeAgo(item.at)}</span>
         </span>
-        <p className="m-0 text-[13px] leading-[1.5] text-ink">{item.reason}</p>
+        {item.kind === 'question' ? null : (
+          <p className="m-0 text-[13px] leading-[1.5] text-ink">{item.reason}</p>
+        )}
+        {item.kind === 'question' ? (
+          <OpenQuestions task={task} onAnswered={handlers.onAnswered} />
+        ) : null}
         <div className="flex flex-wrap items-center gap-1.5">
           <Button variant="primary" onClick={primary.run}>
             {primary.label}

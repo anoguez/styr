@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { AGENT_STATES } from './agentState.js'
 import {
   ANSI_COLOURS,
+  DEFAULT_AUTO_LIMITS,
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_TERMINAL_PALETTE,
@@ -103,6 +104,18 @@ export const extraRepoSchema = z.object({
   prUrl: z.string().optional()
 })
 
+export const taskQuestionSchema = z
+  .object({
+    id: z.string(),
+    askedAt: z.string(),
+    askedBy: z.string(),
+    text: z.string(),
+    answer: z.string().optional(),
+    answeredAt: z.string().optional(),
+    answeredBy: z.string().optional()
+  })
+  .strict()
+
 export const taskFrontmatterSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -129,6 +142,7 @@ export const taskFrontmatterSchema = z.object({
   order: z.number().default(0),
   doneAt: z.string().optional(),
   archivedAt: z.string().optional(),
+  questions: z.array(taskQuestionSchema).default([]),
   createdAt: z.string(),
   updatedAt: z.string()
 })
@@ -189,6 +203,12 @@ export const orchestrationSchema = z.object({
   spec: z.number().int().min(0).max(20),
   implement: z.number().int().min(0).max(20),
   review: z.number().int().min(0).max(20)
+})
+
+export const autoDispatchLimitsSchema = z.object({
+  launchesPerHour: z.number().int().min(1).max(200),
+  failures: z.number().int().min(1).max(20),
+  reviews: z.number().int().min(1).max(20)
 })
 
 export const providerRoutingSchema = z.object({
@@ -272,6 +292,7 @@ export const settingsSchema = z.object({
   promptTemplates: z.array(promptTemplateSchema).default([]),
   promptRouting: promptRoutingSchema,
   orchestration: orchestrationSchema,
+  autoDispatchLimits: autoDispatchLimitsSchema.default(DEFAULT_AUTO_LIMITS),
   autoDispatch: z.boolean().default(false),
   autoDispatchSince: z.string().optional(),
   theme: themeSchema,
@@ -314,6 +335,7 @@ export const settingsSchema = z.object({
       maxAgeDays: z.number().int().min(0).max(365).default(DEFAULT_DONE_CAP.maxAgeDays)
     })
     .default(DEFAULT_DONE_CAP),
+  autoArchiveAsk: z.boolean().default(true),
   sources: z.array(sourceConfigSchema).default([])
 })
 
@@ -729,6 +751,16 @@ export const remoteAgentCliReportSchema = z.object({
   ]),
   problem: message,
   installCommand: line.optional()
+})
+
+export const remoteMcpSetupReportSchema = z.object({
+  provider,
+  state: z.enum(['registered', 'stale', 'missing', 'unknown']),
+  registeredEntry: line.optional(),
+  expectedEntry: line,
+  installCommand: message,
+  removeCommand: message.optional(),
+  problem: message
 })
 
 const remoteItemSchema = z.object({

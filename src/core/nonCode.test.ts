@@ -12,6 +12,7 @@ const base = {
   readiness: 'ready',
   tags: [],
   contextFiles: [],
+  questions: [],
   filePath: '/ws/tasks/TASK-0001.md',
   repoPath: '/notes',
   useWorktree: false

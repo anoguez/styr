@@ -27,15 +27,17 @@ export function agentRowsFor(
   sessions: TerminalSessionInfo[],
   workspaceId: string
 ): AgentRow[] {
-  return sortAgentRows(
-    tasks
-      .filter((task) => (shown.has(task.id) || task.agentSession) && !isAgentArchived(task))
-      .map((task) => ({
-        task,
-        agent: shown.get(task.id),
-        session: findTaskSession(sessions, task.id, workspaceId)
-      }))
-  )
+  const rows: AgentRow[] = []
+  for (const task of tasks) {
+    if (isAgentArchived(task)) continue
+    // A stale status record alone does not make an agent: once the chat is unlinked and its tab
+    // closed, the row goes.
+    const session = findTaskSession(sessions, task.id, workspaceId)
+    if (!task.agentSession && !session) continue
+    if (!shown.has(task.id) && !task.agentSession) continue
+    rows.push({ task, agent: shown.get(task.id), session })
+  }
+  return sortAgentRows(rows)
 }
 
 /**

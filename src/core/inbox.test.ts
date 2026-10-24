@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentState, AgentStatus } from './agentState.js'
 import { buildInbox, summariseInbox } from './inbox.js'
-import type { Task } from './types.js'
+import type { Task, TaskQuestion } from './types.js'
 
 function task(id: string, extra: Partial<Task> = {}): Task {
   return {
@@ -10,12 +10,16 @@ function task(id: string, extra: Partial<Task> = {}): Task {
     status: 'backlog',
     readiness: 'ready',
     blockedBy: [],
+    questions: [],
     updatedAt: '2026-01-01T00:00:00Z',
     ...extra
   } as unknown as Task
 }
 function agent(taskId: string, state: AgentState, at = '2026-01-02T00:00:00Z'): AgentStatus {
   return { taskId, state, at }
+}
+function ask(id: string, askedAt: string, text = 'Is X ok?'): TaskQuestion {
+  return { id, askedAt, askedBy: 'claude', text }
 }
 const ids = (items: { task: Task }[]): string[] => items.map((i) => i.task.id)
 
@@ -118,7 +122,15 @@ describe('summariseInbox', () => {
         ])
       )
     )
-    expect(summary).toEqual({ needs: 3, running: 1, next: 1, waiting: 1, review: 1, spec: 1 })
+    expect(summary).toEqual({
+      needs: 3,
+      running: 1,
+      next: 1,
+      waiting: 1,
+      question: 0,
+      review: 1,
+      spec: 1
+    })
   })
 
   it('is all zeroes for an empty board', () => {
@@ -127,8 +139,51 @@ describe('summariseInbox', () => {
       running: 0,
       next: 0,
       waiting: 0,
+      question: 0,
       review: 0,
       spec: 0
     })
+  })
+})
+
+describe('open questions', () => {
+  const asked = task('A', {
+    status: 'in_progress',
+    questions: [
+      ask('q2', '2026-01-03T00:00:00Z', 'Second?'),
+      ask('q1', '2026-01-02T00:00:00Z', 'First?\nmore')
+    ]
+  })
+
+  it('outranks a working agent: a question for the owner does not hide under Running', () => {
+    const inbox = buildInbox([asked], new Map([['A', agent('A', 'working')]]))
+    expect(inbox.running).toEqual([])
+    expect(inbox.needs[0]).toMatchObject({
+      kind: 'question',
+      reason: 'First? (+1 more)',
+      at: '2026-01-02T00:00:00Z'
+    })
+  })
+
+  it('ranks after a waiting agent and before the rest of Needs you', () => {
+    const inbox = buildInbox(
+      [task('S', { readiness: 'needs_spec' }), asked, task('W', { status: 'in_progress' })],
+      new Map([['W', agent('W', 'waiting')]])
+    )
+    expect(ids(inbox.needs)).toEqual(['W', 'A', 'S'])
+  })
+
+  it('ignores answered questions, and leaves a Done task in Done', () => {
+    const answered = task('B', {
+      questions: [{ ...ask('q1', '2026-01-02T00:00:00Z'), answer: 'Yes' }]
+    })
+    const done = task('C', { status: 'done', questions: [ask('q1', '2026-01-02T00:00:00Z')] })
+    const inbox = buildInbox([answered, done], new Map())
+    expect(inbox.needs).toEqual([])
+    expect(ids(inbox.done)).toEqual(['C'])
+  })
+
+  it('counts the kind for the workspace switcher', () => {
+    expect(summariseInbox(buildInbox([asked], new Map()))).toMatchObject({ needs: 1, question: 1 })
   })
 })

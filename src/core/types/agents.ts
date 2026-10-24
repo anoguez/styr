@@ -50,8 +50,22 @@ export const AUTO_DISPATCH_PAUSE_LABELS: Record<AutoDispatchPause, string> = {
 }
 
 /** What Orchestrate would do, without the task objects the renderer does not need. */
-/** Failed reviews (review → Backlog) after which Auto-run stops starting a task: it needs a person. */
-export const AUTO_REWORK_LIMIT = 3
+/** Auto-run's safety limits, a workspace setting. */
+export interface AutoDispatchLimits {
+  /** Auto launches per rolling hour before Auto-run switches itself off. */
+  launchesPerHour: number
+  /** Consecutive failed launches before Auto-run switches itself off. */
+  failures: number
+  /** Failed reviews (review → Backlog) after which Auto-run stops starting a task: it needs a person. */
+  reviews: number
+}
+
+/** What a workspace gets until it changes them. */
+export const DEFAULT_AUTO_LIMITS: AutoDispatchLimits = {
+  launchesPerHour: 20,
+  failures: 3,
+  reviews: 3
+}
 
 export interface OrchestrationSummary {
   dispatch: {
@@ -96,6 +110,28 @@ export type AgentCliStatus =
   | { state: 'missing' }
   | { state: 'failed'; detail: string }
   | { state: 'unsupported_shell' }
+
+/**
+ * Whether the Styr MCP server is registered with an agent CLI and points at this install.
+ * `unknown` is a probe that could not tell (CLI missing, unsupported shell, timeout, odd output);
+ * it is never reported as `missing`.
+ */
+export type McpSetupState = 'registered' | 'stale' | 'missing' | 'unknown'
+
+export interface McpSetupReport {
+  provider: 'claude' | 'codex'
+  state: McpSetupState
+  /** The script path the provider has registered, when it has a `styr` server. */
+  registeredEntry?: string
+  /** This host's MCP entry: what a registration should point at. */
+  expectedEntry: string
+  /** The command that registers the server, for the fix-it text. */
+  installCommand: string
+  /** The command that removes a stale registration first, when there is one. */
+  removeCommand?: string
+  /** One sentence on what is wrong; empty when registered. */
+  problem: string
+}
 
 /** One agent CLI check, with what it ran and, when it is not ready, what to do about it. */
 export interface AgentCliReport {

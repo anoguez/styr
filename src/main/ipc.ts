@@ -1,4 +1,5 @@
 import { existsSync, readdirSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { execFile, spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -19,6 +20,7 @@ import {
   getTask,
   reorderTasks,
   setArchived,
+  answerQuestion,
   updateTask
 } from '@core/taskStore.js'
 import { fetchAndSettle, settleLandedTasks } from './landing.js'
@@ -50,6 +52,8 @@ import { createTasksService } from '@host/tasksService.js'
 import { createWorklogService } from '@host/worklogService.js'
 import { createReviewService, diskReviewStore } from '@host/reviewService.js'
 import { listDirectories } from '@host/directories.js'
+import { providerById } from '@core/providers/index.js'
+import { agentSkip } from '@core/terminalLayout.js'
 import { createTerminalTabsService, diskTabsStore } from '@host/terminalTabs.js'
 import { listWorkspaces } from '@core/workspaces.js'
 import {
@@ -77,6 +81,7 @@ import { CodexMonitor, prepareCodex } from './codexMonitor.js'
 import { agentPrompts, publishAgentConversation } from './usage.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
+import { mcpSetupStatus } from './mcpSetup.js'
 import { bindGlobalSettingsSave, remoteRouter, routedIpcMain, startRemote } from './remote.js'
 import { isWebLink } from './windowSecurity.js'
 
@@ -107,6 +112,7 @@ const tasksService = createTasksService({
     addNote,
     reorderTasks,
     setArchived,
+    answerQuestion,
     deleteTask: (taskId) => {
       deleteTask(taskId)
       reviewService.forget(taskId)
@@ -116,6 +122,8 @@ const tasksService = createTasksService({
   },
   settings: () => loadSettings(),
   requestLanding: () => requestLanding(),
+  route: (taskId) => agentsService.reviewRoute(taskId),
+  deliver: (taskId, message) => agentsService.deliverReview(taskId, message),
   observeTasks,
   recordNotifyDuration,
   requestAutoRun: () => dispatchService.requestAutoRun(),
@@ -207,7 +215,18 @@ const terminalTabs = createTerminalTabsService({
     currentDirectory: (id) => terminalRuntimeState(id)?.cwd,
     createShell: ({ cwd, title }) => createSession({ cwd, title, shell: loadSettings().shell })
   },
-  agents: { restoreAgent: (taskId) => agentsService.restoreAgent(taskId) },
+  agents: {
+    restoreAgent: (taskId) => agentsService.restoreAgent(taskId),
+    skipReason: (taskId) => {
+      const task = findTask(taskId)
+      const ref = task?.agentSession
+      return agentSkip(
+        taskId,
+        task ?? null,
+        Boolean(ref && providerById(ref.provider).sessionExists(ref.id))
+      )
+    }
+  },
   directoryExists: existsSync,
   now: () => new Date().toISOString()
 })
@@ -433,6 +452,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('tasks:archive', (_event, id: string, archived: boolean) =>
     tasksService.archive(id, archived)
   )
+  ipcMain.handle('tasks:answerQuestion', (_event, id: string, questionId: string, answer: string) =>
+    tasksService.answerQuestion(id, questionId, answer)
+  )
   ipcMain.handle('tasks:delete', (_event, id: string) => tasksService.delete(id))
 
   ipcMain.handle('tasks:reveal', (_event, id: string) => {
@@ -453,6 +475,13 @@ export function registerIpcHandlers(): void {
     })
   )
   ipcMain.handle('diagnostics:stop', () => stopSampling())
+  ipcMain.handle('app:changelog', async () => {
+    try {
+      return await readFile(join(app.getAppPath(), 'CHANGELOG.md'), 'utf8')
+    } catch {
+      return null
+    }
+  })
   ipcMain.handle('app:info', () => ({ isPackaged: app.isPackaged, version: app.getVersion() }))
   ipcMain.on('app:titleBarColors', (event, background: string, symbols: string) => {
     // macOS draws traffic lights, not an overlay; Windows and Linux both use the overlay.
@@ -507,6 +536,10 @@ export function registerIpcHandlers(): void {
     'agents:cliStatus',
     (_event, provider: 'claude' | 'codex', command: string, shell: string) =>
       agentCliStatus({ provider, command: String(command ?? ''), shell: String(shell ?? '') })
+  )
+
+  ipcMain.handle('agents:mcpStatus', (_event, provider: 'claude' | 'codex', fresh?: boolean) =>
+    mcpSetupStatus({ provider, fresh: fresh === true })
   )
 
   ipcMain.handle('settings:pickApp', async (event) => {

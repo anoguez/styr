@@ -16,6 +16,7 @@ function task(extra: Partial<Task> = {}): Task {
     repoPath: '/repo',
     filePath: '/tasks/TASK-1.md',
     sessions: [],
+    questions: [],
     activity: [],
     order: 0,
     createdAt: '2026-01-01T00:00:00Z',
@@ -25,6 +26,8 @@ function task(extra: Partial<Task> = {}): Task {
 }
 
 interface Harness {
+  route: 'queued' | 'now' | 'resume' | 'fresh'
+  failDelivery: boolean
   writes: TaskWrites
   tasks: Map<string, Task>
   /** Store writes and notifies, in order. */
@@ -39,6 +42,7 @@ function harness(): Harness {
     if (!existing) throw new Error(`Task ${id} not found`)
     return existing
   }
+  const harnessState = { route: 'now' as Harness['route'], failDelivery: false }
   const ports: TaskWritePorts = {
     findTask: (id) => tasks.get(id),
     createTask: (draft) => {
@@ -70,11 +74,50 @@ function harness(): Harness {
       found(id)
       tasks.delete(id)
     },
+    answerQuestion: (id, questionId, answer) => {
+      calls.push(`answer ${id} ${questionId}`)
+      const current = found(id)
+      const question = current.questions.find((candidate) => candidate.id === questionId)
+      if (!question) throw new Error(`Question ${questionId} not found`)
+      if (question.answer !== undefined)
+        throw new Error(`Question ${questionId} is already answered`)
+      const updated = {
+        ...current,
+        questions: current.questions.map((candidate) =>
+          candidate.id === questionId ? { ...candidate, answer } : candidate
+        )
+      }
+      tasks.set(id, updated)
+      return updated
+    },
+    route: () => ({ route: harnessState.route }),
+    deliver: (id, message) => {
+      calls.push(`deliver ${id} ${message.split('\n')[0]}`)
+      return harnessState.failDelivery
+        ? Promise.reject(new Error('no terminal'))
+        : Promise.resolve()
+    },
     removeWorktree: (target) => calls.push(`removeWorktree ${target.id} ${target.repoPath}`),
     notifyTasks: () => calls.push('notifyTasks'),
     notifyAgents: () => calls.push('notifyAgents')
   }
-  return { writes: createTaskWrites(ports), tasks, calls }
+  return {
+    writes: createTaskWrites(ports),
+    tasks,
+    calls,
+    get route() {
+      return harnessState.route
+    },
+    set route(value) {
+      harnessState.route = value
+    },
+    get failDelivery() {
+      return harnessState.failDelivery
+    },
+    set failDelivery(value) {
+      harnessState.failDelivery = value
+    }
+  }
 }
 
 const count = (calls: string[], name: string): number =>
@@ -172,5 +215,59 @@ describe('createTaskWrites', () => {
     withChat.tasks.set('TASK-1', task({ agentSession: { provider: 'claude', id: 'c1' } }))
     withChat.writes.removeAgent('TASK-1')
     expect(withChat.calls).toEqual(['update TASK-1 agentSession', 'notifyTasks', 'notifyAgents'])
+  })
+
+  describe('answerQuestion', () => {
+    const ask = (): void => {
+      h.tasks.set(
+        'TASK-1',
+        task({
+          questions: [
+            { id: 'q1', askedAt: '2026-01-01T00:00:00Z', askedBy: 'claude', text: 'Is X ok?' }
+          ]
+        })
+      )
+    }
+
+    it.each(['queued', 'now', 'resume'] as const)(
+      'records, then delivers by the %s route',
+      async (route) => {
+        ask()
+        h.route = route
+        const result = await h.writes.answerQuestion('TASK-1', 'q1', 'Yes')
+        expect(result.delivery).toBe(route)
+        expect(h.calls).toEqual([
+          'answer TASK-1 q1',
+          'notifyTasks',
+          'deliver TASK-1 The owner answered your question q1 (ask_owner):'
+        ])
+      }
+    )
+
+    it('records an answer without launching an agent that has no chat', async () => {
+      ask()
+      h.route = 'fresh'
+      const result = await h.writes.answerQuestion('TASK-1', 'q1', 'Yes')
+      expect(result.delivery).toBe('recorded')
+      expect(h.calls).toEqual(['answer TASK-1 q1', 'notifyTasks'])
+    })
+
+    it('keeps the answer when the delivery fails', async () => {
+      ask()
+      h.failDelivery = true
+      const result = await h.writes.answerQuestion('TASK-1', 'q1', 'Yes')
+      expect(result).toMatchObject({ delivery: 'failed', error: 'no terminal' })
+      expect(h.tasks.get('TASK-1')?.questions[0]?.answer).toBe('Yes')
+    })
+
+    it('refuses a second answer and delivers nothing', async () => {
+      ask()
+      await h.writes.answerQuestion('TASK-1', 'q1', 'Yes')
+      h.calls.length = 0
+      await expect(h.writes.answerQuestion('TASK-1', 'q1', 'No')).rejects.toThrow(
+        'already answered'
+      )
+      expect(h.calls).toEqual(['answer TASK-1 q1'])
+    })
   })
 })

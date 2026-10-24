@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.39.0](https://github.com/anoguez/styr/compare/v0.38.0...v0.39.0) (2026-10-23)
+
+
+### Features
+
+* archive Ask agent tasks when their session ends ([#213](https://github.com/anoguez/styr/issues/213)) ([905191c](https://github.com/anoguez/styr/commit/905191c606a79cfae55329f17e742105657f07b6))
+* Auto-run safety limits as workspace settings ([#209](https://github.com/anoguez/styr/issues/209)) ([896926f](https://github.com/anoguez/styr/commit/896926f26d424a7e9d6d45175b58a9de2c0040a0))
+* detect whether the Styr MCP server is set up for each provider ([#210](https://github.com/anoguez/styr/issues/210)) ([793659e](https://github.com/anoguez/styr/commit/793659e9c8afd04d04b7ee1a660cbbcc198c7c26))
+* Fix with agent sets the repo from the command's directory and offers Launch ([#212](https://github.com/anoguez/styr/issues/212)) ([c606d56](https://github.com/anoguez/styr/commit/c606d564175f8cd0666cd54f504d83fffa30751b))
+* What's new after an update and in the update prompt ([#211](https://github.com/anoguez/styr/issues/211)) ([919055f](https://github.com/anoguez/styr/commit/919055f1c10108799e829a6fa83e3b59045f1373))
+
+
+### Bug Fixes
+
+* align the header to the left in macOS full screen ([#206](https://github.com/anoguez/styr/issues/206)) ([ae6c3e9](https://github.com/anoguez/styr/commit/ae6c3e9397e62fc43795187f55e4d6d0d62b611e))
+* unpack the Styr Terminal tarball with relative paths so Windows Git Bash tar works ([#205](https://github.com/anoguez/styr/issues/205)) ([4a153e5](https://github.com/anoguez/styr/commit/4a153e5540ac4d09bc2b457ac34d0d20ddb3a074))
+
+## [0.38.0](https://github.com/anoguez/styr/compare/v0.37.2...v0.38.0) (2026-10-23)
+
+
+### Features
+
+* build and publish Windows and Linux releases ([#195](https://github.com/anoguez/styr/issues/195)) ([2ffee8f](https://github.com/anoguez/styr/commit/2ffee8fab78bd8bee85808a0d725807ddfc8321b))
+* restore terminal tabs after a relaunch ([#200](https://github.com/anoguez/styr/issues/200)) ([f9c544f](https://github.com/anoguez/styr/commit/f9c544ff8b92e89898b2bb1978c14e85a8b13043))
+* review comments and Request changes in the Changes dialog ([#193](https://github.com/anoguez/styr/issues/193)) ([99a49b9](https://github.com/anoguez/styr/commit/99a49b9f03705793cb4794213750e3037ef1ea09))
+* split_task, request_review and ask_owner MCP verbs ([#201](https://github.com/anoguez/styr/issues/201)) ([dd3dabf](https://github.com/anoguez/styr/commit/dd3dabf700d75d8b0057b585445fc5b9e08f9fea))
+* unlink the spec chat when a spec run hands the task back to Backlog ([#199](https://github.com/anoguez/styr/issues/199)) ([c8643e9](https://github.com/anoguez/styr/commit/c8643e934ab8bea7c3df6e73fb74ca2693d4e28f))
+
+
+### Bug Fixes
+
+* Auto-run keeps its rework cap, loop guard and launch limit across a relaunch ([#196](https://github.com/anoguez/styr/issues/196)) ([1cf3ed3](https://github.com/anoguez/styr/commit/1cf3ed32190b80235809fca5794e3ba76d9040c8))
+* count subagent tokens in the Worklog ([#198](https://github.com/anoguez/styr/issues/198)) ([c1e3a75](https://github.com/anoguez/styr/commit/c1e3a75e91729a583e8d017e55740622f635b682))
+* Dispatch lane limits count ready agents as occupying a slot ([#202](https://github.com/anoguez/styr/issues/202)) ([4fd7c38](https://github.com/anoguez/styr/commit/4fd7c38628fddf8403a19742faeefd30a31fe58b))
+* hide the sidebar agent once its chat is unlinked and its tab is closed ([#203](https://github.com/anoguez/styr/issues/203)) ([15de660](https://github.com/anoguez/styr/commit/15de6609c40553b2fbb83280d90451f727eec12d))
+* time out the server bundle build and cancel superseded CI runs ([#204](https://github.com/anoguez/styr/issues/204)) ([b767b0c](https://github.com/anoguez/styr/commit/b767b0c2c09c43142e610acbe2a802e6bab7f89a))
+* tray menu hides "Open Styr" while the window is in front, adds quick actions ([#197](https://github.com/anoguez/styr/issues/197)) ([ab9b519](https://github.com/anoguez/styr/commit/ab9b519afe9c01936f9d2b5c5e215c4b0fed22ce))
+
 ## [0.37.2](https://github.com/anoguez/styr/compare/v0.37.1...v0.37.2) (2026-10-22)
 
 

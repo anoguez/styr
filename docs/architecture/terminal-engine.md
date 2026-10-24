@@ -70,6 +70,22 @@ events only gather it. An acknowledgement for a replaced engine is ignored.
 A view's engine is chosen once, at mount. Toggling the setting affects new terminals only, since
 remounting would cost the running one its scrollback.
 
+## NativeTerminalView file map
+
+`components/NativeTerminalView.tsx` only composes: props, the host `div` and which of
+`AgentBlockList`, `TerminalBlockList` and the grid shows. The concerns live beside it, each taking
+one argument object per render (handlers are re-made every render, as before; values read after a
+render ends — `gridRef`, `selectionRef`, `bindingsRef`, the `on*Ref` callbacks — stay refs).
+
+| File (under `lib/nativeTerminal/` unless noted) | Owns                                                                                                                                                        |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useNativeEngine.ts`                            | attach/detach per `sessionId`, frame and block-list subscriptions, cell measure, resize, `TerminalHandle`, fullscreen/block-list reports, fallback, `write` |
+| `useAgentSession.ts`, `agentApproval.ts`        | the agent CLI's conversation, TUI vs Styr view, prompt sending, approval card (`approvalRequest` is pure)                                                   |
+| `useGridSelection.ts`                           | the grid's selection (state and ref), clearing, its text from the engine's buffer                                                                           |
+| `useGridInput.ts`                               | keys, clipboard, paste, file drop, IME composition, focus and focus reporting                                                                               |
+| `useGridPointer.ts`, `pointerMath.ts`           | wheel, hover, mouse reporting, selection drag, link click; `pointerMath` is the pure part (wheel lines, selection start, dropped text)                      |
+| `components/NativeGridLayer.tsx`                | what the grid draws: selection, rows, hidden IME input, composition, cursor, exit code                                                                      |
+
 ## Untrusted output
 
 Terminal output is untrusted. `NativeTerminalView` puts every character in as React text — never

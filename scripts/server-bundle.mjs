@@ -84,7 +84,7 @@ writeFileSync(
 execFileSync(
   'npm',
   ['install', '--omit=dev', '--no-audit', '--no-fund', '--no-package-lock', '--loglevel=error'],
-  { cwd: stage, stdio: 'inherit', shell: false }
+  { cwd: stage, stdio: 'inherit', shell: false, timeout: 300_000 }
 )
 
 // ── The entry ─────────────────────────────────────────────────────────────────────────────
@@ -102,7 +102,10 @@ chmodSync(join(stage, 'bin', 'styr'), 0o755)
 writeFileSync(join(stage, 'VERSION'), `${version}\n`)
 
 // ── Check that it runs, with its own Node and its own native modules ──────────────────────
-const said = execFileSync(join(stage, 'bin', 'styr'), ['serve', '--version'], { encoding: 'utf8' })
+const said = execFileSync(join(stage, 'bin', 'styr'), ['serve', '--version'], {
+  encoding: 'utf8',
+  timeout: 60_000
+})
 if (said.trim() !== version) throw new Error(`bin/styr says ${said.trim()}, expected ${version}`)
 execFileSync(
   join(stage, 'node', 'bin', 'node'),
@@ -110,7 +113,7 @@ execFileSync(
     '-e',
     "const db = new (require('better-sqlite3'))(':memory:'); db.prepare('select 1').get(); require('node-pty')"
   ],
-  { cwd: stage, stdio: 'inherit' }
+  { cwd: stage, stdio: 'inherit', timeout: 60_000 }
 )
 
 const tarball = join(dist, `${name}.tar.gz`)
@@ -118,10 +121,19 @@ execFileSync('tar', ['-czf', tarball, '-C', stage, '.'])
 rmSync(work, { recursive: true, force: true })
 console.log(`${tarball}\nsha256 ${sha256(readFileSync(tarball))}`)
 
-async function download(url) {
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`)
-  return Buffer.from(await response.arrayBuffer())
+// A stalled connection must fail the build, not hang it: each attempt has a deadline, and a
+// transient failure gets a couple of retries.
+async function download(url, attempts = 3) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(120_000) })
+      if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`)
+      return Buffer.from(await response.arrayBuffer())
+    } catch (error) {
+      if (attempt >= attempts) throw error
+      console.warn(`${url}: ${error.message}; retrying (${attempt}/${attempts - 1})`)
+    }
+  }
 }
 
 function sha256(data) {

@@ -76,8 +76,8 @@ export function useDispatch({
 
   /** Start the listed tasks before switching Auto-run on, so its first pass does not race them. */
   const confirm = useCallback(
-    async (summary: OrchestrationSummary, autoOn: boolean) => {
-      if (summary.dispatch.length > 0) await run(summary.dispatch.map((entry) => entry.taskId))
+    async (taskIds: string[], autoOn: boolean) => {
+      if (taskIds.length > 0) await run(taskIds)
       if (autoOn !== autoState.on) setAutoOn(autoOn)
     },
     [run, autoState.on, setAutoOn]

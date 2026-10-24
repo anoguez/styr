@@ -38,6 +38,7 @@ function task(repoPath: string, extra: Array<Partial<Task['extraRepos'][number]>
     blockedBy: [],
     contextFiles: [],
     sessions: [],
+    questions: [],
     order: 0,
     createdAt: '',
     updatedAt: '',

@@ -1,6 +1,7 @@
 import type { SourceConfig } from '../sources/types.js'
 import type { ThemeSettings } from '../types.js'
 import type {
+  AutoDispatchLimits,
   OrchestrationCapacity,
   OrchestrationLane,
   PromptRouting,
@@ -31,6 +32,7 @@ export const SHORTCUT_COMMANDS = [
   'terminalRetry',
   'terminalSplit',
   'terminalAskReview',
+  'terminalFixLast',
   'terminalHandOff',
   'terminalCreatePr',
   'terminalActivity',
@@ -84,6 +86,7 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   terminalRetry: ['mod+r'],
   terminalSplit: ['mod+d'],
   terminalAskReview: [],
+  terminalFixLast: [],
   terminalHandOff: [],
   terminalCreatePr: [],
   terminalActivity: ['mod+shift+a'],
@@ -137,6 +140,8 @@ export interface Settings {
   promptTemplates: PromptTemplate[]
   promptRouting: PromptRouting
   orchestration: OrchestrationCapacity
+  /** Auto-run's safety limits; a change applies from the next pass. */
+  autoDispatchLimits: AutoDispatchLimits
   /** Auto-run: keep starting eligible work as slots free up. Off until the user turns it on. */
   autoDispatch: boolean
   /**
@@ -153,6 +158,8 @@ export interface Settings {
   taskDefaults: TaskDefaults
   taskPresets: TaskPreset[]
   doneCap: DoneCap
+  /** Archive an Ask agent task when its terminal exits while it is still In Progress. */
+  autoArchiveAsk: boolean
   sources: SourceConfig[]
 }
 
@@ -189,12 +196,14 @@ export const WORKSPACE_SETTING_KEYS = [
   'promptTemplates',
   'promptRouting',
   'orchestration',
+  'autoDispatchLimits',
   'autoDispatch',
   'autoDispatchSince',
   'theme',
   'taskDefaults',
   'taskPresets',
   'doneCap',
+  'autoArchiveAsk',
   'sources'
 ] as const satisfies readonly (keyof Settings)[]
 

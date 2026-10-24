@@ -129,6 +129,7 @@ export function createDispatchService(ports: DispatchServicePorts) {
     setEnabled: writeAutoDispatchFlag,
     workspaceId: () => settings.load().activeWorkspaceId,
     since: () => settings.load().autoDispatchSince,
+    limits: () => settings.load().autoDispatchLimits,
     beforePass: checkForMergedWorkBriefly,
     snapshot: (skip) => ({ plan: buildPlan(skip), tasks: ports.tasks.query() }),
     launch: async (task, lane) => {
@@ -143,8 +144,8 @@ export function createDispatchService(ports: DispatchServicePorts) {
         // The task may have been deleted meanwhile; there is nothing to note it on.
       }
     },
-    reworkCapped: (task) => {
-      const message = reworkCappedMessage(task.id)
+    reworkCapped: (task, limit) => {
+      const message = reworkCappedMessage(task.id, limit)
       try {
         ports.tasks.addNote(
           task.id,
@@ -186,22 +187,29 @@ export function createDispatchService(ports: DispatchServicePorts) {
     }
   }
 
-  /** Dispatch now: starts the planned tasks, or only `taskIds` among them. */
+  /**
+   * Dispatch now: starts the planned tasks in plan order, or only `taskIds` among them, in the
+   * order given (ids not in the plan are ignored). Launches begin in sequence without awaiting
+   * each other, so a slow one does not delay the rest.
+   */
   async function run(
     taskIds?: string[]
   ): Promise<{ lane: OrchestrationLane; taskId: string; session: TerminalSessionInfo }[]> {
-    const wanted = taskIds ? new Set(taskIds) : null
     // A review whose PR was merged since the dialog opened is Done now, and drops out of the plan.
     await checkForMergedWorkBriefly()
     const built = buildPlan()
+    const planned = taskIds
+      ? [...new Set(taskIds)].flatMap((id) => {
+          const entry = built.dispatch.find(({ task }) => task.id === id)
+          return entry ? [entry] : []
+        })
+      : built.dispatch
     return Promise.all(
-      built.dispatch
-        .filter(({ task }) => !wanted || wanted.has(task.id))
-        .map(async ({ task, lane }) => ({
-          lane,
-          taskId: task.id,
-          session: await dispatchTask(task, lane)
-        }))
+      planned.map(async ({ task, lane }) => ({
+        lane,
+        taskId: task.id,
+        session: await dispatchTask(task, lane)
+      }))
     )
   }
 

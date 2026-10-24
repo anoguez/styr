@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { SUBAGENT_EVENTS } from '../agentState.js'
 import { agentsDir, subagentsDir, supportDir } from '../agentStore.js'
 import type { Settings } from '../types.js'
+import { parseMcpGet } from './mcpGet.js'
 import type { AgentProvider, TranscriptUsage, TranscriptUsageReader } from './types.js'
 
 /**
@@ -223,6 +224,10 @@ export const claudeProvider: AgentProvider = {
 
   mcpInstallCommand: (serverEntry, syntax) =>
     `claude mcp add styr --scope user -- node ${syntax.quote(serverEntry)}`,
+
+  mcpRemoveCommand: () => 'claude mcp remove styr -s user',
+  mcpProbeCommand: (command, syntax) => `${syntax.invoke(command)} mcp get styr`,
+  parseMcpRegistration: (result) => parseMcpGet(result, /^\s*Args:\s*(.+)$/m),
 
   // Inherited, these make a launched `claude` treat itself as a child of the parent session: it
   // turns transcript saving off, so the next launch finds no transcript and starts a fresh chat

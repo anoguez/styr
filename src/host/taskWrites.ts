@@ -1,6 +1,8 @@
+import { answerMessage } from '@core/questions.js'
 import { taskDraftSchema, taskPatchSchema } from '@core/taskSchema.js'
 import {
   TASK_STATUSES,
+  type AnswerResult,
   type Task,
   type TaskDraft,
   type TaskPatch,
@@ -20,6 +22,11 @@ export interface TaskWritePorts {
   addNote(taskId: string, author: string, message: string): Task
   reorderTasks(status: TaskStatus, orderedIds: string[]): Task[]
   setArchived(taskId: string, archived: boolean): Task
+  /** Records the owner's answer and its note; throws when the question is missing or answered. */
+  answerQuestion(taskId: string, questionId: string, answer: string): Task
+  /** How a message would reach the task's agent, and the delivery (`sessionLifecycle`). */
+  route(taskId: string): { route: 'queued' | 'now' | 'resume' | 'fresh' }
+  deliver(taskId: string, message: string): Promise<unknown>
   deleteTask(taskId: string): void
   /** Removes the task's git worktree from disk; the task file is updated separately. */
   removeWorktree(task: Task & { repoPath: string }): void
@@ -54,6 +61,34 @@ export function createTaskWrites(ports: TaskWritePorts) {
     /** Archived tasks drop out of every agent list, so the agents are re-broadcast too. */
     archive: (taskId: string, archived: boolean): Task =>
       write(() => ports.setArchived(taskId, archived), { agents: true }),
+
+    /**
+     * Records an owner's answer, then sends it to the agent by the Request changes routes. The
+     * answer is kept whatever happens to the delivery, and a question answered once is refused,
+     * so it is never sent twice. A task with no chat to resume is not launched for an answer: the
+     * agent reads it from its prompt next time. The task's status is not touched.
+     */
+    answerQuestion: async (
+      taskId: string,
+      questionId: string,
+      answer: string
+    ): Promise<AnswerResult> => {
+      const task = write(() => ports.answerQuestion(taskId, questionId, answer))
+      const question = task.questions.find((candidate) => candidate.id === questionId)
+      if (!question?.answer) return { task, delivery: 'recorded' }
+      const { route } = ports.route(taskId)
+      if (route === 'fresh') return { task, delivery: 'recorded' }
+      try {
+        await ports.deliver(taskId, answerMessage(question, question.answer))
+        return { task, delivery: route }
+      } catch (error) {
+        return {
+          task,
+          delivery: 'failed',
+          error: error instanceof Error ? error.message : String(error)
+        }
+      }
+    },
 
     delete: (taskId: string): void => write(() => ports.deleteTask(taskId)),
 

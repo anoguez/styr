@@ -41,12 +41,15 @@ function harness(): Harness {
         calls.push(`archive ${id} ${archived}`)
         return task({ id })
       },
+      answerQuestion: (id) => task({ id }),
       deleteTask: (id) => calls.push(`delete ${id}`),
       removeWorktree: (t) => calls.push(`removeWorktree ${t.id}`),
       brokenTaskFiles: () => [{ filePath: '/tasks/bad.md', reason: 'no frontmatter' }]
     },
     settings: () => shippedSettings(),
     requestLanding: () => calls.push('landing'),
+    route: () => ({ route: 'fresh' }),
+    deliver: () => Promise.resolve(),
     observeTasks: (tasks) => calls.push(`observe ${tasks.length}`),
     recordNotifyDuration: (ms) => calls.push(`time ${typeof ms}`),
     requestAutoRun: () => calls.push('autoRun'),
