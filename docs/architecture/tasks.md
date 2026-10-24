@@ -12,6 +12,13 @@ the store and its own `notifyTasksChanged` as `TaskWritePorts`, and `ipc.ts` map
 one operation, so a new write handler goes through it rather than calling `notifyTasksChanged`
 itself.
 
+## Extra repositories
+
+`extraRepos` is frontmatter next to `repoPath` and is read by `normaliseExtraRepos` in `markdown.ts`
+(see `worktrees.md`, Multi-repo tasks). It is stored in one JSON index column and rebuilt from the
+files like every other field. `TaskPatch` may change which repositories a task has only before the
+first launch; `updateTask` throws once a worktree exists.
+
 ## Task dependencies
 
 `Task.blockedBy` is a list of same-workspace task ids (ids repeat across workspaces, so there is no

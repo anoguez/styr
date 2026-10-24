@@ -8,6 +8,7 @@
     "src/core/sources/restSources.ts",
     "src/core/taskSchema.ts",
     "src/core/prompt.ts",
+    "src/core/repoNames.ts",
     "src/core/activityNote.ts",
     "src/core/boardTools.ts",
     "src/core/questions.ts",

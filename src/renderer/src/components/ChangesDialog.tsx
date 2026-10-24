@@ -29,7 +29,8 @@ import { ReviewFooter, ReviewHint } from './review/ReviewFooter.js'
 import { ReviewCommentList } from './review/ReviewCommentList.js'
 import { useCommentJump } from './review/useCommentJump.js'
 import { useDiffPaneReview } from './review/useDiffPaneReview.js'
-import { Modal, StatusBadge } from './ui.js'
+import { repoDisplayNames } from '@core/repoNames.js'
+import { Modal, Segmented, StatusBadge } from './ui.js'
 
 const NARROW_BELOW = 900
 const LAYOUT_KEY = 'styr.changes.layout'
@@ -64,9 +65,16 @@ function updatedLabel(at: number | undefined, now: number): string {
 const filesLabel = (count: number): string =>
   `${count.toLocaleString()} ${count === 1 ? 'file' : 'files'}`
 
+interface RepoTotals {
+  files: number
+  additions: number
+  deletions: number
+}
+
 /**
  * What a task changed: one combined, file-by-file unified diff, where the person can leave review
- * comments on lines and send them to the task's agent with Request changes.
+ * comments on lines and send them to the task's agent with Request changes. A multi-repo task adds
+ * a switcher at the top and shows one repository's diff at a time (the choice is UI state only).
  */
 export function ChangesDialog({
   task,
@@ -76,6 +84,105 @@ export function ChangesDialog({
   task: Task
   onClose: () => void
   /** Request changes delivered: the dialog closes and the app confirms it. */
+  onSent: (sent: ReviewSent) => void
+}): ReactNode {
+  const paths = useMemo(
+    () => [
+      ...(task.repoPath ? [task.repoPath] : []),
+      ...(task.useWorktree ? task.extraRepos.map((extra) => extra.repoPath) : [])
+    ],
+    [task.repoPath, task.useWorktree, task.extraRepos]
+  )
+  const [repo, setRepo] = useState<string | undefined>(undefined)
+  const [totals, setTotals] = useState<Record<string, RepoTotals | undefined>>({})
+  const multi = paths.length > 1
+
+  // Every repository's own totals for the switcher, read again when the task file changes.
+  useEffect(() => {
+    if (!multi) return
+    let live = true
+    for (const path of paths) {
+      void window.api.git.taskDiff(task.id, path).then((next) => {
+        if (live) setTotals((all) => ({ ...all, [path]: totalsOf(next) }))
+      })
+    }
+    return () => {
+      live = false
+    }
+  }, [multi, paths, task.id, task.updatedAt])
+
+  if (!multi) return <ChangesView task={task} onClose={onClose} onSent={onSent} />
+  const names = repoDisplayNames(paths)
+  const active = repo && paths.includes(repo) ? repo : (paths[0] as string)
+  const options = paths.map((path, index) => ({
+    value: path,
+    label: repoLabel(names[index] as string, totals[path])
+  }))
+  return (
+    <ChangesView
+      key={active}
+      task={task}
+      repo={active}
+      onClose={onClose}
+      onSent={onSent}
+      onLoaded={(next) => setTotals((all) => ({ ...all, [active]: totalsOf(next) }))}
+      switcher={
+        options.length <= 3 ? (
+          <Segmented label="Repository" value={active} options={options} onChange={setRepo} />
+        ) : (
+          <div role="tablist" aria-label="Repository" className="flex gap-1 overflow-x-auto">
+            {options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={option.value === active}
+                onClick={() => setRepo(option.value)}
+                className={`h-6 shrink-0 whitespace-nowrap rounded-md px-2.5 text-[12px] font-medium ${
+                  option.value === active ? 'bg-raised text-ink' : 'text-dim hover:text-ink'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )
+      }
+    />
+  )
+}
+
+function totalsOf(result: DiffResult): RepoTotals | undefined {
+  return 'error' in result
+    ? undefined
+    : {
+        files: result.totalFiles,
+        additions: result.totalAdditions,
+        deletions: result.totalDeletions
+      }
+}
+
+/** `api · 3 files +10 −2`, or `api · No changes`; just the name while the totals load. */
+function repoLabel(name: string, totals: RepoTotals | undefined): string {
+  if (!totals) return name
+  if (totals.files === 0) return `${name} · No changes`
+  return `${name} · ${totals.files} ${totals.files === 1 ? 'file' : 'files'} +${totals.additions.toLocaleString()} −${totals.deletions.toLocaleString()}`
+}
+
+function ChangesView({
+  task,
+  repo,
+  switcher,
+  onLoaded,
+  onClose,
+  onSent
+}: {
+  task: Task
+  /** The repository of a multi-repo task to show; unset is the task's own. */
+  repo?: string
+  switcher?: ReactNode
+  onLoaded?: (result: DiffResult) => void
+  onClose: () => void
   onSent: (sent: ReviewSent) => void
 }): ReactNode {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -104,14 +211,17 @@ export function ChangesDialog({
 
   const load = useCallback(() => {
     const request = ++requestRef.current
-    void window.api.git.taskDiff(task.id).then((next) => {
+    void window.api.git.taskDiff(task.id, repo).then((next) => {
       if (request !== requestRef.current) return
+      onLoaded?.(next)
       if (!('error' in next)) for (const file of next.files) knownFiles.current.set(file.path, file)
       setResult(next)
       setLoadedAt(Date.now())
       setVersion((current) => current + 1)
     })
-  }, [task.id])
+    // `onLoaded` is the parent's setter and changes with each render; the request does not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id, repo])
 
   useEffect(load, [load])
 
@@ -173,12 +283,12 @@ export function ChangesDialog({
   const fetchPatch = useCallback(
     (path: string, full: boolean) => {
       void window.api.git
-        .filePatch(task.id, path, full)
+        .filePatch(task.id, path, full, repo)
         .then((patch) =>
           setPatches((all) => ({ ...all, [path]: { version, result: patch, full } }))
         )
     },
-    [task.id, version]
+    [task.id, repo, version]
   )
 
   const entry = current ? patches[current.path] : undefined
@@ -272,7 +382,8 @@ export function ChangesDialog({
     [layout, visible, collapsed]
   )
 
-  const repoName = splitPath(task.repoPath ?? '')[1]
+  const repoPath = repo ?? task.repoPath ?? ''
+  const repoName = splitPath(repoPath)[1]
   const uncommitted = files.filter((file) => file.uncommitted).length
   const branchLabel = diff?.branch
 
@@ -367,6 +478,7 @@ export function ChangesDialog({
                 {task.title}
               </h2>
             </div>
+            {switcher}
             {isLoading ? (
               <div className="flex h-5 items-center gap-2.5">
                 <span className="h-2.5 w-[190px] rounded bg-raised" />
@@ -420,7 +532,7 @@ export function ChangesDialog({
                   Uncommitted changes in <span className="font-semibold">{repoName}</span>
                 </span>
                 <span className="font-mono text-[11px] text-faint">
-                  {task.repoPath} · no worktree for this task
+                  {repoPath} · no worktree, working in the main checkout
                 </span>
                 <span className="inline-flex items-center gap-2 font-mono text-[11.5px]">
                   <span className="text-dim">{filesLabel(diff.totalFiles)}</span>

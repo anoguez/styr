@@ -77,6 +77,18 @@ describe('landing', () => {
     ])
   })
 
+  it("clears a multi-repo task's extra worktrees too, keeping the repositories", async () => {
+    const h = harness()
+    h.rows = [
+      task('TASK-1', {
+        extraRepos: [{ repoPath: '/client', worktreePath: '/client.worktrees/TASK-1' }]
+      })
+    ]
+    h.landed.add('TASK-1')
+    expect(await createLanding(h.ports).settleLandedTasks()).toBe(true)
+    expect(h.calls).toContain('update TASK-1 {"extraRepos":[{"repoPath":"/client"}]}')
+  })
+
   it('writes nothing for work that has not landed', async () => {
     const h = harness()
     expect(await createLanding(h.ports).settleLandedTasks()).toBe(false)

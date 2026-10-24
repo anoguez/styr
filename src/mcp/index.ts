@@ -49,12 +49,28 @@ function summarise(task: Task, open: string[] = blockedByOpen(task)): Record<str
     blockedBy: task.blockedBy,
     blockedByOpen: open,
     prUrl: task.prUrl,
+    ...(task.extraRepos.length > 0 ? { extraRepos: task.extraRepos } : {}),
     contextFiles: task.contextFiles,
     questions: task.questions,
     openQuestions: openQuestions(task).length,
     updatedAt: task.updatedAt,
     filePath: task.filePath
   }
+}
+
+/** Applies each given `prUrl` to the existing entry with that `repoPath`; nothing else changes. */
+function mergeExtraPrUrls(
+  task: Task,
+  given: { repoPath: string; prUrl?: string }[]
+): Task['extraRepos'] {
+  const same = (a: string, b: string): boolean =>
+    a.replace(/[\\/]+$/, '') === b.replace(/[\\/]+$/, '')
+  return task.extraRepos.map((extra) => {
+    const update = given.find((entry) => same(entry.repoPath, extra.repoPath))
+    return update && update.prUrl !== undefined
+      ? { ...extra, prUrl: update.prUrl || undefined }
+      : extra
+  })
 }
 
 function json(payload: unknown): { content: [{ type: 'text'; text: string }] } {
@@ -153,7 +169,10 @@ server.registerTool(
       'Update any field of a task, including moving it to another board column. Set readiness to ' +
       '"ready" once a task is specified well enough to be worked on, or "needs_spec" when it is not. ' +
       'contextFiles replaces the task attachment list — absolute paths to files worth reading for ' +
-      'this task. prUrl is the link to the pull/merge request opened for the task, on any host. ' +
+      'this task. prUrl is the link to the pull/merge request opened for the task, on any host (for a task ' +
+      "that spans several repositories, the primary repository's). extraRepos records a PR for each other " +
+      'repository: entries are matched by repoPath and only their prUrl is applied; the list itself is never ' +
+      'replaced and repositories cannot be added or removed. ' +
       'baseBranch is the branch the task worktree starts from; it can only be changed before the ' +
       "worktree exists, and unset means the repository checkout's current branch. blockedBy lists the " +
       'ids of tasks in this workspace that must be Done before this one starts; it replaces the list ' +
@@ -171,10 +190,13 @@ server.registerTool(
       baseBranch: z.string().optional(),
       blockedBy: blockedByInput,
       contextFiles: z.array(z.string()).optional(),
-      prUrl: z.string().optional()
+      prUrl: z.string().optional(),
+      extraRepos: z
+        .array(z.object({ repoPath: z.string(), prUrl: z.string().optional() }))
+        .optional()
     }
   },
-  async ({ id, ...patch }) => {
+  async ({ id, extraRepos, ...patch }) => {
     const existing = getTask(id)
     if (
       existing?.worktreePath &&
@@ -183,7 +205,8 @@ server.registerTool(
     ) {
       throw new Error(`${id} already has a worktree, so its base branch can no longer change`)
     }
-    return json(summarise(updateTask(id, patch)))
+    const merged = existing && extraRepos ? mergeExtraPrUrls(existing, extraRepos) : undefined
+    return json(summarise(updateTask(id, merged ? { ...patch, extraRepos: merged } : patch)))
   }
 )
 

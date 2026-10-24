@@ -10,6 +10,7 @@ import {
   type TaskForm
 } from '../../lib/taskForm.js'
 import { BranchIcon, ChevronIcon, FolderIcon } from '../icons.js'
+import { ExtraReposField } from './ExtraReposField.js'
 import { PROP_LABEL, PROP_ROW, PropertySelect, RowToggle, SECTION_LABEL } from './fields.js'
 
 /** The Model field's hint: where the model comes from when it is left on Default. */
@@ -246,6 +247,15 @@ export function WorkspaceFields({
               </button>
             </div>
           ) : null}
+          <ExtraReposField
+            repos={form.extraRepos}
+            primary={form.repoPath}
+            fixed={Boolean(
+              task?.worktreePath || task?.extraRepos.some((repo) => repo.worktreePath)
+            )}
+            defaultPath={settings.defaultRepoPath}
+            onChange={(extraRepos) => patch({ extraRepos })}
+          />
           {warning ? (
             <span
               title={hint}

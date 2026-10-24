@@ -318,3 +318,136 @@ describe('RemoteFetcher', () => {
     expect(warned).toHaveLength(1)
   })
 })
+
+describe('settleTasks on a multi-repo task', () => {
+  type Answer = { landed: boolean; ahead: number } | undefined
+  const multi = (over: Partial<LandingTask> = {}): LandingTask =>
+    task({
+      repoPath: '/w/api',
+      worktreePath: '/w/api.worktrees/x',
+      extraRepos: [
+        { repoPath: '/w/client', baseBranch: 'release/2.x', worktreePath: '/w/client.worktrees/x' }
+      ],
+      ...over
+    })
+
+  /** A fake whose landing answer comes from the repository the checkout is in. */
+  function repos(answers: Record<string, Answer>, removed: Record<string, boolean> = {}) {
+    const cleaned: string[] = []
+    const git: CheckoutGit = {
+      refListing: async (repo) => `refs/heads/styr/TASK-0001 ${repo}`,
+      branchLanding: async ({ repoPath }) => {
+        const answer = answers[repoPath]
+        return answer && { branch: 'styr/TASK-0001', base: 'main', ...answer }
+      },
+      cleanupLandedTask: async ({ repoPath }) => {
+        cleaned.push(repoPath)
+        return {
+          worktreeRemoved: removed[repoPath] ?? true,
+          notes: [`Removed ${repoPath}.`]
+        }
+      }
+    }
+    return {
+      cleaned,
+      ports: { git, cache: new LandingCache(1000, () => 0), workspaceId: 'default' }
+    }
+  }
+
+  it('moves to done and cleans every repository when all have landed', async () => {
+    const { ports: p, cleaned } = repos({
+      '/w/api': { landed: true, ahead: 0 },
+      '/w/client': { landed: true, ahead: 0 }
+    })
+    const { writes } = await settleTasks([multi()], p)
+    expect(writes[0]).toEqual({ kind: 'status', taskId: 'TASK-0001', status: 'done' })
+    expect(cleaned).toEqual(['/w/api', '/w/client'])
+    expect(writes).toContainEqual({ kind: 'clearWorktree', taskId: 'TASK-0001', extras: true })
+  })
+
+  it('stays in review with one note naming both sets when only some landed', async () => {
+    const { ports: p, cleaned } = repos({
+      '/w/api': { landed: true, ahead: 0 },
+      '/w/client': { landed: false, ahead: 3 }
+    })
+    const { writes } = await settleTasks([multi()], p)
+    expect(writes).toEqual([
+      {
+        kind: 'note',
+        taskId: 'TASK-0001',
+        message: 'Landed: api. Not landed: client (3 commits ahead of main)'
+      }
+    ])
+    expect(cleaned).toEqual([])
+  })
+
+  it('does not repeat the partial note', async () => {
+    const message = 'Landed: api. Not landed: client (1 commit ahead of main)'
+    const { ports: p } = repos({
+      '/w/api': { landed: true, ahead: 0 },
+      '/w/client': { landed: false, ahead: 1 }
+    })
+    const { writes } = await settleTasks(
+      [multi({ activity: [{ at: '', author: 'styr', message }] })],
+      p
+    )
+    expect(writes).toEqual([])
+  })
+
+  it('writes nothing when none has landed', async () => {
+    const { ports: p } = repos({
+      '/w/api': { landed: false, ahead: 2 },
+      '/w/client': { landed: false, ahead: 1 }
+    })
+    expect((await settleTasks([multi()], p)).writes).toEqual([])
+  })
+
+  it('does not let an untouched repository block Done', async () => {
+    const { ports: p } = repos({
+      '/w/api': { landed: true, ahead: 0 },
+      '/w/client': { landed: false, ahead: 0 }
+    })
+    const { writes } = await settleTasks([multi()], p)
+    expect(writes[0]).toEqual({ kind: 'status', taskId: 'TASK-0001', status: 'done' })
+  })
+
+  it('is not Done when no repository has anything landed', async () => {
+    const { ports: p } = repos({
+      '/w/api': { landed: false, ahead: 0 },
+      '/w/client': { landed: false, ahead: 0 }
+    })
+    expect((await settleTasks([multi()], p)).writes).toEqual([])
+  })
+
+  it('treats a missing task branch as not landed', async () => {
+    const { ports: p } = repos({ '/w/api': { landed: true, ahead: 0 }, '/w/client': undefined })
+    const { writes } = await settleTasks([multi()], p)
+    expect(writes).toEqual([
+      {
+        kind: 'note',
+        taskId: 'TASK-0001',
+        message: 'Landed: api. Not landed: client (no task branch)'
+      }
+    ])
+  })
+
+  it('skips an extra that fell back to the plain repository', async () => {
+    const { ports: p, cleaned } = repos({ '/w/api': { landed: true, ahead: 0 } })
+    const fellBack = multi({ extraRepos: [{ repoPath: '/w/client' }] })
+    const { writes } = await settleTasks([fellBack], p)
+    expect(writes[0]).toEqual({ kind: 'status', taskId: 'TASK-0001', status: 'done' })
+    expect(cleaned).toEqual(['/w/api'])
+  })
+
+  it('cleans a Done task per repository and keeps worktrees recorded while one is refused', async () => {
+    const { ports: p, cleaned } = repos({}, { '/w/client': false })
+    const { writes } = await settleTasks([multi({ status: 'done' })], p)
+    expect(cleaned).toEqual(['/w/api', '/w/client'])
+    expect(writes.some((write) => write.kind === 'clearWorktree')).toBe(false)
+    expect(writes).toHaveLength(1)
+  })
+
+  it('names the extra repositories in the fetch list', () => {
+    expect(reposAwaitingLanding([multi()]).sort()).toEqual(['/w/api', '/w/client'])
+  })
+})
