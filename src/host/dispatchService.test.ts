@@ -161,6 +161,12 @@ describe('Dispatch now', () => {
     expect(result.map((r) => r.taskId)).toEqual(['TASK-2'])
   })
 
+  it('launches in the order asked for, ignoring unknown ids, and returns results in that order', async () => {
+    const result = await service.run(['TASK-2', 'NOPE', 'TASK-1'])
+    expect(h.launches.map((l) => l.taskId)).toEqual(['TASK-2', 'TASK-1'])
+    expect(result.map((r) => r.taskId)).toEqual(['TASK-2', 'TASK-1'])
+  })
+
   it('plans after the check: a review merged meanwhile is not started', async () => {
     h.merged = async () => {
       h.rows = [task('TASK-1'), task('TASK-2', { status: 'done' })]
