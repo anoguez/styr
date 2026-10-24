@@ -88,7 +88,18 @@ export const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
     branches: z.array(line).max(REMOTE_LIMITS.entries),
     current: line.optional()
   }),
-  'git:diffStats': z.record(short, z.object({ added: count, removed: count, files: count })),
+  'git:diffStats': z.record(
+    short,
+    z.object({
+      added: count,
+      removed: count,
+      files: count,
+      repos: z
+        .array(z.object({ name: line, added: count, removed: count, files: count }))
+        .max(8)
+        .optional()
+    })
+  ),
   'git:taskDiff': remoteDiffResultSchema,
   'git:filePatch': remotePatchResultSchema,
   'agents:list': z.array(remoteAgentStatusSchema).max(REMOTE_LIMITS.entries),

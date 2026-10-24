@@ -398,9 +398,13 @@ export function registerIpcHandlers(): void {
     tasksService.removeWorktree(taskId)
   )
   ipcMain.handle('git:branches', (_event, repoPath: string) => gitService.branches(repoPath))
-  ipcMain.handle('git:taskDiff', (_event, taskId: unknown) => gitService.taskDiff(taskId))
-  ipcMain.handle('git:filePatch', (_event, taskId: unknown, path: unknown, full?: unknown) =>
-    gitService.filePatch(taskId, path, full)
+  ipcMain.handle('git:taskDiff', (_event, taskId: unknown, repo?: unknown) =>
+    gitService.taskDiff(taskId, repo)
+  )
+  ipcMain.handle(
+    'git:filePatch',
+    (_event, taskId: unknown, path: unknown, full?: unknown, repo?: unknown) =>
+      gitService.filePatch(taskId, path, full, repo)
   )
   ipcMain.handle('git:diffStats', () => gitService.diffStats())
   ipcMain.handle('agents:list', () => agentStatuses())

@@ -463,3 +463,65 @@ describe('checkoutsOf', () => {
     expect(task.checkout).toBe(task.repos[0]?.checkout)
   })
 })
+
+describe('a multi-repo task in real repositories', () => {
+  function change(worktree: string, file: string): void {
+    writeFileSync(join(worktree, file), 'work\n')
+    runGit(['add', file], worktree)
+    runGit(['commit', '-m', `Add ${file}`], worktree)
+  }
+
+  it('diffs, patches and measures each repository on its own', async () => {
+    const api = temporaryRepository()
+    const client = temporaryRepository()
+    const task = {
+      id: 'TASK-0007',
+      repoPath: api,
+      useWorktree: true,
+      extraRepos: [{ repoPath: client }]
+    }
+    const opened = taskCheckout(DEFAULT_WORKSPACE_ID, task)
+    const [primary, extra] = opened.repos
+    if (!primary || !extra) throw new Error('expected two repositories')
+    const apiTree = ensureWorktree(primary.checkout).path
+    const clientTree = ensureWorktree(extra.checkout).path
+    change(apiTree, 'api.txt')
+    change(clientTree, 'client-a.txt')
+    change(clientTree, 'client-b.txt')
+
+    const launched = taskCheckout(DEFAULT_WORKSPACE_ID, {
+      ...task,
+      worktreePath: apiTree,
+      extraRepos: [{ repoPath: client, worktreePath: clientTree }]
+    })
+    const files = (repo: number): string[] => {
+      const diff = launched.repos[repo]?.diff()
+      return diff && 'files' in diff ? diff.files.map((file) => file.path).sort() : []
+    }
+    expect(files(0)).toEqual(['api.txt'])
+    expect(files(1)).toEqual(['client-a.txt', 'client-b.txt'])
+    expect(launched.repos[1]?.filePatch('client-a.txt')).toMatchObject({
+      patch: expect.stringContaining('+work')
+    })
+    // A file of the other repository is not in this repository's diff: no arbitrary reads.
+    expect(launched.repos[0]?.filePatch('client-a.txt')).not.toHaveProperty('patch')
+    expect(await launched.repos[1]?.diffStat()).toMatchObject({ files: 2 })
+  })
+
+  it('measures an extra that fell back to the plain repository as the repository itself', () => {
+    const api = temporaryRepository()
+    const client = temporaryRepository()
+    writeFileSync(join(client, 'loose.txt'), 'edit\n')
+    const launched = taskCheckout(DEFAULT_WORKSPACE_ID, {
+      id: 'TASK-0008',
+      repoPath: api,
+      useWorktree: true,
+      worktreePath: ensureWorktree(
+        taskCheckout(DEFAULT_WORKSPACE_ID, { id: 'TASK-0008', repoPath: api }).checkout
+      ).path,
+      extraRepos: [{ repoPath: client }]
+    })
+    const diff = launched.repos[1]?.diff()
+    expect(diff).toMatchObject({ kind: 'repo' })
+  })
+})

@@ -127,8 +127,15 @@ export function taskCheckout(
   location?: WorktreeLocation
 ): TaskCheckout {
   const worktree = task.useWorktree !== false
-  const repos = checkoutsOf(workspaceId, task, location).map((entry) =>
-    repoCheckout(entry, worktree)
+  const extras = task.extraRepos ?? []
+  const launched = Boolean(task.worktreePath) || extras.some((extra) => extra.worktreePath)
+  const repos = checkoutsOf(workspaceId, task, location).map((entry, index) =>
+    // An extra that fell back to the plain repository has no worktree: measure that checkout.
+    repoCheckout(
+      entry,
+      worktree &&
+        (entry.role === 'primary' || !launched || Boolean(extras[index - 1]?.worktreePath))
+    )
   )
   return { ...(repos[0] as RepoCheckout), repos }
 }

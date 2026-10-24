@@ -305,10 +305,12 @@ export function createServerHost(ports: ServerHostPorts) {
     'tasks:checkMerged': channel(none, () => checkForMergedWork()),
 
     'git:branches': channel(z.tuple([str]), (repoPath) => gitService.branches(repoPath)),
-    'git:taskDiff': channel(z.tuple([z.unknown()]), (taskId) => gitService.taskDiff(taskId)),
+    'git:taskDiff': channel(z.tuple([z.unknown(), z.unknown().optional()]), (taskId, repo) =>
+      gitService.taskDiff(taskId, repo)
+    ),
     'git:filePatch': channel(
-      z.tuple([z.unknown(), z.unknown(), z.unknown().optional()]),
-      (taskId, path, full) => gitService.filePatch(taskId, path, full)
+      z.tuple([z.unknown(), z.unknown(), z.unknown().optional(), z.unknown().optional()]),
+      (taskId, path, full, repo) => gitService.filePatch(taskId, path, full, repo)
     ),
     'git:diffStats': channel(none, () => gitService.diffStats()),
 
