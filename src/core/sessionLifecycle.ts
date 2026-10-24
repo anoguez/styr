@@ -153,7 +153,8 @@ export interface LaunchRun {
 export function launchPatch(
   settings: Settings,
   task: Task,
-  plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase'>,
+  plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase'> &
+    Partial<Pick<LaunchPlan, 'extraWorktrees'>>,
   run: LaunchRun = {},
   now: () => string = () => new Date().toISOString()
 ): TaskPatch {
@@ -165,6 +166,23 @@ export function launchPatch(
   }
   // "Current branch" resolves when the worktree is cut; keep it, or the diff measures from main.
   if (plan.worktreeBase && !task.baseBranch) patch.baseBranch = plan.worktreeBase
+  // Each extra repository records its own worktree and start branch, in place and in order.
+  if (plan.extraWorktrees?.length) {
+    let changed = false
+    const extraRepos = task.extraRepos.map((extra) => {
+      const made = plan.extraWorktrees?.find((candidate) => candidate.repoPath === extra.repoPath)
+      if (!made) return extra
+      const next = {
+        ...extra,
+        worktreePath: made.worktreePath,
+        ...(made.baseBranch && !extra.baseBranch ? { baseBranch: made.baseBranch } : {})
+      }
+      if (next.worktreePath !== extra.worktreePath || next.baseBranch !== extra.baseBranch)
+        changed = true
+      return next
+    })
+    if (changed) patch.extraRepos = extraRepos
+  }
   if (!sessionId) return patch
 
   if (task.agentSession?.id !== sessionId || task.agentSession?.provider !== plan.provider) {
@@ -276,7 +294,8 @@ export function createSessionLifecycle(ports: SessionPorts) {
   function saveLaunchMetadata(
     workspaceId: string,
     taskId: string,
-    plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase' | 'warning'>,
+    plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase' | 'warning'> &
+      Partial<Pick<LaunchPlan, 'extraWorktrees'>>,
     run: LaunchRun
   ): void {
     const active = workspaceId === ports.settings().activeWorkspaceId

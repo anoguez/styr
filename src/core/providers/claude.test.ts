@@ -7,7 +7,7 @@ import { syntaxFor } from '../shell.js'
 import { claudeProvider, claudeTranscriptUsage } from './claude.js'
 
 const workspace = mkdtempSync(join(tmpdir(), 'styr-claude-'))
-const build = (claudeApprovalMode: 'user' | 'auto', resume: boolean) =>
+const build = (claudeApprovalMode: 'user' | 'auto', resume: boolean, extraDirs?: string[]) =>
   claudeProvider.buildCommand({
     settings: {
       storageDir: workspace,
@@ -20,6 +20,7 @@ const build = (claudeApprovalMode: 'user' | 'auto', resume: boolean) =>
     resume,
     cwd: '/w',
     prompt: '"$P"',
+    extraDirs,
     syntax: syntaxFor('posix')
   })
 
@@ -183,5 +184,22 @@ describe('claude subagentTranscripts', () => {
 
   it('is empty for a session that started none', () => {
     expect(claudeProvider.subagentTranscripts('other', join(project, 'other.jsonl'))).toEqual([])
+  })
+})
+
+describe('claude extra directories', () => {
+  it('leaves the command unchanged without any', () => {
+    expect(build('user', false, [])).toBe(build('user', false))
+    expect(build('user', false)).not.toContain('--add-dir')
+  })
+
+  it('adds one --add-dir per directory, quoted, before the session', () => {
+    expect(build('user', false, ['/w/client', '/w/my docs'])).toMatch(
+      / --add-dir '\/w\/client' --add-dir '\/w\/my docs' --session-id sid "\$P"$/
+    )
+  })
+
+  it('passes them on resume too', () => {
+    expect(build('user', true, ['/w/client'])).toMatch(/ --add-dir '\/w\/client' --resume sid/)
   })
 })

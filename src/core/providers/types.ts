@@ -38,6 +38,12 @@ export interface ProviderCommandInput {
   model?: string
   /** A shell expression that expands to the prompt, or undefined to submit nothing. */
   prompt?: string
+  /**
+   * Absolute paths of the task's other repositories (a multi-repo task), which the agent may read
+   * and write beside `cwd`. The provider turns them into its CLI's flags; passed on resume too,
+   * since the flags are per invocation.
+   */
+  extraDirs?: readonly string[]
   /** The syntax of the shell the command is typed into; build every quoted part with it. */
   syntax: ShellSyntax
 }

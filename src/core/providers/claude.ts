@@ -174,7 +174,17 @@ export const claudeProvider: AgentProvider = {
   id: 'claude',
   label: 'Claude Code',
 
-  buildCommand({ settings, taskId, sessionId, resume, forkFrom, model, prompt, syntax }) {
+  buildCommand({
+    settings,
+    taskId,
+    sessionId,
+    resume,
+    forkFrom,
+    model,
+    prompt,
+    extraDirs = [],
+    syntax
+  }) {
     const hookArg = `--settings ${syntax.quote(writeHookSettings(settings, taskId))}`
     // `--session-id` is only accepted beside `--resume` together with `--fork-session`, which is what
     // lets a fork's id be known before the CLI starts.
@@ -188,7 +198,9 @@ export const claudeProvider: AgentProvider = {
     const modeArg = settings.claudeApprovalMode === 'auto' ? ' --permission-mode auto' : ''
     // Passed on resume too: `--model` sets the session's model, so a changed choice takes effect.
     const modelArg = model ? ` --model ${syntax.quote(model)}` : ''
-    return `${syntax.invoke(settings.claudeCommand)} ${hookArg}${modeArg}${modelArg} ${sessionArg}${promptArg}`
+    // One `--add-dir` per other repository, so the agent can edit them without a permission prompt.
+    const dirArgs = extraDirs.map((dir) => ` --add-dir ${syntax.quote(dir)}`).join('')
+    return `${syntax.invoke(settings.claudeCommand)} ${hookArg}${modeArg}${modelArg}${dirArgs} ${sessionArg}${promptArg}`
   },
 
   newSessionId: () => randomUUID(),

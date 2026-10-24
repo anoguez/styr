@@ -145,6 +145,8 @@ function harness(): Harness {
         provider: options.provider ?? 'claude',
         command: 'agent',
         cwd: '/repo',
+        extraDirs: [],
+        extraWorktrees: [],
         sessionId: 'sess-1',
         resumed: false,
         worktreePath: '/repo.worktrees/TASK-1',
@@ -490,6 +492,8 @@ describe('startForTask', () => {
       provider: 'codex',
       command: 'a',
       cwd: '/repo',
+      extraDirs: [],
+      extraWorktrees: [],
       sessionId: 'thread-1',
       resumed: true
     })
@@ -532,6 +536,8 @@ describe('startForTask', () => {
       provider: 'claude',
       command: 'a',
       cwd: '/repo',
+      extraDirs: [],
+      extraWorktrees: [],
       sessionId: 's',
       resumed: false,
       warning: 'no worktree'
@@ -559,6 +565,8 @@ describe('restoreAgent', () => {
         provider: options.provider ?? 'claude',
         command: 'agent --resume',
         cwd: '/repo',
+        extraDirs: [],
+        extraWorktrees: [],
         sessionId: 'saved-chat',
         resumed: true
       }
