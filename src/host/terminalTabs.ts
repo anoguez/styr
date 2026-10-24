@@ -53,7 +53,11 @@ export interface TerminalTabsPorts {
     /** A shell tab in the current Settings shell. */
     createShell(options: { cwd: string; title: string }): TerminalSessionInfo
   }
-  agents: { restoreAgent(taskId: string): Promise<TerminalSessionInfo> }
+  agents: {
+    restoreAgent(taskId: string): Promise<TerminalSessionInfo>
+    /** Why the task's tab cannot come back in the active workspace (`agentSkip`), else undefined. */
+    skipReason(taskId: string): string | undefined
+  }
   directoryExists(path: string): boolean
   now(): string
 }
@@ -131,9 +135,14 @@ export function createTerminalTabsService(ports: TerminalTabsPorts) {
     load()
     const known = new Set(ports.workspaceIds())
     const before = pending.length
-    pending = pending.filter(
-      (entry) => entry.kind === 'shell' || known.has(entry.workspaceId ?? '')
-    )
+    const active = ports.settings().activeWorkspaceId
+    // A tab that cannot come back (its task is Done, archived, deleted or has no chat) is never
+    // offered: the banner would promise a tab and the restore would fail.
+    pending = pending.filter((entry) => {
+      if (entry.kind === 'shell') return true
+      if (!known.has(entry.workspaceId ?? '')) return false
+      return entry.workspaceId !== active || !entry.taskId || !ports.agents.skipReason(entry.taskId)
+    })
     if (pending.length !== before) save()
     const { now } = splitPending(pending, ports.settings().activeWorkspaceId)
     return offerFor(now, mode() === 'always')

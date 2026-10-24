@@ -52,6 +52,7 @@ function harness(saved?: { tabs: LayoutEntry[]; active?: number }) {
       createShell: ({ cwd, title }) => (h.opened.push(`shell ${cwd}`), add({ cwd, title }))
     },
     agents: {
+      skipReason: (taskId) => h.agentFailures.get(taskId),
       restoreAgent: async (taskId) => {
         const failure = h.agentFailures.get(taskId)
         if (failure) throw new Error(`${taskId} ${failure}`)
@@ -209,6 +210,21 @@ describe('restoring', () => {
     expect(service.offer()).toEqual({ tabs: 1, agents: 1, auto: false })
     await service.restore()
     expect(h.opened).toEqual(['shell /home', 'agent T9'])
+  })
+})
+
+describe('offering', () => {
+  it('does not offer an agent tab that cannot come back, and forgets it', () => {
+    const { h, service, tabs } = harness({ tabs: [agentEntry('T1'), agentEntry('T2')] })
+    h.agentFailures.set('T1', 'is done or archived')
+    expect(service.offer()).toEqual({ tabs: 1, agents: 1, auto: false })
+    expect(tabs()?.map((entry) => entry.taskId)).toEqual(['T2'])
+  })
+
+  it('offers nothing when the only saved tab is of a Done task', () => {
+    const { h, service } = harness({ tabs: [agentEntry('T1')] })
+    h.agentFailures.set('T1', 'is done or archived')
+    expect(service.offer()).toBeNull()
   })
 })
 
