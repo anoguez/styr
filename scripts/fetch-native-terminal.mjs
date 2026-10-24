@@ -18,8 +18,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  cpSync,
   readFileSync,
-  renameSync,
   rmSync,
   writeFileSync
 } from 'node:fs'
@@ -131,7 +131,8 @@ async function main() {
     checkPackage(join(work, 'package'), lock, pin.binary)
     keepOnlyBinary(join(work, 'package'), pin.binary)
     mkdirSync(dirname(DESTINATION), { recursive: true })
-    renameSync(join(work, 'package'), DESTINATION)
+    // A copy, not a rename: the temp dir and the checkout can be on different drives (EXDEV).
+    cpSync(join(work, 'package'), DESTINATION, { recursive: true })
   } finally {
     rmSync(work, { recursive: true, force: true })
   }
