@@ -52,6 +52,8 @@ import { createTasksService } from '@host/tasksService.js'
 import { createWorklogService } from '@host/worklogService.js'
 import { createReviewService, diskReviewStore } from '@host/reviewService.js'
 import { listDirectories } from '@host/directories.js'
+import { providerById } from '@core/providers/index.js'
+import { agentSkip } from '@core/terminalLayout.js'
 import { createTerminalTabsService, diskTabsStore } from '@host/terminalTabs.js'
 import { listWorkspaces } from '@core/workspaces.js'
 import {
@@ -213,7 +215,18 @@ const terminalTabs = createTerminalTabsService({
     currentDirectory: (id) => terminalRuntimeState(id)?.cwd,
     createShell: ({ cwd, title }) => createSession({ cwd, title, shell: loadSettings().shell })
   },
-  agents: { restoreAgent: (taskId) => agentsService.restoreAgent(taskId) },
+  agents: {
+    restoreAgent: (taskId) => agentsService.restoreAgent(taskId),
+    skipReason: (taskId) => {
+      const task = findTask(taskId)
+      const ref = task?.agentSession
+      return agentSkip(
+        taskId,
+        task ?? null,
+        Boolean(ref && providerById(ref.provider).sessionExists(ref.id))
+      )
+    }
+  },
   directoryExists: existsSync,
   now: () => new Date().toISOString()
 })
