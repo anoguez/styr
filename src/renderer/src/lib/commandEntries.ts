@@ -130,6 +130,15 @@ export function buildCommandEntries(
     })
   }
   entries.push({
+    id: 'view:setup',
+    label: 'Quick setup…',
+    group: 'Actions',
+    mode: 'command',
+    keywords:
+      'welcome wizard onboarding first run getting started set up agents theme dispatch workspace',
+    run: () => dispatch({ type: 'setup', mode: 'quick' })
+  })
+  entries.push({
     id: 'view:performance',
     label: 'Show performance',
     group: 'Actions',

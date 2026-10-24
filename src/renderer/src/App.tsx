@@ -58,6 +58,8 @@ import { useRemoteSessions, useTerminalSessions } from './hooks/useTerminalSessi
 import { useTheme } from './hooks/useTheme.js'
 import { useReleaseNotes, useUpdates } from './hooks/useUpdates.js'
 import { useWhatsNewOnLaunch } from './hooks/useWhatsNewOnLaunch.js'
+import { useSetupOnLaunch } from './hooks/useSetupOnLaunch.js'
+import { SetupWizard } from './components/setup/SetupWizard.js'
 import { useRemote } from './hooks/useRemote.js'
 import { useWorkspaces } from './hooks/useWorkspaces.js'
 import { agentRowsFor, boardSummary, selectedAgentTaskId } from './lib/agentRows.js'
@@ -124,7 +126,9 @@ export default function App(): ReactNode {
     shell.newWorkspace ||
     shell.confirmDispatch ||
     shell.confirmAutoStop ||
-    shell.whatsNew !== null
+    shell.whatsNew !== null ||
+    shell.setup !== null
+  useSetupOnLaunch(settings, overview, modalOpen, dispatch)
   useWhatsNewOnLaunch(appInfo, modalOpen, dispatch)
   const terminals = useTerminalSessions()
   const { sessions, activeSession, terminalOpen, adopt: adoptSession } = terminals
@@ -586,6 +590,20 @@ export default function App(): ReactNode {
                   })
                 }
                 onClose={() => dispatch({ type: 'whatsNew', request: null })}
+              />
+            ) : null}
+
+            {shell.setup ? (
+              <SetupWizard
+                mode={shell.setup}
+                settings={settings}
+                workspaces={workspaces}
+                onSave={save}
+                onPreviewTheme={setPreviewTheme}
+                onClose={() => {
+                  setPreviewTheme(null)
+                  dispatch({ type: 'setup', mode: null })
+                }}
               />
             ) : null}
 
