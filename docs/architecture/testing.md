@@ -89,7 +89,10 @@ it:
    and the local branch.
 3. "Show performance" opens the panel with the processes, the task-change timings and the counts.
 4. With the Worklog on, a task file with a session (and no transcript) shows in the Worklog.
-5. A REST source served by the test itself: the test request is refused with External sources off;
+5. Quick setup (palette) opens titled "Quick setup", applies a Dispatch preset and a theme into the
+   saved settings, and offers no rename for the Default workspace. Closing it early, after a choice
+   and a confirm, saves nothing.
+6. A REST source served by the test itself: the test request is refused with External sources off;
    with them on it reads the items, the preview writes nothing, and applying one item creates only
    that task.
 

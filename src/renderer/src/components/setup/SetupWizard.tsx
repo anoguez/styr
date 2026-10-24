@@ -4,6 +4,7 @@ import {
   workspaceSettingsFor,
   type Settings,
   type SettingsChange,
+  DEFAULT_WORKSPACE_ID,
   type ThemeSettings
 } from '@core/types.js'
 import { formatAccelerator } from '@core/shortcuts.js'
@@ -61,7 +62,9 @@ export function SetupWizard({
 
   const saved: Settings = { ...settings, ...target.savedWorkspaceSettings }
   const dirty = first ? new Set<string>() : dirtySteps(draft, saved)
-  const nameChanged = name.trim() !== target.editedWorkspaceName
+  // The Default workspace keeps its name (`renameWorkspace` refuses it), so it is never renamed.
+  const nameLocked = workspaceId === DEFAULT_WORKSPACE_ID
+  const nameChanged = !nameLocked && name.trim() !== target.editedWorkspaceName
   const changes = changedKeyCount(draft, saved) + (nameChanged ? 1 : 0)
   const themeEdited =
     JSON.stringify(draft.theme) !== JSON.stringify(target.savedWorkspaceSettings.theme)
@@ -238,6 +241,7 @@ export function SetupWizard({
             <WorkspaceStep
               mode={mode}
               name={name}
+              nameLocked={nameLocked}
               onName={setName}
               picker={picker}
               draft={draft}

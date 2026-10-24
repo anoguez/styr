@@ -55,6 +55,7 @@ function Heading({ title, children }: { title: string; children: ReactNode }): R
 export function WorkspaceStep({
   mode,
   name,
+  nameLocked,
   onName,
   picker,
   draft,
@@ -62,6 +63,8 @@ export function WorkspaceStep({
 }: StepProps & {
   mode: SetupMode
   name: string
+  /** The Default workspace cannot be renamed. */
+  nameLocked: boolean
   onName: (name: string) => void
   /** Quick setup: the workspaces to set up, and which one is being edited. */
   picker: ReactNode
@@ -80,10 +83,18 @@ export function WorkspaceStep({
         </p>
       </div>
       {picker}
-      <Field label="Workspace name">
+      <Field
+        label="Workspace name"
+        hint={
+          nameLocked
+            ? 'The Default workspace keeps its name. Add another from the workspace menu.'
+            : undefined
+        }
+      >
         <input
           aria-label="Workspace name"
-          className={`${inputBase} h-8 w-[280px] max-w-full px-2.5 text-[13px]`}
+          disabled={nameLocked}
+          className={`${inputBase} h-8 w-[280px] max-w-full px-2.5 text-[13px] disabled:opacity-60`}
           value={name}
           onChange={(event) => onName(event.target.value)}
         />

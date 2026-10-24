@@ -247,6 +247,48 @@ test("the Worklog lists a task's agent sessions in the period", async () => {
   styr.expectNoErrors()
 })
 
+test('Quick setup from the palette applies what was chosen', async () => {
+  const { page } = styr
+  await runCommand(page, 'Quick setup')
+  // Reopened after the first run, so it is not the welcome.
+  const wizard = page.getByRole('dialog', { name: 'Quick setup' })
+  await expect(wizard).toBeVisible()
+  // The Default workspace cannot be renamed, so its name is not offered for editing.
+  await expect(wizard.getByLabel('Workspace name')).toBeDisabled()
+
+  await wizard.getByRole('button', { name: /Dispatch$/ }).click()
+  await wizard.getByRole('button', { name: /^Hands-on/ }).click()
+  await wizard.getByRole('button', { name: /Theme$/ }).click()
+  await wizard.getByRole('button', { name: 'Midnight' }).click()
+
+  await wizard.getByRole('button', { name: /Review$/ }).click()
+  await expect(wizard.getByText('2 changes to Default')).toBeVisible()
+  await wizard.getByRole('button', { name: /^Apply/ }).click()
+  await expect(wizard).toBeHidden()
+
+  const saved = await page.evaluate(() => window.api.settings.get())
+  expect(saved.orchestration).toEqual({ spec: 0, implement: 1, review: 0 })
+  expect(saved.autoDispatch).toBe(false)
+  expect(saved.theme.base).toBe('#0e1117')
+  styr.expectNoErrors()
+})
+
+test('closing Quick setup early saves nothing', async () => {
+  const { page } = styr
+  const before = await page.evaluate(() => window.api.settings.get())
+  await runCommand(page, 'Quick setup')
+  const wizard = page.getByRole('dialog', { name: 'Quick setup' })
+  await wizard.getByRole('button', { name: /Theme$/ }).click()
+  await wizard.getByRole('button', { name: 'Plum' }).click()
+  // Unsaved changes are named first; the person confirms (warn, don't refuse).
+  page.once('dialog', (dialog) => void dialog.accept())
+  await wizard.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(wizard).toBeHidden()
+  const after = await page.evaluate(() => window.api.settings.get())
+  expect(after.theme).toEqual(before.theme)
+  styr.expectNoErrors()
+})
+
 test('REST sources are tested, previewed and imported only with the flag on', async () => {
   const { page } = styr
   const rest = {
