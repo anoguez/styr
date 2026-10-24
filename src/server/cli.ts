@@ -1,16 +1,29 @@
 /** What `styr serve …` was asked to do. */
 export type ServerCommand =
-  | { command: 'serve'; socket?: string }
+  | { command: 'serve'; socket?: string; listen?: ListenSpec; pair?: boolean }
   | { command: 'attach'; socket?: string }
   | { command: 'version' }
   | { command: 'help' }
   | { command: 'invalid'; message: string }
 
+/** `--listen <address>[:port]`: where devices reach this server (`remote-access.md`). */
+export interface ListenSpec {
+  address: string
+  port: number
+}
+
+export const DEFAULT_LISTEN_PORT = 7878
+
 export const USAGE = `Usage:
   styr serve [--socket <path>]          Run the headless Styr server
+  styr serve --listen <address>[:port] [--pair]
+                                        Also accept paired devices over WebSocket on one
+                                        private address (loopback, LAN or Tailscale); --pair
+                                        prints a QR to pair a device with
   styr serve attach [--socket <path>]   Pipe stdio to the running server (what ssh runs)
   styr serve --version                  Print the server's version
 
+Devices see only the workspaces that have "Allow remote clients" switched on in their settings.
 The socket defaults to ~/.styr/server.sock ($STYR_HOME/server.sock), or $STYR_SERVER_SOCKET.`
 
 /**
@@ -21,6 +34,8 @@ export function parseServerArgs(argv: string[]): ServerCommand {
   const args = argv[0] === 'serve' ? argv.slice(1) : [...argv]
   let command: 'serve' | 'attach' = 'serve'
   let socket: string | undefined
+  let listen: ListenSpec | undefined
+  let pair = false
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!
     if (arg === 'attach' && i === 0) command = 'attach'
@@ -31,7 +46,33 @@ export function parseServerArgs(argv: string[]): ServerCommand {
       if (!value) return { command: 'invalid', message: '--socket needs a path' }
       socket = value
     } else if (arg.startsWith('--socket=')) socket = arg.slice('--socket='.length)
-    else return { command: 'invalid', message: `Unknown argument: ${arg}` }
+    else if (arg === '--pair') pair = true
+    else if (arg === '--listen' || arg.startsWith('--listen=')) {
+      const value = arg === '--listen' ? args[++i] : arg.slice('--listen='.length)
+      const spec = value ? parseListen(value) : undefined
+      if (!spec) return { command: 'invalid', message: '--listen needs <address>[:port]' }
+      listen = spec
+    } else return { command: 'invalid', message: `Unknown argument: ${arg}` }
   }
-  return socket ? { command, socket } : { command }
+  if (pair && !listen) return { command: 'invalid', message: '--pair needs --listen' }
+  if (command === 'attach' && (listen || pair)) {
+    return { command: 'invalid', message: 'attach takes only --socket' }
+  }
+  return {
+    command,
+    ...(socket ? { socket } : {}),
+    ...(listen ? { listen } : {}),
+    ...(pair ? { pair } : {})
+  } as ServerCommand
+}
+
+/** `192.168.1.5`, `192.168.1.5:7878`, `[fd7a::1]:7878` or `fd7a::1`. */
+export function parseListen(value: string): ListenSpec | undefined {
+  const bracketed = /^\[([^\]]+)\](?::(\d+))?$/.exec(value)
+  const ipv4 = /^([^:]+)(?::(\d+))?$/.exec(value)
+  const match = bracketed ?? ipv4
+  const address = match?.[1] ?? (value.includes(':') ? value : undefined)
+  if (!address) return undefined
+  const port = match?.[2] ? Number(match[2]) : DEFAULT_LISTEN_PORT
+  return { address, port }
 }

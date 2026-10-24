@@ -158,6 +158,15 @@ export function switchWorkspace(id: string): void {
   }
 }
 
+const trayListeners = new Set<(statuses: AgentStatus[], titles: Map<string, string>) => void>()
+
+/** The local agents' tray model, for the network listener (`networkAccess.ts`). */
+export function onLocalTray(
+  listener: (statuses: AgentStatus[], titles: Map<string, string>) => void
+): void {
+  trayListeners.add(listener)
+}
+
 /**
  * The agents service, created here so the Codex monitor it makes comes up when `ipc.ts` loads, as
  * it always has: after the tasks and workspaces services, before Auto-run.
@@ -196,7 +205,10 @@ const agentsService = createAgentsService({
   prepareCodex,
   planLaunch,
   // The tray shows every connected remote workspace's agents too: the router merges them in.
-  updateTray: (statuses, titles) => remoteRouter.localTrayChanged(statuses, titles),
+  updateTray: (statuses, titles) => {
+    remoteRouter.localTrayChanged(statuses, titles)
+    for (const listener of trayListeners) listener(statuses, titles)
+  },
   requestAutoRun: () => dispatchService.requestAutoRun()
 })
 

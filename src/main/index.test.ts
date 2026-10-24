@@ -96,6 +96,11 @@ vi.mock('./tray.js', () => ({
   setTrayAutoRun: record('setTrayAutoRun'),
   watchWindow: record('watchWindow')
 }))
+vi.mock('./networkAccess.js', () => ({
+  registerAccessHandlers: record('registerAccessHandlers'),
+  startNetworkAccess: record('startNetworkAccess'),
+  stopNetworkAccess: record('stopNetworkAccess')
+}))
 vi.mock('./updater.js', () => ({ initUpdater: record('initUpdater') }))
 vi.mock('./usage.js', () => ({ forgetContext: () => {}, initUsage: record('initUsage') }))
 
@@ -116,6 +121,7 @@ describe('start-up order', () => {
       'tasksDir',
       'syncIndex',
       'registerIpcHandlers',
+      'registerAccessHandlers',
       'startRemoteWorkspaces',
       'startAutoDispatch',
       'installAppMenu',
@@ -134,7 +140,8 @@ describe('start-up order', () => {
       'window:openHandler',
       'window:load',
       'initUpdater',
-      'initUsage'
+      'initUsage',
+      'startNetworkAccess'
     ])
   })
 

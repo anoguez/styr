@@ -78,6 +78,13 @@ const DESKTOP_ONLY = new Set([
   'terminal:nativeDetach',
   'terminal:nativeClearBlocks',
   'terminal:nativeReceived',
+  // Remote access: this computer's own listener and the devices paired with it
+  // (`src/main/networkAccess.ts`).
+  'access:state',
+  'access:configure',
+  'access:pair',
+  'access:cancelPair',
+  'access:revoke',
   // The client's own connections to remote hosts (`src/main/remote.ts`).
   'remote:state',
   'remote:retry',

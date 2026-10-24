@@ -2,15 +2,24 @@ import { cpSync, mkdirSync, renameSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { configDir } from '@core/config.js'
 import { loadSettings } from '@core/settingsStore.js'
+import { globalSettingsFor } from '@core/types.js'
+import { listWorkspaces } from '@core/workspaces.js'
+import { renderUnicodeCompact } from 'uqr'
 import { nodePtySpawn } from '@host/terminals/nodePty.js'
 import type { AppPaths } from '@host/ports.js'
-import { PROTOCOL_VERSION, createHub, type ServerInfo } from './hub.js'
-import { createServerHost } from './serverHost.js'
+import { PROTOCOL_VERSION, createHub, type Hub, type ServerInfo } from './hub.js'
+import { createServerHost, type ServerHost } from './serverHost.js'
+import type { ListenSpec } from './cli.js'
+import { createNetworkAccess, forwardToHub } from './networkAccess.js'
 import { listen } from './socket.js'
 
 export interface ServeOptions {
   socketPath: string
   version: string
+  /** Also accept paired devices on this private address (`--listen`). */
+  listen?: ListenSpec
+  /** Print a QR to pair a device with, once listening (`--pair`). */
+  pair?: boolean
   /** The folder holding `out/server/` and `resources/`: the repo, or the server bundle. */
   root: string
 }
@@ -45,7 +54,7 @@ export async function serve(options: ServeOptions): Promise<void> {
   const host = createServerHost({
     broadcast: (channel, payload) => {
       if (channel === 'server:tray') tray = payload
-      hub.broadcast(channel, payload)
+      forwardToHub(hub, channel, payload)
     },
     // A headless server has no desktop: the clients raise the notification.
     notify: (title, body) => hub.broadcast('server:notify', { title, body }),
@@ -69,6 +78,7 @@ export async function serve(options: ServeOptions): Promise<void> {
 
   const listener = await listen(options.socketPath, hub)
   host.start()
+  const network = options.listen ? await startNetwork(options, hub, host) : undefined
   process.stdout.write(`styr server ${options.version} listening on ${options.socketPath}\n`)
 
   // A crash would kill every agent the server runs; log and carry on, as Electron's main does.
@@ -82,12 +92,62 @@ export async function serve(options: ServeOptions): Promise<void> {
       stopping = true
       void listener
         .close()
+        .then(() => network?.stop())
         .then(() => host.stop())
         .finally(resolve)
     }
     process.once('SIGTERM', stop)
     process.once('SIGINT', stop)
   })
+}
+
+/**
+ * `--listen`: the same network access as the desktop app (`networkAccess.ts`), switched on for
+ * this run on the address given. A bad address or a port in use stops the server before it serves.
+ */
+async function startNetwork(
+  options: ServeOptions,
+  hub: Hub,
+  host: ServerHost
+): Promise<{ stop(): Promise<void> }> {
+  const sessions = () => host.terminals.listSessions()
+  const { service } = createNetworkAccess({
+    hub,
+    gate: {
+      isOpen: (id) => {
+        const workspace = listWorkspaces(loadSettings()).find((entry) => entry.id === id)
+        return (
+          workspace !== undefined && !workspace.remote && loadSettings(id).remoteAccess === true
+        )
+      },
+      activeId: () => loadSettings().activeWorkspaceId,
+      sessionWorkspace: (id) => {
+        const session = sessions().find((entry) => entry.id === id && !entry.host)
+        return { exists: session !== undefined, workspaceId: session?.workspaceId }
+      },
+      currentGlobal: () => globalSettingsFor(loadSettings())
+    },
+    // A server has no desktop to keep awake.
+    keepAwake: { hold: () => 0, release: () => undefined },
+    broadcast: () => undefined,
+    log: (message) => process.stdout.write(`${message}\n`)
+  })
+  const state = await service.configure({
+    enabled: true,
+    bindAddress: options.listen!.address,
+    port: options.listen!.port
+  })
+  if (!state.listening) {
+    throw new Error(state.error ?? 'Could not listen for devices.')
+  }
+  if (options.pair) {
+    const pairing = service.pair()
+    process.stdout.write(
+      `Scan this with the Styr app within 2 minutes (it works once):\n\n` +
+        `${renderUnicodeCompact(pairing.uri, { ecc: 'M' })}\n${pairing.uri}\n`
+    )
+  }
+  return { stop: () => service.stop() }
 }
 
 /**

@@ -27,6 +27,7 @@ import {
 import { AgentsSection } from './settings/AgentsSection.js'
 import { DispatchSection } from './settings/DispatchSection.js'
 import { ExperimentalSection } from './settings/ExperimentalSection.js'
+import { RemoteAccessSection } from './settings/RemoteAccessSection.js'
 import { RemoteSection } from './settings/RemoteSection.js'
 import { RemoteContext, boardAccess, useRemoteState } from '../lib/remoteStatus.js'
 import { PreferencesSection } from './settings/PreferencesSection.js'
@@ -333,6 +334,7 @@ export function SettingsDialog({
                   />
                 ) : null}
 
+                {section === 'remote-access' ? <RemoteAccessSection /> : null}
                 {section === 'remote' ? (
                   <RemoteSection workspaces={workspaces} onSetUp={newRemoteWorkspace} />
                 ) : null}

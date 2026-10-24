@@ -32,7 +32,13 @@ async function main(): Promise<number> {
       const { serve } = await import('./serve.js')
       // out/server/index.mjs → the repo, or the bundle that holds out/ and resources/.
       const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-      await serve({ socketPath: socketPath(parsed), version: __STYR_VERSION__, root })
+      await serve({
+        socketPath: socketPath(parsed),
+        version: __STYR_VERSION__,
+        root,
+        listen: parsed.listen,
+        pair: parsed.pair
+      })
       return 0
     }
   }

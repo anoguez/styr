@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util'
 import { RPC_ERRORS, RpcError } from '@host/rpc/jsonRpc.js'
 
 /**
@@ -134,7 +135,7 @@ export function createNetworkPolicy(ports: GatePorts): ClientPolicy {
           const change = params[0] as { workspaceId?: unknown; global?: unknown } | undefined
           requireWorkspace(change?.workspaceId)
           // The app-level keys (storage folder, shortcuts, updates …) are the desktop's.
-          if (JSON.stringify(change?.global) !== JSON.stringify(ports.currentGlobal())) {
+          if (!isDeepStrictEqual(change?.global, ports.currentGlobal())) {
             throw forbidden('App-level settings can only be changed on the desktop.')
           }
           return

@@ -34,12 +34,12 @@ export const helloSchema = z.object({
   protocol: z.number().int().optional(),
   clientNonce: hex(32)
 })
-const authSchema = z.object({
+export const authSchema = z.object({
   type: z.literal('auth'),
   deviceId: z.string().min(1).max(100),
   proof: hex(64)
 })
-const pairSchema = z.object({
+export const pairSchema = z.object({
   type: z.literal('pair'),
   name: z.string().max(200),
   verifier: hex(64),
