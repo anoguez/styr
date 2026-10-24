@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.40.0](https://github.com/anoguez/styr/compare/v0.39.0...v0.40.0) (2026-10-24)
+
+
+### Features
+
+* agents ask owner questions in the terminal too, and can close them with resolve_question ([#221](https://github.com/anoguez/styr/issues/221)) ([f6e70ad](https://github.com/anoguez/styr/commit/f6e70ada6f223c089d8f780f081f0a2b32f908f9))
+* reorder and skip tasks in the Dispatch dialog ([#214](https://github.com/anoguez/styr/issues/214)) ([40025b8](https://github.com/anoguez/styr/commit/40025b80b605f0bc04060461886ccce7ffb62af0))
+* welcome wizard for first run, and Quick setup in the command palette ([#219](https://github.com/anoguez/styr/issues/219)) ([3410196](https://github.com/anoguez/styr/commit/34101961aa435874ca27d31bdba86378dded0948))
+
+
+### Bug Fixes
+
+* copy the vendored Styr Terminal instead of renaming it across drives ([#215](https://github.com/anoguez/styr/issues/215)) ([4935203](https://github.com/anoguez/styr/commit/4935203572ac361108488744635472ad18ed6029))
+* do not offer to restore agent tabs that cannot come back ([#217](https://github.com/anoguez/styr/issues/217)) ([1e7b7bb](https://github.com/anoguez/styr/commit/1e7b7bb574afb2f0c41f7bc3905d34e9a9c66cda))
+
 ## [0.39.0](https://github.com/anoguez/styr/compare/v0.38.0...v0.39.0) (2026-10-23)
 
 
