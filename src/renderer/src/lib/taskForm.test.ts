@@ -159,6 +159,14 @@ describe('taskPayload', () => {
     expect(taskPayload({ ...blank, project: ' web ' }).project).toBe('web')
     expect(taskPayload({ ...blank, repoPath: '' }).project).toBeUndefined()
   })
+
+  it('drops blank repositories and trims the rest', () => {
+    const payload = taskPayload({
+      ...blank,
+      extraRepos: [{ repoPath: '  ' }, { repoPath: ' /w/client ', baseBranch: 'dev' }]
+    })
+    expect(payload.extraRepos).toEqual([{ repoPath: '/w/client', baseBranch: 'dev' }])
+  })
 })
 
 describe('templateNames', () => {

@@ -15,6 +15,7 @@ import {
 import type { DiffStat } from '@core/diff.js'
 import { DispatchingContext } from '../lib/dispatchRun.js'
 import { describeBlockers, useOpenBlockers } from '../lib/blockerContext.js'
+import { fileName } from '../lib/terminalPath.js'
 import { Chip, DiffCount, DiffStatButton } from './ui.js'
 import { DispatchGlyph, dispatchToggleTitle } from './dispatchMark.js'
 
@@ -118,20 +119,51 @@ export function TaskCardBody({
   const stop = { onPointerDown: (e: SyntheticEvent) => e.stopPropagation() }
   const linkClass =
     'inline-flex shrink-0 items-center gap-[3px] whitespace-nowrap text-[var(--color-accent-text)] hover:underline'
-  const prLink = task.prUrl ? (
-    <a
-      href={task.prUrl}
-      target="_blank"
-      rel="noreferrer"
-      title={task.prUrl}
-      className={linkClass}
-      {...stop}
-      onClick={(event) => event.stopPropagation()}
-    >
-      <RefIcon name="pr" />
-      PR
-    </a>
-  ) : null
+  const prLinks = [
+    ...(task.prUrl ? [{ name: 'PR', url: task.prUrl }] : []),
+    ...(task.useWorktree
+      ? task.extraRepos.flatMap((extra) =>
+          extra.prUrl ? [{ name: `PR · ${fileName(extra.repoPath)}`, url: extra.prUrl }] : []
+        )
+      : [])
+  ]
+  const prLink =
+    prLinks.length === 1 ? (
+      <a
+        href={prLinks[0]?.url}
+        target="_blank"
+        rel="noreferrer"
+        title={prLinks[0]?.url}
+        className={linkClass}
+        {...stop}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <RefIcon name="pr" />
+        PR
+      </a>
+    ) : prLinks.length > 1 ? (
+      // A multi-repo task has a pull request per repository.
+      <details className="relative shrink-0" {...stop} onClick={(event) => event.stopPropagation()}>
+        <summary className={`${linkClass} cursor-pointer list-none`}>
+          <RefIcon name="pr" />
+          PRs ({prLinks.length})
+        </summary>
+        <div className="absolute left-0 top-full z-20 mt-1 flex min-w-[140px] flex-col gap-0.5 rounded-lg border border-edge bg-card p-1 shadow-lg">
+          {prLinks.map((link) => (
+            <a
+              key={link.url}
+              href={link.url}
+              target="_blank"
+              rel="noreferrer"
+              title={link.url}
+              className="whitespace-nowrap rounded-md px-2 py-1 text-[var(--color-accent-text)] hover:bg-raised"
+            >
+              {link.name}
+            </a>
+          ))}
+        </div>
+      </details>
+    ) : null
   const issueLink = task.externalRef?.url ? (
     <a
       href={task.externalRef.url}

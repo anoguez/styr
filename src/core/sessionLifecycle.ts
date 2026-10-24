@@ -12,12 +12,14 @@ import type { LaunchOptions, LaunchPlan } from './launch.js'
 import { laneFor, providerForLane } from './orchestrate.js'
 import { resolveTemplateFor } from './prompt.js'
 import { agentSkip } from './terminalLayout.js'
-import { createPullRequestPrompt } from './pullRequest.js'
+import { createPullRequestPrompt, createPullRequestsPrompt } from './pullRequest.js'
+import { repoDisplayNames } from './repoNames.js'
 import { providerById } from './providers/index.js'
 import type { ThreadUpdate } from './providers/codexProtocol.js'
 import { TaskLaunchGate } from './taskLaunchGate.js'
 import {
   WORKTREE_BRANCH_PREFIX,
+  worktreeKey,
   type OrchestrationLane,
   type Settings,
   type Task,
@@ -572,6 +574,34 @@ export function createSessionLifecycle(ports: SessionPorts) {
     }
     const repoPath = task.repoPath || settings.defaultRepoPath.trim()
     const base = task.baseBranch || (repoPath ? ports.git.baseBranch(repoPath) : undefined)
+    const extras = task.useWorktree ? task.extraRepos.filter((extra) => extra.worktreePath) : []
+    if (extras.length > 0) {
+      const branch = `${WORKTREE_BRANCH_PREFIX}${worktreeKey(settings.activeWorkspaceId, task.id)}`
+      const names = repoDisplayNames([repoPath, ...extras.map((extra) => extra.repoPath)])
+      submitToAgent(
+        live.id,
+        createPullRequestsPrompt({
+          taskFile: task.filePath,
+          repos: [
+            {
+              name: names[0] ?? repoPath,
+              path: task.worktreePath ?? repoPath,
+              base,
+              branch,
+              primary: true
+            },
+            ...extras.map((extra, index) => ({
+              name: names[index + 1] ?? extra.repoPath,
+              path: extra.worktreePath ?? extra.repoPath,
+              base: extra.baseBranch || ports.git.baseBranch(extra.repoPath),
+              branch,
+              primary: false
+            }))
+          ]
+        })
+      )
+      return
+    }
     submitToAgent(live.id, createPullRequestPrompt({ taskFile: task.filePath, base }))
   }
 

@@ -47,6 +47,15 @@ Fresh and fork launches pass `-c sandbox_workspace_write.network_access=true`: t
 by default, which made `gh` report an invalid token and `git push` fail. Resumed threads keep the sandbox
 they started with. Whether the daemon honours the override is unverified against a real daemon.
 
+A multi-repo task passes each extra repo's worktree as `--add-dir <path>` (Claude and Codex alike,
+via `ProviderCommandInput.extraDirs`; `launch.ts` never knows the flag). Claude repeats it on
+resume. Codex 0.159.3's CLI parser accepts `--add-dir` on the TUI, `resume` and `fork` (checked with
+`--help`); that the daemon applies it to the thread's sandbox is, like the network override, not
+verified against a live daemon — the prompt names every repo's path either way, so the floor is an
+agent that `cd`s there and may be prompted. The prompt (`buildPrompt`) takes `extraRepos` as plain
+data and adds a "Repositories" block, placed by `{{repos}}` when a template has it, otherwise
+appended with the board protocol; the Done and PR wording is per repo in that mode.
+
 The MCP install command for Codex sets `STYR_MCP_AUTHOR=codex` so board notes are attributed.
 
 ## Models
