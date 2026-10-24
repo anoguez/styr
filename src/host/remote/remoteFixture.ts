@@ -29,6 +29,7 @@ export function remoteTask(fields: Partial<Task> & Pick<Task, 'id' | 'title'>): 
     tags: [],
     orchestrate: true,
     useWorktree: false,
+    extraRepos: [],
     blockedBy: [],
     contextFiles: [],
     sessions: [],

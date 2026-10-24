@@ -5,6 +5,7 @@ import {
   DEFAULT_DONE_CAP,
   DEFAULT_SHORTCUTS,
   DEFAULT_TERMINAL_PALETTE,
+  MAX_EXTRA_REPOS,
   MAX_TASK_PRESETS,
   ORCHESTRATION_LANES,
   REST_METHODS,
@@ -95,6 +96,13 @@ export const activityEntrySchema = z.object({
   message: z.string()
 })
 
+export const extraRepoSchema = z.object({
+  repoPath: z.string().min(1),
+  baseBranch: z.string().optional(),
+  worktreePath: z.string().optional(),
+  prUrl: z.string().optional()
+})
+
 export const taskFrontmatterSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -108,6 +116,7 @@ export const taskFrontmatterSchema = z.object({
   useWorktree: z.boolean().default(false),
   baseBranch: z.string().optional(),
   worktreePath: z.string().optional(),
+  extraRepos: z.array(extraRepoSchema).default([]),
   blockedBy: z.array(z.string()).default([]),
   contextFiles: z.array(z.string()).default([]),
   promptTemplateId: z.string().optional(),
@@ -142,6 +151,7 @@ export const taskDraftSchema = z.object({
   useWorktree: z.boolean().optional(),
   baseBranch: z.string().optional(),
   worktreePath: z.string().optional(),
+  extraRepos: z.array(extraRepoSchema).max(MAX_EXTRA_REPOS).optional(),
   blockedBy: z.array(z.string().regex(TASK_ID_RE, 'Use a task id like TASK-0012')).optional(),
   contextFiles: z.array(z.string()).optional(),
   promptTemplateId: z.string().optional(),
@@ -422,6 +432,15 @@ export const remoteTaskSchema = taskFrontmatterSchema.extend({
   repoPath: remotePathSchema.optional(),
   baseBranch: line.optional(),
   worktreePath: remotePathSchema.optional(),
+  extraRepos: list(
+    z.object({
+      repoPath: remotePathSchema,
+      baseBranch: line.optional(),
+      worktreePath: remotePathSchema.optional(),
+      prUrl: line.optional()
+    }),
+    MAX_EXTRA_REPOS
+  ).default([]),
   blockedBy: list(short).default([]),
   contextFiles: list(remotePathSchema).default([]),
   sessions: list(taskSessionRefSchema).default([]),

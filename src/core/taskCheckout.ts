@@ -8,7 +8,8 @@ import {
   type CleanupResult,
   type Landing
 } from './worktreeLanding.js'
-import { worktreeKey, type Task, type WorktreeLocation } from './types.js'
+import { repoDisplayNames } from './repoNames.js'
+import { worktreeKey, type ExtraRepo, type Task, type WorktreeLocation } from './types.js'
 
 export type { Checkout, CleanupResult, Landing }
 
@@ -36,22 +37,56 @@ export function checkoutOf(
   return { repoPath, key, baseBranch: task.baseBranch, location: made ?? location }
 }
 
+/** One repository of a task: the primary (where the agent starts) or an extra. */
+export interface TaskRepoCheckout {
+  role: 'primary' | 'extra'
+  /** Display name: the folder, or `parent/folder` when two repositories share one. */
+  repoName: string
+  checkout: Checkout
+}
+
+/**
+ * Every repository of a task, the primary first, each keyed like `checkoutOf` does: all share the
+ * task's branch name (same `worktreeKey`), each in its own repository, with its own base branch.
+ * A task without `useWorktree` has no extras — `extraRepos` is ignored then.
+ */
+export function checkoutsOf(
+  workspaceId: string,
+  task: Pick<Task, 'id' | 'baseBranch'> &
+    Partial<Pick<Task, 'worktreePath' | 'useWorktree' | 'extraRepos'>> & { repoPath: string },
+  location: WorktreeLocation = 'beside'
+): TaskRepoCheckout[] {
+  const extras: ExtraRepo[] = task.useWorktree === false ? [] : (task.extraRepos ?? [])
+  const names = repoDisplayNames([task.repoPath, ...extras.map((extra) => extra.repoPath)])
+  return [
+    {
+      role: 'primary',
+      repoName: names[0] as string,
+      checkout: checkoutOf(workspaceId, task, task.repoPath, location)
+    },
+    ...extras.map((extra, index): TaskRepoCheckout => ({
+      role: 'extra',
+      repoName: names[index + 1] as string,
+      checkout: checkoutOf(workspaceId, { ...extra, id: task.id }, extra.repoPath, location)
+    }))
+  ]
+}
+
 function samePath(a: string, b: string): boolean {
   return resolve(a) === resolve(b)
 }
 
 /** The task fields a checkout is derived from; only tasks with a repository have one. */
 export type CheckoutTask = Pick<Task, 'id' | 'baseBranch'> &
-  Partial<Pick<Task, 'useWorktree' | 'worktreePath'>> & { repoPath: string }
+  Partial<Pick<Task, 'useWorktree' | 'worktreePath' | 'extraRepos'>> & { repoPath: string }
 
 /**
- * A task's checkout, keyed by the task: what it changed, one file's patch, whether its branch has
- * landed, and removing its worktree. The worktree/repository split is decided here — a task with
- * `useWorktree: false` is measured in the repository itself; an unset flag (older task files)
- * counts as a worktree task.
+ * One repository of a task, keyed by the task: what it changed, one file's patch, whether its
+ * branch has landed, and removing its worktree. The worktree/repository split is decided here — a
+ * task with `useWorktree: false` is measured in the repository itself; an unset flag (older task
+ * files) counts as a worktree task.
  */
-export interface TaskCheckout {
-  readonly checkout: Checkout
+export interface RepoCheckout extends TaskRepoCheckout {
   diff(): DiffResult
   /** The card's totals for a `changes` diff, else undefined. Asynchronous: git off the main thread. */
   diffStat(): Promise<DiffStat | undefined>
@@ -63,21 +98,36 @@ export interface TaskCheckout {
   removeWorktree(): void
 }
 
-export function taskCheckout(
-  workspaceId: string,
-  task: CheckoutTask,
-  location?: WorktreeLocation
-): TaskCheckout {
-  const checkout = checkoutOf(workspaceId, task, task.repoPath, location)
-  const worktree = task.useWorktree !== false
+/**
+ * A task's checkout is its primary repository's, so single-repo callers need no change; `repos`
+ * lists every repository of the task, the primary first (one entry for a single-repo task).
+ */
+export interface TaskCheckout extends RepoCheckout {
+  readonly repos: readonly RepoCheckout[]
+}
+
+function repoCheckout(entry: TaskRepoCheckout, worktree: boolean): RepoCheckout {
+  const { checkout } = entry
   return {
-    checkout,
+    ...entry,
     diff: () => taskDiff(checkout, worktree),
     diffStat: () => taskDiffStat(checkout, worktree),
     filePatch: (path, full = false) => taskFilePatch(checkout, worktree, path, full),
     landing: () => branchLanding(checkout),
     removeWorktree: () => removeWorktree(checkout)
   }
+}
+
+export function taskCheckout(
+  workspaceId: string,
+  task: CheckoutTask,
+  location?: WorktreeLocation
+): TaskCheckout {
+  const worktree = task.useWorktree !== false
+  const repos = checkoutsOf(workspaceId, task, location).map((entry) =>
+    repoCheckout(entry, worktree)
+  )
+  return { ...(repos[0] as RepoCheckout), repos }
 }
 
 /**

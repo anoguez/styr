@@ -30,6 +30,20 @@ export const TASK_READINESS_LABELS: Record<TaskReadiness, string> = {
 
 export type TaskSource = 'markdown' | 'json'
 
+/** Most repositories a task may add beside its primary one. */
+export const MAX_EXTRA_REPOS = 5
+
+/**
+ * A repository a task touches besides its primary one (`Task.repoPath`). Its `baseBranch`,
+ * `worktreePath` and `prUrl` mean what the task's own fields mean for the primary repo.
+ */
+export interface ExtraRepo {
+  repoPath: string
+  baseBranch?: string
+  worktreePath?: string
+  prUrl?: string
+}
+
 export interface Task {
   id: string
   title: string
@@ -46,6 +60,11 @@ export interface Task {
   /** Branch the worktree starts from; unset means the main checkout's current branch. */
   baseBranch?: string
   worktreePath?: string
+  /**
+   * More repositories the task spans, each with its own worktree on the task's branch. Settable
+   * only before the first launch; ignored unless `useWorktree` is on. Empty for a single-repo task.
+   */
+  extraRepos: ExtraRepo[]
   /** Ids of same-workspace tasks that must be Done first. Whether the task is blocked is derived. */
   blockedBy: string[]
   contextFiles: string[]
