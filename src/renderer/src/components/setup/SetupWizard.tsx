@@ -173,116 +173,128 @@ export function SetupWizard({
 
   return (
     <Modal title={SETUP_TITLES[mode]} onClose={close} onSubmit={next} bare backdropCloses={false}>
-      <header className="flex items-center gap-3.5 border-b border-edge py-3.5 pl-6 pr-3.5">
-        <h2 className="whitespace-nowrap text-[15px] font-semibold tracking-[-0.01em]">
-          {SETUP_TITLES[mode]}
-        </h2>
-        <ol className="m-0 flex min-w-0 flex-1 list-none flex-wrap items-center gap-1 p-0">
-          {SETUP_STEPS.map((item, index) => {
-            const current = index === step
-            const done = first && index < step
-            const locked = index > reach
-            return (
-              <li key={item.id} className="flex">
-                <button
-                  type="button"
-                  disabled={locked}
-                  aria-current={current ? 'step' : undefined}
-                  onClick={() => go(index)}
-                  className={`inline-flex h-6 items-center gap-1.5 rounded-[7px] px-2 text-[12px] font-medium transition-colors enabled:hover:text-ink disabled:cursor-default ${
-                    current ? 'bg-raised text-ink' : locked ? 'text-faint/60' : 'text-dim'
-                  }`}
-                >
-                  <span
-                    className={`grid size-4 place-items-center rounded-full border text-[10px] ${
-                      current
-                        ? 'border-[var(--color-accent-text)] text-ink'
-                        : done
-                          ? 'border-accent bg-accent text-[var(--color-on-accent)]'
-                          : 'border-edge-strong text-faint'
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={SETUP_TITLES[mode]}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <header className="flex items-center gap-3.5 border-b border-edge py-3.5 pl-6 pr-3.5">
+          <h2 className="whitespace-nowrap text-[15px] font-semibold tracking-[-0.01em]">
+            {SETUP_TITLES[mode]}
+          </h2>
+          <ol className="m-0 flex min-w-0 flex-1 list-none flex-wrap items-center gap-1 p-0">
+            {SETUP_STEPS.map((item, index) => {
+              const current = index === step
+              const done = first && index < step
+              const locked = index > reach
+              return (
+                <li key={item.id} className="flex">
+                  <button
+                    type="button"
+                    disabled={locked}
+                    aria-current={current ? 'step' : undefined}
+                    onClick={() => go(index)}
+                    className={`inline-flex h-6 items-center gap-1.5 rounded-[7px] px-2 text-[12px] font-medium transition-colors enabled:hover:text-ink disabled:cursor-default ${
+                      current ? 'bg-raised text-ink' : locked ? 'text-faint/60' : 'text-dim'
                     }`}
                   >
-                    {done ? '✓' : index + 1}
-                  </span>
-                  {item.label}
-                  {dirty.has(item.id) ? (
                     <span
-                      role="img"
-                      aria-label="Has changes"
-                      className="size-[5px] rounded-full bg-[var(--color-accent-text)]"
-                    />
-                  ) : null}
-                </button>
-              </li>
-            )
-          })}
-        </ol>
-        <Button variant="subtle" className="size-7 shrink-0 p-0" aria-label="Close" onClick={close}>
-          <CloseIcon size={14} />
-        </Button>
-      </header>
+                      className={`grid size-4 place-items-center rounded-full border text-[10px] ${
+                        current
+                          ? 'border-[var(--color-accent-text)] text-ink'
+                          : done
+                            ? 'border-accent bg-accent text-[var(--color-on-accent)]'
+                            : 'border-edge-strong text-faint'
+                      }`}
+                    >
+                      {done ? '✓' : index + 1}
+                    </span>
+                    {item.label}
+                    {dirty.has(item.id) ? (
+                      <span
+                        role="img"
+                        aria-label="Has changes"
+                        className="size-[5px] rounded-full bg-[var(--color-accent-text)]"
+                      />
+                    ) : null}
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+          <Button
+            variant="subtle"
+            className="size-7 shrink-0 p-0"
+            aria-label="Close"
+            onClick={close}
+          >
+            <CloseIcon size={14} />
+          </Button>
+        </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-8 py-[26px]">
-        {id === 'workspace' ? (
-          <WorkspaceStep
-            mode={mode}
-            name={name}
-            onName={setName}
-            picker={picker}
-            draft={draft}
-            patch={patch}
-          />
-        ) : null}
-        {id === 'agents' ? <AgentsStep draft={draft} patch={patch} /> : null}
-        {id === 'dispatch' ? <DispatchStep draft={draft} patch={patch} /> : null}
-        {id === 'theme' ? <ThemeStep draft={draft} patch={patch} /> : null}
-        {id === 'review' ? (
-          <ReviewStep
-            mode={mode}
-            name={name.trim()}
-            draft={draft}
-            patch={patch}
-            changes={changes}
-            onEdit={(stepId) => go(SETUP_STEPS.findIndex((item) => item.id === stepId))}
-            openPaletteHint={
-              <>
-                Run this again any time from the command palette:{' '}
-                <kbd className="font-mono text-dim">{formatAccelerator('mod+k')}</kbd> → Quick
-                setup.
-              </>
-            }
-          />
-        ) : null}
+        <div className="min-h-0 flex-1 overflow-y-auto px-8 py-[26px]">
+          {id === 'workspace' ? (
+            <WorkspaceStep
+              mode={mode}
+              name={name}
+              onName={setName}
+              picker={picker}
+              draft={draft}
+              patch={patch}
+            />
+          ) : null}
+          {id === 'agents' ? <AgentsStep draft={draft} patch={patch} /> : null}
+          {id === 'dispatch' ? <DispatchStep draft={draft} patch={patch} /> : null}
+          {id === 'theme' ? <ThemeStep draft={draft} patch={patch} /> : null}
+          {id === 'review' ? (
+            <ReviewStep
+              mode={mode}
+              name={name.trim()}
+              draft={draft}
+              patch={patch}
+              changes={changes}
+              onEdit={(stepId) => go(SETUP_STEPS.findIndex((item) => item.id === stepId))}
+              openPaletteHint={
+                <>
+                  Run this again any time from the command palette:{' '}
+                  <kbd className="font-mono text-dim">{formatAccelerator('mod+k')}</kbd> → Quick
+                  setup.
+                </>
+              }
+            />
+          ) : null}
+        </div>
+
+        <footer className="flex shrink-0 items-center gap-2 border-t border-edge bg-chrome/40 py-3 pl-6 pr-4">
+          {step > 0 ? (
+            <Button variant="subtle" className="h-[30px]" onClick={() => go(step - 1)}>
+              ← Back
+            </Button>
+          ) : null}
+          <span
+            role={error ? 'alert' : undefined}
+            className={`min-w-0 truncate text-[11.5px] ${error ? 'text-danger' : 'text-faint'}`}
+            title={error || undefined}
+          >
+            {error || `Step ${step + 1} of ${SETUP_STEPS.length} · ${scope}`}
+          </span>
+          <div className="flex-1" />
+          {!isLast ? (
+            <Button variant="subtle" className="h-[30px] shrink-0" onClick={() => go(LAST)}>
+              {first ? (step === 0 ? 'Skip setup' : 'Use defaults') : 'Skip to review'}
+            </Button>
+          ) : null}
+          <Button
+            variant="primary"
+            className="h-[30px] shrink-0 gap-2 px-3.5"
+            disabled={blocked || saving}
+            onClick={next}
+          >
+            {isLast ? (first ? 'Open board' : 'Apply') : first ? 'Continue' : 'Next'} →
+          </Button>
+        </footer>
       </div>
-
-      <footer className="flex shrink-0 items-center gap-2 border-t border-edge bg-chrome/40 py-3 pl-6 pr-4">
-        {step > 0 ? (
-          <Button variant="subtle" className="h-[30px]" onClick={() => go(step - 1)}>
-            ← Back
-          </Button>
-        ) : null}
-        <span
-          role={error ? 'alert' : undefined}
-          className={`min-w-0 truncate text-[11.5px] ${error ? 'text-danger' : 'text-faint'}`}
-          title={error || undefined}
-        >
-          {error || `Step ${step + 1} of ${SETUP_STEPS.length} · ${scope}`}
-        </span>
-        <div className="flex-1" />
-        {!isLast ? (
-          <Button variant="subtle" className="h-[30px] shrink-0" onClick={() => go(LAST)}>
-            {first ? (step === 0 ? 'Skip setup' : 'Use defaults') : 'Skip to review'}
-          </Button>
-        ) : null}
-        <Button
-          variant="primary"
-          className="h-[30px] shrink-0 gap-2 px-3.5"
-          disabled={blocked || saving}
-          onClick={next}
-        >
-          {isLast ? (first ? 'Open board' : 'Apply') : first ? 'Continue' : 'Next'} →
-        </Button>
-      </footer>
     </Modal>
   )
 }

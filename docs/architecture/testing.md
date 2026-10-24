@@ -28,6 +28,9 @@ Playwright's `_electron` drives the built app in `out/`. It uses a throwaway `HO
 `--user-data-dir`, `ZDOTDIR` and `XDG_*`, so it never reads or writes your boards, settings, agents
 or dotfiles. The app needs no test hook for this. One launch runs these steps in order:
 
+0. The fresh profile is welcomed by the setup wizard; Skip setup, then Open board, closes it. (The
+   feature tests' harness marks setup as seen with `styr.setup.seen`, so the wizard stays out of
+   their way.)
 1. The board renders, in a sandboxed renderer (the `Tab` process's `sandboxed` metric, on macOS
    and Windows) whose page has `window.api` and no `require` or `process`.
 2. Create a task, edit it, then move it to In Progress (status menu) and to In Review (drag). The
