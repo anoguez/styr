@@ -24,6 +24,10 @@ first launch; `updateTask` throws once a worktree exists.
 `taskPullRequests` / `hasAllPullRequests` (`core/taskPullRequests.ts`, pure): the card (a plain link
 for one, a menu labelled `#100 - repo` for several), the Inbox's "PRs ready" count, and the
 terminal's Create PR button, which stays while any repository still lacks one.
+An agent records them over MCP with `update_task` or `request_review`, both passing
+`extraRepos: [{ repoPath, prUrl }]` to `mergeExtraPrUrls` (`core/taskPullRequests.ts`): entries match
+an existing extra by `repoPath` (trailing slashes ignored), only `prUrl` is applied, an unknown path
+is ignored and an empty `prUrl` clears it. The list itself is never replaced through either tool.
 
 ## Task dependencies
 
@@ -214,7 +218,7 @@ the fallback (`core/boardTools.ts`). `set_task_status` and `update_task` are unc
   alone; once its children are Done it is an ordinary unblocked task the owner closes. File-only form:
   create the files and edit `blockedBy`.
 - **`request_review`** (`core/reviewRequest.ts`; not `handoff.ts`, which the renderer imports and
-  must stay node-free). Writes a replaceable `## Handoff` section, sets `in_review` (and `prUrl`) in one
+  must stay node-free). Writes a replaceable `## Handoff` section, sets `in_review` (and `prUrl`, plus `extraRepos[].prUrl` through `mergeExtraPrUrls`) in one
   `updateTask`, adds a note, and returns the open question count. `changed` and `verify` are required.
   `getSection(description, 'Handoff')` (`core/sections.ts`, pure) reads the tool's section and a
   hand-written one alike. Sections are `## ` lines matched case-insensitively and run to the next `## `;
