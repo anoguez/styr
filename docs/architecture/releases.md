@@ -44,6 +44,25 @@ too, so every app carries the hashes of the bundles attached). A new platform jo
 release without `latest-mac.yml`, `latest.yml` or `latest-linux.yml` is one the updater sees but
 cannot install.
 
+### Packaged-app smoke
+
+Every platform job starts the packaged app and drives it through the smoke and feature tests
+(`e2e/*.e2e.ts`) after packaging and verification and before "Upload to release":
+`node scripts/packaged-smoke.mjs mac|win|linux` runs them against `dist/mac-arm64/Styr.app`,
+`dist/win-unpacked/Styr.exe` or `dist/linux-unpacked/styr` (under `xvfb-run` on Linux) by setting
+`STYR_APP_EXECUTABLE` (`testing.md`). On macOS it runs with the Developer ID signature and the
+hardened runtime, before the signing keychain is removed, so a signature that blocks `node-pty` or
+`better-sqlite3` fails here. A failing test fails the job, which keeps `publish` from running
+(it needs `success`, so a skipped job counts as a failure too) and leaves the release a draft;
+the job uploads `test-results/` as `packaged-smoke-<os>`. Styr Terminal's spec skips itself.
+
+To check the gate, break something that only exists packaged on a throwaway branch and run the
+workflow by hand: dropping `'out/main/**'` from `asarUnpack` fails the "MCP server … on disk"
+smoke step (the setup command's entry must sit under `app.asar.unpacked` and start under plain
+`node`); a missing entitlements file fails the macOS build or launch. Locally,
+`yarn electron-builder --mac --dir -c.mac.identity=-` then
+`STYR_APP_EXECUTABLE=dist/mac-arm64/Styr.app/Contents/MacOS/Styr yarn playwright test`.
+
 `build-linux` runs on `ubuntu-22.04`, not `ubuntu-latest`: node-pty and better-sqlite3 are compiled
 there and need the runner's glibc or newer, and 2.35 is also Styr Terminal's linux-x64 floor.
 `verify-package.mjs` fails the build if any native module needs a newer glibc (`GLIBC_FLOOR`);

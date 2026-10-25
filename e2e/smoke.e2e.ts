@@ -1,7 +1,7 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import {
   _electron as electron,
   expect,
@@ -9,8 +9,9 @@ import {
   type ElectronApplication,
   type Page
 } from '@playwright/test'
+import { appLaunch } from './harness'
 
-// Drives the built app (`out/`) through the paths a refactor is most likely to break. Everything
+// Drives the built app (`out/`, or the packaged one when STYR_APP_EXECUTABLE is set) through the paths a refactor is most likely to break. Everything
 // lives in a throwaway HOME, so the run never reads or writes real settings, boards or agents.
 // See docs/architecture/testing.md.
 
@@ -20,8 +21,6 @@ const EXTERNALIZED = /externalized for browser compatibility/i
 const SAVE = /^Save(?! as preset| &)/
 /** A failed IPC handler or an uncaught error in the main process. */
 const MAIN_ERROR = /Error occurred in handler|Uncaught|Unhandled/i
-
-const root = resolve(__dirname, '..')
 
 const home = mkdtempSync(join(tmpdir(), 'styr-smoke-'))
 /** `Settings.storageDir` defaults to `~/Styr`, and HOME is the temp folder. */
@@ -110,8 +109,6 @@ async function createTask(title: string): Promise<void> {
 }
 
 test.beforeAll(async () => {
-  if (!existsSync(join(root, 'out', 'main', 'index.mjs')))
-    throw new Error('No build in out/. Run `yarn test:smoke`, which builds first.')
   const env: Record<string, string | undefined> = {
     ...process.env,
     HOME: home,
@@ -126,16 +123,7 @@ test.beforeAll(async () => {
   }
   // Set by `electron-vite dev`; the smoke test loads the built renderer from `out/`.
   delete env.ELECTRON_RENDERER_URL
-  app = await electron.launch({
-    cwd: root,
-    args: [
-      '.',
-      `--user-data-dir=${join(home, 'userData')}`,
-      // CI's Ubuntu forbids the unprivileged user namespaces Chromium's sandbox needs.
-      ...(process.platform === 'linux' ? ['--no-sandbox'] : [])
-    ],
-    env: env as Record<string, string>
-  })
+  app = await electron.launch({ ...appLaunch(home), env: env as Record<string, string> })
   app.process().stderr?.on('data', (chunk) => mainLog.push(String(chunk)))
   app.process().stdout?.on('data', (chunk) => mainLog.push(String(chunk)))
   page = await app.firstWindow().catch((error: Error) => {
@@ -205,6 +193,25 @@ test('smoke', async () => {
       }))
     ).toEqual({ api: 'function', require: 'undefined', process: 'undefined' })
     expectNoErrors()
+  })
+
+  await test.step('the MCP server named in the setup command is on disk and starts', async () => {
+    // Launched by plain `node`, which cannot read inside an asar archive: packaged, the entry must
+    // sit under `app.asar.unpacked` (`asarUnpack` in electron-builder.yml).
+    const command = await page.evaluate(() => window.api.app.mcpCommand('claude'))
+    const entry = /["']?([^"']*\.mjs)["']?/.exec(command)?.[1]
+    if (!entry) throw new Error(`no MCP entry in: ${command}`)
+    expect(existsSync(entry), `MCP entry ${entry}`).toBe(true)
+    if (process.env.STYR_APP_EXECUTABLE) expect(entry).toContain('app.asar.unpacked')
+    // A stdio server ends when its input does; a missing import fails it before then.
+    const result = spawnSync(process.execPath, [entry], {
+      input: '',
+      encoding: 'utf8',
+      timeout: 20_000,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '', STYR_HOME: join(home, '.styr') }
+    })
+    expect(result.stderr, 'MCP server output').not.toMatch(/Cannot find|ERR_MODULE_NOT_FOUND|Error/)
+    expect(result.status, 'MCP server exit').toBe(0)
   })
 
   await test.step('create, edit and move a task; the file follows', async () => {
