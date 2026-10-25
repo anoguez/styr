@@ -15,6 +15,7 @@ import {
 import type { DiffStat } from '@core/diff.js'
 import { DispatchingContext } from '../lib/dispatchRun.js'
 import { describeBlockers, useOpenBlockers } from '../lib/blockerContext.js'
+import { prMenuLabel } from '../lib/prLabel.js'
 import { repoDisplayNames } from '@core/repoNames.js'
 import { Chip, DiffCount, DiffStatButton } from './ui.js'
 import { DispatchGlyph, dispatchToggleTitle } from './dispatchMark.js'
@@ -292,7 +293,7 @@ export function TaskCardBody({
             at={prMenu}
             onClose={() => setPrMenu(null)}
             items={prLinks.map((link) => ({
-              label: link.repo,
+              label: prMenuLabel(link),
               run: () => void window.open(link.url, '_blank', 'noopener')
             }))}
           />
