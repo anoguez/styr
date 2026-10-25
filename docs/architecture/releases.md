@@ -74,6 +74,22 @@ changelog. `scripts/setup-signing-secrets.sh <p12>` sets the five signing secret
 `.p12` exported in Keychain Access — never from `security export`, which cannot reach the
 data-protection keychain where the Developer ID key lives and silently exports other identities.
 
+### Branch protection (a repository setting, applied by the owner)
+
+CI only protects `main` if GitHub requires it. Settings → Branches → rule for `main` (or a
+ruleset): **Require status checks to pass before merging** with **Require branches to be up to
+date before merging**, and these checks:
+
+- `check` (lint, format, build, unit tests, coverage)
+- `windows`
+- `smoke`
+- `server-bundle / build (x64, ubuntu-latest)` and `server-bundle / build (arm64, ubuntu-24.04-arm)`
+  (the reusable workflow's jobs, whose names carry the matrix)
+
+Do not require `smoke-native` (skipped on most PRs, and a skipped required check blocks merging
+under some rulesets) or `osv-scanner`. A renamed job needs this list updated, or the PR waits for a
+check that never reports. Merging Dependabot PRs stays manual, after these are green.
+
 ### Server bundles
 
 Remote workspaces' server (`remote.md`, Server bundles) ships with every release, before the
