@@ -17,9 +17,20 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      # Everything but the packages whose break is a packaged-app break (the exclusions below):
+      # those get one PR each, so a failure is attributable. Dependabot has no per-package
+      # "ungrouped" switch; a dependency matching no group is already its own PR.
       minor-and-patch:
         update-types:
           - minor
           - patch
+        exclude-patterns:
+          - electron
+          - electron-builder
+          - electron-vite
+          - better-sqlite3
+          - node-pty
+          - typescript
+          - '@typescript/*'
     commit-message:
       prefix: ci

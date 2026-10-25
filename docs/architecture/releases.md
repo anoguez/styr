@@ -123,3 +123,12 @@ keychain cannot set its partition list on the runners, and without a named ident
 any other identity in the `.p12`, which notarisation then rejects.
 
 Before 1.0, `feat` bumps the minor version and everything else the patch.
+
+## Dependency updates
+
+Dependabot (`.github/dependabot.yml`) waits seven days after an npm release, then groups minor and
+patch bumps into one PR — except `electron`, `electron-builder`, `electron-vite`, `better-sqlite3`,
+`node-pty`, `typescript` and `@typescript/*` (`exclude-patterns`), which get a PR each: a break in
+the packaged app or the native ABI is then attributable to one bump. Those PRs change `package.json`
+and `yarn.lock`, so CI runs the Electron smoke on macOS and Windows for them (`testing.md`).
+Merging is manual, after green CI; nothing auto-merges.
