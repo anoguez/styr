@@ -65,4 +65,18 @@ describe('parseServerArgs', () => {
     })
     expect(parseServerArgs(['attach', '--listen', '127.0.0.1']).command).toBe('invalid')
   })
+
+  it('controls a running server: pair, devices, revoke', () => {
+    expect(parseServerArgs(['serve', 'pair'])).toEqual({ command: 'pair' })
+    expect(parseServerArgs(['devices', '--socket', '/s'])).toEqual({
+      command: 'devices',
+      socket: '/s'
+    })
+    expect(parseServerArgs(['serve', 'revoke', 'abc123'])).toEqual({
+      command: 'revoke',
+      id: 'abc123'
+    })
+    expect(parseServerArgs(['serve', 'revoke']).command).toBe('invalid')
+    expect(parseServerArgs(['serve', 'pair', '--listen', '127.0.0.1']).command).toBe('invalid')
+  })
 })

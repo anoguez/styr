@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto'
 import { createConnection } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
@@ -67,7 +68,7 @@ describe('network listener', () => {
     }
   })
 
-  it('never puts the token or the pairing secret on the wire', async () => {
+  it('never puts the private key or the pairing secret on the wire', async () => {
     const offer = store.startPairing()
     const sent: string[] = []
     const record = (device: TestPhone): void => {
@@ -88,7 +89,7 @@ describe('network listener', () => {
     await expect(again.authenticate(credentials!)).resolves.toBe(true)
     expect(sent.length).toBeGreaterThan(2)
     for (const text of sent) {
-      expect(text).not.toContain(credentials!.token)
+      expect(text).not.toContain(credentials!.privateKey)
       expect(text).not.toContain(offer.secret)
     }
   })
@@ -126,9 +127,14 @@ describe('network listener', () => {
 
     const wrongToken = phone()
     await wrongToken.opened()
-    await expect(wrongToken.authenticate({ ...credentials, token: 'ab'.repeat(32) })).resolves.toBe(
-      false
-    )
+    await expect(
+      wrongToken.authenticate({
+        ...credentials,
+        privateKey: generateKeyPairSync('ed25519')
+          .privateKey.export({ type: 'pkcs8', format: 'der' })
+          .toString('base64')
+      })
+    ).resolves.toBe(false)
     expect((await wrongToken.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
 
     const unknown = phone()
@@ -149,6 +155,55 @@ describe('network listener', () => {
     const challenge = JSON.parse(await device.next())
     expect(challenge.type).toBe('challenge')
     expect(host.hub.clientCount()).toBe(0)
+  })
+
+  it('gives a sniffer nothing to sign in with: a captured sign-in or pairing cannot be replayed', async () => {
+    const offer = store.startPairing()
+    const sniffed: string[] = []
+    const watch = (device: TestPhone): void => {
+      const original = device.socket.send.bind(device.socket) as (data: string) => void
+      device.socket.send = ((data: string) => {
+        sniffed.push(String(data))
+        original(data)
+      }) as never
+    }
+    const pairing = phone()
+    await pairing.opened()
+    watch(pairing)
+    const credentials = (await pairing.pair(offer.secret, 'victim'))!
+    const signing = phone()
+    await signing.opened()
+    watch(signing)
+    await signing.authenticate(credentials)
+
+    // Replaying the captured pair and auth messages on new connections fails: the nonces differ.
+    for (const captured of sniffed.filter((text) => /"type":"(pair|auth)"/.test(text))) {
+      const attacker = phone()
+      await attacker.opened()
+      await attacker.hello()
+      attacker.send(captured)
+      expect((await attacker.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
+    }
+    expect(store.devices()).toHaveLength(1)
+  })
+
+  it('refuses to pair a key that is not Ed25519', async () => {
+    const offer = store.startPairing()
+    const device = phone()
+    await device.opened()
+    await device.hello()
+    const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 })
+      .publicKey.export({ type: 'spki', format: 'der' })
+      .toString('base64')
+    device.send({
+      type: 'pair',
+      name: 'rsa',
+      publicKey: rsa.slice(0, 90),
+      proof: 'a'.repeat(64)
+    })
+    expect((await device.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
+    expect(offer).toBeDefined()
+    expect(store.devices()).toHaveLength(0)
   })
 
   it('refuses a token from a different install (another key pair)', async () => {
@@ -231,12 +286,14 @@ describe('network listener', () => {
       {
         hub: host.hub,
         store,
-        policy: createNetworkPolicy({
-          isOpen: () => true,
-          activeId: () => 'open',
-          sessionWorkspace: () => ({ exists: false }),
-          currentGlobal: () => ({})
-        }),
+        policy: () =>
+          createNetworkPolicy({
+            isOpen: () => true,
+            activeId: () => 'open',
+            sessionWorkspace: () => ({ exists: false }),
+            currentGlobal: () => ({}),
+            sourcesOf: () => []
+          }),
         protocol: 1,
         log: () => {},
         handshakeMs: 50

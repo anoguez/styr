@@ -5,7 +5,8 @@ import {
   groupedFingerprint,
   interfaceOptions,
   listenerStatus,
-  qrPath
+  qrPath,
+  unencryptedWarning
 } from '../../lib/accessView.js'
 import { ipcMessage } from '../../lib/ipcMessage.js'
 import { Button, Card, CardRow, Field, Hint, Select, SwitchRow, inputClass } from '../ui.js'
@@ -116,6 +117,14 @@ export function RemoteAccessSection(): ReactNode {
           ) : (
             <Hint>{listenerStatus(state)}</Hint>
           )}
+          {unencryptedWarning(state) ? (
+            <span
+              role="note"
+              className="text-[11.5px] leading-[1.5] text-[var(--color-col-review)]"
+            >
+              {unencryptedWarning(state)}
+            </span>
+          ) : null}
           {error ? (
             <span role="alert" className="text-[12px] text-danger">
               {error}

@@ -57,15 +57,16 @@
           "minLength": 1,
           "maxLength": 100
         },
-        "proof": {
+        "signature": {
           "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
+          "minLength": 80,
+          "maxLength": 100
         }
       },
       "required": [
         "type",
         "deviceId",
-        "proof"
+        "signature"
       ]
     },
     "pair": {
@@ -80,9 +81,10 @@
           "type": "string",
           "maxLength": 200
         },
-        "verifier": {
+        "publicKey": {
           "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
+          "minLength": 40,
+          "maxLength": 100
         },
         "proof": {
           "type": "string",
@@ -92,7 +94,7 @@
       "required": [
         "type",
         "name",
-        "verifier",
+        "publicKey",
         "proof"
       ]
     }

@@ -22,16 +22,16 @@ export interface DeviceRecord {
   id: string
   name: string
   /**
-   * SHA-256 of the device's token, hex. The token itself is made on the phone and never reaches
-   * the Mac; this is the key the handshake's proof is checked with.
+   * The device's Ed25519 public key (SPKI DER, base64). The private half is made on the phone
+   * and never reaches the Mac; the sign-in signature is checked against this.
    */
-  verifier: string
+  publicKey: string
   createdAt: string
   lastSeenAt?: string
 }
 
-/** A device as the settings screen lists it: never the verifier. */
-export type DeviceView = Omit<DeviceRecord, 'verifier'>
+/** A device as the settings screen lists it: never the public key. */
+export type DeviceView = Omit<DeviceRecord, 'publicKey'>
 
 const fileSchema = z.object({
   config: z
@@ -47,7 +47,7 @@ const fileSchema = z.object({
       z.object({
         id: z.string().min(1).max(100),
         name: z.string().max(200),
-        verifier: z.string().regex(/^[0-9a-f]{64}$/),
+        publicKey: z.string().min(40).max(100),
         createdAt: z.string(),
         lastSeenAt: z.string().optional()
       })
@@ -80,7 +80,7 @@ export interface AccessStorePorts {
 /**
  * What remote access keeps on this computer, in one file only the user can read
  * (`<config dir>/remote-access.json`, mode 0600): the listener's settings, the paired devices'
- * verifiers and this install's key pair. It is not in the settings, because those reach the
+ * public keys and this install's key pair. It is not in the settings, because those reach the
  * renderer and, over the wire, the clients.
  */
 export function createAccessStore(ports: AccessStorePorts) {
@@ -170,25 +170,25 @@ export function createAccessStore(ports: AccessStorePorts) {
     hasDevice: (deviceId: string): boolean => file.devices.some((device) => device.id === deviceId),
 
     devices: (): DeviceView[] =>
-      file.devices.map(({ verifier: _verifier, ...device }) => ({ ...device })),
+      file.devices.map(({ publicKey: _publicKey, ...device }) => ({ ...device })),
 
-    verifierFor: (deviceId: string): string | undefined =>
-      file.devices.find((device) => device.id === deviceId)?.verifier,
+    publicKeyFor: (deviceId: string): string | undefined =>
+      file.devices.find((device) => device.id === deviceId)?.publicKey,
 
-    addDevice(name: string, verifier: string): DeviceView {
+    addDevice(name: string, publicKey: string): DeviceView {
       if (file.devices.length >= MAX_DEVICES) {
         throw new Error('Too many paired devices. Remove one first.')
       }
       const device: DeviceRecord = {
         id: randomBytes(9).toString('hex'),
         name: name.trim().slice(0, 100) || 'Device',
-        verifier,
+        publicKey,
         createdAt: new Date(ports.now()).toISOString()
       }
       file = { ...file, devices: [...file.devices, device] }
       save()
       changed()
-      const { verifier: _verifier, ...view } = device
+      const { publicKey: _publicKey, ...view } = device
       return view
     },
 

@@ -104,7 +104,7 @@ export function createHub(ports: HubPorts) {
 
   function request(client: Client, method: string, params: unknown[]): unknown {
     client.policy?.check(method, params)
-    const result = handle(client, method, params)
+    const result = handle(client, method, client.policy?.params(method, params) ?? params)
     const policy = client.policy
     if (!policy) return result
     // What the client may see of the answer: another workspace's rows are not for it.
@@ -142,7 +142,7 @@ export function createHub(ports: HubPorts) {
         return undefined
       }
     }
-    const channel = ports.invoke[method]
+    const channel = Object.hasOwn(ports.invoke, method) ? ports.invoke[method] : undefined
     if (!channel) throw new RpcError(RPC_ERRORS.METHOD_NOT_FOUND, `Unknown method: ${method}`)
     return guarded(method, () => channel.run(...(channel.args.parse(params) as never[])))
   }
@@ -168,7 +168,7 @@ export function createHub(ports: HubPorts) {
         return
       }
     }
-    const channel = ports.send[method]
+    const channel = Object.hasOwn(ports.send, method) ? ports.send[method] : undefined
     if (!channel) return
     guarded(method, () => channel.run(...(channel.args.parse(params) as never[])))
   }

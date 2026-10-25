@@ -11,6 +11,8 @@ import { RPC_ERRORS, RpcError } from '@host/rpc/jsonRpc.js'
 export interface ClientPolicy {
   /** Throws a `FORBIDDEN` RpcError when the client may not make this call. */
   check(method: string, params: unknown[]): void
+  /** The arguments to run the call with: a save gets back the secrets it was shown hidden. */
+  params(method: string, params: unknown[]): unknown[]
   /** The answer the client may see. */
   result(method: string, params: unknown[], result: unknown): unknown
   /** The broadcast as this client may see it, or null to drop it. */
@@ -27,11 +29,90 @@ export interface GatePorts {
   sessionWorkspace(terminalId: string): { exists: boolean; workspaceId?: string }
   /** The app-level part of the settings as they are now, for `settings:save`. */
   currentGlobal(): unknown
+  /** A workspace's integrations as saved, to put back the secrets a device was never shown. */
+  sourcesOf(workspaceId: string): unknown[]
+}
+
+/** What stands for a stored secret in the settings a device is sent. */
+export const HIDDEN = '[hidden]'
+
+interface SourceLike {
+  id?: string
+  rest?: { request?: { headers?: { name?: string; value?: string }[]; body?: string } }
+}
+
+/**
+ * The settings a device may see: the values of REST sources' headers and bodies (often API
+ * tokens) are replaced by `HIDDEN`. Shell and agent commands are shown: a device can already
+ * run anything in a terminal.
+ */
+export function redactSettings(value: unknown): unknown {
+  const settings = value as { sources?: SourceLike[] } | null
+  if (!settings || !Array.isArray(settings.sources)) return value
+  return { ...settings, sources: settings.sources.map(hideSecrets) }
+}
+
+function hideSecrets(source: SourceLike): SourceLike {
+  const request = source.rest?.request
+  if (!source.rest || !request) return source
+  return {
+    ...source,
+    rest: {
+      ...source.rest,
+      request: {
+        ...request,
+        headers: request.headers?.map((header) => ({
+          ...header,
+          value: header.value ? HIDDEN : ''
+        })),
+        body: request.body ? HIDDEN : ''
+      }
+    }
+  }
+}
+
+/** A saved change with `HIDDEN` values replaced by the stored ones, or emptied when none match. */
+function restoreSecrets(change: unknown, stored: SourceLike[]): unknown {
+  const draft = change as { workspace?: { sources?: SourceLike[] } } | null
+  const sources = draft?.workspace?.sources
+  if (!draft?.workspace || !Array.isArray(sources)) return change
+  return {
+    ...draft,
+    workspace: {
+      ...draft.workspace,
+      sources: sources.map((source) => {
+        const request = source.rest?.request
+        if (!source.rest || !request) return source
+        const before = stored.find((entry) => entry.id === source.id)?.rest?.request
+        return {
+          ...source,
+          rest: {
+            ...source.rest,
+            request: {
+              ...request,
+              headers: request.headers?.map((header) => ({
+                ...header,
+                value:
+                  header.value === HIDDEN
+                    ? (before?.headers?.find((entry) => entry.name === header.name)?.value ?? '')
+                    : header.value
+              })),
+              body: request.body === HIDDEN ? (before?.body ?? '') : request.body
+            }
+          }
+        }
+      })
+    }
+  }
 }
 
 const forbidden = (message: string): RpcError => new RpcError(RPC_ERRORS.FORBIDDEN, message)
 
 /**
+ * Every channel a device may call is named here, and a channel that is not named is refused: a
+ * new channel in `channelTable.ts` stays closed to devices until someone decides, and
+ * `gate.test.ts` fails until they do.
+ *
  * Calls that work whatever the active workspace is. Each checks the workspace it names, if any,
  * in `check`; the rest need the active workspace to be shared.
  */
@@ -49,13 +130,72 @@ const WITHOUT_ACTIVE = new Set([
   'settings:save'
 ])
 
+/** The board of the active workspace: open to a device while that workspace is shared. */
+const BOARD = new Set([
+  'sources:providers',
+  'sources:ghStatus',
+  'sources:state',
+  'sources:restTest',
+  'sources:targets',
+  'sources:sync',
+  'sources:preview',
+  'sources:apply',
+  'sources:link',
+  'sources:unlink',
+  'sources:refresh',
+  'tasks:list',
+  'tasks:get',
+  'tasks:problems',
+  'tasks:removeWorktree',
+  'tasks:create',
+  'tasks:update',
+  'tasks:note',
+  'tasks:reorder',
+  'tasks:archive',
+  'tasks:answerQuestion',
+  'tasks:delete',
+  'tasks:forgetSession',
+  'tasks:checkMerged',
+  'git:branches',
+  'git:taskDiff',
+  'git:filePatch',
+  'git:diffStats',
+  'agents:list',
+  'agents:remove',
+  'agents:cliStatus',
+  'agents:mcpStatus',
+  'worklog:load',
+  'review:get',
+  'review:save',
+  'review:prepare',
+  'review:requestChanges',
+  'settings:brokenFiles',
+  'orchestrate:plan',
+  'orchestrate:run',
+  'orchestrate:autoState',
+  'orchestrate:autoSet',
+  'terminal:create',
+  'terminal:list',
+  'terminal:launchAgent',
+  'terminal:resumeSession',
+  'terminal:previewPrompt',
+  'terminal:createPr',
+  'terminal:askReview',
+  'terminal:gitContext',
+  'terminal:listDirectories',
+  'usage:claude'
+])
+
 const DESKTOP_CALLS =
-  /^(remote|updates|access|app:(?!mcpCommand)|terminal:native|settings:pick|settings:listApps)/
+  /^(remote|updates|access|app:|terminal:native|settings:pick|settings:listApps)/
 
 /** Never for a network client: they change what this computer does for every client. */
 const NEVER = new Map<string, string>([
   ['server:experimental', 'Experimental switches belong to the desktop app.'],
-  ['workspaces:create', 'A new workspace is created on the desktop.']
+  ['workspaces:create', 'A new workspace is created on the desktop.'],
+  ['diagnostics:snapshot', 'Not available to remote devices.'],
+  ['diagnostics:stop', 'Not available to remote devices.'],
+  ['app:mcpCommand', 'Not available to remote devices.']
 ])
 
 /** Channels whose first argument is a terminal id. */
@@ -77,13 +217,26 @@ const SESSION_FIRST = new Set([
   'agent:approval'
 ])
 
+/** Every channel the gate has a rule for, for the test that forces new ones to be classified. */
+export const CLASSIFIED_CHANNELS: ReadonlySet<string> = new Set([
+  ...WITHOUT_ACTIVE,
+  ...BOARD,
+  ...SESSION_FIRST,
+  ...NEVER.keys()
+])
+
 /** Broadcasts that describe the board and so need the active workspace shared. */
 const SESSION_BROADCASTS = new Set(['terminal:runtimeState', 'terminal:exit'])
 /** Events of the desktop window itself: the tray's command, the updater, ssh hosts, native frames. */
 const DESKTOP_BROADCASTS = /^(remote|updates|access|app|terminal:native):?/
 const ALWAYS_BROADCAST = new Set(['workspaces:changed', 'workspaces:activity', 'settings:changed'])
 
+/**
+ * One policy per connection: it remembers the plain shells its device opened. A shell belongs to
+ * no workspace, so a device may use only its own, never the ones open on the desktop.
+ */
 export function createNetworkPolicy(ports: GatePorts): ClientPolicy {
+  const ownShells = new Set<string>()
   const activeOpen = (): boolean => ports.isOpen(ports.activeId())
 
   function requireWorkspace(id: unknown): void {
@@ -98,11 +251,13 @@ export function createNetworkPolicy(ports: GatePorts): ClientPolicy {
     }
   }
 
-  /** A session is open when its workspace is shared; a plain shell follows the active one. */
+  /** A session is open when its workspace is shared; a plain shell, when this device made it. */
   function sessionOpen(id: string): boolean {
     const session = ports.sessionWorkspace(id)
     if (!session.exists) return false
-    return session.workspaceId ? ports.isOpen(session.workspaceId) : activeOpen()
+    return session.workspaceId
+      ? ports.isOpen(session.workspaceId)
+      : ownShells.has(id) && activeOpen()
   }
 
   function keepOpen<T extends { id: string }>(workspaces: T[]): T[] {
@@ -149,6 +304,8 @@ export function createNetworkPolicy(ports: GatePorts): ClientPolicy {
         }
       }
 
+      if (!CLASSIFIED_CHANNELS.has(method)) throw forbidden('Not available to remote devices.')
+
       if (SESSION_FIRST.has(method)) {
         // Detaching never reveals anything, and must work after a workspace stops being shared.
         if (method !== 'terminal:detach') requireSession(params[0])
@@ -159,8 +316,25 @@ export function createNetworkPolicy(ports: GatePorts): ClientPolicy {
       }
     },
 
-    result(method, _params, result) {
+    params(method, params) {
+      if (method !== 'settings:save') return params
+      const workspaceId = (params[0] as { workspaceId?: unknown } | undefined)?.workspaceId
+      const stored = typeof workspaceId === 'string' ? ports.sourcesOf(workspaceId) : []
+      return [restoreSecrets(params[0], stored as SourceLike[]), ...params.slice(1)]
+    },
+
+    result(method, params, result) {
       switch (method) {
+        case 'settings:get':
+        case 'settings:save':
+          return redactSettings(result)
+        case 'terminal:create': {
+          const created = result as { id?: string; workspaceId?: string } | undefined
+          const requested = (params[0] as { workspaceId?: unknown } | undefined)?.workspaceId
+          if (created?.id && !created.workspaceId && requested === undefined)
+            ownShells.add(created.id)
+          return result
+        }
         case 'workspaces:list':
         case 'workspaces:switch':
         case 'workspaces:rename':
@@ -206,7 +380,7 @@ export function createNetworkPolicy(ports: GatePorts): ClientPolicy {
       if (channel === 'settings:changed') {
         // Always delivered: it is how a client learns its workspace stopped being shared. Then it
         // is told only that, not the settings of a workspace it may no longer see.
-        return { payload: activeOpen() ? payload : { remoteAccess: false } }
+        return { payload: activeOpen() ? redactSettings(payload) : { remoteAccess: false } }
       }
       if (SESSION_BROADCASTS.has(channel)) {
         const id = (payload as { id?: unknown } | undefined)?.id

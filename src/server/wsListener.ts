@@ -31,7 +31,8 @@ export const CLOSE = {
 export interface NetworkListenerOptions {
   hub: Hub
   store: AccessStore
-  policy: ClientPolicy
+  /** One per connection: it remembers what that device opened. */
+  policy: () => ClientPolicy
   protocol: number
   log(message: string): void
   now?(): number
@@ -192,7 +193,7 @@ export async function startNetworkListener(
         if (ws.readyState !== ws.OPEN) return
         if (ws.bufferedAmount > MAX_BUFFERED_BYTES) return ws.terminate()
         ws.send(line.endsWith('\n') ? line.slice(0, -1) : line)
-      }, options.policy)
+      }, options.policy())
     }
 
     let handshakeCounted = true

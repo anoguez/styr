@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { generateKeyPairSync, randomBytes, sign, createPrivateKey } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,12 +6,7 @@ import { WebSocket } from 'ws'
 import { z } from 'zod'
 import { createAccessStore, type AccessStore } from '@host/remoteAccess/accessStore.js'
 import { createNetworkPolicy, type GatePorts } from '@host/remoteAccess/gate.js'
-import {
-  authProof,
-  pairProof,
-  serverChallengeValid,
-  verifierOf
-} from '@host/remoteAccess/handshake.js'
+import { authSignedData, pairProof, serverChallengeValid } from '@host/remoteAccess/handshake.js'
 import { RpcPeer } from '@host/rpc/jsonRpc.js'
 import { createHub, PROTOCOL_VERSION, type Hub, type HubPorts } from './hub.js'
 import { startNetworkListener, type NetworkListener } from './wsListener.js'
@@ -39,7 +34,8 @@ export function networkHost() {
       exists: state.sessions.has(id),
       workspaceId: state.sessions.get(id)
     }),
-    currentGlobal: () => state.global
+    currentGlobal: () => state.global,
+    sourcesOf: () => []
   }
   const hubPorts: HubPorts = {
     invoke: {
@@ -106,7 +102,7 @@ export function networkHost() {
     hub,
     storePath,
     store,
-    policy: createNetworkPolicy(gatePorts),
+    policy: () => createNetworkPolicy(gatePorts),
     cleanup: () => rmSync(dir, { recursive: true, force: true })
   }
 }
@@ -134,8 +130,8 @@ export async function listenOnLoopback(
 
 export interface Credentials {
   deviceId: string
-  /** The 32-byte token, hex: it never leaves the phone. */
-  token: string
+  /** The device's Ed25519 private key (PKCS8 DER, base64): it never leaves the phone. */
+  privateKey: string
 }
 
 /** The phone's side of the handshake, as the protocol document describes it. */
@@ -206,16 +202,21 @@ export class TestPhone {
   async authenticate(credentials: Credentials): Promise<boolean> {
     const hello = await this.hello()
     if (!hello.ok) return false
+    const key = createPrivateKey({
+      key: Buffer.from(credentials.privateKey, 'base64'),
+      format: 'der',
+      type: 'pkcs8'
+    })
     this.send({
       type: 'auth',
       deviceId: credentials.deviceId,
-      proof: authProof(
-        verifierOf(Buffer.from(credentials.token, 'hex')),
-        credentials.deviceId,
-        this.serverNonce,
-        this.clientNonce,
-        this.fingerprint
-      )
+      signature: sign(
+        null,
+        Buffer.from(
+          authSignedData(credentials.deviceId, this.serverNonce, this.clientNonce, this.fingerprint)
+        ),
+        key
+      ).toString('base64')
     })
     return JSON.parse(await this.next()).type === 'ready'
   }
@@ -223,18 +224,28 @@ export class TestPhone {
   async pair(secret: string, name: string): Promise<Credentials | undefined> {
     const hello = await this.hello()
     if (!hello.ok) return undefined
-    const token = randomBytes(32)
-    const verifier = verifierOf(token)
+    const pair = generateKeyPairSync('ed25519')
+    const publicKey = pair.publicKey.export({ type: 'spki', format: 'der' }).toString('base64')
     this.send({
       type: 'pair',
       name,
-      verifier,
-      proof: pairProof(secret, this.serverNonce, this.clientNonce, this.fingerprint, name, verifier)
+      publicKey,
+      proof: pairProof(
+        secret,
+        this.serverNonce,
+        this.clientNonce,
+        this.fingerprint,
+        name,
+        publicKey
+      )
     })
     const paired = JSON.parse(await this.next()) as { type: string; deviceId?: string }
     if (paired.type !== 'paired') return undefined
     expectReady(JSON.parse(await this.next()))
-    return { deviceId: paired.deviceId!, token: token.toString('hex') }
+    return {
+      deviceId: paired.deviceId!,
+      privateKey: pair.privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64')
+    }
   }
 
   /** After `ready`: a JSON-RPC peer over the socket, and everything pushed to it. */

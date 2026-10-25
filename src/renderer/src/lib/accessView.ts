@@ -7,8 +7,8 @@ import type { AccessDevice, AccessInterface, AccessState } from '@core/types.js'
 
 const KIND_LABEL: Record<AccessInterface['kind'], string> = {
   loopback: 'this computer only',
-  private: 'local network',
-  'link-local': 'link-local',
+  private: 'local network, not encrypted',
+  'link-local': 'link-local, not encrypted',
   tailscale: 'Tailscale'
 }
 
@@ -83,4 +83,16 @@ export function listenerStatus(state: AccessState): string {
   }
   if (!state.bindAddress) return 'Pick a network interface to listen on.'
   return 'Not listening. No port is open.'
+}
+
+/**
+ * There is no TLS: only Tailscale and an ssh tunnel to this computer encrypt the connection. On a
+ * plain local network anyone on it can read the session, so the screen says so.
+ */
+export function unencryptedWarning(
+  state: Pick<AccessState, 'interfaces' | 'bindAddress'>
+): string | undefined {
+  const kind = state.interfaces.find((choice) => choice.address === state.bindAddress)?.kind
+  if (kind !== 'private' && kind !== 'link-local') return undefined
+  return 'This connection is not encrypted. Anyone on this network could read the terminals and tasks of a connected device, or take over its session. Use Tailscale, or an ssh tunnel to this computer, unless you trust everyone on it.'
 }

@@ -86,6 +86,22 @@ describe.skipIf(!enabled)('styr serve --listen (integration)', { timeout: 60_000
     await exited
   }
 
+  /** `styr serve <args>` as a second process, the way an operator runs the control commands. */
+  function cli(...args: string[]): Promise<{ code: number | null; out: string; err: string }> {
+    return new Promise((resolve) => {
+      const child = spawn(
+        process.execPath,
+        [join(buildDir, 'out', 'server', 'index.mjs'), 'serve', ...args, '--socket', socket],
+        { env: { PATH: '/usr/bin:/bin', HOME: home, STYR_HOME: join(home, '.styr') } }
+      )
+      let out = ''
+      let err = ''
+      child.stdout.on('data', (chunk) => (out += chunk))
+      child.stderr.on('data', (chunk) => (err += chunk))
+      child.on('exit', (code) => resolve({ code, out, err }))
+    })
+  }
+
   /** A client on the Unix socket: the desktop's own kind, which is never filtered. */
   async function local(): Promise<RpcPeer> {
     const connection = connect(socket)
@@ -242,5 +258,23 @@ describe.skipIf(!enabled)('styr serve --listen (integration)', { timeout: 60_000
       await expect(again.peer.request('workspaces:list', [])).resolves.toBeDefined()
       again.phone.close()
     }
+
+    // The operator pairs a second device and removes the first, without restarting the server.
+    const devices = await cli('devices')
+    expect(devices.out).toContain('Test phone')
+    const deviceId = devices.out.split(/\s+/)[0]!
+    const second = await cli('pair')
+    expect(second.code).toBe(0)
+    expect(second.out).toMatch(/styr:\/\/pair\?\S+/)
+    const online = await signIn(fingerprint, credentials)
+    await expect(cli('revoke', 'nope')).resolves.toMatchObject({ code: 1 })
+    expect((await cli('revoke', deviceId)).code).toBe(0)
+    // Revoking ends the live connection at once, and the token is no good afterwards.
+    expect((await online.phone.waitClosed()).code).toBe(4403)
+    const refused = new TestPhone(port, fingerprint)
+    phones.push(refused)
+    await refused.opened()
+    expect(await refused.authenticate(credentials)).toBe(false)
+    expect((await cli('devices')).out).toContain('No paired devices')
   })
 })

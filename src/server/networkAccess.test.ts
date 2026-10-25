@@ -21,7 +21,8 @@ const gateOf = (host: ReturnType<typeof networkHost>) => ({
     exists: host.state.sessions.has(id),
     workspaceId: host.state.sessions.get(id)
   }),
-  currentGlobal: () => host.state.global
+  currentGlobal: () => host.state.global,
+  sourcesOf: () => []
 })
 
 describe('network access for a host', () => {

@@ -2,6 +2,7 @@ import {
   createHash,
   createHmac,
   createPublicKey,
+  generateKeyPairSync,
   randomBytes,
   timingSafeEqual,
   verify
@@ -11,17 +12,19 @@ import type { AccessStore } from './accessStore.js'
 
 /**
  * The handshake that comes before the JSON-RPC session on a network connection. There is no TLS,
- * so the token is never sent: the phone proves it holds it by signing the nonces with it, and the
- * Mac proves its identity with its key pair, whose fingerprint the phone got in the QR.
+ * so nothing reusable is ever sent: each device has an Ed25519 key pair whose private half never
+ * leaves it (the Mac stores the public key) and signs the nonces at sign-in, and the Mac proves
+ * its identity with its own key pair, whose fingerprint the phone got in the QR.
  *
  *   C → S  {type:'hello', clientNonce}
  *   S → C  {type:'challenge', serverNonce, serverKey, signature}   (signed over both nonces)
- *   C → S  {type:'auth', deviceId, proof}                          paired device
- *      or  {type:'pair', name, verifier, proof}                    first time, with the QR's secret
+ *   C → S  {type:'auth', deviceId, signature}                      paired device
+ *      or  {type:'pair', name, publicKey, proof}                   first time, with the QR's secret
  *   S → C  {type:'ready'} (after 'paired' on a pairing), or {type:'error', code}
  *
- * `verifier` is the SHA-256 of the 32-byte device token, hex; the HMAC keys are the verifier's
- * bytes (auth) and the QR's secret (pair). `docs/architecture/remote-access.md` has the details.
+ * `publicKey` is the device's Ed25519 public key (SPKI DER, base64); the pairing proof is an HMAC
+ * keyed by the QR's secret, so capturing it cannot pair another device, and the sign-in signature
+ * covers both nonces, so capturing it cannot sign in. `docs/architecture/remote-access.md` has the details.
  */
 
 export const HANDSHAKE_MAX_BYTES = 2048
@@ -37,12 +40,12 @@ export const helloSchema = z.object({
 export const authSchema = z.object({
   type: z.literal('auth'),
   deviceId: z.string().min(1).max(100),
-  proof: hex(64)
+  signature: z.string().min(80).max(100)
 })
 export const pairSchema = z.object({
   type: z.literal('pair'),
   name: z.string().max(200),
-  verifier: hex(64),
+  publicKey: z.string().min(40).max(100),
   proof: hex(64)
 })
 
@@ -50,16 +53,13 @@ export function serverSignedData(clientNonce: string, serverNonce: string): stri
   return `styr-server-v1\n${clientNonce}\n${serverNonce}`
 }
 
-export function authProof(
-  verifier: string,
+export function authSignedData(
   deviceId: string,
   serverNonce: string,
   clientNonce: string,
   fingerprint: string
 ): string {
-  return createHmac('sha256', Buffer.from(verifier, 'hex'))
-    .update(`styr-auth-v1\n${deviceId}\n${serverNonce}\n${clientNonce}\n${fingerprint}`)
-    .digest('hex')
+  return `styr-auth-v1\n${deviceId}\n${serverNonce}\n${clientNonce}\n${fingerprint}`
 }
 
 export function pairProof(
@@ -68,16 +68,42 @@ export function pairProof(
   clientNonce: string,
   fingerprint: string,
   name: string,
-  verifier: string
+  publicKey: string
 ): string {
   return createHmac('sha256', secret)
-    .update(`styr-pair-v1\n${serverNonce}\n${clientNonce}\n${fingerprint}\n${name}\n${verifier}`)
+    .update(`styr-pair-v1\n${serverNonce}\n${clientNonce}\n${fingerprint}\n${name}\n${publicKey}`)
     .digest('hex')
 }
 
-export function verifierOf(token: Buffer): string {
-  return createHash('sha256').update(token).digest('hex')
+/** Whether `publicKeyBase64` is an Ed25519 public key (SPKI DER). */
+export function validDevicePublicKey(publicKeyBase64: string): boolean {
+  try {
+    return (
+      createPublicKey({ key: Buffer.from(publicKeyBase64, 'base64'), format: 'der', type: 'spki' })
+        .asymmetricKeyType === 'ed25519'
+    )
+  } catch {
+    return false
+  }
 }
+
+function signatureValid(publicKeyBase64: string, data: string, signatureBase64: string): boolean {
+  try {
+    return verify(
+      null,
+      Buffer.from(data),
+      createPublicKey({ key: Buffer.from(publicKeyBase64, 'base64'), format: 'der', type: 'spki' }),
+      Buffer.from(signatureBase64, 'base64')
+    )
+  } catch {
+    return false
+  }
+}
+
+/** Stands in for a device that does not exist, so a miss costs the same as a bad signature. */
+const DUMMY_KEY = generateKeyPairSync('ed25519')
+  .publicKey.export({ type: 'spki', format: 'der' })
+  .toString('base64')
 
 /** The fingerprint of a server key as the phone computes it from the challenge. */
 export function fingerprintOf(publicKeyBase64: string): string {
@@ -179,16 +205,13 @@ export function createServerHandshake(options: {
       if (auth.success) {
         // A device removed from another process (the CLI) is gone for the next sign-in.
         options.store.reload()
-        const verifier = options.store.verifierFor(auth.data.deviceId)
-        // A missing device still computes a proof, so timing does not say whether it exists.
-        const expected = authProof(
-          verifier ?? '0'.repeat(64),
-          auth.data.deviceId,
-          serverNonce,
-          clientNonce,
-          identity.fingerprint
+        const publicKey = options.store.publicKeyFor(auth.data.deviceId)
+        const good = signatureValid(
+          publicKey ?? DUMMY_KEY,
+          authSignedData(auth.data.deviceId, serverNonce, clientNonce, identity.fingerprint),
+          auth.data.signature
         )
-        if (!verifier || !equalHex(expected, auth.data.proof)) return deny('bad device proof')
+        if (!publicKey || !good) return deny('bad device signature')
         state = 'done'
         return {
           kind: 'ready',
@@ -209,12 +232,13 @@ export function createServerHandshake(options: {
           clientNonce,
           identity.fingerprint,
           pair.data.name,
-          pair.data.verifier
+          pair.data.publicKey
         )
         if (!equalHex(expected, pair.data.proof)) return deny('bad pairing proof')
+        if (!validDevicePublicKey(pair.data.publicKey)) return deny('not an Ed25519 key')
         let device
         try {
-          device = options.store.addDevice(pair.data.name, pair.data.verifier)
+          device = options.store.addDevice(pair.data.name, pair.data.publicKey)
         } catch (error) {
           return deny(error instanceof Error ? error.message : 'could not add the device')
         }

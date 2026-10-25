@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { RPC_ERRORS, RpcError } from '@host/rpc/jsonRpc.js'
-import { createNetworkPolicy, type GatePorts } from './gate.js'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import {
+  CLASSIFIED_CHANNELS,
+  HIDDEN,
+  createNetworkPolicy,
+  redactSettings,
+  type GatePorts
+} from './gate.js'
 
 function setup(overrides: Partial<{ shared: string[]; active: string }> = {}) {
   const state = {
@@ -20,7 +28,8 @@ function setup(overrides: Partial<{ shared: string[]; active: string }> = {}) {
       exists: state.sessions.has(id),
       workspaceId: state.sessions.get(id)
     }),
-    currentGlobal: () => state.global
+    currentGlobal: () => state.global,
+    sourcesOf: () => []
   }
   return { state, policy: createNetworkPolicy(ports) }
 }
@@ -149,7 +158,9 @@ describe('network policy: calls', () => {
     for (const method of ['agent:prompt', 'agent:approval', 'usage:context', 'terminal:handOff']) {
       expect(refused(() => policy.check(method, ['t-closed']))).toBe(true)
     }
-    expect(refused(() => policy.check('terminal:attach', ['t-shell']))).toBe(false)
+    // A plain shell is open on the desktop; a device may not touch it.
+    expect(refused(() => policy.check('terminal:attach', ['t-shell']))).toBe(true)
+    expect(refused(() => policy.check('terminal:write', ['t-shell']))).toBe(true)
   })
 
   it('lets a client detach from a terminal whose workspace stopped being shared', () => {
@@ -190,7 +201,7 @@ describe('network policy: answers', () => {
     })
     expect(
       policy.result('terminal:list', [], [{ id: 't-open' }, { id: 't-closed' }, { id: 't-shell' }])
-    ).toEqual([{ id: 't-open' }, { id: 't-shell' }])
+    ).toEqual([{ id: 't-open' }])
     expect(policy.result('tasks:list', [], [1])).toEqual([1])
   })
 
@@ -297,5 +308,128 @@ describe('network policy: broadcasts', () => {
     expect(policy.broadcast('settings:changed', settings)).toEqual({
       payload: { remoteAccess: false }
     })
+  })
+})
+
+describe('network policy: shells and secrets', () => {
+  it('lets a device use the plain shells it opened, and only those', () => {
+    const { policy, state } = setup()
+    state.sessions.set('t-mine', undefined)
+    expect(refused(() => policy.check('terminal:write', ['t-mine']))).toBe(true)
+    policy.result('terminal:create', [{ shell: '/bin/sh' }], { id: 't-mine' })
+    expect(refused(() => policy.check('terminal:write', ['t-mine']))).toBe(false)
+    expect(policy.terminal('t-mine')).toBe(true)
+    // Another device has its own policy, and does not inherit it.
+    const other = createNetworkPolicy({
+      isOpen: (id) => state.shared.has(id),
+      activeId: () => state.active,
+      sessionWorkspace: (id) => ({ exists: state.sessions.has(id), workspaceId: undefined }),
+      currentGlobal: () => state.global,
+      sourcesOf: () => []
+    })
+    expect(other.terminal('t-mine')).toBe(false)
+    expect(policy.result('terminal:list', [], [{ id: 't-mine' }, { id: 't-shell' }])).toEqual([
+      { id: 't-mine' }
+    ])
+    state.shared.clear()
+    expect(policy.terminal('t-mine')).toBe(false)
+  })
+
+  const rest = {
+    id: 'rest1',
+    rest: {
+      request: {
+        method: 'GET',
+        url: 'https://x.test',
+        headers: [
+          { name: 'Authorization', value: 'Bearer sk-secret', enabled: true },
+          { name: 'Empty', value: '', enabled: true }
+        ],
+        body: '{"key":"sk-secret"}'
+      }
+    }
+  }
+
+  it('hides REST header values and bodies from settings answers and broadcasts', () => {
+    const { policy } = setup()
+    const settings = { shell: '/bin/zsh', sources: [rest] }
+    for (const shown of [
+      policy.result('settings:get', [], settings),
+      policy.result('settings:save', [], settings),
+      policy.broadcast('settings:changed', settings)?.payload
+    ]) {
+      const text = JSON.stringify(shown)
+      expect(text).not.toContain('sk-secret')
+      expect(text).toContain(HIDDEN)
+      expect(text).toContain('Authorization')
+    }
+    expect(redactSettings({ shell: 'x' })).toEqual({ shell: 'x' })
+  })
+
+  it('puts the stored secrets back when a device saves the settings it was shown', () => {
+    const state = { sources: [rest] as unknown[] }
+    const { policy } = setup()
+    const withSources = createNetworkPolicy({
+      isOpen: () => true,
+      activeId: () => 'open',
+      sessionWorkspace: () => ({ exists: false }),
+      currentGlobal: () => ({}),
+      sourcesOf: () => state.sources
+    })
+    void policy
+    const shown = redactSettings({ sources: [rest] }) as { sources: unknown[] }
+    const [change] = withSources.params('settings:save', [
+      { workspaceId: 'open', workspace: { sources: shown.sources }, global: {} }
+    ]) as [{ workspace: { sources: (typeof rest)[] } }]
+    expect(change.workspace.sources[0]).toEqual(rest)
+    // A header the device added itself cannot name a hidden value it never had.
+    const [forged] = withSources.params('settings:save', [
+      {
+        workspaceId: 'open',
+        workspace: {
+          sources: [
+            {
+              ...rest,
+              rest: {
+                request: {
+                  ...rest.rest.request,
+                  headers: [{ name: 'X-New', value: HIDDEN }],
+                  body: ''
+                }
+              }
+            }
+          ]
+        },
+        global: {}
+      }
+    ]) as [{ workspace: { sources: (typeof rest)[] } }]
+    expect(forged.workspace.sources[0]?.rest.request.headers[0]?.value).toBe('')
+    expect(withSources.params('tasks:list', ['x'])).toEqual(['x'])
+  })
+})
+
+describe('network policy: every channel is classified', () => {
+  it('names each channel of the shared table and the hub, so a new one is refused until decided', () => {
+    const table = readFileSync(
+      fileURLToPath(new URL('../channelTable.ts', import.meta.url)),
+      'utf8'
+    )
+    const channels = [...table.matchAll(/^\s+'([a-z]+:[A-Za-z]+)': channel\(/gm)].map((m) => m[1]!)
+    const hub = [
+      'server:info',
+      'server:tray',
+      'terminal:attach',
+      'terminal:detach',
+      'terminal:focus',
+      'terminal:resize'
+    ]
+    expect(channels.length).toBeGreaterThan(60)
+    expect([...channels, ...hub].filter((name) => !CLASSIFIED_CHANNELS.has(name))).toEqual([])
+  })
+
+  it('refuses a channel nobody classified', () => {
+    const { policy } = setup()
+    expect(refused(() => policy.check('brand:new', []))).toBe(true)
+    expect(refused(() => policy.check('constructor', []))).toBe(true)
   })
 })

@@ -28,6 +28,12 @@ async function main(): Promise<number> {
       return 64
     case 'attach':
       return attach(socketPath(parsed), process.stdin, process.stdout, process.stderr)
+    case 'pair':
+    case 'devices':
+    case 'revoke': {
+      const { control } = await import('./ctl.js')
+      return control(parsed, socketPath(parsed), process.stdout, process.stderr)
+    }
     case 'serve': {
       const { serve } = await import('./serve.js')
       // out/server/index.mjs → the repo, or the bundle that holds out/ and resources/.

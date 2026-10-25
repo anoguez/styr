@@ -2,6 +2,9 @@
 export type ServerCommand =
   | { command: 'serve'; socket?: string; listen?: ListenSpec; pair?: boolean }
   | { command: 'attach'; socket?: string }
+  | { command: 'pair'; socket?: string }
+  | { command: 'devices'; socket?: string }
+  | { command: 'revoke'; socket?: string; id: string }
   | { command: 'version' }
   | { command: 'help' }
   | { command: 'invalid'; message: string }
@@ -21,6 +24,10 @@ export const USAGE = `Usage:
                                         private address (loopback, LAN or Tailscale); --pair
                                         prints a QR to pair a device with
   styr serve attach [--socket <path>]   Pipe stdio to the running server (what ssh runs)
+  styr serve pair [--socket <path>]     Show a QR to pair another device with the running server
+  styr serve devices [--socket <path>]  List the paired devices
+  styr serve revoke <id> [--socket <path>]
+                                        Remove a paired device and end its connections
   styr serve --version                  Print the server's version
 
 Devices see only the workspaces that have "Allow remote clients" switched on in their settings.
@@ -32,14 +39,19 @@ The socket defaults to ~/.styr/server.sock ($STYR_HOME/server.sock), or $STYR_SE
  */
 export function parseServerArgs(argv: string[]): ServerCommand {
   const args = argv[0] === 'serve' ? argv.slice(1) : [...argv]
-  let command: 'serve' | 'attach' = 'serve'
+  let command: 'serve' | 'attach' | 'pair' | 'devices' | 'revoke' = 'serve'
+  let id: string | undefined
   let socket: string | undefined
   let listen: ListenSpec | undefined
   let pair = false
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!
-    if (arg === 'attach' && i === 0) command = 'attach'
-    else if (arg === '--version' || arg === '-v') return { command: 'version' }
+    if ((arg === 'attach' || arg === 'pair' || arg === 'devices') && i === 0) command = arg
+    else if (arg === 'revoke' && i === 0) {
+      command = 'revoke'
+      id = args[++i]
+      if (!id) return { command: 'invalid', message: 'revoke needs a device id' }
+    } else if (arg === '--version' || arg === '-v') return { command: 'version' }
     else if (arg === '--help' || arg === '-h') return { command: 'help' }
     else if (arg === '--socket') {
       const value = args[++i]
@@ -55,9 +67,10 @@ export function parseServerArgs(argv: string[]): ServerCommand {
     } else return { command: 'invalid', message: `Unknown argument: ${arg}` }
   }
   if (pair && !listen) return { command: 'invalid', message: '--pair needs --listen' }
-  if (command === 'attach' && (listen || pair)) {
-    return { command: 'invalid', message: 'attach takes only --socket' }
+  if (command !== 'serve' && (listen || pair)) {
+    return { command: 'invalid', message: `${command} takes only --socket` }
   }
+  if (command === 'revoke') return { command, id: id!, ...(socket ? { socket } : {}) }
   return {
     command,
     ...(socket ? { socket } : {}),

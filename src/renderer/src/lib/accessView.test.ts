@@ -5,7 +5,8 @@ import {
   groupedFingerprint,
   interfaceOptions,
   listenerStatus,
-  qrPath
+  qrPath,
+  unencryptedWarning
 } from './accessView.js'
 
 const base: AccessState = {
@@ -25,7 +26,7 @@ const base: AccessState = {
 describe('interfaceOptions', () => {
   it('lists each private address with where it is', () => {
     expect(interfaceOptions(base)).toEqual([
-      { value: '192.168.1.5', label: '192.168.1.5 · en0 · local network' },
+      { value: '192.168.1.5', label: '192.168.1.5 · en0 · local network, not encrypted' },
       { value: '100.101.102.103', label: '100.101.102.103 · utun4 · Tailscale' }
     ])
   })
@@ -80,5 +81,19 @@ describe('listenerStatus', () => {
     )
     expect(listenerStatus(base)).toMatch(/Pick a network interface/)
     expect(listenerStatus({ ...base, bindAddress: '192.168.1.5' })).toMatch(/No port is open/)
+  })
+})
+
+describe('unencryptedWarning', () => {
+  it('warns on a plain local network only', () => {
+    expect(unencryptedWarning({ ...base, bindAddress: '192.168.1.5' })).toMatch(/not encrypted/)
+    expect(unencryptedWarning({ ...base, bindAddress: '100.101.102.103' })).toBeUndefined()
+    expect(unencryptedWarning(base)).toBeUndefined()
+    expect(
+      unencryptedWarning({
+        interfaces: [{ name: 'lo0', address: '127.0.0.1', kind: 'loopback' }],
+        bindAddress: '127.0.0.1'
+      })
+    ).toBeUndefined()
   })
 })

@@ -54,7 +54,8 @@ const access = createNetworkAccess({
       const session = listSessions().find((entry) => entry.id === id && !entry.host)
       return { exists: session !== undefined, workspaceId: session?.workspaceId }
     },
-    currentGlobal: () => globalSettingsFor(loadSettings())
+    currentGlobal: () => globalSettingsFor(loadSettings()),
+    sourcesOf: (id) => loadSettings(id).sources
   },
   keepAwake: {
     hold: () => powerSaveBlocker.start('prevent-app-suspension'),

@@ -34,7 +34,6 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
   store: AccessStore
 } {
   const store = options.store ?? createAccessStore({ path: accessStorePath(), now: Date.now })
-  const policy = createNetworkPolicy(options.gate)
   const service: AccessService = createAccessService({
     store,
     listen: (address, port) =>
@@ -42,7 +41,7 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
         {
           hub: options.hub,
           store,
-          policy,
+          policy: () => createNetworkPolicy(options.gate),
           protocol: PROTOCOL_VERSION,
           log: options.log,
           onConnections: (count) => service.connections(count)

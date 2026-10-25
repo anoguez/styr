@@ -160,15 +160,15 @@ describe('access service', () => {
 
   it('lists devices without verifiers, marks the connected ones and revokes', async () => {
     const { service, store } = setup()
-    const device = store.addDevice('iPhone', 'a'.repeat(64))
+    const device = store.addDevice('iPhone', 'a'.repeat(60))
     connected = [device.id]
     const state = service.state()
     expect(state.devices).toEqual([expect.objectContaining({ id: device.id, connected: false })])
-    expect(JSON.stringify(state)).not.toContain('a'.repeat(64))
+    expect(JSON.stringify(state)).not.toContain('a'.repeat(60))
     await service.configure({ enabled: true, bindAddress: '127.0.0.1', port: 7000 })
     expect(service.state().devices[0]?.connected).toBe(true)
     expect(service.revoke(device.id).devices).toEqual([])
-    expect(store.verifierFor(device.id)).toBeUndefined()
+    expect(store.publicKeyFor(device.id)).toBeUndefined()
   })
 
   it('announces every change to the screen', async () => {

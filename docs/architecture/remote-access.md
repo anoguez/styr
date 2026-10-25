@@ -25,7 +25,7 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   alone exposes a workspace. The flag is ignored for an ssh remote workspace's stub.
 - **Private networks only, enforced in code** (`host/remoteAccess/addresses.ts`). The listener
   binds only to loopback, RFC 1918, link-local or Tailscale addresses (`100.64.0.0/10`,
-  `fd7a:115c:a1e0::/48`); `0.0.0.0`, `::`, a hostname, a public address and "nothing picked" are
+  `fd7a:115c:a1e0::/48`; the IPv4 range also covers carrier-grade NAT); `0.0.0.0`, `::`, a hostname, a public address and "nothing picked" are
   refused with a message, and the default is none. Every accepted socket's source address is
   checked against the same ranges before a byte is read, so a port-forward cannot let the internet
   in. Requests with `X-Forwarded-For`, `Forwarded`, `X-Real-IP` … are refused (no reverse
@@ -34,7 +34,7 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 - **No hub traffic before the handshake.** An unauthenticated peer never reaches `hub.connect`.
   Five failed handshakes from one address in a minute turn that address away (429) for the rest of
   the minute; every refusal is logged.
-- **No TLS in v1.** The handshake keeps the token off the wire instead (below). Encryption beyond
+- **No TLS in v1.** The handshake keeps every reusable credential off the wire instead (below). Encryption beyond
   the private network (Tailscale's WireGuard, an ssh tunnel) is a follow-up.
 - **Network clients get a narrower API** (`gate.ts`): no desktop-only channels, no `remote:*`,
   `updates:*`, `access:*` or `server:experimental`, no `workspaces:create`, no `server:notify`, and
@@ -44,13 +44,21 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   desktop window too, as another window would. It sees the active workspace in `workspaces:list`
   (`activeId`, empty when the active one is not shared) and `settings:changed`.
 
+## Known limits
+
+- A peer on the private network can spend the single-use pairing secret with a bad `pair`
+  message, forcing a rescan; anyone who sees the QR during its 2 minutes can pair.
+- Loopback is allowed (for an ssh tunnel), so a local tunnel agent (ngrok, cloudflared) pointed at
+  the listener would expose it; devices would still need their key.
+- `remote-access.json` holds the host's private key in plaintext (mode 0600).
+
 ## Files
 
 - `src/host/channelTable.ts`: the shared channel table (see `remote.md`).
 - `src/host/remoteAccess/addresses.ts`: the private ranges, `bindAddressProblem`, the interfaces
   Settings offers, the proxy-header list.
 - `src/host/remoteAccess/accessStore.ts`: `~/.styr/remote-access.json` (mode 0600, written
-  atomically): the listener's settings, the devices' verifiers, this install's Ed25519 key pair and
+  atomically): the listener's settings, the devices' public keys, this install's Ed25519 key pair and
   the in-memory pairing offer. Not in `Settings`: those reach the renderer and the clients.
 - `src/host/remoteAccess/handshake.ts`: the handshake, as a pure state machine plus the proof
   functions a client uses.
@@ -63,17 +71,35 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   is the desktop's half (the `access:*` channels, `powerSaveBlocker`, the hub over `ipc.ts`'s table);
   `styr serve --listen <address>[:port] [--pair]` is the server's.
 
+## `styr serve` on a machine with no window (a cloud VM)
+
+`styr serve --listen <tailscale-address>[:port] [--pair]` listens for devices (a public address is
+refused, so a VM needs Tailscale). `--pair` prints a QR and the URI at start. Later, without a
+restart (which would end the agents), on the same machine:
+
+```sh
+styr serve pair          # a new QR, 2 minutes, one use
+styr serve devices       # id, name, connected / last seen
+styr serve revoke <id>   # removes it and ends its connections at once
+```
+
+These go over the Unix socket (`access:pair`, `access:devices`, `access:revoke`, answered only
+there; the gate refuses `access:*` from devices). The pairing secret is printed to the terminal,
+so avoid running `--pair` where a service manager logs stdout; use `styr serve pair` from a shell.
+A workspace is shared by `remoteAccess` in its settings: toggle it from the desktop (the remote
+workspace's Settings → General) or set it in the workspace's `settings.json`.
+
 ## Pairing and sign-in
 
 Pairing happens once per device. "Pair a device…" shows a QR for
 `styr://pair?v=1&host=…&port=…&fp=<fingerprint>&secret=<secret>&exp=<ms>`: the address, this
 install's key fingerprint to pin, and a one-time secret that works for 2 minutes and one attempt
-(a wrong guess spends it too). Pairing is refused while nothing is listening. The long-lived token
-is made on the phone, kept in the platform secure store (Keychain / Keystore) with the fingerprint,
-and **never reaches the computer**: the computer stores `verifier = SHA-256(token)` and the
-device's name and id. The token has no expiry; app, computer or network restarts change nothing.
-It stops working only on Revoke (Settings → Remote access, or the CLI removing the entry), which
-also ends that device's live connections; adding the device again needs a new QR.
+(a wrong guess spends it too). Pairing is refused while nothing is listening. The device makes its
+own Ed25519 key pair and keeps the private key in the platform secure store (Keychain / Keystore)
+with the fingerprint; **the private key never reaches the computer**, which stores only the public
+key, the device's name and its id. The key has no expiry; app, computer or network restarts change
+nothing. It stops working only on Revoke, which also ends that device's live connections; adding
+the device again needs a new QR.
 
 Text frames, JSON, at most 2 KiB and 10 seconds until `ready`:
 
@@ -83,20 +109,25 @@ S → C  {type:'challenge', protocol, serverNonce, serverKey, signature}
          serverKey: Ed25519 public key (SPKI DER, base64); the client checks SHA-256(serverKey) hex
          equals the QR's fingerprint, and signature (Ed25519, base64) over
          "styr-server-v1\n" + clientNonce + "\n" + serverNonce. A mismatch: close, send nothing.
-C → S  {type:'auth', deviceId, proof}
-         proof = hex HMAC-SHA256(key = verifier bytes,
-           "styr-auth-v1\n" + deviceId + "\n" + serverNonce + "\n" + clientNonce + "\n" + fingerprint)
-   or   {type:'pair', name, verifier, proof}
+C → S  {type:'auth', deviceId, signature}
+         signature = base64 Ed25519 (device private key) over
+           "styr-auth-v1\n" + deviceId + "\n" + serverNonce + "\n" + clientNonce + "\n" + fingerprint
+   or   {type:'pair', name, publicKey, proof}
+         publicKey: the device's Ed25519 public key (SPKI DER, base64)
          proof = hex HMAC-SHA256(key = the QR's secret, utf-8,
-           "styr-pair-v1\n" + serverNonce + "\n" + clientNonce + "\n" + fingerprint + "\n" + name + "\n" + verifier)
+           "styr-pair-v1\n" + serverNonce + "\n" + clientNonce + "\n" + fingerprint + "\n" + name + "\n" + publicKey)
 S → C  [{type:'paired', deviceId}] {type:'ready'}   — then JSON-RPC, one message per text frame
    or  {type:'error', code:'unauthorized'}, then close 4401   (every failure looks the same)
 ```
 
-Neither the token nor the pairing secret is sent. The verifier is the key the proof is checked with,
-so it is as sensitive as a password hash that can sign in: the file is 0600 and never leaves the
-computer. A token from another install fails the server-signature check on the phone; a revoked or
-unknown device fails the proof. After `ready` the session is `remote.md`'s protocol, starting with
+Nothing a passive listener captures can be replayed: the sign-in signature and the pairing proof
+both cover this connection's two fresh nonces, and the pairing proof is keyed by the QR's secret,
+which is never sent. The device's credential (the private key) is never sent. A server that does
+not hold the pinned key fails the signature check on the phone, so the phone sends nothing to an
+impostor. **What this does not do is encrypt the session:** after `ready`, terminal I/O, tasks and
+settings are cleartext, and a peer that can sit in the path can read them or take over the
+connection. Safe over Tailscale (WireGuard) or an ssh tunnel to loopback; on a plain local network
+Settings → Remote access warns. After `ready` the session is `remote.md`'s protocol, starting with
 `server:hello`; `docs/protocol/styr-remote.schema.json` lists the channels and argument schemas,
 generated from the zod tuples (`protocolSchema.ts`; `UPDATE_PROTOCOL_SCHEMA=1 yarn vitest run
 src/server/protocolSchema.test.ts` rewrites it, and the test fails when it is stale).
@@ -115,9 +146,16 @@ by the gate is JSON-RPC error `-32001`.
   `rename`, `delete` of another one are refused, `create` always is. `activeId` is `''` while the
   active workspace is not open. The rollups (`workspaces:activity`, `:boardSummary`) and the tray
   (`server:tray`, rows and titles) are filtered to open workspaces.
-- Every other channel is refused unless the active workspace is open. Session channels
-  (`terminal:*`, `agent:*`, `usage:*` with a terminal id) are refused for a terminal whose
-  workspace is not open; a plain shell follows the active workspace.
+- **A channel the gate does not name is refused.** Every channel in `channelTable.ts` is listed in
+  `gate.ts` (`BOARD`, `SESSION_FIRST`, `WITHOUT_ACTIVE`, `NEVER`); `gate.test.ts` fails until a new
+  one is classified, so it stays closed to devices until someone decides. Board channels need the
+  active workspace to be open. Session channels (`terminal:*`, `agent:*`, `usage:*` with a
+  terminal id) are refused for a terminal whose workspace is not open. A plain shell tab belongs to
+  no workspace: a device may use only the shells _it_ opened (`terminal:create`), never the ones
+  open on the desktop.
+- **Secrets are not sent.** Settings answers and `settings:changed` show REST sources' header
+  values and bodies as `[hidden]`; a save that sends `[hidden]` back keeps the stored value.
+  Shell and agent commands are shown: a paired device can already run anything in a terminal.
 - Broadcasts: board events reach a device only while the active workspace is open;
   `terminal:runtimeState` / `terminal:exit` only for open terminals; `terminal:data` only for
   terminals it attached to; `settings:changed` always, but reduced to `{ remoteAccess: false }`
@@ -126,8 +164,8 @@ by the gate is JSON-RPC error `-32001`.
   (`forwardToHub`) and detaches the device's terminals; the PTYs keep running. Its next call is
   refused.
 
-A new channel is therefore open to devices by default (while the active workspace is shared). Put
-one that must not be in `gate.ts` (`NEVER`, `DESKTOP_CALLS`) and its test.
+A paired device is fully trusted once the workspace is shared (commands, the folder listing,
+deleting the shared workspace); there are no per-device scopes in v1.
 
 ## Tests
 

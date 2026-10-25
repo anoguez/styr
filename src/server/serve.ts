@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { cpSync, mkdirSync, renameSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { configDir } from '@core/config.js'
@@ -7,10 +8,11 @@ import { listWorkspaces } from '@core/workspaces.js'
 import { renderUnicodeCompact } from 'uqr'
 import { nodePtySpawn } from '@host/terminals/nodePty.js'
 import type { AppPaths } from '@host/ports.js'
-import { PROTOCOL_VERSION, createHub, type Hub, type ServerInfo } from './hub.js'
+import { PROTOCOL_VERSION, createHub, type ChannelTable, type Hub, type ServerInfo } from './hub.js'
 import { createServerHost, type ServerHost } from './serverHost.js'
 import type { ListenSpec } from './cli.js'
 import { createNetworkAccess, forwardToHub } from './networkAccess.js'
+import { CTL } from './ctl.js'
 import { listen } from './socket.js'
 
 export interface ServeOptions {
@@ -66,8 +68,10 @@ export async function serve(options: ServeOptions): Promise<void> {
     mcpEntry: () => join(options.root, 'out', 'server', 'mcp', 'index.mjs'),
     processMetrics: serverMetrics()
   })
+  // `--listen` adds the pairing controls, answered on the Unix socket only (the gate refuses them).
+  const invoke = { ...host.invoke }
   const hub = createHub({
-    invoke: host.invoke,
+    invoke,
     send: host.send,
     info,
     tray: () => tray,
@@ -78,7 +82,7 @@ export async function serve(options: ServeOptions): Promise<void> {
 
   const listener = await listen(options.socketPath, hub)
   host.start()
-  const network = options.listen ? await startNetwork(options, hub, host) : undefined
+  const network = options.listen ? await startNetwork(options, hub, host, invoke) : undefined
   process.stdout.write(`styr server ${options.version} listening on ${options.socketPath}\n`)
 
   // A crash would kill every agent the server runs; log and carry on, as Electron's main does.
@@ -108,7 +112,8 @@ export async function serve(options: ServeOptions): Promise<void> {
 async function startNetwork(
   options: ServeOptions,
   hub: Hub,
-  host: ServerHost
+  host: ServerHost,
+  invoke: ChannelTable
 ): Promise<{ stop(): Promise<void> }> {
   const sessions = () => host.terminals.listSessions()
   const { service } = createNetworkAccess({
@@ -125,7 +130,8 @@ async function startNetwork(
         const session = sessions().find((entry) => entry.id === id && !entry.host)
         return { exists: session !== undefined, workspaceId: session?.workspaceId }
       },
-      currentGlobal: () => globalSettingsFor(loadSettings())
+      currentGlobal: () => globalSettingsFor(loadSettings()),
+      sourcesOf: (id) => loadSettings(id).sources
     },
     // A server has no desktop to keep awake.
     keepAwake: { hold: () => 0, release: () => undefined },
@@ -139,6 +145,17 @@ async function startNetwork(
   })
   if (!state.listening) {
     throw new Error(state.error ?? 'Could not listen for devices.')
+  }
+  invoke[CTL.pair] = { args: z.tuple([]), run: () => service.pair() }
+  invoke[CTL.devices] = { args: z.tuple([]), run: () => service.state().devices }
+  invoke[CTL.revoke] = {
+    args: z.tuple([z.string().min(1)]),
+    run: ((id: string) => {
+      if (!service.state().devices.some((device) => device.id === id)) {
+        throw new Error(`No paired device ${id}.`)
+      }
+      service.revoke(id)
+    }) as never
   }
   if (options.pair) {
     const pairing = service.pair()
