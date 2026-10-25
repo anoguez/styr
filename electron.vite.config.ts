@@ -17,6 +17,12 @@ export default defineConfig({
         input: {
           index: resolve('src/main/index.ts'),
           'mcp/index': resolve('src/mcp/index.ts')
+        },
+        // electron-vite 6 (Vite 8) names ESM output `.js`; the entry points reference `.mjs`.
+        output: {
+          format: 'es',
+          entryFileNames: '[name].mjs',
+          chunkFileNames: 'chunks/[name]-[hash].mjs'
         }
       }
     }
@@ -28,7 +34,7 @@ export default defineConfig({
       rollupOptions: {
         external: ['electron'],
         input: resolve('src/preload/index.ts'),
-        output: { format: 'cjs', entryFileNames: '[name].cjs', inlineDynamicImports: true }
+        output: { format: 'cjs', entryFileNames: '[name].cjs', codeSplitting: false }
       }
     }
   },
