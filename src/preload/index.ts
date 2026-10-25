@@ -119,7 +119,10 @@ const api = {
     /** The tray's pending request for the window, taken once (null when there is none). */
     takeCommand: (): Promise<TrayCommand | null> => ipcRenderer.invoke('app:takeCommand'),
     /** The tray has a request waiting: take it with `takeCommand`. */
-    onCommand: (handler: () => void): (() => void) => subscribe('app:command', handler)
+    onCommand: (handler: () => void): (() => void) => subscribe('app:command', handler),
+    /** The window entered or left native full screen (also sent after each load). */
+    onFullscreen: (handler: (full: boolean) => void): (() => void) =>
+      subscribe('window:fullscreen', handler as (...args: never[]) => void)
   },
   updates: {
     state: (): Promise<UpdateState> => ipcRenderer.invoke('updates:state'),

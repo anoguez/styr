@@ -237,7 +237,8 @@ in a 44px row, and the header pads left by 86px to clear them. Changing the head
 re-centring the lights — `y` is `(height / 2) - 7`.
 
 In native full screen the lights are hidden, so the header drops that padding to 12px
-(`useFullscreen`: the window fills the screen; no IPC channel needed).
+(`useFullscreen`, fed by the main process's `window:fullscreen` event from `windowFullscreen.ts`;
+comparing window and screen sizes in the renderer misfires).
 
 The browser harness has no traffic lights, so that left gap looks empty there. Alignment can only be
 judged in the real app.
