@@ -9,7 +9,7 @@ import {
   type ElectronApplication,
   type Page
 } from '@playwright/test'
-import { appLaunch } from './harness'
+import { appLaunch, MAIN_ERROR } from './harness'
 
 // Drives the built app (`out/`, or the packaged one when STYR_APP_EXECUTABLE is set) through the paths a refactor is most likely to break. Everything
 // lives in a throwaway HOME, so the run never reads or writes real settings, boards or agents.
@@ -19,8 +19,6 @@ import { appLaunch } from './harness'
 const EXTERNALIZED = /externalized for browser compatibility/i
 /** The plain Save button, whose label carries its shortcut (not "Save as preset…" or "Save & Start"). */
 const SAVE = /^Save(?! as preset| &)/
-/** A failed IPC handler or an uncaught error in the main process. */
-const MAIN_ERROR = /Error occurred in handler|Uncaught|Unhandled/i
 
 const home = mkdtempSync(join(tmpdir(), 'styr-smoke-'))
 /** `Settings.storageDir` defaults to `~/Styr`, and HOME is the temp folder. */

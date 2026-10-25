@@ -118,6 +118,25 @@ it:
    with them on it reads the items, the preview writes nothing, and applying one item creates only
    that task.
 
+## Stability tests (`e2e/stability.e2e.ts`)
+
+Two tests on throwaway profiles, run with the others and in the packaged app too:
+
+1. **Upgrade path.** `launchStyr(name, env, { seed, keepHome })` seeds a profile from
+   `e2e/fixtures/upgrade/` (what an earlier release left: `config.json` with the legacy
+   `workspaceDir` key, two task files) before the first start. The board loads from it. After a
+   clean quit the test sets the index's `user_version` back to 1 (SQLite keeps it at byte 60 of the
+   file, so no SQLite library is needed in the test process), adds a task file while the app is
+   closed, and relaunches: the board and the index must show all three, and `user_version` must be
+   `SCHEMA_VERSION` again (read from `taskIndex.ts`). Refresh the fixture when a release changes
+   what is on disk in a way the app must still read.
+2. **Remote access gate.** With the workspace shared and the listener on loopback (no network
+   beyond localhost), an unpaired WebSocket peer that sends a call is closed with 4400/4401 and is
+   never answered.
+
+Every `expectNoErrors()` also fails on an `uncaughtException` or `unhandledRejection` in the main
+process output since launch, whatever a step's `allowed` pattern excuses.
+
 `e2e/nativeTerminal.e2e.ts` runs a shell in a Styr Terminal tab in the same sandboxed window. The
 engine is private, so it is skipped unless `STYR_TERMINAL_PATH` names a build of its package
 (`terminal-engine.md`); run it locally with that set before changing the preload, the sandbox or
