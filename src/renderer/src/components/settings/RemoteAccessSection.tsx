@@ -5,8 +5,7 @@ import {
   groupedFingerprint,
   interfaceOptions,
   listenerStatus,
-  qrPath,
-  unencryptedWarning
+  qrPath
 } from '../../lib/accessView.js'
 import { ipcMessage } from '../../lib/ipcMessage.js'
 import { Button, Card, CardRow, Field, Hint, Select, SwitchRow, inputClass } from '../ui.js'
@@ -78,7 +77,7 @@ export function RemoteAccessSection(): ReactNode {
       <Card>
         <SwitchRow
           label="Allow other devices to connect"
-          hint="Opens a listener in this app so devices you pair can use the workspaces you share. Only private networks are allowed: this computer, your local network or Tailscale. Quitting Styr, or this Mac sleeping, ends the connection."
+          hint="Opens a listener in this app so devices you pair can use the workspaces you share. Reached over Tailscale (or an ssh tunnel to this computer) only; nothing else is allowed. Quitting Styr, or this Mac sleeping, ends the connection."
           checked={state.enabled}
           onChange={(enabled) => void configure({ enabled })}
         />
@@ -117,14 +116,6 @@ export function RemoteAccessSection(): ReactNode {
           ) : (
             <Hint>{listenerStatus(state)}</Hint>
           )}
-          {unencryptedWarning(state) ? (
-            <span
-              role="note"
-              className="text-[11.5px] leading-[1.5] text-[var(--color-col-review)]"
-            >
-              {unencryptedWarning(state)}
-            </span>
-          ) : null}
           {error ? (
             <span role="alert" className="text-[12px] text-danger">
               {error}

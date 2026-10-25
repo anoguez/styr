@@ -21,7 +21,7 @@ export const USAGE = `Usage:
   styr serve [--socket <path>]          Run the headless Styr server
   styr serve --listen <address>[:port] [--pair]
                                         Also accept paired devices over WebSocket on one
-                                        private address (loopback, LAN or Tailscale); --pair
+                                        Tailscale or loopback address; --pair
                                         prints a QR to pair a device with
   styr serve attach [--socket <path>]   Pipe stdio to the running server (what ssh runs)
   styr serve pair [--socket <path>]     Show a QR to pair another device with the running server

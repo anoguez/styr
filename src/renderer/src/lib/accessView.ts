@@ -7,8 +7,6 @@ import type { AccessDevice, AccessInterface, AccessState } from '@core/types.js'
 
 const KIND_LABEL: Record<AccessInterface['kind'], string> = {
   loopback: 'this computer only',
-  private: 'local network, not encrypted',
-  'link-local': 'link-local, not encrypted',
   tailscale: 'Tailscale'
 }
 
@@ -79,20 +77,8 @@ export function qrPath(modules: boolean[][], quiet = 4): { path: string; size: n
 /** Why the listener is not up, or what it is doing, for the line under the switch. */
 export function listenerStatus(state: AccessState): string {
   if (state.listening) {
-    return `Listening on ${state.bindAddress}:${state.port}. Only devices on that network that you paired can sign in.`
+    return `Listening on ${state.bindAddress}:${state.port}. Only devices you paired can sign in.`
   }
   if (!state.bindAddress) return 'Pick a network interface to listen on.'
   return 'Not listening. No port is open.'
-}
-
-/**
- * There is no TLS: only Tailscale and an ssh tunnel to this computer encrypt the connection. On a
- * plain local network anyone on it can read the session, so the screen says so.
- */
-export function unencryptedWarning(
-  state: Pick<AccessState, 'interfaces' | 'bindAddress'>
-): string | undefined {
-  const kind = state.interfaces.find((choice) => choice.address === state.bindAddress)?.kind
-  if (kind !== 'private' && kind !== 'link-local') return undefined
-  return 'This connection is not encrypted. Anyone on this network could read the terminals and tasks of a connected device, or take over its session. Use Tailscale, or an ssh tunnel to this computer, unless you trust everyone on it.'
 }

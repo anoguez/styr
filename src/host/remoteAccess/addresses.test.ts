@@ -13,25 +13,23 @@ describe('addressKind', () => {
     ['127.0.0.1', 'loopback'],
     ['127.255.0.9', 'loopback'],
     ['::1', 'loopback'],
-    ['10.0.0.5', 'private'],
-    ['172.16.0.1', 'private'],
-    ['172.31.255.255', 'private'],
-    ['192.168.1.20', 'private'],
-    ['169.254.10.1', 'link-local'],
-    ['fe80::1', 'link-local'],
-    ['fe80::1%en0', 'link-local'],
     ['100.64.0.1', 'tailscale'],
     ['100.127.255.254', 'tailscale'],
     ['fd7a:115c:a1e0::1', 'tailscale'],
     ['fd7a:115c:a1e0:ab12:4843:cd96:6200:1', 'tailscale'],
-    ['::ffff:192.168.1.5', 'private'],
-    ['::ffff:c0a8:0105', 'private'],
+    ['::ffff:100.64.0.9', 'tailscale'],
     ['::ffff:127.0.0.1', 'loopback']
   ])('%s is %s', (address, kind) => {
     expect(addressKind(address)).toBe(kind)
   })
 
   it.each([
+    '10.0.0.5',
+    '172.16.0.1',
+    '192.168.1.20',
+    '169.254.10.1',
+    'fe80::1',
+    '::ffff:192.168.1.5',
     '8.8.8.8',
     '172.15.255.255',
     '172.32.0.1',
@@ -48,19 +46,19 @@ describe('addressKind', () => {
     'example.com',
     '',
     '999.1.1.1'
-  ])('%s is not private', (address) => {
+  ])('%s is not allowed', (address) => {
     expect(addressKind(address)).toBeUndefined()
     expect(isPrivateAddress(address)).toBe(false)
   })
 
-  it('treats a missing address as not private', () => {
+  it('treats a missing address as not allowed', () => {
     expect(isPrivateAddress(undefined)).toBe(false)
   })
 })
 
 describe('bindAddressProblem', () => {
-  it('accepts loopback, private and Tailscale addresses', () => {
-    for (const address of ['127.0.0.1', '192.168.1.5', '100.100.1.1', '::1', 'fd7a:115c:a1e0::5']) {
+  it('accepts loopback and Tailscale addresses', () => {
+    for (const address of ['127.0.0.1', '100.100.1.1', '::1', 'fd7a:115c:a1e0::5']) {
       expect(bindAddressProblem(address)).toBeUndefined()
     }
   })
@@ -68,7 +66,9 @@ describe('bindAddressProblem', () => {
   it('refuses every interface, public addresses, names and nothing', () => {
     expect(bindAddressProblem('0.0.0.0')).toMatch(/every interface/)
     expect(bindAddressProblem('::')).toMatch(/every interface/)
-    expect(bindAddressProblem('8.8.8.8')).toMatch(/public/)
+    expect(bindAddressProblem('8.8.8.8')).toMatch(/Tailscale or loopback/)
+    expect(bindAddressProblem('192.168.1.5')).toMatch(/Tailscale or loopback/)
+    expect(bindAddressProblem('10.0.0.2')).toMatch(/Tailscale or loopback/)
     expect(bindAddressProblem('localhost')).toMatch(/not an IP/)
     expect(bindAddressProblem('')).toMatch(/Pick/)
   })
@@ -84,7 +84,7 @@ describe('portProblem', () => {
 })
 
 describe('allowedInterfaces', () => {
-  it('lists only private addresses', () => {
+  it('lists only Tailscale and loopback addresses', () => {
     const entry = (address: string) => ({
       address,
       family: 'IPv4' as const,
@@ -98,10 +98,7 @@ describe('allowedInterfaces', () => {
         en0: [entry('192.168.1.2'), entry('8.8.4.4')],
         utun3: [entry('100.90.1.1')]
       })
-    ).toEqual([
-      { name: 'en0', address: '192.168.1.2', kind: 'private' },
-      { name: 'utun3', address: '100.90.1.1', kind: 'tailscale' }
-    ])
+    ).toEqual([{ name: 'utun3', address: '100.90.1.1', kind: 'tailscale' }])
   })
 })
 

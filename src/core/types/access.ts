@@ -1,5 +1,5 @@
 /** Which private range an address is in (`host/remoteAccess/addresses.ts`). */
-export type AddressKind = 'loopback' | 'private' | 'link-local' | 'tailscale'
+export type AddressKind = 'loopback' | 'tailscale'
 
 /** Remote access settings are not part of `Settings`: see `docs/architecture/remote-access.md`. */
 export interface AccessConfig {

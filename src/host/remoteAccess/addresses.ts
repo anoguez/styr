@@ -5,8 +5,9 @@ import type { AddressKind } from '@core/types/access.js'
 export type { AddressKind }
 
 /**
- * Network access is for private networks only: the listener binds to, and accepts connections
- * from, loopback, RFC 1918 and link-local addresses and Tailscale's ranges, never a public one.
+ * Network access is for Tailscale and loopback only: the listener binds to, and accepts connections
+ * from, loopback (for an ssh tunnel) and Tailscale's ranges, never anything else: a LAN address
+ * would carry the session unencrypted, and a public one would expose it.
  * It is enforced here, in code, so a port-forward or a wrong route cannot let the internet in.
  */
 
@@ -51,10 +52,6 @@ export function addressKind(address: string): AddressKind | undefined {
   const v4 = parseIPv4(address)
   if (v4 !== undefined) {
     if (inV4(v4, '127.0.0.0', 8)) return 'loopback'
-    if (inV4(v4, '10.0.0.0', 8) || inV4(v4, '172.16.0.0', 12) || inV4(v4, '192.168.0.0', 16)) {
-      return 'private'
-    }
-    if (inV4(v4, '169.254.0.0', 16)) return 'link-local'
     if (inV4(v4, '100.64.0.0', 10)) return 'tailscale'
     return undefined
   }
@@ -64,7 +61,6 @@ export function addressKind(address: string): AddressKind | undefined {
   // ::ffff:a.b.c.d is an IPv4 address on a dual-stack socket.
   if (v6 >> 32n === 0xffffn)
     return addressKind([24, 16, 8, 0].map((s) => Number((v6 >> BigInt(s)) & 0xffn)).join('.'))
-  if (v6 >> 118n === 0x3fan) return 'link-local'
   if (v6 >> 80n === TAILSCALE_V6 >> 80n) return 'tailscale'
   return undefined
 }
@@ -82,7 +78,7 @@ export function bindAddressProblem(address: string): string | undefined {
   }
   if (!isIPv4(trimmed) && !isIPv6(trimmed)) return `${trimmed} is not an IP address.`
   if (!isPrivateAddress(trimmed)) {
-    return `${trimmed} is a public address. Only loopback, private (10.x, 172.16–31.x, 192.168.x), link-local and Tailscale addresses are allowed.`
+    return `${trimmed} is not a Tailscale or loopback address. Remote access works over Tailscale (100.64.0.0/10) or an ssh tunnel to 127.0.0.1 only.`
   }
   return undefined
 }

@@ -5,8 +5,7 @@ import {
   groupedFingerprint,
   interfaceOptions,
   listenerStatus,
-  qrPath,
-  unencryptedWarning
+  qrPath
 } from './accessView.js'
 
 const base: AccessState = {
@@ -16,7 +15,7 @@ const base: AccessState = {
   keepAwake: false,
   listening: false,
   interfaces: [
-    { name: 'en0', address: '192.168.1.5', kind: 'private' },
+    { name: 'lo0', address: '127.0.0.1', kind: 'loopback' },
     { name: 'utun4', address: '100.101.102.103', kind: 'tailscale' }
   ],
   devices: [],
@@ -26,7 +25,7 @@ const base: AccessState = {
 describe('interfaceOptions', () => {
   it('lists each private address with where it is', () => {
     expect(interfaceOptions(base)).toEqual([
-      { value: '192.168.1.5', label: '192.168.1.5 · en0 · local network, not encrypted' },
+      { value: '127.0.0.1', label: '127.0.0.1 · lo0 · this computer only' },
       { value: '100.101.102.103', label: '100.101.102.103 · utun4 · Tailscale' }
     ])
   })
@@ -76,24 +75,10 @@ describe('groupedFingerprint', () => {
 
 describe('listenerStatus', () => {
   it('says what it listens on, or why it does not', () => {
-    expect(listenerStatus({ ...base, bindAddress: '192.168.1.5', listening: true })).toMatch(
-      /^Listening on 192\.168\.1\.5:7878/
+    expect(listenerStatus({ ...base, bindAddress: '127.0.0.1', listening: true })).toMatch(
+      /^Listening on 127\.0\.0\.1:7878/
     )
     expect(listenerStatus(base)).toMatch(/Pick a network interface/)
-    expect(listenerStatus({ ...base, bindAddress: '192.168.1.5' })).toMatch(/No port is open/)
-  })
-})
-
-describe('unencryptedWarning', () => {
-  it('warns on a plain local network only', () => {
-    expect(unencryptedWarning({ ...base, bindAddress: '192.168.1.5' })).toMatch(/not encrypted/)
-    expect(unencryptedWarning({ ...base, bindAddress: '100.101.102.103' })).toBeUndefined()
-    expect(unencryptedWarning(base)).toBeUndefined()
-    expect(
-      unencryptedWarning({
-        interfaces: [{ name: 'lo0', address: '127.0.0.1', kind: 'loopback' }],
-        bindAddress: '127.0.0.1'
-      })
-    ).toBeUndefined()
+    expect(listenerStatus({ ...base, bindAddress: '127.0.0.1' })).toMatch(/No port is open/)
   })
 })

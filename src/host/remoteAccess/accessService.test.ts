@@ -33,7 +33,7 @@ describe('access service', () => {
         }
         return listener
       },
-      interfaces: () => [{ name: 'en0', address: '192.168.1.5', kind: 'private' }],
+      interfaces: () => [{ name: 'en0', address: '100.101.102.103', kind: 'tailscale' }],
       keepAwake: {
         hold: () => {
           held.push(held.length + 1)
@@ -69,8 +69,12 @@ describe('access service', () => {
 
   it('listens once switched on with a private interface', async () => {
     const { service } = setup()
-    const state = await service.configure({ enabled: true, bindAddress: '192.168.1.5', port: 7878 })
-    expect(listens).toEqual([['192.168.1.5', 7878]])
+    const state = await service.configure({
+      enabled: true,
+      bindAddress: '100.101.102.103',
+      port: 7878
+    })
+    expect(listens).toEqual([['100.101.102.103', 7878]])
     expect(state).toMatchObject({ enabled: true, listening: true })
     expect(state.error).toBeUndefined()
   })
@@ -104,21 +108,21 @@ describe('access service', () => {
   it('says so when the interface is gone, and never throws', async () => {
     const { service } = setup()
     failWith = Object.assign(new Error('x'), { code: 'EADDRNOTAVAIL' })
-    const state = await service.configure({ enabled: true, bindAddress: '192.168.9.9' })
+    const state = await service.configure({ enabled: true, bindAddress: '100.64.9.9' })
     expect(state.error).toMatch(/not an address of this computer/)
   })
 
   it('restarts on another interface and closes on switch-off', async () => {
     const { service, closed } = setup()
     await service.configure({ enabled: true, bindAddress: '127.0.0.1', port: 7000 })
-    await service.configure({ bindAddress: '192.168.1.5' })
+    await service.configure({ bindAddress: '100.101.102.103' })
     expect(listens).toEqual([
       ['127.0.0.1', 7000],
-      ['192.168.1.5', 7000]
+      ['100.101.102.103', 7000]
     ])
     expect(closed).toEqual(['127.0.0.1:7000'])
     await service.configure({ enabled: false })
-    expect(closed).toEqual(['127.0.0.1:7000', '192.168.1.5:7000'])
+    expect(closed).toEqual(['127.0.0.1:7000', '100.101.102.103:7000'])
     expect(service.state().listening).toBe(false)
   })
 

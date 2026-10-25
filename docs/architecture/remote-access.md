@@ -23,9 +23,9 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   starts the listener; each workspace then opts in with `remoteAccess` (Settings → General,
   "Allow remote clients to open this workspace", a workspace setting, default `false`). Neither
   alone exposes a workspace. The flag is ignored for an ssh remote workspace's stub.
-- **Private networks only, enforced in code** (`host/remoteAccess/addresses.ts`). The listener
-  binds only to loopback, RFC 1918, link-local or Tailscale addresses (`100.64.0.0/10`,
-  `fd7a:115c:a1e0::/48`; the IPv4 range also covers carrier-grade NAT); `0.0.0.0`, `::`, a hostname, a public address and "nothing picked" are
+- **Tailscale (and loopback) only, enforced in code** (`host/remoteAccess/addresses.ts`). The listener
+  binds only to loopback or Tailscale addresses (`100.64.0.0/10`,
+  `fd7a:115c:a1e0::/48`; the IPv4 range also covers carrier-grade NAT); `0.0.0.0`, `::`, a hostname, a LAN (RFC 1918 / link-local) or public address and "nothing picked" are
   refused with a message, and the default is none. Every accepted socket's source address is
   checked against the same ranges before a byte is read, so a port-forward cannot let the internet
   in. Requests with `X-Forwarded-For`, `Forwarded`, `X-Real-IP` … are refused (no reverse
@@ -126,8 +126,8 @@ which is never sent. The device's credential (the private key) is never sent. A 
 not hold the pinned key fails the signature check on the phone, so the phone sends nothing to an
 impostor. **What this does not do is encrypt the session:** after `ready`, terminal I/O, tasks and
 settings are cleartext, and a peer that can sit in the path can read them or take over the
-connection. Safe over Tailscale (WireGuard) or an ssh tunnel to loopback; on a plain local network
-Settings → Remote access warns. After `ready` the session is `remote.md`'s protocol, starting with
+connection. That is why only Tailscale (WireGuard) and loopback (an ssh tunnel) are accepted: a
+LAN address is refused rather than warned about. After `ready` the session is `remote.md`'s protocol, starting with
 `server:hello`; `docs/protocol/styr-remote.schema.json` lists the channels and argument schemas,
 generated from the zod tuples (`protocolSchema.ts`; `UPDATE_PROTOCOL_SCHEMA=1 yarn vitest run
 src/server/protocolSchema.test.ts` rewrites it, and the test fails when it is stale).
