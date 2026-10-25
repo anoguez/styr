@@ -7,6 +7,7 @@ import { adapterFor, currentSources, runCommand, writableSource } from '@core/so
 import { openQuestions } from '@core/questions.js'
 import { requestReview, taskHandoff } from '@core/reviewRequest.js'
 import { MAX_SPLIT_CHILDREN, splitTask } from '@core/taskSplit.js'
+import { mergeExtraPrUrls } from '@core/taskPullRequests.js'
 import {
   addNote,
   askQuestion,
@@ -56,21 +57,6 @@ function summarise(task: Task, open: string[] = blockedByOpen(task)): Record<str
     updatedAt: task.updatedAt,
     filePath: task.filePath
   }
-}
-
-/** Applies each given `prUrl` to the existing entry with that `repoPath`; nothing else changes. */
-function mergeExtraPrUrls(
-  task: Task,
-  given: { repoPath: string; prUrl?: string }[]
-): Task['extraRepos'] {
-  const same = (a: string, b: string): boolean =>
-    a.replace(/[\\/]+$/, '') === b.replace(/[\\/]+$/, '')
-  return task.extraRepos.map((extra) => {
-    const update = given.find((entry) => same(entry.repoPath, extra.repoPath))
-    return update && update.prUrl !== undefined
-      ? { ...extra, prUrl: update.prUrl || undefined }
-      : extra
-  })
 }
 
 function json(payload: unknown): { content: [{ type: 'text'; text: string }] } {
@@ -205,7 +191,8 @@ server.registerTool(
     ) {
       throw new Error(`${id} already has a worktree, so its base branch can no longer change`)
     }
-    const merged = existing && extraRepos ? mergeExtraPrUrls(existing, extraRepos) : undefined
+    const merged =
+      existing && extraRepos ? mergeExtraPrUrls(existing.extraRepos, extraRepos) : undefined
     return json(summarise(updateTask(id, merged ? { ...patch, extraRepos: merged } : patch)))
   }
 )
@@ -274,11 +261,26 @@ server.registerTool(
         openQuestions: z.string().optional(),
         notes: z.string().optional()
       }),
-      prUrl: z.string().optional().describe('The pull/merge request, if one is open')
+      prUrl: z
+        .string()
+        .optional()
+        .describe(
+          "The pull/merge request, if one is open (the primary repository's, on a multi-repo task)"
+        ),
+      extraRepos: z
+        .array(z.object({ repoPath: z.string(), prUrl: z.string().optional() }))
+        .optional()
+        .describe("A multi-repo task's other repositories: each one's repoPath and its PR")
     }
   },
-  async ({ id, summary, prUrl }) => {
-    const { task, openQuestions: open } = requestReview({ id, summary, prUrl, author: AUTHOR })
+  async ({ id, summary, prUrl, extraRepos }) => {
+    const { task, openQuestions: open } = requestReview({
+      id,
+      summary,
+      prUrl,
+      extraRepos,
+      author: AUTHOR
+    })
     return json({ ...summarise(task), openQuestions: open })
   }
 )

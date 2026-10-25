@@ -24,3 +24,21 @@ export function hasAllPullRequests(task: PullRequestTask): boolean {
   const extras = task.useWorktree ? task.extraRepos : []
   return Boolean(task.prUrl) && extras.every((extra) => Boolean(extra.prUrl))
 }
+
+/**
+ * Applies each given `prUrl` to the existing extra repository with that `repoPath`; nothing else
+ * changes, and an entry that names no repository of the task is ignored. An empty `prUrl` clears it.
+ */
+export function mergeExtraPrUrls(
+  extraRepos: Task['extraRepos'],
+  given: readonly { repoPath: string; prUrl?: string }[]
+): Task['extraRepos'] {
+  const same = (a: string, b: string): boolean =>
+    a.replace(/[\\/]+$/, '') === b.replace(/[\\/]+$/, '')
+  return extraRepos.map((extra) => {
+    const update = given.find((entry) => same(entry.repoPath, extra.repoPath))
+    return update && update.prUrl !== undefined
+      ? { ...extra, prUrl: update.prUrl || undefined }
+      : extra
+  })
+}
