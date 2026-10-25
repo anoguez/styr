@@ -70,6 +70,16 @@ exercised. The step "the MCP server … is on disk" checks the MCP entry named b
 `app.asar.unpacked` when packaged, and starts under plain `node`. The specs are the same ones; a
 step must work in both modes, and `yarn playwright test` (no build) is the way to run it.
 
+### macOS and Windows in CI
+
+`smoke` (ubuntu) runs on every PR. The `changes` job diffs the PR against its base and, when it
+touches `package.json`, `yarn.lock`, `electron-builder.yml`, `electron.vite.config.ts`, `scripts/`,
+`build/`, `resources/` or `ci.yml`, `smoke-native` runs the same `yarn test:smoke` on macOS and
+Windows too (a Dependabot bump of `electron` or a native module always qualifies; a docs-only PR
+skips them). `smoke-native` is a separate job so `smoke` stays one stable required check
+(`releases.md`); a skipped `smoke-native` is not a failure for branch protection, so do not
+require it. Add a path to the `grep` in `changes` when a new file can break only on one OS.
+
 ### Adding a step
 
 Add a `test.step` to the one `smoke` test, before the quit step, and end it with
