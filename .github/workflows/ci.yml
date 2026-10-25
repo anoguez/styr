@@ -91,7 +91,8 @@ jobs:
 
   # Whether the PR touches what only breaks on another OS: dependencies, packaging, the build and
   # its scripts, resources. The smoke on macOS and Windows (smoke-native) runs only then; a git
-  # diff against the base needs no extra action to pin. A Dependabot bump of electron, node-pty or
+  # diff against the base needs no extra action to pin. The smoke's own files count: a step can
+  # pass on ubuntu and break on one OS only. A Dependabot bump of electron, node-pty or
   # better-sqlite3 changes package.json and yarn.lock, so it always qualifies.
   changes:
     runs-on: ubuntu-latest
@@ -107,7 +108,7 @@ jobs:
         run: |
           files="$(git diff --name-only HEAD^1 HEAD)"
           echo "$files"
-          if echo "$files" | grep -Eq '^(package\.json|yarn\.lock|electron-builder\.yml|electron\.vite\.config\.ts|scripts/|build/|resources/|\.github/workflows/ci\.yml)'; then
+          if echo "$files" | grep -Eq '^(package\.json|yarn\.lock|electron-builder\.yml|electron\.vite\.config\.ts|scripts/|build/|resources/|e2e/|playwright\.config\.ts|\.github/workflows/ci\.yml)'; then
             echo "risky=true" >> "$GITHUB_OUTPUT"
           else
             echo "risky=false" >> "$GITHUB_OUTPUT"

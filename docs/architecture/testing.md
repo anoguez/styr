@@ -74,7 +74,7 @@ step must work in both modes, and `yarn playwright test` (no build) is the way t
 
 `smoke` (ubuntu) runs on every PR. The `changes` job diffs the PR against its base and, when it
 touches `package.json`, `yarn.lock`, `electron-builder.yml`, `electron.vite.config.ts`, `scripts/`,
-`build/`, `resources/` or `ci.yml`, `smoke-native` runs the same `yarn test:smoke` on macOS and
+`build/`, `resources/`, `e2e/`, `playwright.config.ts` or `ci.yml`, `smoke-native` runs the same `yarn test:smoke` on macOS and
 Windows too (a Dependabot bump of `electron` or a native module always qualifies; a docs-only PR
 skips them). `smoke-native` is a separate job so `smoke` stays one stable required check
 (`releases.md`); a skipped `smoke-native` is not a failure for branch protection, so do not
