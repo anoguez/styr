@@ -127,7 +127,10 @@ function boardProtocol(
           '',
           `You are in a dedicated git worktree at ${task.repoPath} on branch`,
           `\`${WORKTREE_BRANCH_PREFIX}${worktreeKey(workspaceId, task.id)}\`. Commit there. Do not switch branches and do not`,
-          'touch the main checkout — another agent may be working in it.'
+          'touch the main checkout — another agent may be working in it.',
+          'If the work needs a repository this task does not list, do not create a worktree or clone it',
+          'yourself: Styr places worktrees where the owner configured. Ask me to add the repository to',
+          'the task.'
         ]
       : []),
     ...(repos ? ['', repos] : [])

@@ -36,6 +36,7 @@ describe('board protocol outside git', () => {
     const prompt = buildPrompt('Do it', { ...base, useWorktree: true })
     expect(prompt).toContain('landed on the base branch')
     expect(prompt).toContain('dedicated git worktree')
+    expect(prompt).toContain('do not create a worktree or clone it')
   })
 })
 
