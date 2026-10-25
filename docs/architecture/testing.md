@@ -25,7 +25,7 @@ smoke job also runs `styr serve`'s integration test under plain Node (see `remot
 
 ## Smoke test (`e2e/smoke.e2e.ts`)
 
-Playwright's `_electron` drives the built app in `out/`. It uses a throwaway `HOME`, `STYR_HOME`,
+Playwright's `_electron` drives the built app in `out/` (or the packaged app, below). It uses a throwaway `HOME`, `STYR_HOME`,
 `--user-data-dir`, `ZDOTDIR` and `XDG_*`, so it never reads or writes your boards, settings, agents
 or dotfiles. The app needs no test hook for this. One launch runs these steps in order:
 
@@ -34,6 +34,7 @@ or dotfiles. The app needs no test hook for this. One launch runs these steps in
    their way.)
 1. The board renders, in a sandboxed renderer (the `Tab` process's `sandboxed` metric, on macOS
    and Windows) whose page has `window.api` and no `require` or `process`.
+   1b. The MCP server named in the setup command exists on disk and starts under plain `node`.
 2. Create a task, edit it, then move it to In Progress (status menu) and to In Review (drag). The
    file on disk follows each change.
 3. A task file written from outside the app appears on the board.
@@ -58,6 +59,16 @@ The test runs under Electron, so the native modules must be built for Electron's
 `yarn install` does that through `postinstall`. In CI the `smoke` job in `.github/workflows/ci.yml`
 does the same on ubuntu-latest under `xvfb-run`. Linux adds `--no-sandbox`, because the runner
 forbids the user namespaces that Chromium's sandbox needs.
+
+### Running it against the packaged app
+
+`STYR_APP_EXECUTABLE` names a packaged executable (the unpacked app in `dist/`); the smoke and
+feature tests then launch it instead of `out/` (`appLaunch` in `e2e/harness.ts`), with the same
+throwaway profile. The release jobs do this through `scripts/packaged-smoke.mjs` before they upload
+(`releases.md`), so asar and `asarUnpack`, the rebuilt native modules and the signature are all
+exercised. The step "the MCP server … is on disk" checks the MCP entry named by the setup command exists, sits under
+`app.asar.unpacked` when packaged, and starts under plain `node`. The specs are the same ones; a
+step must work in both modes, and `yarn playwright test` (no build) is the way to run it.
 
 ### Adding a step
 

@@ -10,7 +10,7 @@ import {
   type TestInfo
 } from '@playwright/test'
 
-// Launches the built app (`out/`) in a throwaway HOME, as the smoke test does, for the feature
+// Launches the built app (`out/`, or the packaged one: `STYR_APP_EXECUTABLE`) in a throwaway HOME, as the smoke test does, for the feature
 // tests. Nothing here needs an agent CLI or the network. See docs/architecture/testing.md.
 
 /** Vite's stub for a Node builtin in renderer code: the window loads blank. */
@@ -19,6 +19,31 @@ const EXTERNALIZED = /externalized for browser compatibility/i
 const MAIN_ERROR = /Error occurred in handler|Uncaught|Unhandled/i
 
 const root = resolve(__dirname, '..')
+
+/**
+ * What to launch: the built app in `out/`, or — when `STYR_APP_EXECUTABLE` names one — the
+ * packaged app as shipped (asar, rebuilt native modules, signing), which the release jobs test
+ * before they upload anything.
+ */
+export function appLaunch(home: string): { executablePath?: string; args: string[]; cwd: string } {
+  const executablePath = process.env.STYR_APP_EXECUTABLE
+  if (executablePath) {
+    if (!existsSync(executablePath))
+      throw new Error(`STYR_APP_EXECUTABLE names no file: ${executablePath}`)
+  } else if (!existsSync(join(root, 'out', 'main', 'index.mjs')))
+    throw new Error('No build in out/. Run `yarn test:smoke`, which builds first.')
+  return {
+    executablePath,
+    cwd: root,
+    args: [
+      // The packaged executable runs its own app; only Electron itself is pointed at `.`.
+      ...(executablePath ? [] : ['.']),
+      `--user-data-dir=${join(home, 'userData')}`,
+      // CI's Ubuntu forbids the unprivileged user namespaces Chromium's sandbox needs.
+      ...(process.platform === 'linux' ? ['--no-sandbox'] : [])
+    ]
+  }
+}
 
 export interface StyrApp {
   app: ElectronApplication
@@ -45,8 +70,6 @@ export async function launchStyr(
   name: string,
   extra: Record<string, string> = {}
 ): Promise<StyrApp> {
-  if (!existsSync(join(root, 'out', 'main', 'index.mjs')))
-    throw new Error('No build in out/. Run `yarn test:smoke`, which builds first.')
   const home = mkdtempSync(join(tmpdir(), `styr-${name}-`))
   const env: Record<string, string | undefined> = {
     ...process.env,
@@ -65,16 +88,7 @@ export async function launchStyr(
   delete env.ELECTRON_RENDERER_URL
   const errors: string[] = []
   const mainLog: string[] = []
-  const app = await electron.launch({
-    cwd: root,
-    args: [
-      '.',
-      `--user-data-dir=${join(home, 'userData')}`,
-      // CI's Ubuntu forbids the unprivileged user namespaces Chromium's sandbox needs.
-      ...(process.platform === 'linux' ? ['--no-sandbox'] : [])
-    ],
-    env: env as Record<string, string>
-  })
+  const app = await electron.launch({ ...appLaunch(home), env: env as Record<string, string> })
   app.process().stderr?.on('data', (chunk) => mainLog.push(String(chunk)))
   app.process().stdout?.on('data', (chunk) => mainLog.push(String(chunk)))
   const page = await app.firstWindow().catch((error: Error) => {

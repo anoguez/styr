@@ -239,6 +239,20 @@ jobs:
             xcrun stapler validate "$dmg"
           done
 
+      # The packaged, signed app is started under the hardened runtime and driven through the core flows
+      # (e2e/*.e2e.ts, docs/architecture/testing.md). It runs while the signing keychain still exists
+      # and before anything is uploaded, so a failure leaves the release a draft.
+      - name: Smoke test the packaged app
+        run: node scripts/packaged-smoke.mjs mac
+
+      - name: Keep the packaged smoke results
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packaged-smoke-macos
+          path: test-results/
+          retention-days: 7
+
       - name: Keep the build as a workflow artifact
         if: ${{ env.TAG == '' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -313,6 +327,18 @@ jobs:
 
       - run: node scripts/verify-package.mjs win
 
+      # as in build-macos: the unpacked app (dist/win-unpacked) must start and pass the smoke before upload.
+      - name: Smoke test the packaged app
+        run: node scripts/packaged-smoke.mjs win
+
+      - name: Keep the packaged smoke results
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packaged-smoke-windows
+          path: test-results/
+          retention-days: 7
+
       - name: Keep the build as a workflow artifact
         if: ${{ env.TAG == '' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -377,6 +403,18 @@ jobs:
         run: yarn electron-builder --linux --x64 --publish never
 
       - run: node scripts/verify-package.mjs linux
+
+      # as in build-macos, on a virtual display (the harness adds --no-sandbox on Linux).
+      - name: Smoke test the packaged app
+        run: xvfb-run --auto-servernum node scripts/packaged-smoke.mjs linux
+
+      - name: Keep the packaged smoke results
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packaged-smoke-linux
+          path: test-results/
+          retention-days: 7
 
       - name: Keep the build as a workflow artifact
         if: ${{ env.TAG == '' }}
