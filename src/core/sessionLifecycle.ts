@@ -12,12 +12,14 @@ import type { LaunchOptions, LaunchPlan } from './launch.js'
 import { laneFor, providerForLane } from './orchestrate.js'
 import { resolveTemplateFor } from './prompt.js'
 import { agentSkip } from './terminalLayout.js'
-import { createPullRequestPrompt } from './pullRequest.js'
+import { createPullRequestPrompt, createPullRequestsPrompt } from './pullRequest.js'
+import { repoDisplayNames } from './repoNames.js'
 import { providerById } from './providers/index.js'
 import type { ThreadUpdate } from './providers/codexProtocol.js'
 import { TaskLaunchGate } from './taskLaunchGate.js'
 import {
   WORKTREE_BRANCH_PREFIX,
+  worktreeKey,
   type OrchestrationLane,
   type Settings,
   type Task,
@@ -153,7 +155,8 @@ export interface LaunchRun {
 export function launchPatch(
   settings: Settings,
   task: Task,
-  plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase'>,
+  plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase'> &
+    Partial<Pick<LaunchPlan, 'extraWorktrees'>>,
   run: LaunchRun = {},
   now: () => string = () => new Date().toISOString()
 ): TaskPatch {
@@ -165,6 +168,23 @@ export function launchPatch(
   }
   // "Current branch" resolves when the worktree is cut; keep it, or the diff measures from main.
   if (plan.worktreeBase && !task.baseBranch) patch.baseBranch = plan.worktreeBase
+  // Each extra repository records its own worktree and start branch, in place and in order.
+  if (plan.extraWorktrees?.length) {
+    let changed = false
+    const extraRepos = task.extraRepos.map((extra) => {
+      const made = plan.extraWorktrees?.find((candidate) => candidate.repoPath === extra.repoPath)
+      if (!made) return extra
+      const next = {
+        ...extra,
+        worktreePath: made.worktreePath,
+        ...(made.baseBranch && !extra.baseBranch ? { baseBranch: made.baseBranch } : {})
+      }
+      if (next.worktreePath !== extra.worktreePath || next.baseBranch !== extra.baseBranch)
+        changed = true
+      return next
+    })
+    if (changed) patch.extraRepos = extraRepos
+  }
   if (!sessionId) return patch
 
   if (task.agentSession?.id !== sessionId || task.agentSession?.provider !== plan.provider) {
@@ -276,7 +296,8 @@ export function createSessionLifecycle(ports: SessionPorts) {
   function saveLaunchMetadata(
     workspaceId: string,
     taskId: string,
-    plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase' | 'warning'>,
+    plan: Pick<LaunchPlan, 'provider' | 'worktreePath' | 'worktreeBase' | 'warning'> &
+      Partial<Pick<LaunchPlan, 'extraWorktrees'>>,
     run: LaunchRun
   ): void {
     const active = workspaceId === ports.settings().activeWorkspaceId
@@ -553,6 +574,34 @@ export function createSessionLifecycle(ports: SessionPorts) {
     }
     const repoPath = task.repoPath || settings.defaultRepoPath.trim()
     const base = task.baseBranch || (repoPath ? ports.git.baseBranch(repoPath) : undefined)
+    const extras = task.useWorktree ? task.extraRepos.filter((extra) => extra.worktreePath) : []
+    if (extras.length > 0) {
+      const branch = `${WORKTREE_BRANCH_PREFIX}${worktreeKey(settings.activeWorkspaceId, task.id)}`
+      const names = repoDisplayNames([repoPath, ...extras.map((extra) => extra.repoPath)])
+      submitToAgent(
+        live.id,
+        createPullRequestsPrompt({
+          taskFile: task.filePath,
+          repos: [
+            {
+              name: names[0] ?? repoPath,
+              path: task.worktreePath ?? repoPath,
+              base,
+              branch,
+              primary: true
+            },
+            ...extras.map((extra, index) => ({
+              name: names[index + 1] ?? extra.repoPath,
+              path: extra.worktreePath ?? extra.repoPath,
+              base: extra.baseBranch || ports.git.baseBranch(extra.repoPath),
+              branch,
+              primary: false
+            }))
+          ]
+        })
+      )
+      return
+    }
     submitToAgent(live.id, createPullRequestPrompt({ taskFile: task.filePath, base }))
   }
 

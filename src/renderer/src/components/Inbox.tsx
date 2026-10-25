@@ -16,6 +16,7 @@ import {
   type TaskPriority,
   type TaskStatus
 } from '@core/types.js'
+import { taskPullRequests } from '@core/taskPullRequests.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
 import { STATUS_DOT } from '../lib/statusTone.js'
 import { timeAgo } from '../lib/timeAgo.js'
@@ -389,7 +390,9 @@ export function Inbox({
   const movedToday = tasks.filter(
     (task) => new Date(task.updatedAt).toDateString() === today
   ).length
-  const prsReady = tasks.filter((task) => task.prUrl && task.status !== 'done').length
+  const prsReady = tasks
+    .filter((task) => task.status !== 'done')
+    .reduce((sum, task) => sum + taskPullRequests(task).length, 0)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

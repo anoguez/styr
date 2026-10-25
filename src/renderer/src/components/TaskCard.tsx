@@ -15,6 +15,8 @@ import {
 import type { DiffStat } from '@core/diff.js'
 import { DispatchingContext } from '../lib/dispatchRun.js'
 import { describeBlockers, useOpenBlockers } from '../lib/blockerContext.js'
+import { prMenuLabel } from '../lib/prLabel.js'
+import { taskPullRequests } from '@core/taskPullRequests.js'
 import { Chip, DiffCount, DiffStatButton } from './ui.js'
 import { DispatchGlyph, dispatchToggleTitle } from './dispatchMark.js'
 
@@ -118,20 +120,41 @@ export function TaskCardBody({
   const stop = { onPointerDown: (e: SyntheticEvent) => e.stopPropagation() }
   const linkClass =
     'inline-flex shrink-0 items-center gap-[3px] whitespace-nowrap text-[var(--color-accent-text)] hover:underline'
-  const prLink = task.prUrl ? (
-    <a
-      href={task.prUrl}
-      target="_blank"
-      rel="noreferrer"
-      title={task.prUrl}
-      className={linkClass}
-      {...stop}
-      onClick={(event) => event.stopPropagation()}
-    >
-      <RefIcon name="pr" />
-      PR
-    </a>
-  ) : null
+  const [prMenu, setPrMenu] = useState<{ x: number; y: number } | null>(null)
+  const prLinks = taskPullRequests(task)
+  const prLink =
+    prLinks.length === 1 ? (
+      <a
+        href={prLinks[0]?.url}
+        target="_blank"
+        rel="noreferrer"
+        title={prLinks[0]?.url}
+        className={linkClass}
+        {...stop}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <RefIcon name="pr" />
+        PR
+      </a>
+    ) : prLinks.length > 1 ? (
+      // A multi-repo task has a pull request per repository: a menu picks which to open.
+      <button
+        type="button"
+        title="Choose a pull request"
+        aria-haspopup="menu"
+        className={linkClass}
+        {...stop}
+        onClick={(event) => {
+          event.stopPropagation()
+          const box = event.currentTarget.getBoundingClientRect()
+          setPrMenu({ x: box.left, y: box.bottom + 4 })
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <RefIcon name="pr" />
+        PRs ({prLinks.length})
+      </button>
+    ) : null
   const issueLink = task.externalRef?.url ? (
     <a
       href={task.externalRef.url}
@@ -254,6 +277,16 @@ export function TaskCardBody({
         ) : null}
         {issueLink}
         {prLink}
+        {prMenu ? (
+          <CardMenu
+            at={prMenu}
+            onClose={() => setPrMenu(null)}
+            items={prLinks.map((link) => ({
+              label: prMenuLabel(link),
+              run: () => void window.open(link.url, '_blank', 'noopener')
+            }))}
+          />
+        ) : null}
         <span className="ml-auto flex shrink-0 items-center gap-2 font-mono">
           {files > 0 ? (
             <span className="inline-flex items-center gap-[3px]" title={`${files} context files`}>

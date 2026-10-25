@@ -154,6 +154,8 @@ function harness(): Harness {
       provider: options.provider ?? 'claude',
       command: 'agent --resume',
       cwd: '/repo',
+      extraDirs: [],
+      extraWorktrees: [],
       sessionId: options.resume ?? 'fresh',
       resumed: true,
       prompt: undefined,

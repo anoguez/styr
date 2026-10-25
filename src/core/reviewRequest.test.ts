@@ -70,4 +70,30 @@ describe('requestReview', () => {
     })
     expect(taskHandoff(store.getTask(task.id)!)).toBe('**What changed** by hand')
   })
+
+  it('records a PR on each extra repository, matched by path, and leaves the rest alone', async () => {
+    const { store, requestReview, task } = await setup()
+    store.updateTask(task.id, {
+      useWorktree: true,
+      repoPath: '/w/api',
+      extraRepos: [{ repoPath: '/w/client', baseBranch: 'main' }, { repoPath: '/w/docs' }]
+    })
+    requestReview({
+      id: task.id,
+      summary,
+      prUrl: 'https://x/pull/1',
+      extraRepos: [
+        { repoPath: '/w/client/', prUrl: 'https://x/pull/2' },
+        { repoPath: '/w/unknown', prUrl: 'https://x/pull/3' }
+      ],
+      author: 'claude'
+    })
+    expect(store.getTask(task.id)).toMatchObject({
+      prUrl: 'https://x/pull/1',
+      extraRepos: [
+        { repoPath: '/w/client', baseBranch: 'main', prUrl: 'https://x/pull/2' },
+        { repoPath: '/w/docs' }
+      ]
+    })
+  })
 })

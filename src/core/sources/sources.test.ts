@@ -73,6 +73,7 @@ function task(over: Partial<Task> = {}): Task {
     tags: ['github:bug'],
     orchestrate: true,
     useWorktree: false,
+    extraRepos: [],
     questions: [],
     blockedBy: [],
     contextFiles: [],

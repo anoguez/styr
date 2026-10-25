@@ -40,7 +40,7 @@ describe('boardTasks and taskSummaries', () => {
     expect(tasks.map((t) => t.id)).toEqual(['A', 'B'])
     const { titles, states } = taskSummaries(tasks)
     expect(titles.get('A')).toBe('T A')
-    expect(states.get('B')).toEqual({ status: 'backlog', prUrl: 'https://pr' })
+    expect(states.get('B')).toEqual({ status: 'backlog', prsDone: true })
   })
 })
 

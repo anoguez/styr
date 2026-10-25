@@ -1,6 +1,13 @@
 import { branchNameFor } from './worktree.js'
-import { checkoutOf, type Checkout, type CheckoutGit, type Landing } from './taskCheckout.js'
-import type { Task, TaskStatus, WorktreeLocation } from './types.js'
+import {
+  checkoutOf,
+  checkoutsOf,
+  type Checkout,
+  type CheckoutGit,
+  type Landing,
+  type TaskRepoCheckout
+} from './taskCheckout.js'
+import type { ExtraRepo, Task, TaskStatus, WorktreeLocation } from './types.js'
 
 /** git is slow enough (~0.2s a task) that re-checking every kept worktree on each write froze the app. */
 export const LANDING_TTL_MS = 5 * 60_000
@@ -83,12 +90,23 @@ export interface LandingPorts {
 export type LandingTask = Pick<
   Task,
   'id' | 'status' | 'useWorktree' | 'repoPath' | 'worktreePath' | 'baseBranch' | 'activity'
->
+> & { extraRepos?: readonly ExtraRepo[] }
+
+/** Every repository a landing pass looks at for a task: the primary, then its extras. */
+export function taskRepoPaths(
+  task: Pick<LandingTask, 'repoPath' | 'extraRepos' | 'useWorktree'>
+): string[] {
+  return [
+    ...(task.repoPath ? [task.repoPath] : []),
+    ...(task.useWorktree ? (task.extraRepos ?? []).map((extra) => extra.repoPath) : [])
+  ]
+}
 
 /** One task-file change the caller performs, in order, through the task store. */
 export type LandingWrite =
   | { kind: 'status'; taskId: string; status: TaskStatus }
-  | { kind: 'clearWorktree'; taskId: string }
+  /** `extras`: the extra repositories' recorded worktrees are cleared too (a multi-repo task). */
+  | { kind: 'clearWorktree'; taskId: string; extras?: true }
   | { kind: 'note'; taskId: string; message: string }
 
 export interface LandingError {
@@ -134,11 +152,31 @@ export async function settleTasks(
   for (const task of tasks) {
     const { repoPath } = task
     if (!task.useWorktree || !repoPath) continue
-    if (task.status !== 'in_review' && !(task.status === 'done' && task.worktreePath)) continue
+    const extras = task.extraRepos ?? []
+    const hasWorktree = Boolean(task.worktreePath) || extras.some((extra) => extra.worktreePath)
+    if (task.status !== 'in_review' && !(task.status === 'done' && hasWorktree)) continue
     const checkout = checkoutOf(workspaceId, task, repoPath, worktreeLocation)
     const cacheKey = `${workspaceId}:${task.id}`
     const taskWrites: LandingWrite[] = []
     try {
+      if (extras.length > 0) {
+        const repos = countedRepos(
+          checkoutsOf(workspaceId, { ...task, repoPath }, worktreeLocation),
+          extras
+        )
+        const refs: string[] = []
+        for (const { checkout: repo } of repos) {
+          refs.push(refsFingerprint(await listingFor(repo.repoPath), repo.key, repo.baseBranch))
+        }
+        const paths = [task.worktreePath ?? '', ...extras.map((extra) => extra.worktreePath ?? '')]
+        const fingerprint = `${task.status}|${paths.join(',')}|${refs.join('||')}`
+        if (cache.isFresh(cacheKey, fingerprint)) continue
+        await settleMultiRepo(task, repos, git, taskWrites)
+        if (taskWrites.length > 0) cache.forget(cacheKey)
+        else cache.remember(cacheKey, fingerprint)
+        writes.push(...taskWrites)
+        continue
+      }
       const refs = refsFingerprint(await listingFor(repoPath), checkout.key, task.baseBranch)
       const fingerprint = `${task.status}|${task.worktreePath ?? ''}|${refs}`
       if (cache.isFresh(cacheKey, fingerprint)) continue
@@ -154,6 +192,101 @@ export async function settleTasks(
     writes.push(...taskWrites)
   }
   return { writes, errors }
+}
+
+/**
+ * The repositories a multi-repo task is measured on: the primary, and each extra that has a
+ * worktree. An extra that fell back to the plain repository has no recorded worktree and is not
+ * landable, so it neither counts toward Done nor blocks it.
+ */
+function countedRepos(
+  repos: readonly TaskRepoCheckout[],
+  extras: readonly ExtraRepo[]
+): TaskRepoCheckout[] {
+  return repos.filter((repo, index) => repo.role === 'primary' || extras[index - 1]?.worktreePath)
+}
+
+function commits(count: number): string {
+  return `${count} commit${count === 1 ? '' : 's'}`
+}
+
+/**
+ * A multi-repo task is Done only when every landable repository has landed. A repository with no
+ * commits of its own (the agent never touched it) has nothing to land and does not block, but the
+ * task needs at least one repository that really landed. Some landed and some not leaves it In
+ * Review with one note naming both sets; nothing is rolled back.
+ */
+async function settleMultiRepo(
+  task: LandingTask,
+  repos: readonly TaskRepoCheckout[],
+  git: CheckoutGit,
+  out: LandingWrite[]
+): Promise<void> {
+  if (task.status === 'in_review') {
+    const measured: { repo: TaskRepoCheckout; landing: Landing | undefined }[] = []
+    for (const repo of repos) {
+      measured.push({ repo, landing: await git.branchLanding(repo.checkout) })
+    }
+    const landed = measured.filter(({ landing }) => landing?.landed)
+    const blocking = measured.filter(
+      ({ landing }) => !landing?.landed && (!landing || landing.ahead > 0)
+    )
+    if (blocking.length > 0) {
+      if (landed.length === 0) return
+      const message = `Landed: ${landed.map(({ repo }) => repo.repoName).join(', ')}. Not landed: ${blocking
+        .map(({ repo, landing }) =>
+          landing
+            ? `${repo.repoName} (${commits(landing.ahead)} ahead of ${landing.base})`
+            : `${repo.repoName} (no task branch)`
+        )
+        .join(', ')}`
+      if (!isRepeatNote(task.activity, 'styr', message)) {
+        out.push({ kind: 'note', taskId: task.id, message })
+      }
+      return
+    }
+    if (landed.length === 0) return
+    out.push(
+      { kind: 'status', taskId: task.id, status: 'done' },
+      {
+        kind: 'note',
+        taskId: task.id,
+        message: `Work landed in every repository (${landed
+          .map(({ repo, landing }) => `${repo.repoName} on ${landing?.base}`)
+          .join(', ')}); moved to done.`
+      }
+    )
+    await cleanupAll(task, measured, git, out)
+    return
+  }
+  await cleanupAll(
+    task,
+    repos.map((repo) => ({ repo, landing: undefined })),
+    git,
+    out
+  )
+}
+
+/** Each repository is cleaned on its own: a refusal in one is a note and never blocks the rest. */
+async function cleanupAll(
+  task: LandingTask,
+  repos: readonly { repo: TaskRepoCheckout; landing: Landing | undefined }[],
+  git: CheckoutGit,
+  out: LandingWrite[]
+): Promise<void> {
+  const notes: string[] = []
+  let allDone = true
+  for (const { repo, landing } of repos) {
+    const result = await git.cleanupLandedTask(repo.checkout, landing)
+    if (!result.worktreeRemoved) allDone = false
+    notes.push(...result.notes.map((note) => `${repo.repoName}: ${note}`))
+  }
+  const recorded = Boolean(task.worktreePath) || (task.extraRepos ?? []).some((e) => e.worktreePath)
+  if (allDone && recorded) out.push({ kind: 'clearWorktree', taskId: task.id, extras: true })
+  const message = notes.join(' ')
+  if (message && !isRepeatNote(task.activity, 'styr', message)) {
+    out.push({ kind: 'note', taskId: task.id, message })
+  }
 }
 
 async function settle(
@@ -204,7 +337,9 @@ export const FETCH_THROTTLE_MS = 60_000
 export function reposAwaitingLanding(tasks: readonly LandingTask[]): string[] {
   const repos = new Set<string>()
   for (const task of tasks) {
-    if (task.status === 'in_review' && task.useWorktree && task.repoPath) repos.add(task.repoPath)
+    if (task.status === 'in_review' && task.useWorktree) {
+      for (const repo of taskRepoPaths(task)) repos.add(repo)
+    }
   }
   return [...repos]
 }

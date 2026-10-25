@@ -481,11 +481,12 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "array",
         "prefixItems": [
+          {},
           {}
         ],
         "items": false,
         "minItems": 1,
-        "maxItems": 1
+        "maxItems": 2
       }
     },
     "git:filePatch": {
@@ -496,11 +497,12 @@
         "prefixItems": [
           {},
           {},
+          {},
           {}
         ],
         "items": false,
         "minItems": 2,
-        "maxItems": 3
+        "maxItems": 4
       }
     },
     "git:diffStats": {

@@ -7,6 +7,7 @@ import { adapterFor, currentSources, runCommand, writableSource } from '@core/so
 import { openQuestions } from '@core/questions.js'
 import { requestReview, taskHandoff } from '@core/reviewRequest.js'
 import { MAX_SPLIT_CHILDREN, splitTask } from '@core/taskSplit.js'
+import { mergeExtraPrUrls } from '@core/taskPullRequests.js'
 import {
   addNote,
   answerQuestion,
@@ -50,6 +51,7 @@ function summarise(task: Task, open: string[] = blockedByOpen(task)): Record<str
     blockedBy: task.blockedBy,
     blockedByOpen: open,
     prUrl: task.prUrl,
+    ...(task.extraRepos.length > 0 ? { extraRepos: task.extraRepos } : {}),
     contextFiles: task.contextFiles,
     questions: task.questions,
     openQuestions: openQuestions(task).length,
@@ -154,7 +156,10 @@ server.registerTool(
       'Update any field of a task, including moving it to another board column. Set readiness to ' +
       '"ready" once a task is specified well enough to be worked on, or "needs_spec" when it is not. ' +
       'contextFiles replaces the task attachment list — absolute paths to files worth reading for ' +
-      'this task. prUrl is the link to the pull/merge request opened for the task, on any host. ' +
+      'this task. prUrl is the link to the pull/merge request opened for the task, on any host (for a task ' +
+      "that spans several repositories, the primary repository's). extraRepos records a PR for each other " +
+      'repository: entries are matched by repoPath and only their prUrl is applied; the list itself is never ' +
+      'replaced and repositories cannot be added or removed. ' +
       'baseBranch is the branch the task worktree starts from; it can only be changed before the ' +
       "worktree exists, and unset means the repository checkout's current branch. blockedBy lists the " +
       'ids of tasks in this workspace that must be Done before this one starts; it replaces the list ' +
@@ -172,10 +177,13 @@ server.registerTool(
       baseBranch: z.string().optional(),
       blockedBy: blockedByInput,
       contextFiles: z.array(z.string()).optional(),
-      prUrl: z.string().optional()
+      prUrl: z.string().optional(),
+      extraRepos: z
+        .array(z.object({ repoPath: z.string(), prUrl: z.string().optional() }))
+        .optional()
     }
   },
-  async ({ id, ...patch }) => {
+  async ({ id, extraRepos, ...patch }) => {
     const existing = getTask(id)
     if (
       existing?.worktreePath &&
@@ -184,7 +192,9 @@ server.registerTool(
     ) {
       throw new Error(`${id} already has a worktree, so its base branch can no longer change`)
     }
-    return json(summarise(updateTask(id, patch)))
+    const merged =
+      existing && extraRepos ? mergeExtraPrUrls(existing.extraRepos, extraRepos) : undefined
+    return json(summarise(updateTask(id, merged ? { ...patch, extraRepos: merged } : patch)))
   }
 )
 
@@ -252,11 +262,26 @@ server.registerTool(
         openQuestions: z.string().optional(),
         notes: z.string().optional()
       }),
-      prUrl: z.string().optional().describe('The pull/merge request, if one is open')
+      prUrl: z
+        .string()
+        .optional()
+        .describe(
+          "The pull/merge request, if one is open (the primary repository's, on a multi-repo task)"
+        ),
+      extraRepos: z
+        .array(z.object({ repoPath: z.string(), prUrl: z.string().optional() }))
+        .optional()
+        .describe("A multi-repo task's other repositories: each one's repoPath and its PR")
     }
   },
-  async ({ id, summary, prUrl }) => {
-    const { task, openQuestions: open } = requestReview({ id, summary, prUrl, author: AUTHOR })
+  async ({ id, summary, prUrl, extraRepos }) => {
+    const { task, openQuestions: open } = requestReview({
+      id,
+      summary,
+      prUrl,
+      extraRepos,
+      author: AUTHOR
+    })
     return json({ ...summarise(task), openQuestions: open })
   }
 )

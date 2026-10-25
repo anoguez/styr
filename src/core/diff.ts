@@ -52,6 +52,8 @@ export interface DiffStat {
   added: number
   removed: number
   files: number
+  /** A multi-repo task: the totals above are the sum of these, one per repository. */
+  repos?: { name: string; added: number; removed: number; files: number }[]
 }
 
 export type DiffResult = TaskDiff | { error: string }

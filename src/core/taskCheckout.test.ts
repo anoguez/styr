@@ -9,7 +9,13 @@ import {
   temporaryRepository
 } from './gitFixture.js'
 import { refsFingerprint } from './landing.js'
-import { checkoutGit, checkoutOf, taskCheckout, type TaskCheckout } from './taskCheckout.js'
+import {
+  checkoutGit,
+  checkoutOf,
+  checkoutsOf,
+  taskCheckout,
+  type TaskCheckout
+} from './taskCheckout.js'
 import { DEFAULT_WORKSPACE_ID } from './types.js'
 import { checkoutPath, ensureWorktree } from './worktree.js'
 
@@ -401,5 +407,121 @@ describe('diff stats', () => {
     expect(await checkout.diffStat()).toBeUndefined()
     ensureWorktree(checkout.checkout)
     expect(await checkout.diffStat()).toBeUndefined()
+  })
+})
+
+describe('checkoutsOf', () => {
+  const base = { id: 'TASK-0001', repoPath: '/work/api', baseBranch: 'main', useWorktree: true }
+
+  it('is the primary alone for a single-repo task', () => {
+    const repos = checkoutsOf(DEFAULT_WORKSPACE_ID, base)
+    expect(repos.map((repo) => [repo.role, repo.repoName])).toEqual([['primary', 'api']])
+    expect(repos[0]?.checkout).toEqual(checkoutOf(DEFAULT_WORKSPACE_ID, base, '/work/api'))
+  })
+
+  it('lists the extras after the primary, each with its own base and the same key', () => {
+    const repos = checkoutsOf(DEFAULT_WORKSPACE_ID, {
+      ...base,
+      extraRepos: [{ repoPath: '/work/client', baseBranch: 'release/2.x' }]
+    })
+    expect(repos.map((repo) => repo.role)).toEqual(['primary', 'extra'])
+    expect(repos[1]?.checkout.baseBranch).toBe('release/2.x')
+    expect(repos[1]?.checkout.key).toBe(repos[0]?.checkout.key)
+    expect(repos[1]?.checkout.repoPath).toBe('/work/client')
+  })
+
+  it('ignores extras without a worktree, and ignores a worktreePath that is not derivable', () => {
+    expect(
+      checkoutsOf(DEFAULT_WORKSPACE_ID, {
+        ...base,
+        useWorktree: false,
+        extraRepos: [{ repoPath: '/work/client' }]
+      })
+    ).toHaveLength(1)
+    const [, extra] = checkoutsOf(DEFAULT_WORKSPACE_ID, {
+      ...base,
+      extraRepos: [{ repoPath: '/work/client', worktreePath: '/elsewhere' }]
+    })
+    expect(extra?.checkout.location).toBe('beside')
+  })
+
+  it('names two repositories with one folder name by their parent', () => {
+    const repos = checkoutsOf(DEFAULT_WORKSPACE_ID, {
+      ...base,
+      repoPath: '/a/app',
+      extraRepos: [{ repoPath: '/b/app' }]
+    })
+    expect(repos.map((repo) => repo.repoName)).toEqual(['a/app', 'b/app'])
+  })
+
+  it('lets taskCheckout list every repository and keep the primary as itself', () => {
+    const task = taskCheckout(DEFAULT_WORKSPACE_ID, {
+      ...base,
+      extraRepos: [{ repoPath: '/work/client' }]
+    })
+    expect(task.repos).toHaveLength(2)
+    expect(task.checkout).toBe(task.repos[0]?.checkout)
+  })
+})
+
+describe('a multi-repo task in real repositories', () => {
+  function change(worktree: string, file: string): void {
+    writeFileSync(join(worktree, file), 'work\n')
+    runGit(['add', file], worktree)
+    runGit(['commit', '-m', `Add ${file}`], worktree)
+  }
+
+  it('diffs, patches and measures each repository on its own', async () => {
+    const api = temporaryRepository()
+    const client = temporaryRepository()
+    const task = {
+      id: 'TASK-0007',
+      repoPath: api,
+      useWorktree: true,
+      extraRepos: [{ repoPath: client }]
+    }
+    const opened = taskCheckout(DEFAULT_WORKSPACE_ID, task)
+    const [primary, extra] = opened.repos
+    if (!primary || !extra) throw new Error('expected two repositories')
+    const apiTree = ensureWorktree(primary.checkout).path
+    const clientTree = ensureWorktree(extra.checkout).path
+    change(apiTree, 'api.txt')
+    change(clientTree, 'client-a.txt')
+    change(clientTree, 'client-b.txt')
+
+    const launched = taskCheckout(DEFAULT_WORKSPACE_ID, {
+      ...task,
+      worktreePath: apiTree,
+      extraRepos: [{ repoPath: client, worktreePath: clientTree }]
+    })
+    const files = (repo: number): string[] => {
+      const diff = launched.repos[repo]?.diff()
+      return diff && 'files' in diff ? diff.files.map((file) => file.path).sort() : []
+    }
+    expect(files(0)).toEqual(['api.txt'])
+    expect(files(1)).toEqual(['client-a.txt', 'client-b.txt'])
+    expect(launched.repos[1]?.filePatch('client-a.txt')).toMatchObject({
+      patch: expect.stringContaining('+work')
+    })
+    // A file of the other repository is not in this repository's diff: no arbitrary reads.
+    expect(launched.repos[0]?.filePatch('client-a.txt')).not.toHaveProperty('patch')
+    expect(await launched.repos[1]?.diffStat()).toMatchObject({ files: 2 })
+  })
+
+  it('measures an extra that fell back to the plain repository as the repository itself', () => {
+    const api = temporaryRepository()
+    const client = temporaryRepository()
+    writeFileSync(join(client, 'loose.txt'), 'edit\n')
+    const launched = taskCheckout(DEFAULT_WORKSPACE_ID, {
+      id: 'TASK-0008',
+      repoPath: api,
+      useWorktree: true,
+      worktreePath: ensureWorktree(
+        taskCheckout(DEFAULT_WORKSPACE_ID, { id: 'TASK-0008', repoPath: api }).checkout
+      ).path,
+      extraRepos: [{ repoPath: client }]
+    })
+    const diff = launched.repos[1]?.diff()
+    expect(diff).toMatchObject({ kind: 'repo' })
   })
 })

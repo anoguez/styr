@@ -193,14 +193,28 @@ export function DiffStatButton({
   stat,
   onClick
 }: {
-  stat: { added: number; removed: number; files: number }
+  stat: {
+    added: number
+    removed: number
+    files: number
+    repos?: { name: string; added: number; removed: number; files: number }[]
+  }
   onClick: () => void
 }): ReactNode {
   const files = `${stat.files} ${stat.files === 1 ? 'file' : 'files'}`
+  // A multi-repo task: the totals above sum these, and the tooltip lists each.
+  const perRepo = stat.repos?.length
+    ? `\n${stat.repos
+        .map(
+          (repo) =>
+            `${repo.name}: ${repo.files} ${repo.files === 1 ? 'file' : 'files'} · +${repo.added} −${repo.removed}`
+        )
+        .join('\n')}`
+    : ''
   return (
     <button
       type="button"
-      title={`${files} changed · +${stat.added} −${stat.removed} — view changes`}
+      title={`${files} changed · +${stat.added} −${stat.removed} — view changes${perRepo}`}
       aria-label={`View changes: ${files}, +${stat.added} −${stat.removed}`}
       className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[10.5px] text-faint transition-colors hover:bg-raised hover:text-ink"
       onPointerDown={(event) => event.stopPropagation()}

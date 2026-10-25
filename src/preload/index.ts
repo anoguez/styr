@@ -122,7 +122,10 @@ const api = {
     /** The tray's pending request for the window, taken once (null when there is none). */
     takeCommand: (): Promise<TrayCommand | null> => ipcRenderer.invoke('app:takeCommand'),
     /** The tray has a request waiting: take it with `takeCommand`. */
-    onCommand: (handler: () => void): (() => void) => subscribe('app:command', handler)
+    onCommand: (handler: () => void): (() => void) => subscribe('app:command', handler),
+    /** The window entered or left native full screen (also sent after each load). */
+    onFullscreen: (handler: (full: boolean) => void): (() => void) =>
+      subscribe('window:fullscreen', handler as (...args: never[]) => void)
   },
   updates: {
     state: (): Promise<UpdateState> => ipcRenderer.invoke('updates:state'),
@@ -200,9 +203,11 @@ const api = {
     branches: (repoPath: string): Promise<{ branches: string[]; current?: string }> =>
       ipcRenderer.invoke('git:branches', repoPath),
     diffStats: (): Promise<Record<string, DiffStat>> => ipcRenderer.invoke('git:diffStats'),
-    taskDiff: (taskId: string): Promise<DiffResult> => ipcRenderer.invoke('git:taskDiff', taskId),
-    filePatch: (taskId: string, path: string, full = false): Promise<PatchResult> =>
-      ipcRenderer.invoke('git:filePatch', taskId, path, full)
+    /** `repo` is a repository of a multi-repo task (its `repoPath`); the primary when omitted. */
+    taskDiff: (taskId: string, repo?: string): Promise<DiffResult> =>
+      ipcRenderer.invoke('git:taskDiff', taskId, repo),
+    filePatch: (taskId: string, path: string, full = false, repo?: string): Promise<PatchResult> =>
+      ipcRenderer.invoke('git:filePatch', taskId, path, full, repo)
   },
   sources: {
     providers: (): Promise<{ provider: string; label: string }[]> =>

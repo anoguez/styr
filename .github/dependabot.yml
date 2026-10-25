@@ -8,3 +8,18 @@ updates:
       interval: weekly
     commit-message:
       prefix: ci
+  # A new npm release waits a week before Dependabot proposes it, so a hijacked-maintainer
+  # publish is usually caught and pulled first. Security updates ignore the cooldown.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: ci

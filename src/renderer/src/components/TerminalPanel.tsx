@@ -178,7 +178,7 @@ export function TerminalPanel({
   /** `experimental.nativeTerminal`: new terminals try Styr Terminal. */
   nativeTerminal: boolean
   taskTitles: ReadonlyMap<string, string>
-  taskStates: ReadonlyMap<string, { status: TaskStatus; prUrl?: string }>
+  taskStates: ReadonlyMap<string, { status: TaskStatus; prsDone: boolean }>
   /** Per-task change totals; a task with no changes has no entry. */
   diffStats: ReadonlyMap<string, DiffStat>
   onShowChanges: (taskId: string) => void
@@ -401,9 +401,9 @@ export function TerminalPanel({
                       ? taskStates.get(session.taskId)?.status
                       : undefined
                   }
-                  taskPrUrl={
+                  taskPrsDone={
                     session.taskId && session.workspaceId === workspaces.activeId
-                      ? taskStates.get(session.taskId)?.prUrl
+                      ? taskStates.get(session.taskId)?.prsDone
                       : undefined
                   }
                   diffStat={
