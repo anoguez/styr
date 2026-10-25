@@ -336,6 +336,7 @@ export const settingsSchema = z.object({
     })
     .default(DEFAULT_DONE_CAP),
   autoArchiveAsk: z.boolean().default(true),
+  remoteAccess: z.boolean().default(false),
   sources: z.array(sourceConfigSchema).default([])
 })
 

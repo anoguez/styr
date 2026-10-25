@@ -160,6 +160,11 @@ export interface Settings {
   doneCap: DoneCap
   /** Archive an Ask agent task when its terminal exits while it is still In Progress. */
   autoArchiveAsk: boolean
+  /**
+   * Whether devices paired under Settings → Remote access may open this workspace. Off by default;
+   * read by the network gate (`src/host/remoteAccess/gate.ts`), and ignored for an ssh remote stub.
+   */
+  remoteAccess: boolean
   sources: SourceConfig[]
 }
 
@@ -204,6 +209,7 @@ export const WORKSPACE_SETTING_KEYS = [
   'taskPresets',
   'doneCap',
   'autoArchiveAsk',
+  'remoteAccess',
   'sources'
 ] as const satisfies readonly (keyof Settings)[]
 

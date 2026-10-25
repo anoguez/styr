@@ -16,13 +16,14 @@ export const SECTIONS = [
       'taskDefaults',
       'doneCap',
       'autoArchiveAsk',
+      'remoteAccess',
       'defaultRepoPath',
       'shell',
       'openFilesWith',
       'worktreeLocation'
     ],
     words:
-      'done cap archive ask agent chats hide limit worktree location node_modules directory shell terminal orchestrate default preferences open editor app markdown'
+      'remote access share phone device done cap archive ask agent chats hide limit worktree location node_modules directory shell terminal orchestrate default preferences open editor app markdown'
   },
   {
     id: 'agents',
@@ -111,6 +112,17 @@ export const SECTIONS = [
     blurb: 'Separate boards, each with its own tasks, agents and settings.',
     keys: [],
     words: 'board'
+  },
+  {
+    id: 'remote-access',
+    label: 'Remote access',
+    scope: 'app',
+    blurb:
+      'Let devices you pair, such as a phone, use the workspaces you share. Reached over a private network only.',
+    // These controls act at once, like Remote hosts: nothing here waits for Save.
+    keys: [],
+    words:
+      'remote access phone mobile device pair qr tailscale network listen port token revoke awake sleep flutter app'
   },
   {
     id: 'remote',

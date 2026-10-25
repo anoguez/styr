@@ -6,6 +6,9 @@ import type { AgentConversation } from '../core/agentConversation.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type { TerminalBenchRecord } from '../core/terminalBench.js'
 import type {
+  AccessConfig,
+  AccessPairing,
+  AccessState,
   AgentCliReport,
   McpSetupReport,
   AppInfo,
@@ -274,6 +277,20 @@ const api = {
     disconnect: (host: string): Promise<void> => ipcRenderer.invoke('remote:disconnect', host),
     /** Starts the server if needed, then connects. */
     connect: (host: string): Promise<void> => ipcRenderer.invoke('remote:connect', host)
+  },
+  access: {
+    /** Settings → Remote access: the listener, the interfaces to pick from and the paired devices. */
+    state: (): Promise<AccessState> => ipcRenderer.invoke('access:state'),
+    onChanged: (handler: (state: AccessState) => void): (() => void) =>
+      subscribe('access:changed', handler as (...args: never[]) => void),
+    /** Switches the listener on or off, or moves it; a failure leaves it off with `error` set. */
+    configure: (patch: Partial<AccessConfig>): Promise<AccessState> =>
+      ipcRenderer.invoke('access:configure', patch),
+    /** The QR for one new device, good for two minutes and one use. */
+    pair: (): Promise<AccessPairing> => ipcRenderer.invoke('access:pair'),
+    cancelPair: (): Promise<void> => ipcRenderer.invoke('access:cancelPair'),
+    revoke: (deviceId: string): Promise<AccessState> =>
+      ipcRenderer.invoke('access:revoke', deviceId)
   },
   settings: {
     get: (workspaceId?: string): Promise<Settings> =>

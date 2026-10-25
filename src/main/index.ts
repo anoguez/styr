@@ -37,6 +37,7 @@ import { syncAppImageMcp } from './mcpEntry.js'
 import { onBroadcast } from './electronHost.js'
 import { createTray, destroyTray, setTrayAutoRun, watchWindow } from './tray.js'
 import { initUpdater } from './updater.js'
+import { registerAccessHandlers, startNetworkAccess, stopNetworkAccess } from './networkAccess.js'
 import { forgetContext, initUsage } from './usage.js'
 import { watchFullscreen } from './windowFullscreen.js'
 
@@ -214,6 +215,7 @@ app.whenReady().then(() => {
   tasksDir()
   syncIndex()
   registerIpcHandlers()
+  registerAccessHandlers()
   startRemoteWorkspaces()
   startAutoDispatch()
   installAppMenu()
@@ -265,6 +267,7 @@ app.whenReady().then(() => {
   createWindow()
   initUpdater()
   initUsage()
+  startNetworkAccess()
 
   // You merge a PR in the browser and come back: that is when to look for it. Throttled per repo.
   app.on('browser-window-focus', () => checkMergedOnFocus())
@@ -281,6 +284,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   destroyTray()
   stopRemoteWorkspaces()
+  stopNetworkAccess()
   freezeTerminalLayout()
   killAllSessions()
   void stopWatching()

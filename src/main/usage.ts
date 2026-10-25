@@ -1,8 +1,7 @@
-import { ipcMain as electronIpcMain } from 'electron'
 import { codexTranscript } from '@core/providers/codex.js'
 import { createUsage, watchFiles } from '@host/usage.js'
 import { electronHost } from './electronHost.js'
-import { remoteRouter, routedIpcMain } from './remote.js'
+import { remoteRouter } from './remote.js'
 import { findTask } from './taskIndex.js'
 import { sessionTask } from './terminal/ptyManager.js'
 
@@ -13,10 +12,7 @@ export { MAX_PROMPT_CHARS, sendApprovalAnswer, sendPrompt } from '@host/usage.js
  * index and the terminals. Main imports it through this path, which is the one the main-process
  * ordering tests mock.
  */
-/** Routed like `ipc.ts`'s handlers: a remote terminal's usage comes from its server. */
-const ipcMain = routedIpcMain(electronIpcMain)
-
-const usage = createUsage({
+export const usage = createUsage({
   broadcast: (channel, payload) => remoteRouter.fromLocal(channel, payload),
   appPaths: electronHost.appPaths,
   // A lambda: `ptyManager.ts` imports this module back, so its binding is read at call time.
@@ -36,21 +32,7 @@ export const agentPrompts = {
     usage.prompt(terminalId, text)
 }
 
-/** Serves the last reading and pushes each new one. */
+/** Pushes each new reading; the channels that serve them are in the shared table (`ipc.ts`). */
 export function initUsage(): void {
-  ipcMain.handle('usage:claude', () => usage.claudeUsage())
-  ipcMain.handle('usage:codex', (_event, terminalId: string) => usage.codexUsage(terminalId))
-  ipcMain.handle('usage:context', (_event, terminalId: string) => usage.context(terminalId))
-  ipcMain.handle('agent:conversation', (_event, terminalId: string) =>
-    usage.conversation(String(terminalId))
-  )
-  ipcMain.handle('agent:prompt', (_event, terminalId: string, text: unknown) =>
-    usage.prompt(String(terminalId), text)
-  )
-  ipcMain.handle(
-    'agent:approval',
-    (_event, terminalId: string, approvalId: string, optionId: string) =>
-      usage.approval(String(terminalId), String(approvalId), String(optionId))
-  )
   usage.start()
 }

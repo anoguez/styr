@@ -130,6 +130,19 @@ export function PreferencesSection({ draft, patch }: SectionProps): ReactNode {
           </CardRow>
         </Card>
       </div>
+      <div className="flex flex-col gap-2.5">
+        <span className="text-[12px] font-semibold text-dim">Remote access</span>
+        <Card>
+          <CardRow>
+            <SwitchRow
+              checked={draft.remoteAccess}
+              onChange={(remoteAccess) => patch({ remoteAccess })}
+              label="Allow remote clients to open this workspace"
+              hint="Devices paired under Remote access can list, open and use this workspace. Off, they cannot see it. A device that opens it moves this window to it too, as another window would, because Styr has one active workspace. Needs Settings → Remote access to be on."
+            />
+          </CardRow>
+        </Card>
+      </div>
       <Field
         label="Working directory"
         hint="Where agents run and where + Shell opens. Blank uses the storage folder."

@@ -14,11 +14,14 @@ Electron + React kanban board. See README.md for what it does and how to run it.
   for its channels, plus the desktop-only handlers `docs/architecture/host.md` lists.
 - `src/server/` is `styr serve`, the headless host for remote workspaces, run by plain Node.
   **`src/host/` and `src/server/` never import `electron`** (nor `src/main/`); ESLint and the
-  server build enforce it. The server answers the IPC channels under the same names, so a new
-  channel goes in `serverHost.ts` too, or in the desktop-only list in `src/server/channels.test.ts`,
-  and gets a route in the client router (`src/host/remote/channels.ts`). Every IPC handler is
+  server build enforce it. The channels both hosts answer are one table, `src/host/channelTable.ts`
+  (`ipc.ts` registers it, `styr serve` and the desktop's network listener serve it), so a new
+  shared channel goes there, or in the desktop-only list in `src/server/channels.test.ts`, and
+  gets a route in the client router (`src/host/remote/channels.ts`). Every IPC handler is
   registered on `routedIpcMain`, so a remote workspace's calls reach its server (see
-  `docs/architecture/remote.md`).
+  `docs/architecture/remote.md`). Devices on the network reach the same table through the gate in
+  `src/host/remoteAccess/gate.ts`; a new channel is open to them only while the active workspace
+  has `remoteAccess` on (`docs/architecture/remote-access.md`).
 - Markdown files under `<workspace folder>/tasks/` are the only source of truth. All writes go through
   `src/core/taskStore.ts`.
 - `src/host/taskIndex.ts` is a derived SQLite cache, written only by the main process. It must stay
@@ -48,6 +51,7 @@ notes are in `docs/architecture/` — read the one for the area you are changing
 | Terminal engines: xterm.js and experimental Styr Terminal, fallback, native package, release access               | `docs/architecture/terminal-engine.md` |
 | IPC contract test, Electron smoke and feature tests (`yarn test:smoke`), adding a step                            | `docs/architecture/testing.md`         |
 | Remote: `styr serve`, its JSON-RPC protocol, many clients; the client router, connection, reconnect               | `docs/architecture/remote.md`          |
+| Remote access: devices (a phone) reaching shared workspaces over a private network; pairing, the gate, the schema | `docs/architecture/remote-access.md`   |
 
 Keep this file under 300 lines. A new subsystem note goes in the matching file above, not here;
 add a line here only for a rule that must hold in every change.
