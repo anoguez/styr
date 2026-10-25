@@ -15,7 +15,8 @@ import {
 import type { DiffStat } from '@core/diff.js'
 import { DispatchingContext } from '../lib/dispatchRun.js'
 import { describeBlockers, useOpenBlockers } from '../lib/blockerContext.js'
-import { fileName } from '../lib/terminalPath.js'
+import { repoDisplayNames } from '@core/repoNames.js'
+import { PullRequestsDialog } from './PullRequestsDialog.js'
 import { Chip, DiffCount, DiffStatButton } from './ui.js'
 import { DispatchGlyph, dispatchToggleTitle } from './dispatchMark.js'
 
@@ -119,11 +120,16 @@ export function TaskCardBody({
   const stop = { onPointerDown: (e: SyntheticEvent) => e.stopPropagation() }
   const linkClass =
     'inline-flex shrink-0 items-center gap-[3px] whitespace-nowrap text-[var(--color-accent-text)] hover:underline'
+  const [prsOpen, setPrsOpen] = useState(false)
+  const repoNames = repoDisplayNames([
+    task.repoPath ?? '',
+    ...task.extraRepos.map((r) => r.repoPath)
+  ])
   const prLinks = [
-    ...(task.prUrl ? [{ name: 'PR', url: task.prUrl }] : []),
+    ...(task.prUrl ? [{ repo: repoNames[0] ?? '', url: task.prUrl }] : []),
     ...(task.useWorktree
-      ? task.extraRepos.flatMap((extra) =>
-          extra.prUrl ? [{ name: `PR · ${fileName(extra.repoPath)}`, url: extra.prUrl }] : []
+      ? task.extraRepos.flatMap((extra, index) =>
+          extra.prUrl ? [{ repo: repoNames[index + 1] ?? '', url: extra.prUrl }] : []
         )
       : [])
   ]
@@ -142,27 +148,21 @@ export function TaskCardBody({
         PR
       </a>
     ) : prLinks.length > 1 ? (
-      // A multi-repo task has a pull request per repository.
-      <details className="relative shrink-0" {...stop} onClick={(event) => event.stopPropagation()}>
-        <summary className={`${linkClass} cursor-pointer list-none`}>
-          <RefIcon name="pr" />
-          PRs ({prLinks.length})
-        </summary>
-        <div className="absolute left-0 top-full z-20 mt-1 flex min-w-[140px] flex-col gap-0.5 rounded-lg border border-edge bg-card p-1 shadow-lg">
-          {prLinks.map((link) => (
-            <a
-              key={link.url}
-              href={link.url}
-              target="_blank"
-              rel="noreferrer"
-              title={link.url}
-              className="whitespace-nowrap rounded-md px-2 py-1 text-[var(--color-accent-text)] hover:bg-raised"
-            >
-              {link.name}
-            </a>
-          ))}
-        </div>
-      </details>
+      // A multi-repo task has a pull request per repository: a dialog picks which to open.
+      <button
+        type="button"
+        title="Choose a pull request"
+        className={linkClass}
+        {...stop}
+        onClick={(event) => {
+          event.stopPropagation()
+          setPrsOpen(true)
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <RefIcon name="pr" />
+        PRs ({prLinks.length})
+      </button>
     ) : null
   const issueLink = task.externalRef?.url ? (
     <a
@@ -286,6 +286,12 @@ export function TaskCardBody({
         ) : null}
         {issueLink}
         {prLink}
+        {prsOpen
+          ? createPortal(
+              <PullRequestsDialog links={prLinks} onClose={() => setPrsOpen(false)} />,
+              document.body
+            )
+          : null}
         <span className="ml-auto flex shrink-0 items-center gap-2 font-mono">
           {files > 0 ? (
             <span className="inline-flex items-center gap-[3px]" title={`${files} context files`}>
