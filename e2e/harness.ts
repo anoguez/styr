@@ -15,8 +15,16 @@ import {
 
 /** Vite's stub for a Node builtin in renderer code: the window loads blank. */
 const EXTERNALIZED = /externalized for browser compatibility/i
-/** A failed IPC handler or an uncaught error in the main process. */
-const MAIN_ERROR = /Error occurred in handler|Uncaught|Unhandled/i
+/**
+ * A failed IPC handler, or the main process dying of something nobody caught (`uncaughtException`,
+ * `unhandledRejection`, Node's `UnhandledPromiseRejection`, Electron's "Uncaught Exception").
+ */
+export const MAIN_ERROR =
+  /Error occurred in handler|Uncaught|Unhandled|uncaughtException|unhandledRejection/i
+
+/** An error nobody handled; never excused by a step's `allowed` pattern. */
+const CRASH =
+  /uncaughtException|unhandledRejection|UnhandledPromiseRejection|Uncaught (Exception|Error)/i
 
 const root = resolve(__dirname, '..')
 
@@ -55,6 +63,8 @@ export interface StyrApp {
   /** Renderer errors since the last `expectNoErrors`. */
   errors: string[]
   mainLog: string[]
+  /** The main process output since launch: unlike `mainLog`, never cleared by a step. */
+  mainHistory: string[]
   /**
    * Fails on a renderer error, or a main-process error not matching `allowed` (a handler that is
    * meant to refuse, say). Clears both, so each step checks only its own.
@@ -68,9 +78,18 @@ export interface StyrApp {
 /** `extra` adds to the app's environment for this launch only (say, an experimental switch). */
 export async function launchStyr(
   name: string,
-  extra: Record<string, string> = {}
+  extra: Record<string, string> = {},
+  options: {
+    /** An existing profile to start on (a relaunch); `close()` then leaves it for the caller. */
+    home?: string
+    /** Leave the profile on disk at `close()`, for a relaunch on it (the caller removes it). */
+    keepHome?: boolean
+    /** Fills a fresh profile before the app first starts: a previous version's files. */
+    seed?: (home: string) => void
+  } = {}
 ): Promise<StyrApp> {
-  const home = mkdtempSync(join(tmpdir(), `styr-${name}-`))
+  const home = options.home ?? mkdtempSync(join(tmpdir(), `styr-${name}-`))
+  if (!options.home) options.seed?.(home)
   const env: Record<string, string | undefined> = {
     ...process.env,
     HOME: home,
@@ -88,9 +107,13 @@ export async function launchStyr(
   delete env.ELECTRON_RENDERER_URL
   const errors: string[] = []
   const mainLog: string[] = []
+  const mainHistory: string[] = []
   const app = await electron.launch({ ...appLaunch(home), env: env as Record<string, string> })
-  app.process().stderr?.on('data', (chunk) => mainLog.push(String(chunk)))
-  app.process().stdout?.on('data', (chunk) => mainLog.push(String(chunk)))
+  for (const stream of [app.process().stderr, app.process().stdout])
+    stream?.on('data', (chunk) => {
+      mainLog.push(String(chunk))
+      mainHistory.push(String(chunk))
+    })
   const page = await app.firstWindow().catch((error: Error) => {
     throw new Error(`${error.message}\n\nMain process output:\n${mainLog.join('')}`)
   })
@@ -113,16 +136,23 @@ export async function launchStyr(
     storageDir: join(home, 'Styr'),
     errors,
     mainLog,
+    mainHistory,
     expectNoErrors(allowed) {
       const main = mainLog
         .join('')
         .split('\n')
         .filter((line) => MAIN_ERROR.test(line) && !allowed?.test(line))
+      // Whatever a step allows, the process must not have crashed on an unhandled error.
+      const crashes = mainHistory
+        .join('')
+        .split('\n')
+        .filter((line) => CRASH.test(line))
       const renderer = [...errors]
       errors.length = 0
       mainLog.length = 0
       expect(renderer, 'renderer console errors').toEqual([])
       expect(main, 'main process errors').toEqual([])
+      expect(crashes, 'main process uncaught exceptions / unhandled rejections').toEqual([])
     },
     async attachOnFailure(testInfo) {
       if (testInfo.status === testInfo.expectedStatus) return
@@ -140,7 +170,7 @@ export async function launchStyr(
     },
     async close() {
       await app.close().catch(() => undefined)
-      rmSync(home, { recursive: true, force: true })
+      if (!options.home && !options.keepHome) rmSync(home, { recursive: true, force: true })
     }
   }
 }
