@@ -75,6 +75,16 @@ describe('a multi-repo launch', () => {
     expect(patch.extraRepos?.[0]?.worktreePath).toBe(plan.extraDirs[0]?.path)
   })
 
+  it('puts every worktree inside its repository when the workspace says so', () => {
+    const api = temporaryRepository()
+    const client = temporaryRepository()
+    const config = { ...settings(), worktreeLocation: 'inside' as const }
+    const plan = planLaunch(config, task(api, [{ repoPath: client }]), { provider: 'claude' })
+
+    expect(plan.worktreePath?.startsWith(join(api, '.styr', 'worktrees'))).toBe(true)
+    expect(plan.extraDirs[0]?.path.startsWith(join(client, '.styr', 'worktrees'))).toBe(true)
+  })
+
   it('lists the other repositories in the prompt file', () => {
     const api = temporaryRepository()
     const client = temporaryRepository()

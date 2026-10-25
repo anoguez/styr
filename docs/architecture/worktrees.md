@@ -95,3 +95,10 @@ the primary's (recorded by `launchPatch`, fixed once the worktree exists), and a
 - **PRs.** The primary's PR is the top-level `prUrl`; an extra's is `extraRepos[i].prUrl`. MCP
   `update_task` merges `extraRepos[].prUrl` by `repoPath` and never replaces the list. "Create PR"
   (`createPullRequestsPrompt`) asks for one PR per repo, each with its own base and branch.
+
+## Agents and worktrees
+
+Only `ensureWorktree` places a worktree, by `worktreeLocation`. The board protocol in `prompt.ts`
+tells an agent not to create a worktree or clone of its own for a repository the task does not
+list: one made by hand (`git worktree add ../x`) ignores the setting and is unknown to Styr's diff
+and landing. The owner adds the repository as an extra repo instead.
