@@ -469,9 +469,12 @@ export function registerIpcHandlers(): void {
     )
   }
   for (const [name, channel] of Object.entries(channelTable.send)) {
-    ipcMain.on(name, (_event, ...args: unknown[]) =>
-      channel.run(...(channel.args.parse(args) as never[]))
-    )
+    ipcMain.on(name, (_event, ...args: unknown[]) => {
+      // One-way: a bad call is dropped and logged, not thrown into the main process.
+      const parsed = channel.args.safeParse(args)
+      if (parsed.success) channel.run(...(parsed.data as never[]))
+      else console.warn(`Styr: ignored a bad ${name} call:`, parsed.error.message)
+    })
   }
 
   ipcMain.handle('tasks:reveal', (_event, id: string) => {

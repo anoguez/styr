@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http'
 import type { Socket } from 'node:net'
 import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 import type { AccessStore } from '@host/remoteAccess/accessStore.js'
-import { isPrivateAddress, proxyHeader } from '@host/remoteAccess/addresses.js'
+import { addressKind, isPrivateAddress, proxyHeader } from '@host/remoteAccess/addresses.js'
 import type { ClientPolicy } from '@host/remoteAccess/gate.js'
 import {
   HANDSHAKE_MAX_BYTES,
@@ -18,6 +18,8 @@ export const MAX_FRAME_BYTES = 8 * 1024 * 1024
 export const MAX_BUFFERED_BYTES = 32 * 1024 * 1024
 const MAX_HANDSHAKING = 16
 const MAX_PER_ADDRESS = 8
+/** Every device behind an ssh tunnel is 127.0.0.1, so loopback gets a larger share. */
+const MAX_PER_LOOPBACK = 32
 
 /** WebSocket close codes the listener uses (4000–4999 are for applications). */
 export const CLOSE = {
@@ -41,6 +43,8 @@ export interface NetworkListenerOptions {
   handshakeMs?: number
   /** Told how many devices are connected, each time it changes. */
   onConnections?(count: number): void
+  /** Count failures from loopback too (tests); a tunnel shares one address, so it is off. */
+  limitLoopback?: boolean
 }
 
 export interface NetworkListener {
@@ -52,6 +56,19 @@ export interface NetworkListener {
   /** Ends every connection of a device. */
   disconnectDevice(deviceId: string, code?: number): void
   close(): Promise<void>
+}
+
+/**
+ * Tunnelled devices share one source address, and a local process could lock them all out with
+ * failed handshakes. Failures from loopback are logged but not counted: sign-in is a signature,
+ * not a password, so there is nothing to guess.
+ */
+const isLoopback = (source: string): boolean => addressKind(source) === 'loopback'
+
+/** One signed-in connection, as the device registry holds it. */
+interface Session {
+  /** Stops listening to the peer at once, then closes (and, if it will not, cuts) the socket. */
+  end(code: number, reason: string): void
 }
 
 /** The source address of a request, as the socket saw it. */
@@ -69,10 +86,12 @@ export async function startNetworkListener(
   port: number
 ): Promise<NetworkListener> {
   const now = options.now ?? Date.now
+  const countsFailures = (source: string): boolean =>
+    options.limitLoopback === true || !isLoopback(source)
   const limiter = createFailureLimiter({ max: 5, windowMs: 60_000, now })
   const wss = new WebSocketServer({ noServer: true, maxPayload: HANDSHAKE_MAX_BYTES })
   const sockets = new Set<Socket>()
-  const byDevice = new Map<string, Set<WebSocket>>()
+  const byDevice = new Map<string, Set<Session>>()
   const perAddress = new Map<string, number>()
   let handshaking = 0
   let connected = 0
@@ -112,7 +131,10 @@ export async function startNetworkListener(
     if (request.headers.origin !== undefined) return refuse('403 Forbidden', 'browser origin')
     const path = (request.url ?? '').split('?')[0]
     if (path !== '/' && path !== '/ws') return refuse('404 Not Found', 'unknown path')
-    if (handshaking >= MAX_HANDSHAKING || (perAddress.get(source) ?? 0) >= MAX_PER_ADDRESS) {
+    if (
+      handshaking >= MAX_HANDSHAKING ||
+      (perAddress.get(source) ?? 0) >= (isLoopback(source) ? MAX_PER_LOOPBACK : MAX_PER_ADDRESS)
+    ) {
       return refuse('429 Too Many Requests', 'too many open connections')
     }
     wss.handleUpgrade(request, socket, head, (ws) => accept(ws, source))
@@ -125,17 +147,30 @@ export async function startNetworkListener(
     let deviceId = ''
     let connection: ReturnType<Hub['connect']> | undefined
     const handshake = createServerHandshake({ store: options.store, protocol: options.protocol })
+    /**
+     * Ends the session now: nothing the peer sends after this reaches the hub (a peer that ignores
+     * the close frame would otherwise keep calling until `ws` gives up), and the socket is cut
+     * if it does not close itself.
+     */
+    function end(code: number, reason: string): void {
+      if (phase === 'closed') return
+      phase = 'closed'
+      connection?.close()
+      ws.close(code, reason)
+      setTimeout(() => ws.terminate(), 1000).unref()
+    }
+    const session: Session = { end: (code, reason) => end(code, reason) }
     const timeout = setTimeout(() => {
       options.log(`Remote access: ${source} did not finish the handshake`)
-      limiter.fail(source)
-      ws.close(CLOSE.TIMEOUT, 'timeout')
+      if (countsFailures(source)) limiter.fail(source)
+      end(CLOSE.TIMEOUT, 'timeout')
     }, options.handshakeMs ?? HANDSHAKE_TIMEOUT_MS)
     let alive = true
     const ping = setInterval(() => {
       if (phase !== 'open') return
       // Removed from another process (the CLI): this process's store has not heard.
       options.store.reload()
-      if (!options.store.hasDevice(deviceId)) return ws.close(CLOSE.REVOKED, 'removed')
+      if (!options.store.hasDevice(deviceId)) return end(CLOSE.REVOKED, 'removed')
       if (!alive) return ws.terminate()
       alive = false
       ws.ping()
@@ -146,9 +181,10 @@ export async function startNetworkListener(
 
     ws.on('message', (data: RawData, isBinary: boolean) => {
       alive = true
+      if (phase === 'closed') return
       if (isBinary) {
-        if (phase === 'handshake') limiter.fail(source)
-        return ws.close(CLOSE.BAD_REQUEST, 'text frames only')
+        if (phase === 'handshake' && countsFailures(source)) limiter.fail(source)
+        return end(CLOSE.BAD_REQUEST, 'text frames only')
       }
       const text = rawToString(data)
       if (phase === 'open') {
@@ -160,9 +196,8 @@ export async function startNetworkListener(
       for (const message of outcome.messages) ws.send(JSON.stringify(message))
       if (outcome.kind === 'denied') {
         options.log(`Remote access: refused ${source} (${outcome.reason})`)
-        limiter.fail(source)
-        phase = 'closed'
-        ws.close(CLOSE.UNAUTHORIZED, 'unauthorized')
+        if (countsFailures(source)) limiter.fail(source)
+        end(CLOSE.UNAUTHORIZED, 'unauthorized')
         return
       }
       if (outcome.kind === 'ready') {
@@ -180,10 +215,11 @@ export async function startNetworkListener(
       // Past the handshake the frame limit is the session's, not the handshake's.
       const receiver = (ws as unknown as { _receiver?: { _maxPayload: number } })._receiver
       if (receiver) receiver._maxPayload = MAX_FRAME_BYTES
-      const sessions = byDevice.get(id) ?? new Set<WebSocket>()
-      sessions.add(ws)
+      const sessions = byDevice.get(id) ?? new Set<Session>()
+      sessions.add(session)
       byDevice.set(id, sessions)
       connected++
+      counted = true
       options.store.touch(id)
       options.log(
         `Remote access: ${paired ? 'paired and connected' : 'connected'} ${id} from ${source}`
@@ -197,10 +233,13 @@ export async function startNetworkListener(
     }
 
     let handshakeCounted = true
+    /** Counted in `connected` since `open()`. */
+    let counted = false
     ws.on('close', () => {
       clearTimeout(timeout)
       clearInterval(ping)
-      const wasOpen = phase === 'open'
+      const wasOpen = counted
+      counted = false
       phase = 'closed'
       if (handshakeCounted) handshaking--
       handshakeCounted = false
@@ -210,7 +249,7 @@ export async function startNetworkListener(
       connection?.close()
       if (!wasOpen) return
       const sessions = byDevice.get(deviceId)
-      sessions?.delete(ws)
+      sessions?.delete(session)
       if (sessions?.size === 0) byDevice.delete(deviceId)
       connected--
       options.onConnections?.(connected)
@@ -244,7 +283,7 @@ export async function startNetworkListener(
     connections: () => connected,
     connectedDevices: () => [...byDevice.keys()],
     disconnectDevice(deviceId, code = CLOSE.REVOKED) {
-      for (const ws of [...(byDevice.get(deviceId) ?? [])]) ws.close(code, 'removed')
+      for (const session of [...(byDevice.get(deviceId) ?? [])]) session.end(code, 'removed')
     },
     close() {
       unsubscribe()

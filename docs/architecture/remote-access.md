@@ -33,7 +33,9 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   the user's network: Tailscale, or an ssh tunnel to loopback. No UPnP, relay or hole punching.
 - **No hub traffic before the handshake.** An unauthenticated peer never reaches `hub.connect`.
   Five failed handshakes from one address in a minute turn that address away (429) for the rest of
-  the minute; every refusal is logged.
+  the minute; every refusal is logged. Loopback is not counted (every ssh-tunnelled device shares
+  127.0.0.1, and sign-in is a signature, so there is nothing to guess) and gets a larger
+  connection cap.
 - **No TLS in v1.** The handshake keeps every reusable credential off the wire instead (below). Encryption beyond
   the private network (Tailscale's WireGuard, an ssh tunnel) is a follow-up.
 - **Network clients get a narrower API** (`gate.ts`): no desktop-only channels, no `remote:*`,
@@ -155,9 +157,13 @@ by the gate is JSON-RPC error `-32001`.
   open on the desktop.
 - **Secrets are not sent.** Settings answers and `settings:changed` show REST sources' header
   values and bodies as `[hidden]`; a save that sends `[hidden]` back keeps the stored value.
-  Shell and agent commands are shown: a paired device can already run anything in a terminal.
-- Broadcasts: board events reach a device only while the active workspace is open;
-  `terminal:runtimeState` / `terminal:exit` only for open terminals; `terminal:data` only for
+  The stored values are restored only while the source keeps its URL and method, so a device cannot
+  point a source at its own host and have the secrets sent there. This is a courtesy, not a
+  boundary: a paired device can already run anything in a terminal, so shell and agent commands are
+  shown and a determined device can read `settings.json`.
+- Broadcasts: only events named in `gate.ts` are sent at all. Board events reach a device only while the active workspace is open;
+  `terminal:runtimeState`, `agent:conversation` and `usage:context` only for open terminals
+  (`terminal:exit` also reaches a device that was attached to it); `terminal:data` only for
   terminals it attached to; `settings:changed` always, but reduced to `{ remoteAccess: false }`
   once the workspace stopped being shared. `server:notify` and the desktop's own events never.
 - Unsharing a workspace: the hub re-checks on `settings:changed` / `workspaces:changed`

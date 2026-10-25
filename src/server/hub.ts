@@ -211,7 +211,15 @@ export function createHub(ports: HubPorts) {
 
   function broadcast(channel: string, payload?: unknown): void {
     for (const client of clients) {
-      const seen = client.policy ? client.policy.broadcast(channel, payload) : { payload }
+      // The session is gone from the host by now, so the gate cannot place it: a device that was
+      // attached to the terminal is told it ended.
+      const ended =
+        channel === 'terminal:exit' && client.attached.has((payload as { id?: string })?.id ?? '')
+      const seen = ended
+        ? { payload }
+        : client.policy
+          ? client.policy.broadcast(channel, payload)
+          : { payload }
       if (!seen) continue
       client.peer.notify(channel, seen.payload === undefined ? [] : [seen.payload])
     }

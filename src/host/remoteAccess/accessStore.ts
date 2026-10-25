@@ -83,26 +83,45 @@ export interface AccessStorePorts {
  * public keys and this install's key pair. It is not in the settings, because those reach the
  * renderer and, over the wire, the clients.
  */
+/** Drops C0 and C1 control characters. */
+function stripControls(text: string): string {
+  return [...text]
+    .filter((char) => {
+      const code = char.codePointAt(0)!
+      return code > 0x1f && (code < 0x7f || code > 0x9f)
+    })
+    .join('')
+}
+
 export function createAccessStore(ports: AccessStorePorts) {
-  let file = read()
+  let file = read() ?? fileSchema.parse({})
   let offer: PairingOffer | undefined
   const listeners = new Set<() => void>()
   const revokedListeners = new Set<(deviceId: string) => void>()
 
-  function read(): StoreFile {
+  /** The file's content; undefined when it exists but cannot be read now (a hand edit, EMFILE). */
+  function read(): StoreFile | undefined {
+    let text: string
     try {
-      const parsed = fileSchema.safeParse(JSON.parse(readFileSync(ports.path, 'utf8')))
-      if (parsed.success) return parsed.data
-    } catch {
-      // Missing or unreadable: start empty. A new key pair means phones must pair again, which
-      // is the safe outcome of a lost file.
+      text = readFileSync(ports.path, 'utf8')
+    } catch (error) {
+      // A missing file is a fresh install; anything else may pass, so it must not look empty.
+      return (error as NodeJS.ErrnoException).code === 'ENOENT' ? fileSchema.parse({}) : undefined
     }
-    return fileSchema.parse({})
+    try {
+      const parsed = fileSchema.safeParse(JSON.parse(text))
+      return parsed.success ? parsed.data : undefined
+    } catch {
+      return undefined
+    }
   }
 
   /** Picks up another process's change to the file (a device removed with the CLI). */
   function reload(): void {
     const latest = read()
+    // Unreadable right now: keep what this process knows rather than treat it as empty, which
+    // would close every device and write an empty list over the real one.
+    if (!latest) return
     // The pairing offer and an unsaved key are this process's own; only devices and config move.
     file = { ...latest, hostKey: latest.hostKey ?? file.hostKey }
   }
@@ -176,12 +195,14 @@ export function createAccessStore(ports: AccessStorePorts) {
       file.devices.find((device) => device.id === deviceId)?.publicKey,
 
     addDevice(name: string, publicKey: string): DeviceView {
+      reload()
       if (file.devices.length >= MAX_DEVICES) {
         throw new Error('Too many paired devices. Remove one first.')
       }
       const device: DeviceRecord = {
         id: randomBytes(9).toString('hex'),
-        name: name.trim().slice(0, 100) || 'Device',
+        // Control characters would reach the owner's terminal through `styr serve devices`.
+        name: stripControls(name).trim().slice(0, 100) || 'Device',
         publicKey,
         createdAt: new Date(ports.now()).toISOString()
       }
@@ -193,6 +214,7 @@ export function createAccessStore(ports: AccessStorePorts) {
     },
 
     touch(deviceId: string): void {
+      reload()
       const at = new Date(ports.now()).toISOString()
       file = {
         ...file,
@@ -205,6 +227,7 @@ export function createAccessStore(ports: AccessStorePorts) {
     },
 
     revoke(deviceId: string): boolean {
+      reload()
       if (!file.devices.some((device) => device.id === deviceId)) return false
       file = { ...file, devices: file.devices.filter((device) => device.id !== deviceId) }
       save()

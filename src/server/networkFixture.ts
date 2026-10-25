@@ -121,7 +121,8 @@ export async function listenOnLoopback(
       log: (message) => host.state.log.push(message),
       now: () => host.state.clock,
       pingMs: extra.pingMs,
-      handshakeMs: extra.handshakeMs
+      handshakeMs: extra.handshakeMs,
+      limitLoopback: true
     },
     '127.0.0.1',
     0

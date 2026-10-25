@@ -38,7 +38,14 @@ export const HIDDEN = '[hidden]'
 
 interface SourceLike {
   id?: string
-  rest?: { request?: { headers?: { name?: string; value?: string }[]; body?: string } }
+  rest?: {
+    request?: {
+      url?: string
+      method?: string
+      headers?: { name?: string; value?: string }[]
+      body?: string
+    }
+  }
 }
 
 /**
@@ -83,7 +90,11 @@ function restoreSecrets(change: unknown, stored: SourceLike[]): unknown {
       sources: sources.map((source) => {
         const request = source.rest?.request
         if (!source.rest || !request) return source
-        const before = stored.find((entry) => entry.id === source.id)?.rest?.request
+        const known = stored.find((entry) => entry.id === source.id)?.rest?.request
+        // Secrets go back only to the request they were stored for: a device that points the
+        // source at its own URL must not be able to have them sent there.
+        const before =
+          known && known.url === request.url && known.method === request.method ? known : undefined
         return {
           ...source,
           rest: {
@@ -226,7 +237,23 @@ export const CLASSIFIED_CHANNELS: ReadonlySet<string> = new Set([
 ])
 
 /** Broadcasts that describe the board and so need the active workspace shared. */
-const SESSION_BROADCASTS = new Set(['terminal:runtimeState', 'terminal:exit'])
+const SESSION_BROADCASTS = new Map([
+  ['terminal:runtimeState', 'id'],
+  ['terminal:exit', 'id'],
+  ['agent:conversation', 'terminalId'],
+  ['usage:context', 'terminalId']
+])
+/** Events about the active board. Any broadcast not named here or above is not sent to devices. */
+const BOARD_BROADCASTS = new Set([
+  'tasks:changed',
+  'agents:changed',
+  'review:changed',
+  'sources:state',
+  'orchestrate:autoState',
+  'orchestrate:autoStarted',
+  'usage:claude',
+  'tasks:activate'
+])
 /** Events of the desktop window itself: the tray's command, the updater, ssh hosts, native frames. */
 const DESKTOP_BROADCASTS = /^(remote|updates|access|app|terminal:native):?/
 const ALWAYS_BROADCAST = new Set(['workspaces:changed', 'workspaces:activity', 'settings:changed'])
@@ -382,12 +409,13 @@ export function createNetworkPolicy(ports: GatePorts): ClientPolicy {
         // is told only that, not the settings of a workspace it may no longer see.
         return { payload: activeOpen() ? redactSettings(payload) : { remoteAccess: false } }
       }
-      if (SESSION_BROADCASTS.has(channel)) {
-        const id = (payload as { id?: unknown } | undefined)?.id
+      const field = SESSION_BROADCASTS.get(channel)
+      if (field) {
+        const id = (payload as Record<string, unknown> | undefined)?.[field]
         return typeof id === 'string' && sessionOpen(id) ? { payload } : null
       }
       if (ALWAYS_BROADCAST.has(channel)) return { payload }
-      return activeOpen() ? { payload } : null
+      return BOARD_BROADCASTS.has(channel) && activeOpen() ? { payload } : null
     },
 
     terminal: sessionOpen

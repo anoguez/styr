@@ -215,6 +215,32 @@ describe('network listener', () => {
     await expect(impostor.authenticate(credentials)).resolves.toBe(false)
   })
 
+  it('stops listening to a revoked device at once, even if it ignores the close', async () => {
+    const credentials = await pairDevice()
+    const device = phone()
+    await device.opened()
+    await device.authenticate(credentials)
+    device.rpc()
+    expect(host.hub.clientCount()).toBe(1)
+    store.revoke(credentials.deviceId)
+    // Immediately, before any close handshake could finish: the hub no longer has the client.
+    expect(host.hub.clientCount()).toBe(0)
+  })
+
+  it('tells a device that the terminal it was attached to ended', async () => {
+    const credentials = await pairDevice()
+    const device = phone()
+    await device.opened()
+    await device.authenticate(credentials)
+    const { peer, pushed } = device.rpc()
+    await peer.request('terminal:attach', ['t-open'])
+    // The host has already forgotten the session when its exit is announced.
+    host.state.sessions.delete('t-open')
+    host.hub.broadcast('terminal:exit', { id: 't-open', exitCode: 0 })
+    await tick()
+    expect(pushed.filter(([method]) => method === 'terminal:exit')).toHaveLength(1)
+  })
+
   it('ends a revoked device’s live connection', async () => {
     const credentials = await pairDevice()
     const device = phone()

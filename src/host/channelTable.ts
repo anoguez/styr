@@ -243,10 +243,10 @@ export function createChannelTable(services: ChannelServices): {
       agentsService.askForPullRequest(taskId)
     ),
     'terminal:askReview': channel(z.tuple([str]), (taskId) => agentsService.askReview(taskId)),
-    'terminal:askFork': channel(z.tuple([str, z.string().optional()]), (sessionId, question) =>
+    'terminal:askFork': channel(z.tuple([str, z.string().nullish()]), (sessionId, question) =>
       agentsService.askFork(sessionId, question ?? '')
     ),
-    'terminal:handOff': channel(z.tuple([str, z.string().optional()]), (sessionId, output) =>
+    'terminal:handOff': channel(z.tuple([str, z.string().nullish()]), (sessionId, output) =>
       agentsService.handOff(sessionId, output ?? '')
     ),
     'terminal:gitContext': channel(z.tuple([str]), (path) => gitService.gitContext(path)),

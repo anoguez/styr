@@ -232,8 +232,6 @@ describe('network policy: broadcasts', () => {
     'orchestrate:autoState',
     'orchestrate:autoStarted',
     'usage:claude',
-    'usage:context',
-    'agent:conversation',
     'tasks:activate'
   ]
 
@@ -274,6 +272,23 @@ describe('network policy: broadcasts', () => {
     }
     expect(policy.terminal('t-open')).toBe(true)
     expect(policy.terminal('t-closed')).toBe(false)
+  })
+
+  it('filters conversations and context by the terminal they belong to', () => {
+    const { policy } = setup()
+    for (const channel of ['agent:conversation', 'usage:context']) {
+      const open = { terminalId: 't-open', x: 1 }
+      expect(policy.broadcast(channel, open)).toEqual({ payload: open })
+      expect(policy.broadcast(channel, { terminalId: 't-closed' })).toBeNull()
+      expect(policy.broadcast(channel, { terminalId: 't-shell' })).toBeNull()
+      expect(policy.broadcast(channel, { terminalId: 't-missing' })).toBeNull()
+      expect(policy.broadcast(channel, {})).toBeNull()
+    }
+  })
+
+  it('sends nothing it has not been told about', () => {
+    const { policy } = setup()
+    expect(policy.broadcast('some:newEvent', { secret: 1 })).toBeNull()
   })
 
   it('filters the switcher’s broadcasts', () => {
@@ -404,6 +419,27 @@ describe('network policy: shells and secrets', () => {
       }
     ]) as [{ workspace: { sources: (typeof rest)[] } }]
     expect(forged.workspace.sources[0]?.rest.request.headers[0]?.value).toBe('')
+    // Pointing the source at another URL must not carry its stored secrets there.
+    const [moved] = withSources.params('settings:save', [
+      {
+        workspaceId: 'open',
+        workspace: {
+          sources: [
+            {
+              ...rest,
+              rest: {
+                request: {
+                  ...(shown.sources[0] as typeof rest).rest.request,
+                  url: 'https://attacker.test'
+                }
+              }
+            }
+          ]
+        },
+        global: {}
+      }
+    ]) as [{ workspace: { sources: (typeof rest)[] } }]
+    expect(JSON.stringify(moved)).not.toContain('sk-secret')
     expect(withSources.params('tasks:list', ['x'])).toEqual(['x'])
   })
 })
