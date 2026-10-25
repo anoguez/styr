@@ -43,12 +43,29 @@ function taskFile(workspaceId: string, taskId: string): string {
 const readTask = (workspaceId: string, taskId: string): string =>
   readFileSync(taskFile(workspaceId, taskId), 'utf8')
 
-/** The pid and every descendant of it, from `ps`. */
-function processTree(root: number): number[] {
-  const rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+/** Every process as `[pid, ppid]`: `ps` on macOS and Linux, CIM on Windows (which has no `ps`). */
+function processTable(): [number, number][] {
+  const output =
+    process.platform === 'win32'
+      ? execFileSync(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-Command',
+            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }'
+          ],
+          { encoding: 'utf8' }
+        )
+      : execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+  return output
     .trim()
-    .split('\n')
+    .split(/\r?\n/)
     .map((line) => line.trim().split(/\s+/).map(Number) as [number, number])
+}
+
+/** The pid and every descendant of it. */
+function processTree(root: number): number[] {
+  const rows = processTable()
   const tree = [root]
   for (let i = 0; i < tree.length; i++)
     for (const [pid, ppid] of rows) if (ppid === tree[i] && !tree.includes(pid)) tree.push(pid)
