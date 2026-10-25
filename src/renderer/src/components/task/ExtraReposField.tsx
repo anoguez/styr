@@ -160,6 +160,17 @@ function ExtraRepoRow({
           )}
         </div>
       ) : null}
+      {repo.worktreePath || repo.prUrl ? (
+        <input
+          aria-label="Pull request URL"
+          type="url"
+          value={repo.prUrl ?? ''}
+          placeholder="Pull request link (none yet)"
+          title="Optional link to this repository's pull or merge request, on any host"
+          onChange={(event) => onChange({ prUrl: event.target.value || undefined })}
+          className="ml-2 h-6 min-w-0 rounded-[5px] border border-transparent bg-transparent px-1.5 font-mono text-[11px] text-ink outline-none placeholder:text-faint hover:border-edge focus:border-accent focus:bg-chrome"
+        />
+      ) : null}
       {problem ? (
         <span className="pl-2 text-[11px] leading-[1.4] text-[var(--color-col-review-text)]">
           {problem}

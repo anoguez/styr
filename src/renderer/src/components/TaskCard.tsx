@@ -16,7 +16,7 @@ import type { DiffStat } from '@core/diff.js'
 import { DispatchingContext } from '../lib/dispatchRun.js'
 import { describeBlockers, useOpenBlockers } from '../lib/blockerContext.js'
 import { prMenuLabel } from '../lib/prLabel.js'
-import { repoDisplayNames } from '@core/repoNames.js'
+import { taskPullRequests } from '@core/taskPullRequests.js'
 import { Chip, DiffCount, DiffStatButton } from './ui.js'
 import { DispatchGlyph, dispatchToggleTitle } from './dispatchMark.js'
 
@@ -121,18 +121,7 @@ export function TaskCardBody({
   const linkClass =
     'inline-flex shrink-0 items-center gap-[3px] whitespace-nowrap text-[var(--color-accent-text)] hover:underline'
   const [prMenu, setPrMenu] = useState<{ x: number; y: number } | null>(null)
-  const repoNames = repoDisplayNames([
-    task.repoPath ?? '',
-    ...task.extraRepos.map((r) => r.repoPath)
-  ])
-  const prLinks = [
-    ...(task.prUrl ? [{ repo: repoNames[0] ?? '', url: task.prUrl }] : []),
-    ...(task.useWorktree
-      ? task.extraRepos.flatMap((extra, index) =>
-          extra.prUrl ? [{ repo: repoNames[index + 1] ?? '', url: extra.prUrl }] : []
-        )
-      : [])
-  ]
+  const prLinks = taskPullRequests(task)
   const prLink =
     prLinks.length === 1 ? (
       <a

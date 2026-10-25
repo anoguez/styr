@@ -19,6 +19,12 @@ itself.
 files like every other field. `TaskPatch` may change which repositories a task has only before the
 first launch; `updateTask` throws once a worktree exists.
 
+**Pull requests.** The primary repository's is the top-level `prUrl`, an extra's is its own
+`extraRepos[].prUrl`. Anything that shows or counts a task's pull requests asks
+`taskPullRequests` / `hasAllPullRequests` (`core/taskPullRequests.ts`, pure): the card (a plain link
+for one, a menu labelled `#100 - repo` for several), the Inbox's "PRs ready" count, and the
+terminal's Create PR button, which stays while any repository still lacks one.
+
 ## Task dependencies
 
 `Task.blockedBy` is a list of same-workspace task ids (ids repeat across workspaces, so there is no
