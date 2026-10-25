@@ -236,17 +236,17 @@ test('smoke', async () => {
     await expect(column('In Progress').getByText('Smoke task edited')).toBeVisible()
     await expect.poll(() => readTask('default', 'TASK-0001')).toMatch(/^status: in_progress$/m)
 
-    // And on to In Review by dragging the card. It is grabbed at the left of its title: the hover
-    // actions cover the rest and swallow the pointer. The board uses `closestCorners`, which
-    // averages the four corner distances, so a tall empty column only wins over the card's own
-    // slot when the card sits near the column's middle. It is dropped centred in the column.
+    // And on to In Review by dragging the card. It is grabbed at its id (TASK-0001), bottom left:
+    // the hover actions cover the title on a narrow card (the board shares a 1024 px window with
+    // the Agents panel on the macOS and Windows runners) and swallow the pointer. The board uses
+    // `closestCorners`, which averages the four corner distances, so a tall empty column only wins
+    // over the card's own slot when the card sits near the column's middle. It is dropped centred
+    // in the column.
     const cardBox = await card('Smoke task edited').boundingBox()
-    const title = await card('Smoke task edited')
-      .getByText('Smoke task edited', { exact: true })
-      .boundingBox()
+    const id = await card('Smoke task edited').getByText('TASK-0001', { exact: true }).boundingBox()
     const to = await column('In Review').locator('> div').boundingBox()
-    if (!cardBox || !title || !to) throw new Error('card or column not laid out')
-    const grab = { x: title.x + 8, y: title.y + title.height / 2 }
+    if (!cardBox || !id || !to) throw new Error('card or column not laid out')
+    const grab = { x: id.x + 8, y: id.y + id.height / 2 }
     await page.mouse.move(grab.x, grab.y)
     await page.mouse.down()
     await page.mouse.move(grab.x + 12, grab.y, { steps: 5 })
