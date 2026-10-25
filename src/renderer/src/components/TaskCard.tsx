@@ -16,7 +16,6 @@ import type { DiffStat } from '@core/diff.js'
 import { DispatchingContext } from '../lib/dispatchRun.js'
 import { describeBlockers, useOpenBlockers } from '../lib/blockerContext.js'
 import { repoDisplayNames } from '@core/repoNames.js'
-import { PullRequestsDialog } from './PullRequestsDialog.js'
 import { Chip, DiffCount, DiffStatButton } from './ui.js'
 import { DispatchGlyph, dispatchToggleTitle } from './dispatchMark.js'
 
@@ -120,7 +119,7 @@ export function TaskCardBody({
   const stop = { onPointerDown: (e: SyntheticEvent) => e.stopPropagation() }
   const linkClass =
     'inline-flex shrink-0 items-center gap-[3px] whitespace-nowrap text-[var(--color-accent-text)] hover:underline'
-  const [prsOpen, setPrsOpen] = useState(false)
+  const [prMenu, setPrMenu] = useState<{ x: number; y: number } | null>(null)
   const repoNames = repoDisplayNames([
     task.repoPath ?? '',
     ...task.extraRepos.map((r) => r.repoPath)
@@ -148,15 +147,17 @@ export function TaskCardBody({
         PR
       </a>
     ) : prLinks.length > 1 ? (
-      // A multi-repo task has a pull request per repository: a dialog picks which to open.
+      // A multi-repo task has a pull request per repository: a menu picks which to open.
       <button
         type="button"
         title="Choose a pull request"
+        aria-haspopup="menu"
         className={linkClass}
         {...stop}
         onClick={(event) => {
           event.stopPropagation()
-          setPrsOpen(true)
+          const box = event.currentTarget.getBoundingClientRect()
+          setPrMenu({ x: box.left, y: box.bottom + 4 })
         }}
         onDoubleClick={(event) => event.stopPropagation()}
       >
@@ -286,12 +287,16 @@ export function TaskCardBody({
         ) : null}
         {issueLink}
         {prLink}
-        {prsOpen
-          ? createPortal(
-              <PullRequestsDialog links={prLinks} onClose={() => setPrsOpen(false)} />,
-              document.body
-            )
-          : null}
+        {prMenu ? (
+          <CardMenu
+            at={prMenu}
+            onClose={() => setPrMenu(null)}
+            items={prLinks.map((link) => ({
+              label: link.repo,
+              run: () => void window.open(link.url, '_blank', 'noopener')
+            }))}
+          />
+        ) : null}
         <span className="ml-auto flex shrink-0 items-center gap-2 font-mono">
           {files > 0 ? (
             <span className="inline-flex items-center gap-[3px]" title={`${files} context files`}>
