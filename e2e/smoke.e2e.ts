@@ -43,12 +43,29 @@ function taskFile(workspaceId: string, taskId: string): string {
 const readTask = (workspaceId: string, taskId: string): string =>
   readFileSync(taskFile(workspaceId, taskId), 'utf8')
 
-/** The pid and every descendant of it, from `ps`. */
-function processTree(root: number): number[] {
-  const rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+/** Every process as `[pid, ppid]`: `ps` on macOS and Linux, CIM on Windows (which has no `ps`). */
+function processTable(): [number, number][] {
+  const output =
+    process.platform === 'win32'
+      ? execFileSync(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-Command',
+            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }'
+          ],
+          { encoding: 'utf8' }
+        )
+      : execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+  return output
     .trim()
-    .split('\n')
+    .split(/\r?\n/)
     .map((line) => line.trim().split(/\s+/).map(Number) as [number, number])
+}
+
+/** The pid and every descendant of it. */
+function processTree(root: number): number[] {
+  const rows = processTable()
   const tree = [root]
   for (let i = 0; i < tree.length; i++)
     for (const [pid, ppid] of rows) if (ppid === tree[i] && !tree.includes(pid)) tree.push(pid)
@@ -236,17 +253,17 @@ test('smoke', async () => {
     await expect(column('In Progress').getByText('Smoke task edited')).toBeVisible()
     await expect.poll(() => readTask('default', 'TASK-0001')).toMatch(/^status: in_progress$/m)
 
-    // And on to In Review by dragging the card. It is grabbed at the left of its title: the hover
-    // actions cover the rest and swallow the pointer. The board uses `closestCorners`, which
-    // averages the four corner distances, so a tall empty column only wins over the card's own
-    // slot when the card sits near the column's middle. It is dropped centred in the column.
+    // And on to In Review by dragging the card. It is grabbed at its id (TASK-0001), bottom left:
+    // the hover actions cover the title on a narrow card (the board shares a 1024 px window with
+    // the Agents panel on the macOS and Windows runners) and swallow the pointer. The board uses
+    // `closestCorners`, which averages the four corner distances, so a tall empty column only wins
+    // over the card's own slot when the card sits near the column's middle. It is dropped centred
+    // in the column.
     const cardBox = await card('Smoke task edited').boundingBox()
-    const title = await card('Smoke task edited')
-      .getByText('Smoke task edited', { exact: true })
-      .boundingBox()
+    const id = await card('Smoke task edited').getByText('TASK-0001', { exact: true }).boundingBox()
     const to = await column('In Review').locator('> div').boundingBox()
-    if (!cardBox || !title || !to) throw new Error('card or column not laid out')
-    const grab = { x: title.x + 8, y: title.y + title.height / 2 }
+    if (!cardBox || !id || !to) throw new Error('card or column not laid out')
+    const grab = { x: id.x + 8, y: id.y + id.height / 2 }
     await page.mouse.move(grab.x, grab.y)
     await page.mouse.down()
     await page.mouse.move(grab.x + 12, grab.y, { steps: 5 })

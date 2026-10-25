@@ -89,6 +89,64 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  # Whether the PR touches what only breaks on another OS: dependencies, packaging, the build and
+  # its scripts, resources. The smoke on macOS and Windows (smoke-native) runs only then; a git
+  # diff against the base needs no extra action to pin. A Dependabot bump of electron, node-pty or
+  # better-sqlite3 changes package.json and yarn.lock, so it always qualifies.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      risky: ${{ steps.diff.outputs.risky }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge commit and its first parent, the base branch's tip.
+          fetch-depth: 2
+
+      - id: diff
+        run: |
+          files="$(git diff --name-only HEAD^1 HEAD)"
+          echo "$files"
+          if echo "$files" | grep -Eq '^(package\.json|yarn\.lock|electron-builder\.yml|electron\.vite\.config\.ts|scripts/|build/|resources/|\.github/workflows/ci\.yml)'; then
+            echo "risky=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "risky=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The same Electron smoke and feature tests as `smoke`, on macOS and Windows, for a risky change
+  # only. Ubuntu's `smoke` stays a job of its own so it is a stable required check and runs on every
+  # PR. Windows installs the N-API prebuilds (scripts/postinstall.mjs skips the rebuild there).
+  smoke-native:
+    needs: changes
+    if: ${{ needs.changes.outputs.risky == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      - run: yarn test:smoke
+
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: smoke-test-results-${{ matrix.os }}
+          path: test-results/
+          retention-days: 7
+
   # The server bundles, x64 and arm64, built and self-checked exactly as the release builds them
   # (server-bundle.yml), so a bundle that will not build or run fails here rather than at release.
   server-bundle:
