@@ -96,6 +96,7 @@ vi.mock('./tray.js', () => ({
   setTrayAutoRun: record('setTrayAutoRun'),
   watchWindow: record('watchWindow')
 }))
+vi.mock('./windowFullscreen.js', () => ({ watchFullscreen: record('watchFullscreen') }))
 vi.mock('./updater.js', () => ({ initUpdater: record('initUpdater') }))
 vi.mock('./usage.js', () => ({ forgetContext: () => {}, initUsage: record('initUsage') }))
 
@@ -131,6 +132,7 @@ describe('start-up order', () => {
       'window:create',
       'window:on',
       'watchWindow',
+      'watchFullscreen',
       'window:openHandler',
       'window:load',
       'initUpdater',

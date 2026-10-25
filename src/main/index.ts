@@ -38,6 +38,7 @@ import { onBroadcast } from './electronHost.js'
 import { createTray, destroyTray, setTrayAutoRun, watchWindow } from './tray.js'
 import { initUpdater } from './updater.js'
 import { forgetContext, initUsage } from './usage.js'
+import { watchFullscreen } from './windowFullscreen.js'
 
 /**
  * Electron's default menu binds ⌘W to Close Window, and a menu accelerator is handled before the
@@ -176,6 +177,7 @@ function createWindow(): BrowserWindow {
 
   window.on('ready-to-show', () => window.show())
   watchWindow(window)
+  watchFullscreen(window)
   window.webContents.setWindowOpenHandler(openHandler((url) => void shell.openExternal(url)))
 
   if (process.env.ELECTRON_RENDERER_URL) {
