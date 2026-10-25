@@ -212,7 +212,8 @@ describe('access service', () => {
     expect(released).toEqual([1])
   })
 
-  it('stores its file for the user only', async () => {
+  // Windows has no POSIX file modes; its profile folder is already private to the user.
+  it.skipIf(process.platform === 'win32')('stores its file for the user only', async () => {
     const { service } = setup()
     await service.configure({ enabled: true, bindAddress: '127.0.0.1', port: 7000 })
     expect(statSync(join(dir, 'access.json')).mode & 0o777).toBe(0o600)
