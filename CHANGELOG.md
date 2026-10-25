@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.40.0](https://github.com/anoguez/styr/compare/v0.39.0...v0.40.0) (2026-10-25)
+
+
+### Features
+
+* agents ask owner questions in the terminal too, and can close them with resolve_question ([#221](https://github.com/anoguez/styr/issues/221)) ([f6e70ad](https://github.com/anoguez/styr/commit/f6e70ada6f223c089d8f780f081f0a2b32f908f9))
+* let paired devices reach shared workspaces over a private network ([#222](https://github.com/anoguez/styr/issues/222)) ([fe82eaa](https://github.com/anoguez/styr/commit/fe82eaa1d3c5382d0c9e410f7c4864eccae81605))
+* multi-repo tasks, a worktree in each repo ([#220](https://github.com/anoguez/styr/issues/220)) ([d12bd4c](https://github.com/anoguez/styr/commit/d12bd4c0da83fc60697598b3a1737339f1c2fabb))
+* reorder and skip tasks in the Dispatch dialog ([#214](https://github.com/anoguez/styr/issues/214)) ([40025b8](https://github.com/anoguez/styr/commit/40025b80b605f0bc04060461886ccce7ffb62af0))
+* welcome wizard for first run, and Quick setup in the command palette ([#219](https://github.com/anoguez/styr/issues/219)) ([3410196](https://github.com/anoguez/styr/commit/34101961aa435874ca27d31bdba86378dded0948))
+
+
+### Bug Fixes
+
+* copy the vendored Styr Terminal instead of renaming it across drives ([#215](https://github.com/anoguez/styr/issues/215)) ([4935203](https://github.com/anoguez/styr/commit/4935203572ac361108488744635472ad18ed6029))
+* detect macOS full screen from the main process, not window size ([#234](https://github.com/anoguez/styr/issues/234)) ([bbafd3b](https://github.com/anoguez/styr/commit/bbafd3bec0ce50d64114f8294fada41343d96753))
+* do not offer to restore agent tabs that cannot come back ([#217](https://github.com/anoguez/styr/issues/217)) ([1e7b7bb](https://github.com/anoguez/styr/commit/1e7b7bb574afb2f0c41f7bc3905d34e9a9c66cda))
+* tell agents not to create their own worktrees for unlisted repositories ([#237](https://github.com/anoguez/styr/issues/237)) ([df0d65c](https://github.com/anoguez/styr/commit/df0d65ca7c1cb67d8026cb02e5eb37c0d4e708f1))
+
+
+### Documentation
+
+* list the branch-protection checks main needs ([#240](https://github.com/anoguez/styr/issues/240)) ([ca37fd1](https://github.com/anoguez/styr/commit/ca37fd1a80dc2d660f6701eabbd63445f629acd5))
+
 ## [0.39.0](https://github.com/anoguez/styr/compare/v0.38.0...v0.39.0) (2026-10-23)
 
 
