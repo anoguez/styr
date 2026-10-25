@@ -58,3 +58,40 @@ worse than a shared working directory.
 
 `WORKTREE_BRANCH_PREFIX` lives in `types/workspaces.ts` because `prompt.ts` needs it too, and `prompt.ts` is
 imported by the renderer — it must not reach for `worktree.ts`, which uses `node:child_process`.
+
+## Multi-repo tasks
+
+A task may span several repositories: `Task.extraRepos` (`{repoPath, baseBranch?, worktreePath?,
+prUrl?}`, max 5) sits beside `repoPath`, which stays the _primary_ repo — the session `cwd`. Every
+single-repo reader (`repoPath`, `baseBranch`, `worktreePath`, `prUrl`, the index columns, the MCP
+server) keeps meaning the primary, so a task without `extraRepos` is exactly the old task. It needs
+`useWorktree`; without it `extraRepos` is ignored. Each repo has its own base branch, resolved like
+the primary's (recorded by `launchPatch`, fixed once the worktree exists), and all share the branch
+`styr/<key>`, each in its own repository.
+
+- **Keys.** `checkoutsOf` (`taskCheckout.ts`) returns the primary then each extra as
+  `{role, repoName, checkout}`; `taskCheckout` is the primary plus `repos`. Names are the folder, or
+  `parent/folder` on a clash (`repoNames.ts`, pure: the prompt and the renderer use it).
+- **Fixed after launch.** `updateTask` refuses to add or remove repositories once any worktree
+  exists ("make a new task"); recording a launch's `worktreePath`/`baseBranch` on the same
+  repositories is not a change. `markdown.ts` normalises hand edits (`normaliseExtraRepos`): one
+  mapping or a bare string becomes a list, entries without a `repoPath`, repeats and the primary are
+  dropped, trailing slashes trimmed, capped at 5. Whether a path is a git repo is checked at launch,
+  not at parse: a non-repo falls back like any worktree failure, with a warning.
+- **Launch.** `checkoutFor` ensures every worktree; a failure on any repo falls back to that repo's
+  plain path with a warning naming it (joined with `; `) and never stops the session. An extra that
+  fell back has no `worktreePath`, is shown in the Changes dialog as a plain-repository diff, and is
+  not landable. Resume re-ensures every worktree.
+- **Diffs.** `git:taskDiff` and `git:filePatch` take an optional trailing `repo` (a `repoPath`),
+  resolved against `checkoutsOf` — a repo that is not the task's is refused. `git:diffStats` sums all
+  repos for the card and lists each in `DiffStat.repos` for the tooltip.
+- **Landing.** `settleTasks` evaluates a multi-repo task with `settleMultiRepo`: Done only when every
+  _counted_ repo (the primary, and each extra with a worktree) has landed or has no commits of its
+  own, and at least one really landed. Some landed, some not leaves it In Review with one note,
+  "Landed: api. Not landed: client (3 commits ahead of main)", deduped by `isRepeatNote`. Nothing is
+  rolled back. On Done each repo is cleaned on its own (a refusal in one is a note and does not
+  block the rest); `clearWorktree` (with `extras`) clears every recorded path only when all repos
+  were cleaned. The cache is keyed per task, its fingerprint is the status plus each repo's refs.
+- **PRs.** The primary's PR is the top-level `prUrl`; an extra's is `extraRepos[i].prUrl`. MCP
+  `update_task` merges `extraRepos[].prUrl` by `repoPath` and never replaces the list. "Create PR"
+  (`createPullRequestsPrompt`) asks for one PR per repo, each with its own base and branch.

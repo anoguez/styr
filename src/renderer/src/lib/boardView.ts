@@ -1,5 +1,6 @@
 import type { AgentState, AgentStatus } from '@core/agentState.js'
 import { sortColumn } from '@core/boardOrder.js'
+import { hasAllPullRequests } from '@core/taskPullRequests.js'
 import type { OrchestrationLane, OrchestrationSummary, Task, TaskStatus } from '@core/types.js'
 
 export type Board = Record<TaskStatus, Task[]>
@@ -23,11 +24,13 @@ export function boardTasks(board: Board): Task[] {
 /** What a terminal tab needs to know of its task: the title to show, and status and PR link. */
 export function taskSummaries(tasks: Task[]): {
   titles: Map<string, string>
-  states: Map<string, { status: TaskStatus; prUrl?: string }>
+  states: Map<string, { status: TaskStatus; prsDone: boolean }>
 } {
   return {
     titles: new Map(tasks.map((task) => [task.id, task.title])),
-    states: new Map(tasks.map((task) => [task.id, { status: task.status, prUrl: task.prUrl }]))
+    states: new Map(
+      tasks.map((task) => [task.id, { status: task.status, prsDone: hasAllPullRequests(task) }])
+    )
   }
 }
 

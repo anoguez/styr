@@ -1,7 +1,7 @@
 import matter from 'gray-matter'
 import { migrateProviderFields } from './migrateTask.js'
 import { TASK_ID_RE, taskFrontmatterSchema } from './taskSchema.js'
-import type { ActivityEntry, Task } from './types.js'
+import { MAX_EXTRA_REPOS, type ActivityEntry, type ExtraRepo, type Task } from './types.js'
 
 const ACTIVITY_MARKER = '<!-- styr:activity -->'
 // A hand-written file may carry the heading without the marker; the marker is only ever written by us.
@@ -87,6 +87,55 @@ function normaliseBlockers(value: unknown): string[] {
   return [...new Set(ids)]
 }
 
+function trimTrailingSlashes(path: string): string {
+  const trimmed = path.trim().replace(/[\\/]+$/, '')
+  // "/" and "C:\\" are whole paths, not paths with a slash to trim.
+  return trimmed || path.trim()
+}
+
+/** Case-insensitive on Windows paths is not guessed at: two spellings of one folder are one repo. */
+function repoKey(path: string): string {
+  return trimTrailingSlashes(path).replace(/\\/g, '/')
+}
+
+function optionalText(value: unknown): string | undefined {
+  return typeof value === 'string' ? value.trim() || undefined : undefined
+}
+
+/**
+ * A hand-written `extraRepos`: one mapping or a list, an entry may be a bare path. Entries without
+ * a usable `repoPath`, repeats of the primary repo or of an earlier entry are dropped, trailing
+ * slashes are trimmed and the list is capped. Anything else in an entry is kept as written.
+ */
+export function normaliseExtraRepos(value: unknown, primary: unknown): ExtraRepo[] {
+  const items = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value]
+  const seen = new Set<string>()
+  if (typeof primary === 'string' && primary.trim()) seen.add(repoKey(primary))
+  const out: ExtraRepo[] = []
+  for (const item of items) {
+    const entry =
+      typeof item === 'string'
+        ? { repoPath: item }
+        : item && typeof item === 'object' && !Array.isArray(item)
+          ? (item as Record<string, unknown>)
+          : undefined
+    const repoPath = typeof entry?.repoPath === 'string' ? trimTrailingSlashes(entry.repoPath) : ''
+    if (!entry || !repoPath || seen.has(repoKey(repoPath))) continue
+    seen.add(repoKey(repoPath))
+    const baseBranch = optionalText(entry.baseBranch)
+    const worktreePath = optionalText(entry.worktreePath)
+    const prUrl = optionalText(entry.prUrl)
+    out.push({
+      repoPath,
+      ...(baseBranch ? { baseBranch } : {}),
+      ...(worktreePath ? { worktreePath } : {}),
+      ...(prUrl ? { prUrl } : {})
+    })
+    if (out.length === MAX_EXTRA_REPOS) break
+  }
+  return out
+}
+
 function textOf(value: unknown): string | undefined {
   const text = typeof value === 'number' || typeof value === 'boolean' ? String(value) : value
   return typeof text === 'string' && text.trim() ? text.trim() : undefined
@@ -154,6 +203,7 @@ function tolerate(data: Record<string, unknown>): Record<string, unknown> {
   }
   if ('blockedBy' in out) out.blockedBy = normaliseBlockers(out.blockedBy)
   if ('model' in out) out.model = normaliseModel(out.model)
+  if ('extraRepos' in out) out.extraRepos = normaliseExtraRepos(out.extraRepos, out.repoPath)
   for (const field of TIMESTAMP_FIELDS) {
     if (out[field] instanceof Date) out[field] = out[field].toISOString()
   }
@@ -184,6 +234,7 @@ export function serialiseTask(task: Task): string {
     ...(task.baseBranch ? { baseBranch: task.baseBranch } : {}),
     ...(task.blockedBy.length > 0 ? { blockedBy: task.blockedBy } : {}),
     ...(task.worktreePath ? { worktreePath: task.worktreePath } : {}),
+    ...(task.extraRepos.length > 0 ? { extraRepos: task.extraRepos } : {}),
     ...(task.contextFiles.length > 0 ? { contextFiles: task.contextFiles } : {}),
     ...(task.promptTemplateId ? { promptTemplateId: task.promptTemplateId } : {}),
     ...(task.provider ? { provider: task.provider } : {}),

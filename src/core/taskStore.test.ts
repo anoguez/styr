@@ -179,6 +179,33 @@ describe('task store blockers', () => {
     expect(() => store.updateTask(a.id, { blockedBy: [b.id], priority: 'high' })).not.toThrow()
   })
 
+  it('sets extraRepos before the first launch, then refuses to change the repositories', async () => {
+    const store = await taskStoreInTemporaryWorkspace()
+    const task = store.createTask({
+      title: 'Two repos',
+      repoPath: '/work/api',
+      useWorktree: true,
+      extraRepos: [{ repoPath: '/work/api' }, { repoPath: '/work/client/' }]
+    })
+    expect(task.extraRepos).toEqual([{ repoPath: '/work/client' }])
+    const edited = store.updateTask(task.id, { extraRepos: [{ repoPath: '/work/docs' }] })
+    expect(edited.extraRepos).toEqual([{ repoPath: '/work/docs' }])
+
+    store.updateTask(task.id, { worktreePath: '/work/api.worktrees/x' })
+    expect(() => store.updateTask(task.id, { extraRepos: [] })).toThrow(/make a new task/i)
+    // Recording a launch's results on the same repositories is not a change.
+    const launched = store.updateTask(task.id, {
+      extraRepos: [{ repoPath: '/work/docs', worktreePath: '/work/docs.worktrees/x' }]
+    })
+    expect(launched.extraRepos[0]?.worktreePath).toBe('/work/docs.worktrees/x')
+  })
+
+  it('keeps no extraRepos on a task without a worktree', async () => {
+    const store = await taskStoreInTemporaryWorkspace()
+    const task = store.createTask({ title: 'Loose', extraRepos: [{ repoPath: '/work/client' }] })
+    expect(task.extraRepos).toEqual([])
+  })
+
   it('asks and answers a question through its own writes, with a note each', async () => {
     const store = await taskStoreInTemporaryWorkspace()
     const task = store.createTask({ title: 'Ask', status: 'in_progress' })

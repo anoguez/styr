@@ -22,6 +22,7 @@ const task: Task = {
   orchestrate: false,
   useWorktree: true,
   worktreePath: '/projects/styr.worktrees/TASK-0042',
+  extraRepos: [],
   questions: [
     {
       id: 'q1',
@@ -349,5 +350,85 @@ describe('task Markdown', () => {
       expect(parse('questions: [{id: q1}, null, [], ""]').questions).toEqual([])
       expect(parse('questions: {text: 7, extra: x}').questions).toHaveLength(1)
     })
+  })
+})
+
+describe('extraRepos', () => {
+  const file = (extra: string): string =>
+    [
+      '---',
+      'id: TASK-0050',
+      'title: Two repos',
+      'repoPath: /work/api',
+      'useWorktree: true',
+      extra,
+      'createdAt: 2026-10-01T00:00:00.000Z',
+      'updatedAt: 2026-10-01T00:00:00.000Z',
+      '---',
+      'Body.'
+    ].join('\n')
+  const read = (extra: string): Task =>
+    parseTaskMarkdown(file(extra), '/workspace/tasks/TASK-0050-two.md')
+
+  it('is empty, and written as no key, for a single-repo task', () => {
+    const parsed = read('tags: []')
+    expect(parsed.extraRepos).toEqual([])
+    expect(serialiseTask(parsed)).not.toContain('extraRepos')
+  })
+
+  it('round-trips a full entry', () => {
+    const parsed = read(
+      [
+        'extraRepos:',
+        '  - repoPath: /work/client',
+        '    baseBranch: release/2.x',
+        '    worktreePath: /work/client.worktrees/x',
+        '    prUrl: https://example.com/pr/1'
+      ].join('\n')
+    )
+    expect(parsed.extraRepos).toEqual([
+      {
+        repoPath: '/work/client',
+        baseBranch: 'release/2.x',
+        worktreePath: '/work/client.worktrees/x',
+        prUrl: 'https://example.com/pr/1'
+      }
+    ])
+    expect(parseTaskMarkdown(serialiseTask(parsed), parsed.filePath).extraRepos).toEqual(
+      parsed.extraRepos
+    )
+  })
+
+  it('turns a single mapping or a bare string into a list', () => {
+    expect(read('extraRepos:\n  repoPath: /work/client').extraRepos).toEqual([
+      { repoPath: '/work/client' }
+    ])
+    expect(read('extraRepos: /work/client/').extraRepos).toEqual([{ repoPath: '/work/client' }])
+    expect(read('extraRepos:\n  - /work/a\n  - /work/b').extraRepos).toEqual([
+      { repoPath: '/work/a' },
+      { repoPath: '/work/b' }
+    ])
+  })
+
+  it('drops entries without a repoPath, repeats and the primary repo, keeping the rest', () => {
+    const parsed = read(
+      [
+        'extraRepos:',
+        '  - baseBranch: main',
+        '  - 42',
+        '  - /work/api/',
+        '  - repoPath: /work/client',
+        '    baseBranch: main',
+        '  - /work/client'
+      ].join('\n')
+    )
+    expect(parsed.extraRepos).toEqual([{ repoPath: '/work/client', baseBranch: 'main' }])
+    expect(parsed.title).toBe('Two repos')
+    expect(parsed.description).toBe('Body.')
+  })
+
+  it('caps the list at five', () => {
+    const lines = Array.from({ length: 8 }, (_, index) => `  - /work/r${index}`)
+    expect(read(['extraRepos:', ...lines].join('\n')).extraRepos).toHaveLength(5)
   })
 })

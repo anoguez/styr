@@ -202,3 +202,33 @@ describe('codexSubagentTranscripts', () => {
     expect(codexSubagentTranscripts('p', parent, home)).toContain(late)
   })
 })
+
+describe('codexCommand extra directories', () => {
+  const base = { sessionId: 'id', cwd: '/w/api', syntax: syntaxFor('posix') }
+
+  it('is byte-identical without any', () => {
+    expect(codexCommand(settings, { ...base, resume: false, extraDirs: [] })).toBe(
+      codexCommand(settings, { ...base, resume: false })
+    )
+  })
+
+  it('adds --add-dir after --cd, quoting a path with a space', () => {
+    const command = codexCommand(settings, {
+      ...base,
+      resume: false,
+      extraDirs: ['/w/client', '/w/my docs']
+    })
+    expect(command).toContain(
+      `--cd '/w/api' --add-dir '/w/client' --add-dir '/w/my docs' --sandbox workspace-write`
+    )
+  })
+
+  it('passes them on resume and fork', () => {
+    expect(codexCommand(settings, { ...base, resume: true, extraDirs: ['/w/client'] })).toBe(
+      `codex resume --remote unix:// --cd '/w/api' --add-dir '/w/client' id`
+    )
+    expect(
+      codexCommand(settings, { ...base, resume: false, forkFrom: 'src', extraDirs: ['/w/c'] })
+    ).toContain(`codex fork --remote unix:// --cd '/w/api' --add-dir '/w/c'`)
+  })
+})

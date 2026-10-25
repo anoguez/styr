@@ -74,19 +74,33 @@ function questionsBlock(task: Task): string {
  * How to move the task on the board. Rendered into every prompt rather than written into each
  * template, so a custom or older template cannot leave an agent with no way to report progress.
  */
-function boardProtocol(task: Task, workspaceId?: string, plainFolder = false): string {
-  const finish = plainFolder
+function boardProtocol(
+  task: Task,
+  workspaceId: string | undefined,
+  plainFolder: boolean,
+  multiRepo: boolean,
+  repos: string
+): string {
+  const finish = multiRepo
     ? [
-        ...REVIEW_LINE_PLAIN,
-        '- Do not set `status: done` yourself: this is not a code change, so there is nothing to land.',
-        '  I mark it done when I am happy with the result.'
-      ]
-    : [
         ...REVIEW_LINE,
-        '- Set `status: done` only when the work has landed on the base branch (or I confirm it). Work',
-        '  that is merely approved or committed on a branch stays `in_review`.',
-        '- If you open a pull or merge request (any host), record its URL as `prUrl:` in the frontmatter so the card links to it.'
+        "- Set `status: done` only when every repository's branch has landed on its base (or I confirm",
+        '  it). Work that is merely approved or committed on a branch stays `in_review`.',
+        '- If you open a pull or merge request (any host), record its URL as `prUrl:` on the matching',
+        "  `extraRepos` entry in the frontmatter; the primary repository's goes in the top-level `prUrl:`."
       ]
+    : plainFolder
+      ? [
+          ...REVIEW_LINE_PLAIN,
+          '- Do not set `status: done` yourself: this is not a code change, so there is nothing to land.',
+          '  I mark it done when I am happy with the result.'
+        ]
+      : [
+          ...REVIEW_LINE,
+          '- Set `status: done` only when the work has landed on the base branch (or I confirm it). Work',
+          '  that is merely approved or committed on a branch stays `in_review`.',
+          '- If you open a pull or merge request (any host), record its URL as `prUrl:` in the frontmatter so the card links to it.'
+        ]
   return [
     '## Board protocol',
     `This task is the file ${task.filePath}. The board reads it from there, so you move it by`,
@@ -115,7 +129,8 @@ function boardProtocol(task: Task, workspaceId?: string, plainFolder = false): s
           `\`${WORKTREE_BRANCH_PREFIX}${worktreeKey(workspaceId, task.id)}\`. Commit there. Do not switch branches and do not`,
           'touch the main checkout — another agent may be working in it.'
         ]
-      : [])
+      : []),
+    ...(repos ? ['', repos] : [])
   ].join('\n')
 }
 
@@ -123,9 +138,40 @@ function placeholder(key: string): RegExp {
   return new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`)
 }
 
+/** One of a multi-repo task's other repositories, as plain data: the prompt reads no git. */
+export interface PromptRepo {
+  name: string
+  /** Where the agent finds it: its worktree, or the plain repository when none could be made. */
+  path: string
+  baseBranch: string
+  branch: string
+}
+
 export interface PromptOptions {
   /** The task runs in a folder that is not a git repository, so there is no branch to land. */
   plainFolder?: boolean
+  /** The repositories beside the primary one; empty or unset for a single-repo task. */
+  extraRepos?: readonly PromptRepo[]
+  /** Display name of the primary repository, the one the agent starts in. */
+  primaryName?: string
+}
+
+/** The multi-repo brief (`{{repos}}`): empty for a single-repo task. */
+export function reposBlock(
+  primaryName: string,
+  extraRepos: readonly PromptRepo[] = [],
+  inWorktree = true
+): string {
+  if (extraRepos.length === 0) return ''
+  const [first] = extraRepos
+  const branch = first?.branch ?? ''
+  return [
+    '## Repositories',
+    `This task spans several repositories. You started in \`${primaryName}\` (the primary). Each repo below is a separate git ${inWorktree ? 'worktree' : 'checkout'} on branch \`${branch}\`:`,
+    ...extraRepos.map((repo) => `- ${repo.name} at ${repo.path} (base ${repo.baseBranch})`),
+    "Commit in every repo you change, `cd` into it first, and never edit another repo's main checkout.",
+    "The task is Done only when every repository's branch has landed on its base."
+  ].join('\n')
 }
 
 export function buildPrompt(
@@ -134,13 +180,21 @@ export function buildPrompt(
   workspaceId?: string,
   options: PromptOptions = {}
 ): string {
+  const repos = reposBlock(options.primaryName ?? '', options.extraRepos)
+  const placedRepos = placeholder('repos').test(template)
   const sections: Record<string, string> = {
     contextFiles: contextBlock(task.contextFiles),
     issue: task.externalRef?.url
       ? `This task is linked to an external issue: ${task.externalRef.url}`
       : '',
     questions: questionsBlock(task),
-    board: boardProtocol(task, workspaceId, options.plainFolder)
+    board: boardProtocol(
+      task,
+      workspaceId,
+      options.plainFolder ?? false,
+      repos.length > 0,
+      placedRepos ? '' : repos
+    )
   }
   const values: Record<string, string> = {
     id: task.id,
@@ -153,6 +207,7 @@ export function buildPrompt(
     tags: task.tags.join(', '),
     filePath: task.filePath,
     repoPath: task.repoPath ?? '',
+    repos,
     ...sections
   }
 

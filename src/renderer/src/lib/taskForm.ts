@@ -9,6 +9,7 @@ import {
   presetFromFields
 } from '@core/taskPreset.js'
 import type {
+  ExtraRepo,
   Settings,
   Task,
   TaskPreset,
@@ -30,6 +31,8 @@ export interface TaskForm {
   prUrl: string
   useWorktree: boolean
   baseBranch: string
+  /** The other repositories of a worktree task; blank paths are dropped on save. */
+  extraRepos: ExtraRepo[]
   orchestrate: boolean
   blockedBy: string[]
   contextFiles: string[]
@@ -53,6 +56,7 @@ export function toForm(task: Task | null, settings: Settings): TaskForm {
     prUrl: task?.prUrl ?? '',
     useWorktree: task?.useWorktree ?? settings.taskDefaults.useWorktree,
     baseBranch: task?.baseBranch ?? '',
+    extraRepos: task?.extraRepos ?? [],
     orchestrate: task?.orchestrate ?? settings.taskDefaults.orchestrate,
     blockedBy: task?.blockedBy ?? [],
     contextFiles: task?.contextFiles ?? [],
@@ -158,6 +162,9 @@ export function taskPayload(form: TaskForm) {
     prUrl: form.prUrl.trim() || undefined,
     useWorktree: form.useWorktree,
     baseBranch: form.baseBranch || undefined,
+    extraRepos: form.extraRepos
+      .filter((repo) => repo.repoPath.trim())
+      .map((repo) => ({ ...repo, repoPath: repo.repoPath.trim() })),
     orchestrate: form.orchestrate,
     blockedBy: form.blockedBy,
     contextFiles: form.contextFiles,

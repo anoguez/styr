@@ -168,7 +168,7 @@ export function TerminalSurface({
   agentStatus,
   shownState,
   taskStatus,
-  taskPrUrl,
+  taskPrsDone,
   diffStat,
   onShowChanges,
   onAskReview,
@@ -196,7 +196,8 @@ export function TerminalSurface({
   /** The board status of this session's task, when it has one. */
   taskStatus?: TaskStatus
   /** The task's pull request, once there is one. */
-  taskPrUrl?: string
+  /** Every repository of the task already has its pull request. */
+  taskPrsDone?: boolean
   /** The task branch's change totals; absent when it has none. */
   diffStat?: DiffStat
   /** Open the Changes dialog for this session's task. */
@@ -380,12 +381,12 @@ export function TerminalSurface({
     agentStatus?.state !== 'working' &&
     agentStatus?.state !== 'waiting'
 
-  // Ask for the PR once the review has passed: the task is in review, has no PR yet, and its agent is
+  // Ask for the PR once the review has passed: the task is in review, has a repository without a PR yet, and its agent is
   // running but not mid-turn (text typed at a bare shell would run as a command).
   const canCreatePr =
     Boolean(session.taskId) &&
     taskStatus === 'in_review' &&
-    !taskPrUrl &&
+    !taskPrsDone &&
     Boolean(runtime?.runningCommand) &&
     agentStatus?.state !== 'working' &&
     agentStatus?.state !== 'waiting'

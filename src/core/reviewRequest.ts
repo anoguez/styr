@@ -3,6 +3,7 @@
 // `## Handoff` section and setting `status: in_review` itself — `getSection` reads both alike.
 import { openQuestions } from './questions.js'
 import { getSection, setSection } from './sections.js'
+import { mergeExtraPrUrls } from './taskPullRequests.js'
 import { addNote, getTask, updateTask } from './taskStore.js'
 
 export const HANDOFF_HEADING = 'Handoff'
@@ -19,6 +20,8 @@ export interface ReviewRequest {
   id: string
   summary: ReviewSummary
   prUrl?: string
+  /** A pull request per other repository of a multi-repo task, matched by `repoPath`. */
+  extraRepos?: { repoPath: string; prUrl?: string }[]
   author: string
 }
 
@@ -48,7 +51,7 @@ export function requestReview(request: ReviewRequest): {
   task: ReturnType<typeof getTask> & object
   openQuestions: number
 } {
-  const { id, summary, prUrl, author } = request
+  const { id, summary, prUrl, extraRepos, author } = request
   if (!summary.changed.trim()) throw new Error('summary.changed is required: say what changed')
   if (!summary.verify.trim()) throw new Error('summary.verify is required: say how to check it')
   const task = getTask(id)
@@ -58,7 +61,12 @@ export function requestReview(request: ReviewRequest): {
     HANDOFF_HEADING,
     renderHandoffSection(summary, new Date().toISOString(), author)
   )
-  updateTask(id, { status: 'in_review', description, ...(prUrl ? { prUrl } : {}) })
+  updateTask(id, {
+    status: 'in_review',
+    description,
+    ...(prUrl ? { prUrl } : {}),
+    ...(extraRepos ? { extraRepos: mergeExtraPrUrls(task.extraRepos, extraRepos) } : {})
+  })
   const open = openQuestions(task).length
   const first = summary.changed.trim().split('\n')[0]?.trim() ?? ''
   const saved = addNote(

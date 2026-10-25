@@ -11,7 +11,12 @@ import { basename, dirname, extname, join } from 'node:path'
 import { blockerProblem, indexTasks } from './blocking.js'
 import { migrateProviderFields } from './migrateTask.js'
 import { jsonTaskSchema } from './taskSchema.js'
-import { hasFrontmatter, parseTaskMarkdown, serialiseTask } from './markdown.js'
+import {
+  hasFrontmatter,
+  normaliseExtraRepos,
+  parseTaskMarkdown,
+  serialiseTask
+} from './markdown.js'
 import { firstLine, MAX_OPEN_QUESTIONS, nextQuestionId, openQuestions } from './questions.js'
 import { tasksDir } from './settingsStore.js'
 import type { ActivityEntry, Task, TaskDraft, TaskFilter, TaskPatch, TaskStatus } from './types.js'
@@ -62,6 +67,7 @@ function adoptUnmanaged(raw: string, filePath: string, index: number): Task {
     readiness: 'ready',
     orchestrate: true,
     useWorktree: false,
+    extraRepos: [],
     sessions: [],
     blockedBy: [],
     contextFiles: [],
@@ -211,6 +217,7 @@ export function createTask(draft: TaskDraft): Task {
     useWorktree: draft.useWorktree ?? false,
     baseBranch: draft.baseBranch,
     worktreePath: draft.worktreePath,
+    extraRepos: draft.useWorktree ? normaliseExtraRepos(draft.extraRepos, draft.repoPath) : [],
     blockedBy: draft.blockedBy ?? [],
     contextFiles: draft.contextFiles ?? [],
     promptTemplateId: draft.promptTemplateId,
@@ -243,6 +250,18 @@ export function updateTask(id: string, patch: TaskPatch): Task {
         id,
         changes.blockedBy,
         all.filter((other) => other.id !== id)
+      )
+    }
+  }
+  if (patch.extraRepos) {
+    changes.extraRepos = normaliseExtraRepos(patch.extraRepos, patch.repoPath ?? task.repoPath)
+    if (
+      (task.worktreePath || task.extraRepos.some((repo) => repo.worktreePath)) &&
+      changes.extraRepos.map((repo) => repo.repoPath).join('\n') !==
+        task.extraRepos.map((repo) => repo.repoPath).join('\n')
+    ) {
+      throw new Error(
+        `Task ${id} already has its worktrees, so its repositories cannot change. Make a new task for the other repository.`
       )
     }
   }
