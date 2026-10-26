@@ -108,6 +108,16 @@ export const SECTIONS = [
       'working directory worktree location node_modules shell terminal tabs restore open files editor app'
   },
   {
+    id: 'remote-sharing',
+    label: 'Remote access',
+    scope: 'workspace',
+    sub: 'Environment',
+    blurb:
+      'Whether devices you have paired may open this workspace. Each workspace opts in on its own.',
+    keys: ['remoteAccess'],
+    words: 'remote access share sharing phone device allow workspace'
+  },
+  {
     id: 'theme',
     label: 'Theme',
     scope: 'workspace',
@@ -127,15 +137,15 @@ export const SECTIONS = [
   },
   {
     id: 'remote-access',
-    label: 'Remote access',
+    label: 'Remote devices',
     scope: 'app',
+    live: true,
     blurb:
-      'Let devices you pair, such as a phone, use the workspaces you share. Reached over a private network only.',
-    // The listener and devices act at once; the per-workspace switch waits for Save. So the page
-    // is not `live`.
-    keys: ['remoteAccess'],
+      'Let devices you pair, such as a phone, reach this computer over a private network. Each workspace decides on its own page whether they may open it.',
+    // These controls act at once, like Remote hosts: nothing here waits for Save.
+    keys: [],
     words:
-      'remote access share sharing workspace phone mobile device pair qr tailscale network listen port token revoke awake sleep flutter app'
+      'remote access devices phone mobile pair qr tailscale network listen port token revoke awake sleep flutter app'
   },
   {
     id: 'remote',

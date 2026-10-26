@@ -37,6 +37,7 @@ import { ShortcutsSection } from './settings/ShortcutsSection.js'
 import { StorageSection } from './settings/StorageSection.js'
 import { TemplatesSection } from './settings/TemplatesSection.js'
 import { ThemeSection } from './settings/ThemeSection.js'
+import { WorkspaceSharingSection } from './settings/WorkspaceSharingSection.js'
 import { UpdatesSection } from './settings/UpdatesSection.js'
 
 /** The mark for a page whose controls act at once instead of waiting for Save. */
@@ -385,13 +386,10 @@ export function SettingsDialog({
                   />
                 ) : null}
 
-                {section === 'remote-access' ? (
-                  <RemoteAccessSection
-                    draft={draft}
-                    patch={patch}
-                    workspaceName={target.editedWorkspaceName}
-                  />
+                {section === 'remote-sharing' ? (
+                  <WorkspaceSharingSection draft={draft} patch={patch} />
                 ) : null}
+                {section === 'remote-access' ? <RemoteAccessSection /> : null}
                 {section === 'remote' ? (
                   <RemoteSection workspaces={workspaces} onSetUp={newRemoteWorkspace} />
                 ) : null}

@@ -19,7 +19,7 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 
 ## Rules
 
-- **Off by default, two switches.** Settings → Remote access → "Allow other devices to connect"
+- **Off by default, two switches.** Settings → Remote devices → "Allow other devices to connect"
   starts the listener; each workspace then opts in with `remoteAccess` (Settings → Remote access,
   "Allow remote clients to open this workspace", a workspace setting, default `false`). Neither
   alone exposes a workspace. The flag is ignored for an ssh remote workspace's stub.
