@@ -21,6 +21,7 @@ import {
   PROP_ROW,
   PropertySelect,
   SECTION_LABEL,
+  STATUS_DOT,
   TagsEditor
 } from './fields.js'
 
@@ -45,8 +46,7 @@ export function optionsOf<T extends string>(
 
 export const STATUS_OPTIONS = optionsOf(TASK_STATUSES, TASK_STATUS_LABELS)
 
-/** Priority, readiness, project, tags, blockers, PR link and the linked source item. Status is
- *  in the header. */
+/** Status, priority, readiness, project, tags, blockers, PR link and the linked source item. */
 export function PropertiesFields({
   form,
   patch,
@@ -68,6 +68,13 @@ export function PropertiesFields({
   return (
     <div className="flex flex-col gap-0.5">
       <span className={`${SECTION_LABEL} pb-1.5`}>Properties</span>
+      <PropertySelect
+        label="Status"
+        value={form.status}
+        dots={STATUS_DOT}
+        options={STATUS_OPTIONS}
+        onChange={(status) => patch({ status })}
+      />
       <PropertySelect
         label="Priority"
         value={form.priority}

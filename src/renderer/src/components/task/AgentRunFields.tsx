@@ -138,9 +138,9 @@ export function WorkspaceFields({
   const existing = form.useWorktree && task?.worktreePath ? task : null
   return (
     <div className="flex flex-col gap-0.5">
-      <span className={`${SECTION_LABEL} pb-1.5`}>Workspace</span>
+      <span className={`${SECTION_LABEL} px-2 pb-1 pt-1.5`}>Directory</span>
       <div className={`${PROP_ROW} h-8`}>
-        <span className={PROP_LABEL}>Directory</span>
+        <span className={PROP_LABEL}>Folder</span>
         <div className="flex h-7 items-center gap-1 rounded-[7px] border border-transparent pl-2 pr-[3px] hover:border-edge hover:bg-card focus-within:border-accent focus-within:bg-chrome">
           <input
             aria-label="Working directory"

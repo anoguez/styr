@@ -22,6 +22,7 @@ import { McpSetupNotice, useMcpSetup } from './McpSetup.js'
 import { TaskFooter } from './task/TaskFooter.js'
 import { TaskHeader } from './task/TaskHeader.js'
 import { TaskSidebar } from './task/TaskSidebar.js'
+import { WorkspaceMenu } from './task/WorkspaceMenu.js'
 import { ActivityTab, ChatsTab, PromptTab, TabNav, type TabKey } from './task/TaskTabs.js'
 
 /**
@@ -173,9 +174,20 @@ export function TaskDialog({
         >
           <TaskHeader
             task={task}
-            status={form.status}
+            presets={settings.taskPresets}
+            appliedPresetId={appliedPresetId}
+            onPreset={applyPreset}
             openBlockers={waitingOn}
-            onStatus={(status) => patch({ status })}
+            workspace={
+              <WorkspaceMenu
+                form={form}
+                patch={patch}
+                task={task}
+                taskId={taskId}
+                settings={settings}
+                onClose={onClose}
+              />
+            }
             title={form.title}
             titleMissing={titleMissing}
             titleRef={titleRef}
@@ -224,14 +236,10 @@ export function TaskDialog({
               form={form}
               patch={patch}
               task={task}
-              taskId={taskId}
               saved={saved}
               allTasks={allTasks}
               settings={settings}
               routedName={routedName}
-              appliedPresetId={appliedPresetId}
-              onPreset={applyPreset}
-              onClose={onClose}
             />
           </div>
 

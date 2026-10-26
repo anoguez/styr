@@ -292,8 +292,8 @@ closing early saves nothing. `useSetupOnLaunch` opens the welcome once, when `st
 repository is chosen and no board has a task; anyone else is just marked as seen. Never put a second list of
 settings in the wizard: a new step edits existing keys.
 
-`TaskDialog` is the same shape: it holds the form and composes `components/task/` (`TaskHeader` with the status pill, the
-tabs in `TaskTabs`/`BriefTab`, `TaskSidebar` with its Properties, Agent and Workspace groups, `TaskFooter`). It follows the Claude Design file "Styr Task Dialog v3". Its rules are in
+`TaskDialog` is the same shape: it holds the form and composes `components/task/` (`TaskHeader` with the preset picker and the title, `WorkspaceMenu` beside the title for the directory, worktree and extra repos, the
+tabs in `TaskTabs`/`BriefTab`, `TaskSidebar` with its Properties (status included) and Agent groups, `TaskFooter`). It follows the Claude Design file "Styr Task Dialog v4". Its rules are in
 `lib/taskForm.ts`. Context files can be dropped anywhere on the Brief tab as well as picked with
 Add; both go through `withContextFiles`, and dropped `File`s become paths via the preload's
 `pathsForFiles` (`webUtils.getPathForFile`). Shared stroke icons are in `components/icons.tsx`.
