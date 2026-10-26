@@ -7,7 +7,7 @@ import {
   globalSettingsFor,
   workspaceSettingsFor
 } from '@core/types.js'
-import { formatAccelerator } from '@core/shortcuts.js'
+import { formatAccelerator, shortcutHint } from '@core/shortcuts.js'
 import { Button, Chip, Eyebrow, Modal, Select } from './ui.js'
 import { WorkspacesPane } from './WorkspacesPane.js'
 import { RestSourcePane } from './RestSourcePane.js'
@@ -30,13 +30,37 @@ import { ExperimentalSection } from './settings/ExperimentalSection.js'
 import { RemoteAccessSection } from './settings/RemoteAccessSection.js'
 import { RemoteSection } from './settings/RemoteSection.js'
 import { RemoteContext, boardAccess, useRemoteState } from '../lib/remoteStatus.js'
+import { EnvironmentSection } from './settings/EnvironmentSection.js'
 import { PreferencesSection } from './settings/PreferencesSection.js'
 import { RoutingSection } from './settings/RoutingSection.js'
 import { ShortcutsSection } from './settings/ShortcutsSection.js'
 import { StorageSection } from './settings/StorageSection.js'
 import { TemplatesSection } from './settings/TemplatesSection.js'
 import { ThemeSection } from './settings/ThemeSection.js'
+import { WorkspaceSharingSection } from './settings/WorkspaceSharingSection.js'
 import { UpdatesSection } from './settings/UpdatesSection.js'
+
+/** The mark for a page whose controls act at once instead of waiting for Save. */
+function BoltIcon({ size, label }: { size: number; label?: string }): ReactNode {
+  return (
+    <svg
+      role={label ? 'img' : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      viewBox="0 0 16 16"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinejoin="round"
+      className={label ? 'text-faint' : undefined}
+    >
+      <title>{label}</title>
+      <path d="M8.5 2 4 9h3.5l-1 5L11 7H7.5z" />
+    </svg>
+  )
+}
 
 export function SettingsDialog({
   settings,
@@ -153,8 +177,11 @@ export function SettingsDialog({
       <Modal bare backdropCloses={false} title="Settings" onClose={onClose} onSubmit={save}>
         <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)]">
           <nav className="flex min-h-0 flex-col gap-2.5 overflow-y-auto border-r border-edge bg-chrome/50 px-2.5 py-3">
-            <div className="px-1.5">
+            <div className="flex items-center justify-between px-1.5">
               <span className="text-[15px] font-semibold tracking-[-0.01em]">Settings</span>
+              <kbd className="font-mono text-[10px] text-faint">
+                {shortcutHint(draft.shortcuts, 'settings')}
+              </kbd>
             </div>
             <label className="relative block">
               <svg
@@ -209,26 +236,39 @@ export function SettingsDialog({
                     </Select>
                   </span>
                 ) : null}
-                {group.items.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    aria-current={item.id === section}
-                    onClick={() => setSection(item.id)}
-                    className={`flex h-[26px] items-center gap-2 rounded-[7px] px-2 text-left text-[12.5px] transition-colors ${
-                      item.id === section
-                        ? 'bg-raised font-semibold text-ink'
-                        : 'font-medium text-dim hover:bg-raised/70 hover:text-ink'
-                    }`}
+                {group.subs.map((sub, index) => (
+                  <div
+                    key={sub.label}
+                    className={`flex flex-col gap-0.5 ${index > 0 && sub.label ? 'mt-2' : ''}`}
                   >
-                    <span className="flex-1">{item.label}</span>
-                    {dirtySections.has(item.id) ? (
-                      <span
-                        title="Unsaved changes"
-                        className="size-1.5 rounded-full bg-[var(--color-accent-text)]"
-                      />
+                    {sub.label ? (
+                      <span className="px-2 py-0.5 text-[11px] font-medium text-faint">
+                        {sub.label}
+                      </span>
                     ) : null}
-                  </button>
+                    {sub.items.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        aria-current={item.id === section}
+                        onClick={() => setSection(item.id)}
+                        className={`flex h-[26px] items-center gap-2 rounded-[7px] px-2 text-left text-[12.5px] transition-colors ${
+                          item.id === section
+                            ? 'bg-raised font-semibold text-ink'
+                            : 'font-medium text-dim hover:bg-raised/70 hover:text-ink'
+                        }`}
+                      >
+                        <span className="flex-1">{item.label}</span>
+                        {'live' in item ? <BoltIcon size={11} label="Applies right away" /> : null}
+                        {dirtySections.has(item.id) ? (
+                          <span
+                            title="Unsaved changes"
+                            className="size-1.5 rounded-full bg-[var(--color-accent-text)]"
+                          />
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </div>
             ))}
@@ -240,7 +280,7 @@ export function SettingsDialog({
           <section className="flex min-h-0 min-w-0 flex-col">
             <header className="flex items-start gap-4 border-b border-edge py-4 pl-6 pr-4">
               <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-[17px] font-semibold tracking-[-0.01em]">{active.label}</h2>
                   <Chip
                     tone={active.scope === 'workspace' ? 'accent' : 'neutral'}
@@ -250,6 +290,14 @@ export function SettingsDialog({
                       ? `${target.editedWorkspaceName} only`
                       : 'All workspaces'}
                   </Chip>
+                  {'live' in active ? (
+                    <Chip tone="done" title="Nothing on this page waits for Save">
+                      <span className="mr-1 inline-flex">
+                        <BoltIcon size={10} />
+                      </span>
+                      Applies right away
+                    </Chip>
+                  ) : null}
                 </div>
                 <p className="text-[12px] leading-normal text-dim text-pretty">{active.blurb}</p>
               </div>
@@ -322,6 +370,10 @@ export function SettingsDialog({
                   <PreferencesSection draft={draft} patch={patch} />
                 ) : null}
 
+                {section === 'environment' ? (
+                  <EnvironmentSection draft={draft} patch={patch} />
+                ) : null}
+
                 {section === 'workspaces' ? (
                   <WorkspacesPane
                     workspaces={workspaces}
@@ -334,6 +386,9 @@ export function SettingsDialog({
                   />
                 ) : null}
 
+                {section === 'remote-sharing' ? (
+                  <WorkspaceSharingSection draft={draft} patch={patch} />
+                ) : null}
                 {section === 'remote-access' ? <RemoteAccessSection /> : null}
                 {section === 'remote' ? (
                   <RemoteSection workspaces={workspaces} onSetUp={newRemoteWorkspace} />

@@ -11,10 +11,11 @@ import { ipcMessage } from '../../lib/ipcMessage.js'
 import { Button, Card, CardRow, Field, Hint, Select, SwitchRow, inputClass } from '../ui.js'
 
 /**
- * Settings → Remote access (all workspaces): lets devices you pair reach this computer's
- * workspaces over a private network (`docs/architecture/remote-access.md`). Off until switched on,
- * and then only on one private address you pick. Each workspace opts in on its own, under
- * Settings → General. These controls act at once, like Remote hosts: they are not part of Save.
+ * Settings → Remote devices (all workspaces): lets devices you pair reach this computer over a
+ * private network (`docs/architecture/remote-access.md`). Off until switched on, and then only on
+ * one private address you pick. Which workspaces they may open is decided per workspace, under
+ * Settings → Remote access (`WorkspaceSharingSection`). These controls act at once, like Remote
+ * hosts: they are not part of Save.
  */
 export function RemoteAccessSection(): ReactNode {
   const [state, setState] = useState<AccessState>()

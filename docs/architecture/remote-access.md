@@ -19,8 +19,8 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 
 ## Rules
 
-- **Off by default, two switches.** Settings → Remote access → "Allow other devices to connect"
-  starts the listener; each workspace then opts in with `remoteAccess` (Settings → General,
+- **Off by default, two switches.** Settings → Remote devices → "Allow other devices to connect"
+  starts the listener; each workspace then opts in with `remoteAccess` (Settings → Remote access,
   "Allow remote clients to open this workspace", a workspace setting, default `false`). Neither
   alone exposes a workspace. The flag is ignored for an ssh remote workspace's stub.
 - **Tailscale (and loopback) only, enforced in code** (`host/remoteAccess/addresses.ts`). The listener
@@ -89,7 +89,7 @@ These go over the Unix socket (`access:pair`, `access:devices`, `access:revoke`,
 there; the gate refuses `access:*` from devices). The pairing secret is printed to the terminal,
 so avoid running `--pair` where a service manager logs stdout; use `styr serve pair` from a shell.
 A workspace is shared by `remoteAccess` in its settings: toggle it from the desktop (the remote
-workspace's Settings → General) or set it in the workspace's `settings.json`.
+workspace's Settings → Remote access) or set it in the workspace's `settings.json`.
 
 ## Pairing and sign-in
 
