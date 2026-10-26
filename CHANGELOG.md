@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.41.0](https://github.com/anoguez/styr/compare/v0.40.0...v0.41.0) (2026-10-26)
+
+
+### Features
+
+* regroup the Settings dialog nav to the v2 design ([#246](https://github.com/anoguez/styr/issues/246)) ([a14c355](https://github.com/anoguez/styr/commit/a14c35562b6ff49f48df82e4d05b9f507112b75f))
+* Task dialog v4 layout, status in the sidebar and where it runs beside the title ([#244](https://github.com/anoguez/styr/issues/244)) ([176c5e5](https://github.com/anoguez/styr/commit/176c5e5fedcb1be487863aeab653be9ab4b135b3))
+
 ## [0.40.0](https://github.com/anoguez/styr/compare/v0.39.0...v0.40.0) (2026-10-25)
 
 
