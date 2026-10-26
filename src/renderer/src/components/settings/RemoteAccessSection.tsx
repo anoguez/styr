@@ -9,14 +9,20 @@ import {
 } from '../../lib/accessView.js'
 import { ipcMessage } from '../../lib/ipcMessage.js'
 import { Button, Card, CardRow, Field, Hint, Select, SwitchRow, inputClass } from '../ui.js'
+import type { SectionProps } from './sections.js'
 
 /**
  * Settings → Remote access (all workspaces): lets devices you pair reach this computer's
  * workspaces over a private network (`docs/architecture/remote-access.md`). Off until switched on,
- * and then only on one private address you pick. Each workspace opts in on its own, under
- * Settings → General. These controls act at once, like Remote hosts: they are not part of Save.
+ * and then only on one private address you pick. Each workspace opts in on its own, with the
+ * first card here. That switch is a workspace setting and waits for Save; the listener, devices and
+ * pairing below it act at once, like Remote hosts.
  */
-export function RemoteAccessSection(): ReactNode {
+export function RemoteAccessSection({
+  draft,
+  patch,
+  workspaceName
+}: SectionProps & { workspaceName: string }): ReactNode {
   const [state, setState] = useState<AccessState>()
   const [error, setError] = useState('')
   const [pairing, setPairing] = useState<AccessPairing>()
@@ -74,6 +80,18 @@ export function RemoteAccessSection(): ReactNode {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2.5">
+        <span className="text-[12px] font-semibold text-dim">{workspaceName}</span>
+        <Card>
+          <SwitchRow
+            checked={draft.remoteAccess}
+            onChange={(remoteAccess) => patch({ remoteAccess })}
+            label="Allow remote clients to open this workspace"
+            hint="Devices paired below can list, open and use this workspace. Off, they cannot see it. A device that opens it moves this window to it too, as another window would, because Styr has one active workspace. Needs Allow other devices to connect to be on."
+          />
+        </Card>
+        <Hint>Saved with Save, for {workspaceName} only. Everything below applies right away.</Hint>
+      </div>
       <Card>
         <SwitchRow
           label="Allow other devices to connect"

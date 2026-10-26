@@ -83,7 +83,6 @@ describe('settings sections', () => {
     }
     expect(SECTIONS.filter((item) => 'live' in item).map((item) => item.id)).toEqual([
       'workspaces',
-      'remote-access',
       'remote'
     ])
   })

@@ -385,7 +385,13 @@ export function SettingsDialog({
                   />
                 ) : null}
 
-                {section === 'remote-access' ? <RemoteAccessSection /> : null}
+                {section === 'remote-access' ? (
+                  <RemoteAccessSection
+                    draft={draft}
+                    patch={patch}
+                    workspaceName={target.editedWorkspaceName}
+                  />
+                ) : null}
                 {section === 'remote' ? (
                   <RemoteSection workspaces={workspaces} onSetUp={newRemoteWorkspace} />
                 ) : null}

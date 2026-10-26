@@ -178,7 +178,7 @@ checkout instead of sharing the repository:
 ```
 
 By default worktrees sit beside the repo rather than inside it, so they never appear as untracked
-files and need no `.gitignore` entry. Set **Settings → General → Worktree location** to **Inside
+files and need no `.gitignore` entry. Set **Settings → Folders & terminal → Worktree location** to **Inside
 .styr/worktrees** to put them in `~/Workspace/acme/.styr/worktrees/TASK-0004` instead: anything that
 looks up the folder tree, such as Node's `node_modules` resolution, then finds the dependencies
 already installed in the main checkout, so a new worktree needs no install of its own. Styr writes a

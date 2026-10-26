@@ -185,7 +185,7 @@ export function remoteFileAction(
     reveal: false,
     openTitle: editor
       ? `Open in ${editor === 'cursor' ? 'Cursor' : 'VS Code'} over ssh — ${where}`
-      : `${where}. Only VS Code or Cursor (Settings → General → Open files with) can open a remote file.`,
+      : `${where}. Only VS Code or Cursor (Settings → Folders & terminal → Open files with) can open a remote file.`,
     revealTitle: `${where}. A remote file cannot be shown in this computer's file manager.`
   }
 }

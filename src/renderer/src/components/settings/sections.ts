@@ -14,9 +14,9 @@ export const SECTIONS = [
     sub: 'Board',
     blurb:
       'Defaults for new tasks, and what the board keeps in view. Existing tasks keep their own settings.',
-    keys: ['taskDefaults', 'doneCap', 'autoArchiveAsk', 'remoteAccess'],
+    keys: ['taskDefaults', 'doneCap', 'autoArchiveAsk'],
     words:
-      'remote access share phone device done cap archive ask agent chats hide limit worktree dispatch orchestrate default general preferences new task'
+      'done cap archive ask agent chats hide limit worktree dispatch orchestrate default general preferences new task'
   },
   {
     id: 'agents',
@@ -129,13 +129,13 @@ export const SECTIONS = [
     id: 'remote-access',
     label: 'Remote access',
     scope: 'app',
-    live: true,
     blurb:
       'Let devices you pair, such as a phone, use the workspaces you share. Reached over a private network only.',
-    // These controls act at once, like Remote hosts: nothing here waits for Save.
-    keys: [],
+    // The listener and devices act at once; the per-workspace switch waits for Save. So the page
+    // is not `live`.
+    keys: ['remoteAccess'],
     words:
-      'remote access phone mobile device pair qr tailscale network listen port token revoke awake sleep flutter app'
+      'remote access share sharing workspace phone mobile device pair qr tailscale network listen port token revoke awake sleep flutter app'
   },
   {
     id: 'remote',
