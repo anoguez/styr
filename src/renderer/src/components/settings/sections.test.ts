@@ -40,7 +40,7 @@ describe('settings sections', () => {
     const draft = settings({ shell: 'zsh', doneCap: { maxCount: 5, maxAgeDays: 0 } })
     const changes = unsavedChanges(draft, saved)
     expect(changes.count).toBe(2)
-    expect([...changes.sections]).toEqual(['preferences'])
+    expect([...changes.sections]).toEqual(['preferences', 'environment'])
     expect(unsavedChanges(saved, settings()).count).toBe(0)
   })
 
@@ -70,20 +70,32 @@ describe('settings sections', () => {
     const groups = settingsNav('', off)
     expect(groups.map((group) => group.label)).toEqual(['Workspace', 'All workspaces'])
     expect(groups[0]!.picker).toBe(true)
-    expect(settingsNav('', on).map((group) => group.label)).toContain('Integrations')
-    const integrations = (flags: typeof on): string[] =>
-      settingsNav('', flags)
-        .filter((group) => group.label === 'Integrations')
-        .flatMap((group) => group.items.map((item) => item.id))
-    expect(integrations(on)).toEqual(['source-github', 'source-rest'])
-    expect(integrations(off)).toEqual([])
+    expect(groups[0]!.subs.map((sub) => sub.label)).toEqual(['Board', 'Agents', 'Environment'])
+    const board = (flags: typeof on): string[] =>
+      settingsNav('', flags)[0]!.subs[0]!.items.map((item) => item.id)
+    expect(board(on)).toEqual(['preferences', 'presets', 'source-github', 'source-rest', 'theme'])
+    expect(board(off)).toEqual(['preferences', 'presets', 'theme'])
+  })
+
+  it('files every workspace page under a sub-heading and marks the live app pages', () => {
+    for (const item of SECTIONS) {
+      expect('sub' in item).toBe(item.scope === 'workspace')
+    }
+    expect(SECTIONS.filter((item) => 'live' in item).map((item) => item.id)).toEqual([
+      'workspaces',
+      'remote-access',
+      'remote'
+    ])
   })
 
   it('filters the nav by label and search words, case-insensitively', () => {
     const ids = (search: string): string[] =>
-      settingsNav(search, on).flatMap((group) => group.items.map((item) => item.id))
+      settingsNav(search, on).flatMap((group) =>
+        group.subs.flatMap((sub) => sub.items.map((item) => item.id))
+      )
     expect(ids('  KEYBOARD ')).toEqual(['shortcuts'])
     expect(ids('github')).toEqual(['source-github', 'experimental'])
+    expect(ids('restore')).toEqual(['environment'])
     expect(settingsNav('nothing matches this', on)).toEqual([])
   })
 

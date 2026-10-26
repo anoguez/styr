@@ -73,8 +73,10 @@ template and provider edits — live in `sections.ts` and `settings/draft.ts` wi
 `flush` to hand its padding and scrolling to a child that manages its own panes.
 
 The dialog is a `Modal` with `bare`: it draws no header or footer of its own, and `SettingsDialog`
-supplies the nav (a "Workspace" group headed by the workspace picker, an "All workspaces" group
-below it, filtered by each section's `words` from the search box), a header with the section blurb
+supplies the nav (a "Workspace" group headed by the workspace picker and split into Board, Agents
+and Environment sub-headings by each section's `sub`, an "All workspaces" group below it, filtered
+by each section's `words` from the search box; a section with `live` shows a bolt in the nav and an
+"Applies right away" chip because nothing on it waits for Save), a header with the section blurb
 and a scope chip, and a footer carrying the dirty status, Discard and Save (⌘↵). Dirty state is
 derived by comparing `draft` to the saved settings over each section's `keys`, so a new section must
 list the `Settings` keys it edits. Save keeps the dialog open: `useWorkspaceTarget.markSaved` makes what was

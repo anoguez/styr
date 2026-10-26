@@ -9,27 +9,22 @@ import type { ExperimentalSettings, Settings } from '@core/types.js'
 export const SECTIONS = [
   {
     id: 'preferences',
-    label: 'General',
+    label: 'Tasks',
     scope: 'workspace',
-    blurb: 'Defaults for new tasks in this workspace. Existing tasks keep their own settings.',
-    keys: [
-      'taskDefaults',
-      'doneCap',
-      'autoArchiveAsk',
-      'remoteAccess',
-      'defaultRepoPath',
-      'shell',
-      'openFilesWith',
-      'worktreeLocation'
-    ],
+    sub: 'Board',
+    blurb:
+      'Defaults for new tasks, and what the board keeps in view. Existing tasks keep their own settings.',
+    keys: ['taskDefaults', 'doneCap', 'autoArchiveAsk', 'remoteAccess'],
     words:
-      'remote access share phone device done cap archive ask agent chats hide limit worktree location node_modules directory shell terminal orchestrate default preferences open editor app markdown'
+      'remote access share phone device done cap archive ask agent chats hide limit worktree dispatch orchestrate default general preferences new task'
   },
   {
     id: 'agents',
     label: 'Agents',
     scope: 'workspace',
-    blurb: 'The coding CLIs Styr can launch, and how to reach them.',
+    sub: 'Agents',
+    blurb:
+      'The coding CLIs Styr can launch, the models they offer, and how they ask for permission.',
     keys: [
       'enabledProviders',
       'defaultProvider',
@@ -42,41 +37,43 @@ export const SECTIONS = [
     words: 'claude codex provider mcp command approvals agents model models opus sonnet'
   },
   {
-    id: 'source-github',
-    label: 'GitHub',
-    group: 'integrations',
-    scope: 'workspace',
-    blurb: 'Link GitHub issues to tasks. Read-only sources are never written to.',
-    keys: ['sources'],
-    provider: 'github',
-    flag: 'externalSources',
-    words: 'github issues sync gh external source integrations'
-  },
-  {
-    id: 'source-rest',
-    label: 'REST API',
-    group: 'integrations',
-    scope: 'workspace',
-    blurb: 'Import the items REST endpoints return as tasks. Styr only reads from them.',
-    // `sources` is claimed by the GitHub page; this one is judged by its own entries in it
-    keys: [],
-    provider: 'rest',
-    flag: 'externalSources',
-    words: 'rest api http endpoint request headers body json sync external source integrations'
-  },
-  {
     id: 'presets',
     label: 'Presets',
     scope: 'workspace',
+    sub: 'Board',
     blurb:
       'Starting points for the New task dialog. A task keeps no link to the preset it came from.',
     keys: ['taskPresets'],
     words: 'task template preset bug refactor spec new task prefill'
   },
   {
+    id: 'source-github',
+    label: 'GitHub',
+    scope: 'workspace',
+    sub: 'Board',
+    blurb: 'Link GitHub issues to tasks. Read-only sources are never written to.',
+    keys: ['sources'],
+    provider: 'github',
+    flag: 'externalSources',
+    words: 'github issues sync gh external source'
+  },
+  {
+    id: 'source-rest',
+    label: 'REST API',
+    scope: 'workspace',
+    sub: 'Board',
+    blurb: 'Import the items REST endpoints return as tasks. Styr only reads from them.',
+    // `sources` is claimed by the GitHub page; this one is judged by its own entries in it
+    keys: [],
+    provider: 'rest',
+    flag: 'externalSources',
+    words: 'rest api http endpoint request headers body json sync external source'
+  },
+  {
     id: 'routing',
     label: 'Prompt routing',
     scope: 'workspace',
+    sub: 'Agents',
     blurb: 'Which template runs when you press Start, based on where the task sits.',
     keys: ['promptRouting', 'defaultPromptTemplateId', 'providerRouting'],
     words: 'template column spec fallback agent lane'
@@ -85,6 +82,7 @@ export const SECTIONS = [
     id: 'templates',
     label: 'Templates',
     scope: 'workspace',
+    sub: 'Agents',
     blurb: 'The prompts agents receive. Placeholders are filled from the task.',
     keys: ['promptTemplates'],
     words: 'prompt placeholder body'
@@ -93,14 +91,27 @@ export const SECTIONS = [
     id: 'orchestration',
     label: 'Dispatch',
     scope: 'workspace',
-    blurb: 'Which agent picks up each kind of work, and how many run at once.',
+    sub: 'Agents',
+    blurb:
+      'Which agent picks up each kind of work, how many run at once, and when Auto-run stops itself.',
     keys: ['orchestration', 'autoDispatchLimits'],
-    words: 'slots lanes parallel concurrency limits breaker safety'
+    words: 'slots lanes parallel concurrency limits breaker safety auto-run orchestrate agent lane'
+  },
+  {
+    id: 'environment',
+    label: 'Folders & terminal',
+    scope: 'workspace',
+    sub: 'Environment',
+    blurb: 'Where agents work, which shell they get, and how files open.',
+    keys: ['defaultRepoPath', 'worktreeLocation', 'shell', 'restoreTabs', 'openFilesWith'],
+    words:
+      'working directory worktree location node_modules shell terminal tabs restore open files editor app'
   },
   {
     id: 'theme',
     label: 'Theme',
     scope: 'workspace',
+    sub: 'Board',
     blurb: 'Colours and fonts. Changes preview live while this workspace is open.',
     keys: ['theme'],
     words: 'colour color font gradient terminal palette appearance'
@@ -109,6 +120,7 @@ export const SECTIONS = [
     id: 'workspaces',
     label: 'Workspaces',
     scope: 'app',
+    live: true,
     blurb: 'Separate boards, each with its own tasks, agents and settings.',
     keys: [],
     words: 'board'
@@ -117,6 +129,7 @@ export const SECTIONS = [
     id: 'remote-access',
     label: 'Remote access',
     scope: 'app',
+    live: true,
     blurb:
       'Let devices you pair, such as a phone, use the workspaces you share. Reached over a private network only.',
     // These controls act at once, like Remote hosts: nothing here waits for Save.
@@ -126,8 +139,9 @@ export const SECTIONS = [
   },
   {
     id: 'remote',
-    label: 'Remote hosts (all workspaces)',
+    label: 'Remote hosts',
     scope: 'app',
+    live: true,
     blurb: 'Machines that run your remote workspaces. Your local workspaces are not affected.',
     keys: [],
     flag: 'remoteWorkspaces',
@@ -169,8 +183,10 @@ export const SECTIONS = [
 ] as const satisfies readonly {
   id: string
   label: string
-  /** The nav heading it sits under; defaults to its scope. */
-  group?: 'integrations'
+  /** The sub-heading a workspace page sits under in the nav. */
+  sub?: 'Board' | 'Agents' | 'Environment'
+  /** Nothing on the page waits for Save: its controls act at once. */
+  live?: true
   /** An Integrations page edits only this provider's entries of `sources`. */
   provider?: string
   /** Hidden unless this experimental feature is switched on. */
@@ -227,16 +243,23 @@ export function unsavedChanges(
 }
 
 const NAV_GROUPS = [
-  { label: 'Workspace', picker: true, key: 'workspace' },
-  { label: 'Integrations', picker: false, key: 'integrations' },
-  { label: 'All workspaces', picker: false, key: 'app' }
+  { label: 'Workspace', picker: true, scope: 'workspace' },
+  { label: 'All workspaces', picker: false, scope: 'app' }
 ] as const
+
+const NAV_SUBS = ['Board', 'Agents', 'Environment'] as const
+
+export interface NavSub {
+  /** Empty for the app-level group, which has no sub-headings. */
+  label: string
+  items: Section[]
+}
 
 export interface NavGroup {
   label: string
   /** The group headed by the workspace picker. */
   picker: boolean
-  items: Section[]
+  subs: NavSub[]
 }
 
 /** The nav: shown sections matching the search box, under their group; empty groups drop out. */
@@ -245,10 +268,15 @@ export function settingsNav(search: string, experimental: ExperimentalSettings):
   const matches = (item: Section): boolean =>
     sectionShown(item, experimental) &&
     (!query || `${item.label} ${item.words}`.toLowerCase().includes(query))
-  const groupOf = (item: Section): string => ('group' in item ? item.group : item.scope)
-  return NAV_GROUPS.map(({ label, picker, key }) => ({
-    label,
-    picker,
-    items: SECTIONS.filter((item) => groupOf(item) === key && matches(item))
-  })).filter((group) => group.items.length > 0)
+  return NAV_GROUPS.map(({ label, picker, scope }) => {
+    const inScope = SECTIONS.filter((item) => item.scope === scope && matches(item))
+    const subs: NavSub[] =
+      scope === 'app'
+        ? [{ label: '', items: inScope }]
+        : NAV_SUBS.map((sub) => ({
+            label: sub,
+            items: inScope.filter((item) => 'sub' in item && item.sub === sub)
+          }))
+    return { label, picker, subs: subs.filter((sub) => sub.items.length > 0) }
+  }).filter((group) => group.subs.length > 0)
 }
