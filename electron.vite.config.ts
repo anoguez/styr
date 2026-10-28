@@ -11,7 +11,9 @@ export default defineConfig({
   main: {
     resolve: { alias: { '@core': core, '@host': host } },
     build: {
-      externalizeDeps: true,
+      // The MCP server is launched by plain `node` from app.asar.unpacked (or the AppImage copy),
+      // where node_modules inside the asar cannot be reached. Every package it imports is bundled.
+      externalizeDeps: { exclude: ['@modelcontextprotocol/sdk', 'zod', 'gray-matter'] },
       rollupOptions: {
         external: nodeExternals,
         input: {

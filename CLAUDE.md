@@ -142,7 +142,10 @@ preload, IPC layer and MCP server all share them. A new domain file goes in `typ
   by `setPrimaryModifier` in the renderer; show keys with `formatAccelerator`/`shortcutHint`.
 - `out/main/**` is in `asarUnpack`. The MCP server is launched by plain `node`, which cannot read
   inside an asar archive, so `app:mcpCommand` resolves it under `app.asar.unpacked` when packaged.
-  Anything else that must be run by a non-Electron process needs the same treatment. An AppImage
+  Anything else that must be run by a non-Electron process needs the same treatment. `node_modules`
+  stay inside the asar, out of that process's reach, so every package the MCP server imports is
+  bundled (`externalizeDeps.exclude`); `scripts/build.mjs` starts it without `node_modules` and
+  fails the build if it cannot answer `initialize`. An AppImage
   mounts itself only while running, so there `mcpEntry.ts` copies `out/main` to `~/.styr/mcp-server`.
 - Anything that builds a shell command from a path must run it through `shellQuote`.
   `app:mcpCommand` is copy-pasted by the user into a terminal, and a path with a space (an

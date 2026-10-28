@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 // Vite swaps node builtins for a stub that only throws once the renderer runs, so a stray
 // `import … from 'node:fs'` in renderer-facing code reaches the user as a blank window.
@@ -43,8 +45,55 @@ child.on('exit', (code) => {
   }
   console.log('\nrenderer bundle is free of node builtins')
   checkSandboxedPreload()
-  buildServer()
+  checkStandaloneMcp().then(buildServer)
 })
+
+/**
+ * The MCP server runs under plain `node` from app.asar.unpacked (or the AppImage copy), with no
+ * node_modules in reach: a package left external there exits at startup, which Claude Code reports
+ * only as CONNECTION_CLOSED. Run a copy of out/main outside the repo and expect an initialize answer.
+ */
+function checkStandaloneMcp() {
+  const dir = mkdtempSync(join(tmpdir(), 'styr-mcp-check-'))
+  cpSync('out/main', join(dir, 'main'), { recursive: true })
+  const mcp = spawn(process.execPath, [join(dir, 'main', 'mcp', 'index.mjs')], { shell: false })
+  let stdout = ''
+  let stderr = ''
+  mcp.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
+  mcp.stderr.setEncoding('utf8').on('data', (chunk) => (stderr += chunk))
+  mcp.stdin.write(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'build', version: '0' }
+      }
+    }) + '\n'
+  )
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => mcp.kill(), 10_000)
+    mcp.stdout.on('data', () => {
+      if (stdout.includes('"serverInfo"')) mcp.kill()
+    })
+    mcp.on('exit', () => {
+      clearTimeout(timer)
+      rmSync(dir, { recursive: true, force: true })
+      if (!stdout.includes('"serverInfo"')) {
+        console.error(
+          '\nBuild failed: the MCP server does not start without node_modules (as it runs once ' +
+            'installed). Bundle what it imports (externalizeDeps.exclude in electron.vite.config.ts).\n' +
+            stderr
+        )
+        process.exit(1)
+      }
+      console.log('MCP server starts standalone (no node_modules)')
+      resolve()
+    })
+  })
+}
 
 /**
  * The renderer is sandboxed, where the preload is one script that may require `electron` alone: a
