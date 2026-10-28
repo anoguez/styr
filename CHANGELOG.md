@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.1](https://github.com/anoguez/styr/compare/v0.41.0...v0.41.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **mcp:** bundle the MCP server's dependencies so it starts once installed ([#247](https://github.com/anoguez/styr/issues/247)) ([94c3605](https://github.com/anoguez/styr/commit/94c36059dffe8b85031aa08d6c550df195a742da))
+
 ## [0.41.0](https://github.com/anoguez/styr/compare/v0.40.0...v0.41.0) (2026-10-26)
 
 
