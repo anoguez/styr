@@ -5,6 +5,7 @@ import {
   groupedFingerprint,
   interfaceOptions,
   listenerStatus,
+  needsSharedWorkspace,
   qrPath
 } from './accessView.js'
 
@@ -19,7 +20,8 @@ const base: AccessState = {
     { name: 'utun4', address: '100.101.102.103', kind: 'tailscale' }
   ],
   devices: [],
-  fingerprint: 'ab'.repeat(32)
+  fingerprint: 'ab'.repeat(32),
+  workspaceShared: true
 }
 
 describe('interfaceOptions', () => {
@@ -33,6 +35,27 @@ describe('interfaceOptions', () => {
   it('keeps a saved address whose interface is gone, marked', () => {
     const options = interfaceOptions({ ...base, bindAddress: '10.9.9.9' })
     expect(options.at(-1)).toEqual({ value: '10.9.9.9', label: '10.9.9.9 · not available now' })
+  })
+
+  it('marks an IPv6 address as such', () => {
+    const options = interfaceOptions({
+      ...base,
+      interfaces: [{ name: 'utun4', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' }]
+    })
+    expect(options[0]?.label).toBe('fd7a:115c:a1e0::1 · utun4 · Tailscale IPv6')
+  })
+})
+
+describe('needsSharedWorkspace', () => {
+  const device = { id: 'd1', name: 'iPhone', createdAt: '2026-11-01T00:00:00Z', connected: true }
+
+  it('asks once a device is paired and nothing is shared', () => {
+    expect(needsSharedWorkspace({ devices: [device], workspaceShared: false })).toBe(true)
+  })
+
+  it('stays quiet with no device or with a shared workspace', () => {
+    expect(needsSharedWorkspace({ devices: [], workspaceShared: false })).toBe(false)
+    expect(needsSharedWorkspace({ devices: [device], workspaceShared: true })).toBe(false)
   })
 })
 

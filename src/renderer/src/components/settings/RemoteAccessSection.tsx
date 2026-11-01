@@ -1,10 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { AccessPairing, AccessState } from '@core/types.js'
 import {
+  SHIELDS_UP_WARNING,
   deviceLine,
   groupedFingerprint,
   interfaceOptions,
   listenerStatus,
+  needsSharedWorkspace,
   qrPath
 } from '../../lib/accessView.js'
 import { ipcMessage } from '../../lib/ipcMessage.js'
@@ -17,7 +19,15 @@ import { Button, Card, CardRow, Field, Hint, Select, SwitchRow, inputClass } fro
  * Settings → Remote access (`WorkspaceSharingSection`). These controls act at once, like Remote
  * hosts: they are not part of Save.
  */
-export function RemoteAccessSection(): ReactNode {
+export function RemoteAccessSection({
+  openWorkspaceName,
+  onShared
+}: {
+  /** The workspace "Share this workspace" shares: the open one, which a device lands on. */
+  openWorkspaceName: string
+  /** After that share is saved, so the dialog's draft agrees with the file. */
+  onShared: () => void
+}): ReactNode {
   const [state, setState] = useState<AccessState>()
   const [error, setError] = useState('')
   const [pairing, setPairing] = useState<AccessPairing>()
@@ -28,6 +38,9 @@ export function RemoteAccessSection(): ReactNode {
       setState(initial)
       setPort(String(initial.port))
     })
+    // Shields Up is asked about when the page opens (and by the service when switched on), not
+    // polled: the answer comes back through `access:changed`.
+    void window.api.access.checkNetwork().catch(() => undefined)
     return window.api.access.onChanged(setState)
   }, [])
 
@@ -65,6 +78,16 @@ export function RemoteAccessSection(): ReactNode {
     }
   }
 
+  async function share(): Promise<void> {
+    setError('')
+    try {
+      setState(await window.api.access.shareWorkspace())
+      onShared()
+    } catch (failure) {
+      setError(ipcMessage(failure))
+    }
+  }
+
   function cancelPairing(): void {
     setPairing(undefined)
     void window.api.access.cancelPair()
@@ -75,6 +98,32 @@ export function RemoteAccessSection(): ReactNode {
 
   return (
     <div className="flex flex-col gap-4">
+      {state.shieldsUp ? (
+        <Card>
+          <CardRow className="px-3.5 py-3">
+            <span role="alert" className="text-[12px] text-danger">
+              {SHIELDS_UP_WARNING}
+            </span>
+          </CardRow>
+        </Card>
+      ) : null}
+      {needsSharedWorkspace(state) ? (
+        <Card>
+          <CardRow className="flex items-center gap-3 px-3.5 py-3">
+            <span className="flex-1 text-[12px] text-ink">
+              No workspace is shared yet, so paired devices have nothing to open. Share{' '}
+              {openWorkspaceName}, the open one, or turn on others under Settings → Remote access.
+            </span>
+            <Button
+              className="shrink-0"
+              title={`Turns on Allow remote clients to open this workspace for ${openWorkspaceName}.`}
+              onClick={() => void share()}
+            >
+              Share this workspace
+            </Button>
+          </CardRow>
+        </Card>
+      ) : null}
       <Card>
         <SwitchRow
           label="Allow other devices to connect"

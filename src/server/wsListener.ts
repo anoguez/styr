@@ -147,6 +147,11 @@ export async function startNetworkListener(
     let deviceId = ''
     let connection: ReturnType<Hub['connect']> | undefined
     const handshake = createServerHandshake({ store: options.store, protocol: options.protocol })
+    /** Where a handshake that went quiet stopped, for the log. */
+    const stalled = (): string =>
+      handshake.step() === 'hello'
+        ? 'connected, but sent no hello'
+        : "got this computer's key and did not answer: the phone may not trust it; pair again with a new QR"
     /**
      * Ends the session now: nothing the peer sends after this reaches the hub (a peer that ignores
      * the close frame would otherwise keep calling until `ws` gives up), and the socket is cut
@@ -161,7 +166,7 @@ export async function startNetworkListener(
     }
     const session: Session = { end: (code, reason) => end(code, reason) }
     const timeout = setTimeout(() => {
-      options.log(`Remote access: ${source} did not finish the handshake`)
+      options.log(`Remote access: ${source} did not finish the handshake (${stalled()})`)
       if (countsFailures(source)) limiter.fail(source)
       end(CLOSE.TIMEOUT, 'timeout')
     }, options.handshakeMs ?? HANDSHAKE_TIMEOUT_MS)
@@ -236,6 +241,11 @@ export async function startNetworkListener(
     /** Counted in `connected` since `open()`. */
     let counted = false
     ws.on('close', () => {
+      // A phone that does not trust the key it was shown hangs up without a word: say so here,
+      // since nothing else in the log would.
+      if (phase === 'handshake' && handshake.step() === 'auth') {
+        options.log(`Remote access: ${source} hung up at the key check (${stalled()})`)
+      }
       clearTimeout(timeout)
       clearInterval(ping)
       const wasOpen = counted

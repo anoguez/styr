@@ -6,7 +6,7 @@ import type {
   AccessState
 } from '@core/types/access.js'
 import type { AccessStore } from './accessStore.js'
-import { bindAddressProblem, portProblem } from './addresses.js'
+import { bindAddressProblem, defaultBindAddress, portProblem } from './addresses.js'
 import { createKeepAwake, type KeepAwakePorts } from './keepAwake.js'
 
 /** What the transport gives back once it listens (`src/server/wsListener.ts`). */
@@ -25,6 +25,13 @@ export interface AccessServicePorts {
   /** `access:changed`, to the Settings screen. */
   broadcast(state: AccessState): void
   log(message: string): void
+  /**
+   * Whether Tailscale's Shields Up is on (`tailscale.ts`); undefined when it cannot tell. Absent on
+   * a host with no screen to warn on.
+   */
+  shieldsUp?(): Promise<boolean | undefined>
+  /** Whether any workspace has `remoteAccess` on. Absent: assumed so. */
+  workspaceShared?(): boolean
 }
 
 /**
@@ -37,6 +44,7 @@ export function createAccessService(ports: AccessServicePorts) {
   const { store } = ports
   let running: RunningListener | undefined
   let error: string | undefined
+  let shieldsUp: boolean | undefined
   let applying: Promise<void> = Promise.resolve()
   const awake = createKeepAwake(ports.keepAwake)
 
@@ -52,8 +60,25 @@ export function createAccessService(ports: AccessServicePorts) {
         .devices()
         .map((device) => ({ ...device, connected: connected.has(device.id) })),
       fingerprint: store.identity().fingerprint,
-      ...(store.pairing() ? { pairingExpiresAt: store.pairing()!.expiresAt } : {})
+      ...(store.pairing() ? { pairingExpiresAt: store.pairing()!.expiresAt } : {}),
+      ...(shieldsUp !== undefined ? { shieldsUp } : {}),
+      workspaceShared: ports.workspaceShared?.() ?? true
     }
+  }
+
+  /**
+   * Asks Tailscale whether Shields Up is on, then tells the screen. Run when Settings opens the
+   * section and when access is switched on, never on a timer; the probe is a child process, so
+   * nothing waits on it.
+   */
+  async function checkNetwork(): Promise<AccessState> {
+    if (ports.shieldsUp) {
+      const next = await ports.shieldsUp().catch(() => undefined)
+      if (next && !shieldsUp)
+        ports.log('Remote access: Tailscale Shields Up is on; devices cannot connect in')
+      shieldsUp = next
+    }
+    return publish()
   }
 
   function publish(): AccessState {
@@ -121,7 +146,14 @@ export function createAccessService(ports: AccessServicePorts) {
       if (patch.port !== undefined) next.port = patch.port
       if (patch.enabled !== undefined) next.enabled = patch.enabled
       if (patch.keepAwake !== undefined) next.keepAwake = patch.keepAwake
+      // Switched on with nothing picked: the Tailscale IPv4 address. Only an empty choice is
+      // filled; an address the user picked, IPv6 included, is never swapped for another.
+      if (next.enabled && patch.bindAddress === undefined && !store.config().bindAddress) {
+        const fallback = defaultBindAddress(ports.interfaces())
+        if (fallback) next.bindAddress = fallback
+      }
       const merged = { ...store.config(), ...next }
+      if (next.enabled) void checkNetwork()
       if (merged.enabled) {
         const problem = bindAddressProblem(merged.bindAddress) ?? portProblem(merged.port)
         if (problem) {
@@ -149,6 +181,11 @@ export function createAccessService(ports: AccessServicePorts) {
     },
 
     cancelPairing: (): void => store.cancelPairing(),
+
+    checkNetwork,
+
+    /** Something the state is derived from changed elsewhere (a workspace was shared). */
+    refresh: (): AccessState => publish(),
 
     revoke(deviceId: string): AccessState {
       store.revoke(deviceId)

@@ -26,7 +26,10 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 - **Tailscale (and loopback) only, enforced in code** (`host/remoteAccess/addresses.ts`). The listener
   binds only to loopback or Tailscale addresses (`100.64.0.0/10`,
   `fd7a:115c:a1e0::/48`; the IPv4 range also covers carrier-grade NAT); `0.0.0.0`, `::`, a hostname, a LAN (RFC 1918 / link-local) or public address and "nothing picked" are
-  refused with a message, and the default is none. Every accepted socket's source address is
+  refused with a message. Settings lists the Tailscale IPv4 address first, and switching access on
+  with nothing picked listens there (`defaultBindAddress`); it never picks IPv6 or loopback by
+  itself, and never replaces an address the user chose (the QR carries it, and an IPv6 host fails
+  on networks that reach the IPv4 one). Every accepted socket's source address is
   checked against the same ranges before a byte is read, so a port-forward cannot let the internet
   in. Requests with `X-Forwarded-For`, `Forwarded`, `X-Real-IP` … are refused (no reverse
   proxies), and so is any request with an `Origin` (a web page cannot be a device). Reachability is
@@ -45,6 +48,21 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 - **One active workspace, shared by all clients.** A device that switches workspace moves the
   desktop window too, as another window would. It sees the active workspace in `workspaces:list`
   (`activeId`, empty when the active one is not shared) and `settings:changed`.
+
+## What Settings warns about
+
+- **Shields Up.** With Tailscale's Shields Up on, nothing connects in and the phone only sees a
+  timeout. `tailscale.ts` runs `tailscale debug prefs` (a child process, never synchronous, trying
+  the Mac app's binary when `tailscale` is not on the app's PATH) and reads `ShieldsUp` alone; the
+  answer is `AccessState.shieldsUp`. It is asked when Settings → Remote devices opens
+  (`access:checkNetwork`) and when access is switched on, never on a timer.
+- **Nothing shared.** `AccessState.workspaceShared` is false while no workspace has `remoteAccess`
+  on; with a device paired, the page offers "Share this workspace" (`access:shareWorkspace`), which
+  saves the flag on the open workspace through `settings:save`. The access state is re-sent on
+  `settings:changed` / `workspaces:changed`.
+- **The log names the step.** A refusal says whether sign-in, the pairing code or a late message
+  failed, and a handshake that went quiet says whether the device sent no `hello` or hung up after
+  the challenge (the key check a phone fails without a word).
 
 ## Known limits
 
@@ -65,6 +83,7 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 - `src/host/remoteAccess/handshake.ts`: the handshake, as a pure state machine plus the proof
   functions a client uses.
 - `src/host/remoteAccess/gate.ts`: `createNetworkPolicy`, the per-client filter the hub applies.
+- `src/host/remoteAccess/tailscale.ts`: the Shields Up probe.
 - `src/host/remoteAccess/accessService.ts`: what Settings drives: switch on/off, move, pair, revoke,
   the keep-awake hold (`keepAwake.ts`). A listener that cannot start (port in use, interface gone)
   leaves the setting off with the reason in `error`; the app carries on.

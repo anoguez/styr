@@ -163,6 +163,9 @@ export function createServerHandshake(options: {
   }
 
   return {
+    /** How far it got: `hello` until the challenge is sent, `auth` while waiting for the answer. */
+    step: (): 'hello' | 'auth' | 'done' => state,
+
     receive(text: string): HandshakeResult {
       if (state === 'done') return deny('message after the handshake ended')
       if (Buffer.byteLength(text) > HANDSHAKE_MAX_BYTES) return deny('handshake message too large')
@@ -211,7 +214,9 @@ export function createServerHandshake(options: {
           authSignedData(auth.data.deviceId, serverNonce, clientNonce, identity.fingerprint),
           auth.data.signature
         )
-        if (!publicKey || !good) return deny('bad device signature')
+        if (!publicKey)
+          return deny('sign-in: not a paired device (revoked, or paired with another computer)')
+        if (!good) return deny('sign-in: the device key check failed')
         state = 'done'
         return {
           kind: 'ready',
@@ -225,7 +230,8 @@ export function createServerHandshake(options: {
       if (pair.success) {
         // The offer is spent by the attempt, so a wrong guess cannot be retried against it.
         const offer = options.store.consumePairing()
-        if (!offer) return deny('no open pairing')
+        if (!offer)
+          return deny('pairing code: no QR is open (it expired, was used or was cancelled)')
         const expected = pairProof(
           offer.secret,
           serverNonce,
@@ -234,7 +240,8 @@ export function createServerHandshake(options: {
           pair.data.name,
           pair.data.publicKey
         )
-        if (!equalHex(expected, pair.data.proof)) return deny('bad pairing proof')
+        if (!equalHex(expected, pair.data.proof))
+          return deny('pairing code: does not match the QR shown')
         if (!validDevicePublicKey(pair.data.publicKey)) return deny('not an Ed25519 key')
         let device
         try {
