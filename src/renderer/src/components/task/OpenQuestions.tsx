@@ -4,7 +4,7 @@ import type { AnswerResult, Task } from '@core/types.js'
 import { Button } from '../ui.js'
 
 /**
- * The questions an agent put to the owner (`ask_owner`), each with a field and Send answer. The
+ * The open questions in the task file (`questions:`), each with a field and Send answer. The
  * answer is recorded in the task file and sent to the agent by the host; `onAnswered` reports how
  * it went. Shown in the Inbox for a `question` item and in the task dialog under the description.
  */
