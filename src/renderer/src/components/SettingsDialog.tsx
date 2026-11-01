@@ -389,7 +389,18 @@ export function SettingsDialog({
                 {section === 'remote-sharing' ? (
                   <WorkspaceSharingSection draft={draft} patch={patch} />
                 ) : null}
-                {section === 'remote-access' ? <RemoteAccessSection /> : null}
+                {section === 'remote-access' ? (
+                  <RemoteAccessSection
+                    openWorkspaceName={workspaces.names.get(openId) ?? 'this workspace'}
+                    onShared={() => {
+                      // Saved on disk already: the draft and its baseline follow, so it is not
+                      // shown as an unsaved change and a later Save does not undo it.
+                      if (!target.editingActiveWorkspace) return
+                      setDraft((current) => ({ ...current, remoteAccess: true }))
+                      target.markSaved({ ...target.savedWorkspaceSettings, remoteAccess: true })
+                    }}
+                  />
+                ) : null}
                 {section === 'remote' ? (
                   <RemoteSection workspaces={workspaces} onSetUp={newRemoteWorkspace} />
                 ) : null}

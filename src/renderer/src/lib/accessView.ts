@@ -11,7 +11,19 @@ const KIND_LABEL: Record<AccessInterface['kind'], string> = {
 }
 
 export function interfaceLabel(choice: AccessInterface): string {
-  return `${choice.address} · ${choice.name} · ${KIND_LABEL[choice.kind]}`
+  const family = choice.address.includes(':') ? ' IPv6' : ''
+  return `${choice.address} · ${choice.name} · ${KIND_LABEL[choice.kind]}${family}`
+}
+
+/** Shown while Tailscale's Shields Up is on: devices cannot connect in, whatever Styr does. */
+export const SHIELDS_UP_WARNING =
+  'Tailscale Shields Up is on, so this computer blocks incoming connections from your devices: pairing and sign-in time out. In Tailscale, turn on Allow incoming connections (or run tailscale set --shields-up=false), then pair again.'
+
+/** A device is paired but no workspace is shared, so it has nothing to open. */
+export function needsSharedWorkspace(
+  state: Pick<AccessState, 'devices' | 'workspaceShared'>
+): boolean {
+  return state.devices.length > 0 && !state.workspaceShared
 }
 
 /** The interfaces to offer: the saved address stays in the list, marked, when it has gone away. */

@@ -1,10 +1,11 @@
 import { app, ipcMain, powerSaveBlocker, safeStorage } from 'electron'
 import { pinWorkspace, pinnedWorkspaceId } from '@core/config.js'
 import { loadSettings } from '@core/settingsStore.js'
-import { globalSettingsFor } from '@core/types.js'
+import { globalSettingsFor, workspaceSettingsFor, type SettingsChange } from '@core/types.js'
 import { listWorkspaces } from '@core/workspaces.js'
-import type { AccessConfig } from '@core/types/access.js'
+import type { AccessConfig, AccessState } from '@core/types/access.js'
 import type { SecretBox } from '@host/remoteAccess/accessStore.js'
+import { tailscaleShieldsUp } from '@host/remoteAccess/tailscale.js'
 import { createHub, PROTOCOL_VERSION } from '../server/hub.js'
 import { createNetworkAccess, forwardToHub } from '../server/networkAccess.js'
 import { channelTable, onLocalTray } from './ipc.js'
@@ -80,14 +81,43 @@ const access = createNetworkAccess({
   },
   broadcast: (state) => electronHost.broadcast('access:changed', state),
   log: (message) => console.warn(message),
-  secrets: keychain
+  secrets: keychain,
+  shieldsUp: () => tailscaleShieldsUp(),
+  workspaceShared: () => listWorkspaces(loadSettings()).some((entry) => isOpen(entry.id))
 })
+
+/**
+ * "Share this workspace", from the notice Settings shows once a device is paired and nothing is
+ * shared: turns `remoteAccess` on for the open workspace through the ordinary save, so the
+ * workspaces, the hub and every window hear `settings:changed` as after Settings → Save.
+ */
+async function shareActiveWorkspace(): Promise<AccessState> {
+  const global = loadSettings()
+  const id = global.activeWorkspaceId
+  if (listWorkspaces(global).find((entry) => entry.id === id)?.remote) {
+    throw new Error('The open workspace lives on a remote host, so devices cannot open it here.')
+  }
+  const own = loadSettings(id)
+  const change: SettingsChange = {
+    workspaceId: id,
+    workspace: { ...workspaceSettingsFor(own), remoteAccess: true },
+    global: globalSettingsFor(global)
+  }
+  await channelTable.invoke['settings:save']!.run(change as never)
+  return access.service.refresh()
+}
+
+/** What the access state is derived from besides its own store: which workspaces are shared. */
+const SHARING_CHANGES = new Set(['settings:changed', 'workspaces:changed'])
 
 const configSchemaKeys: (keyof AccessConfig)[] = ['enabled', 'bindAddress', 'port', 'keepAwake']
 
 /** Called once the app is ready: feeds the hub what the windows are told, and listens if left on. */
 export function startNetworkAccess(): void {
-  onBroadcast((channel, payload) => forwardToHub(hub, channel, payload))
+  onBroadcast((channel, payload) => {
+    forwardToHub(hub, channel, payload)
+    if (SHARING_CHANGES.has(channel)) access.service.refresh()
+  })
   onLocalTray((statuses, titles) => {
     lastTray = { statuses, titles: Object.fromEntries(titles) }
     forwardToHub(hub, 'server:tray', lastTray)
@@ -109,6 +139,8 @@ export function registerAccessHandlers(): void {
   )
   ipcMain.handle('access:pair', () => access.service.pair())
   ipcMain.handle('access:cancelPair', () => access.service.cancelPairing())
+  ipcMain.handle('access:checkNetwork', () => access.service.checkNetwork())
+  ipcMain.handle('access:shareWorkspace', () => shareActiveWorkspace())
   ipcMain.handle('access:revoke', (_event, deviceId: unknown) =>
     access.service.revoke(String(deviceId))
   )

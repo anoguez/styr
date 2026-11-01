@@ -85,6 +85,8 @@ const DESKTOP_ONLY = new Set([
   'access:pair',
   'access:cancelPair',
   'access:revoke',
+  'access:checkNetwork',
+  'access:shareWorkspace',
   // The client's own connections to remote hosts (`src/main/remote.ts`).
   'remote:state',
   'remote:retry',

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { AccessState } from '@core/types/access.js'
+import type { AccessInterface, AccessState } from '@core/types/access.js'
 import { createAccessService, type RunningListener } from './accessService.js'
 import { createAccessStore, PAIRING_TTL_MS } from './accessStore.js'
 import { createKeepAwake } from './keepAwake.js'
@@ -17,6 +17,9 @@ describe('access service', () => {
   let connected: string[]
   let held: number[]
   let released: number[]
+  let interfaces: AccessInterface[]
+  let shields: boolean | undefined
+  let shared: boolean
 
   function setup() {
     const store = createAccessStore({ path: join(dir, 'access.json'), now: () => clock })
@@ -33,7 +36,7 @@ describe('access service', () => {
         }
         return listener
       },
-      interfaces: () => [{ name: 'en0', address: '100.101.102.103', kind: 'tailscale' }],
+      interfaces: () => interfaces,
       keepAwake: {
         hold: () => {
           held.push(held.length + 1)
@@ -42,7 +45,9 @@ describe('access service', () => {
         release: (id: number) => void released.push(id)
       },
       broadcast: (state) => broadcasts.push(state),
-      log: (message) => log.push(message)
+      log: (message) => log.push(message),
+      shieldsUp: async () => shields,
+      workspaceShared: () => shared
     })
     return { store, service, closed }
   }
@@ -57,6 +62,9 @@ describe('access service', () => {
     connected = []
     held = []
     released = []
+    interfaces = [{ name: 'en0', address: '100.101.102.103', kind: 'tailscale' }]
+    shields = undefined
+    shared = true
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -87,6 +95,56 @@ describe('access service', () => {
       expect(state.error).toBeTruthy()
     }
     expect(listens).toEqual([])
+  })
+
+  it('switched on with nothing picked, listens on the Tailscale IPv4 address', async () => {
+    interfaces = [
+      { name: 'utun3', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' },
+      { name: 'utun3', address: '100.90.1.1', kind: 'tailscale' }
+    ]
+    const { service, store } = setup()
+    const state = await service.configure({ enabled: true })
+    expect(state).toMatchObject({ enabled: true, listening: true, bindAddress: '100.90.1.1' })
+    expect(store.config().bindAddress).toBe('100.90.1.1')
+  })
+
+  it('keeps an address the user picked, IPv6 included, across switching off and on', async () => {
+    interfaces = [
+      { name: 'utun3', address: '100.90.1.1', kind: 'tailscale' },
+      { name: 'utun3', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' }
+    ]
+    const { service } = setup()
+    await service.configure({ enabled: true, bindAddress: 'fd7a:115c:a1e0::1' })
+    await service.configure({ enabled: false })
+    const state = await service.configure({ enabled: true })
+    expect(state.bindAddress).toBe('fd7a:115c:a1e0::1')
+  })
+
+  it('never picks IPv6 by itself', async () => {
+    interfaces = [{ name: 'utun3', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' }]
+    const { service } = setup()
+    const state = await service.configure({ enabled: true })
+    expect(state).toMatchObject({ enabled: false, bindAddress: '' })
+    expect(listens).toEqual([])
+  })
+
+  it('reports Shields Up once checked, and checks when switched on', async () => {
+    shields = true
+    const { service } = setup()
+    expect(service.state().shieldsUp).toBeUndefined()
+    expect((await service.checkNetwork()).shieldsUp).toBe(true)
+    shields = false
+    await service.configure({ enabled: true })
+    await Promise.resolve()
+    expect(service.state().shieldsUp).toBe(false)
+  })
+
+  it('says whether any workspace is shared', () => {
+    shared = false
+    const { service } = setup()
+    expect(service.state().workspaceShared).toBe(false)
+    shared = true
+    expect(service.refresh().workspaceShared).toBe(true)
   })
 
   it('refuses a bad port', async () => {
