@@ -95,4 +95,22 @@ describe('Noise_XX_25519_ChaChaPoly_SHA256', () => {
     expect(() => responder.read(Buffer.alloc(32))).not.toThrow()
     expect(() => responder.write()).toThrow(/invalid public key/)
   })
+
+  it('gives the transport once, and stops after a message that failed', () => {
+    const a = new NoiseXX({ initiator: true, staticKey: generateNoiseKeyPair() })
+    const b = new NoiseXX({ initiator: false, staticKey: generateNoiseKeyPair() })
+    b.read(a.write())
+    a.read(b.write())
+    b.read(a.write())
+    a.transport()
+    expect(() => a.transport()).toThrow(/already taken/)
+
+    const c = new NoiseXX({ initiator: true, staticKey: generateNoiseKeyPair() })
+    const d = new NoiseXX({ initiator: false, staticKey: generateNoiseKeyPair() })
+    d.read(c.write())
+    const reply = d.write()
+    reply[reply.length - 1]! ^= 1
+    expect(() => c.read(reply)).toThrow()
+    expect(() => c.read(reply)).toThrow(/failed/)
+  })
 })

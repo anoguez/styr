@@ -168,9 +168,10 @@ S → C  sealed {type:'paired', deviceId}  (pairing only), then sealed {type:'re
 ```
 
 - **Static keys** are X25519 and made per connection. Identity is still the Ed25519 key:
-  `signature` is Ed25519 (base64) over `"styr-noise-v1\n" ‖ sender's Noise static key (32 bytes) ‖
-h`, where `h` is the handshake hash just before that payload is encrypted. `identityKey` is SPKI
-  DER, base64, as in protocol 1.
+  `signature` is Ed25519 (base64, 64 bytes) over `label ‖ sender's Noise static key (32 bytes) ‖
+h`, where `label` is `"styr-noise-host-v1\n"` for the host and `"styr-noise-device-v1\n"` for the
+  device, and `h` is the handshake hash just before that payload is encrypted. `identityKey` is
+  SPKI DER (44 bytes), base64, as in protocol 1. Every base64 field is strict and padded.
 - **The device checks the host first:** SHA-256(`identityKey`) must be the QR's fingerprint and the
   signature must verify over the static key Noise just delivered. Otherwise it closes without
   writing message 3, so an impostor (a relay among them) learns nothing about the device.
@@ -179,10 +180,11 @@ h`, where `h` is the handshake hash just before that payload is encrypted. `iden
   secret, utf-8; `"styr-noise-pair-v1\n" ‖ h ‖ "\n" + name + "\n" + identityKey`), and the
   signature must be by `identityKey`. `h` covers both ephemeral and both static keys, so a relay
   running a handshake with each side cannot carry a proof from one to the other; the secret never
-  travels, and the attempt spends it.
+  travels, and the attempt spends it. `name` is at most 100 characters, so message 3 fits the 2 KiB
+  handshake limit whatever they are.
 - **Records.** Each sealed message is `flag ‖ bytes` (flag 1: the message ends here, 0: more
   follows); a message longer than 65,518 bytes is split, and every non-final record carries exactly
-  65,518. A message reassembles to at most 8 MiB and must be UTF-8. Noise's counters make any
+  65,518 (a message ends on its last chunk, never on an empty record). A message reassembles to at most 8 MiB and must be UTF-8. Noise's counters make any
   altered, replayed, reordered or dropped frame fail the next decrypt, and the host then closes
   with 4400: the session cannot recover.
 
@@ -192,6 +194,17 @@ another Noise key) and frame sequences the host must refuse (tampered, replayed,
 dropped). styr-app's Dart client replays the same file; `UPDATE_SECURE_VECTOR=1 yarn vitest run
 src/host/remoteAccess/secureSession.vector.test.ts` rewrites it, which is a wire change on both
 sides.
+
+**What the device must do itself** (the host cannot enforce it): over a relay, never fall back to
+protocol 1, whatever the host answers; reject an all-zero X25519 result (small-order key), as
+`noise.ts` does; send no JSON-RPC before `ready`; end the session on any failed frame.
+
+**What a relay still learns:** who connects when, each message's length (there is no padding), that a
+session is a pairing (message 3's size and the `paired` record), and the host's identity key, by
+running a handshake with it. Like protocol 1, anyone who can reach the host while a QR is open can
+spend it with one bad attempt, forcing a rescan. The listener's failure limit and connection caps
+are per source address; behind a relay every device shares one, so the relay client needs its own
+per-session limits.
 
 ## The gate (what a device sees)
 

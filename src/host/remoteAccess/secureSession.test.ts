@@ -206,6 +206,20 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
       expect(() => channel.open(over.toString('base64'))).toThrow(/too large/)
     })
 
+    it('refuses an empty final record after a split', () => {
+      const { raw, channel } = rawPair()
+      const full = raw.send.encrypt(record(0, Buffer.alloc(RECORD_CHUNK_BYTES, 97)))
+      expect(channel.open(full.toString('base64'))).toBeUndefined()
+      const empty = raw.send.encrypt(record(1, Buffer.alloc(0)))
+      expect(() => channel.open(empty.toString('base64'))).toThrow(/empty final/)
+    })
+
+    it('splits a message of exactly one chunk into one record', () => {
+      const { raw, channel } = rawPair()
+      const frame = raw.send.encrypt(record(1, Buffer.alloc(RECORD_CHUNK_BYTES, 97)))
+      expect(channel.open(frame.toString('base64'))).toHaveLength(RECORD_CHUNK_BYTES)
+    })
+
     it('refuses a message that is not UTF-8', () => {
       const { raw, channel } = rawPair()
       const frame = raw.send.encrypt(record(1, Buffer.from([0xff, 0xfe]))).toString('base64')
@@ -325,6 +339,24 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
       const outcome = host.receive(phoneFinal)
       expect(outcome.kind).toBe('denied')
       expect(store.devices()).toEqual([])
+    })
+
+    it('pairs with the longest name, of any characters, inside the handshake limit', () => {
+      const offer = store.startPairing()
+      const result = run(
+        server(),
+        client({ signIn: { type: 'pair', name: '\u0001🙂'.repeat(50), secret: offer.secret } })
+      )
+      expect(result.server.kind).toBe('ready')
+    })
+
+    it('refuses a name over the limit', () => {
+      const offer = store.startPairing()
+      const result = run(
+        server(),
+        client({ signIn: { type: 'pair', name: 'x'.repeat(101), secret: offer.secret } })
+      )
+      expect(result.server).toMatchObject({ kind: 'denied', reason: 'expected auth or pair' })
     })
 
     it('refuses a pairing whose signature is not by the key it names', () => {

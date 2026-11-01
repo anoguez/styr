@@ -173,7 +173,7 @@ function refusedHosts() {
           identityKey: identity.publicKey,
           signature: sign(
             null,
-            identitySignedData(signedStatic ?? staticKey.publicKey, hash),
+            identitySignedData('host', signedStatic ?? staticKey.publicKey, hash),
             identity.privateKey
           ).toString('base64')
         })

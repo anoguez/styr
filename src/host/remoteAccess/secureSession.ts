@@ -36,7 +36,11 @@ import {
 export const SECURE_PROTOCOL = 2
 /** Both sides start the handshake from these bytes. */
 export const NOISE_PROLOGUE = Buffer.from('styr-noise-v1')
-const IDENTITY_CONTEXT = Buffer.from('styr-noise-v1\n')
+/** Each role signs under its own label, so one side's signature can never stand for the other's. */
+const IDENTITY_CONTEXT = {
+  host: Buffer.from('styr-noise-host-v1\n'),
+  device: Buffer.from('styr-noise-device-v1\n')
+} as const
 const PAIR_CONTEXT = Buffer.from('styr-noise-pair-v1\n')
 
 /** One record: a flag byte (1 = the message ends here, 0 = more follows) and a piece of it. */
@@ -57,9 +61,13 @@ export function decodeFrame(frame: string): Buffer {
   return Buffer.from(frame, 'base64')
 }
 
-/** What an identity signature covers: its Noise static key and the handshake so far. */
-export function identitySignedData(staticKey: Buffer, handshakeHash: Buffer): Buffer {
-  return Buffer.concat([IDENTITY_CONTEXT, staticKey, handshakeHash])
+/** What an identity signature covers: the signer's role, its Noise static key and the handshake so far. */
+export function identitySignedData(
+  role: 'host' | 'device',
+  staticKey: Buffer,
+  handshakeHash: Buffer
+): Buffer {
+  return Buffer.concat([IDENTITY_CONTEXT[role], staticKey, handshakeHash])
 }
 
 /**
@@ -78,8 +86,16 @@ export function securePairProof(
 }
 
 const base64Text = (max: number) => z.string().max(max)
-const signature = z.string().min(80).max(100)
-const identityKey = z.string().min(40).max(100)
+const strictBase64 = (bytes: number) =>
+  z
+    .string()
+    .regex(BASE64)
+    .refine((text) => Buffer.from(text, 'base64').length === bytes)
+/** Ed25519: a 64-byte signature, and a public key as 44 bytes of SPKI DER. */
+const signature = strictBase64(64)
+const identityKey = strictBase64(44)
+/** Short enough that message 3 stays inside the handshake limit whatever the characters. */
+export const DEVICE_NAME_MAX = 100
 
 export const secureHelloSchema = z.object({
   type: z.literal('hello'),
@@ -91,7 +107,7 @@ export const clientPayloadSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('auth'), deviceId: z.string().min(1).max(100), signature }),
   z.object({
     type: z.literal('pair'),
-    name: z.string().max(200),
+    name: z.string().max(DEVICE_NAME_MAX),
     identityKey,
     signature,
     proof: z.string().regex(/^[0-9a-f]{64}$/)
@@ -100,7 +116,8 @@ export const clientPayloadSchema = z.discriminatedUnion('type', [
 
 export class SecureChannelError extends Error {}
 
-const utf8 = new TextDecoder('utf-8', { fatal: true })
+/** Strict, and keeps a BOM as a character, as Dart's decoder does. */
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 
 /**
  * A session's messages over Noise transport, as text frames. Any frame that fails (tampered,
@@ -149,6 +166,10 @@ export class SecureFrameChannel {
         throw new Error('short record')
       }
       if (flag !== RECORD_MORE && flag !== RECORD_FINAL) throw new Error('bad record flag')
+      // A sender ends a split message on its last full chunk, never on an empty record.
+      if (flag === RECORD_FINAL && piece.length === 0 && this.pending.length > 0) {
+        throw new Error('empty final record')
+      }
       if (this.pendingBytes + piece.length > this.maxMessageBytes) {
         throw new Error('message too large')
       }
@@ -236,7 +257,7 @@ export function createSecureServerHandshake(options: {
         JSON.stringify({
           identityKey: identity.publicKey,
           signature: identity
-            .signBytes(identitySignedData(staticKey.publicKey, hash))
+            .signBytes(identitySignedData('host', staticKey.publicKey, hash))
             .toString('base64')
         })
       )
@@ -249,7 +270,7 @@ export function createSecureServerHandshake(options: {
     const { payload, hashBeforePayload } = noise.read(decodeFrame(text))
     const parsed = clientPayloadSchema.safeParse(jsonPayload(payload))
     if (!parsed.success) return deny('expected auth or pair')
-    const signed = identitySignedData(noise.remoteStatic!, hashBeforePayload)
+    const signed = identitySignedData('device', noise.remoteStatic!, hashBeforePayload)
     let deviceId: string
     let paired = false
     if (parsed.data.type === 'auth') {

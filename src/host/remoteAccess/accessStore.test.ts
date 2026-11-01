@@ -46,6 +46,20 @@ describe('access store', () => {
     expect(JSON.parse(readFileSync(path, 'utf8')).devices).toHaveLength(1)
   })
 
+  it('never writes over a file it could not read when it started, nor makes a new key', () => {
+    const fingerprint = make().identity().fingerprint
+    const good = readFileSync(path, 'utf8')
+    // A file from a newer version, or a hand edit in progress.
+    writeFileSync(path, '{ "devices": [')
+    const store = make()
+    expect(() => store.identity().fingerprint).toThrow(/cannot be read/)
+    expect(() => store.setConfig({ port: 1 })).toThrow(/cannot be read/)
+    expect(readFileSync(path, 'utf8')).toBe('{ "devices": [')
+    // Readable again: it carries on with the real key.
+    writeFileSync(path, good)
+    expect(store.identity().fingerprint).toBe(fingerprint)
+  })
+
   it('treats a missing file as a fresh install', () => {
     expect(make().devices()).toEqual([])
   })
@@ -128,6 +142,33 @@ describe('access store', () => {
       expect(serve.identity().fingerprint).toBe(fingerprint)
       expect(() => serve.identity().sign('data')).toThrow(/desktop app's keychain/)
       expect(saved().sealedPrivateKey).toMatch(/^sealed:/)
+    })
+
+    it('signs with the plaintext key when the keychain will not seal it', () => {
+      make().identity()
+      const store = withKeychain({
+        seal: () => {
+          throw new Error('locked')
+        },
+        open: () => ''
+      })
+      expect(signs(store)).toBe(true)
+      expect(saved().privateKey).toBeDefined()
+    })
+
+    it('does not ask a keychain that refused again', () => {
+      withKeychain(keychain()).identity().sign('x')
+      let asked = 0
+      const store = withKeychain({
+        seal: () => 'x',
+        open: () => {
+          asked++
+          throw new Error('denied')
+        }
+      })
+      expect(() => store.identity().sign('a')).toThrow()
+      expect(() => store.identity().sign('b')).toThrow()
+      expect(asked).toBe(1)
     })
 
     it('keeps the key in the file, 0600, without a keychain', () => {

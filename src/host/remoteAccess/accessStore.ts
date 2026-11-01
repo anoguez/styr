@@ -127,7 +127,14 @@ function stripControls(text: string): string {
 }
 
 export function createAccessStore(ports: AccessStorePorts) {
-  let file = read() ?? fileSchema.parse({})
+  const initial = read()
+  let file = initial ?? fileSchema.parse({})
+  /**
+   * False while the file exists but could not be read (a hand edit, EMFILE, a newer format): the
+   * empty stand-in must never be written over it, nor a new key made, which would lose the devices
+   * and change the fingerprint every phone pinned.
+   */
+  let trusted = initial !== undefined
   let offer: PairingOffer | undefined
   const listeners = new Set<() => void>()
   const revokedListeners = new Set<(deviceId: string) => void>()
@@ -155,11 +162,22 @@ export function createAccessStore(ports: AccessStorePorts) {
     // Unreadable right now: keep what this process knows rather than treat it as empty, which
     // would close every device and write an empty list over the real one.
     if (!latest) return
+    if (!trusted) {
+      trusted = true
+      file = latest
+      return
+    }
     // The pairing offer and an unsaved key are this process's own; only devices and config move.
     file = { ...latest, hostKey: latest.hostKey ?? file.hostKey }
   }
 
   function save(): void {
+    if (!trusted) reload()
+    if (!trusted) {
+      throw new Error(
+        `${ports.path} cannot be read, so nothing is written over it. Fix or remove the file.`
+      )
+    }
     mkdirSync(dirname(ports.path), { recursive: true, mode: 0o700 })
     const temp = `${ports.path}.${process.pid}.tmp`
     writeFileSync(temp, JSON.stringify(file, null, 2), { mode: 0o600 })
@@ -173,7 +191,9 @@ export function createAccessStore(ports: AccessStorePorts) {
 
   /** The host key's public half, made on first use. */
   function hostKey(): NonNullable<StoreFile['hostKey']> {
+    if (!trusted) reload()
     if (!file.hostKey) {
+      if (!trusted) save()
       const pair = generateKeyPairSync('ed25519')
       const privateKey = pair.privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64')
       const box = ports.secrets?.()
@@ -190,6 +210,8 @@ export function createAccessStore(ports: AccessStorePorts) {
   }
 
   let unsealed: { publicKey: string; key: KeyObject } | undefined
+  /** A keychain that refused once is not asked again until restart: any peer can cause a sign. */
+  let refused: Error | undefined
 
   /**
    * The private key, read once per process. A plaintext key from before the keychain is sealed and
@@ -204,18 +226,24 @@ export function createAccessStore(ports: AccessStorePorts) {
     if (key.privateKey !== undefined) {
       pkcs8 = key.privateKey
       if (box) {
-        const sealedPrivateKey = box.seal(pkcs8)
-        file = { ...file, hostKey: { publicKey: key.publicKey, sealedPrivateKey } }
-        save()
+        try {
+          const sealedPrivateKey = box.seal(pkcs8)
+          file = { ...file, hostKey: { publicKey: key.publicKey, sealedPrivateKey } }
+          save()
+        } catch {
+          // The keychain would not take it: the key stays in the file, 0600, and still signs.
+        }
       }
     } else if (box) {
+      if (refused) throw refused
       try {
         pkcs8 = box.open(key.sealedPrivateKey!)
       } catch (error) {
-        throw new Error(
+        refused = new Error(
           `Could not read this computer's remote access key from the keychain: ${String(error)}`,
           { cause: error }
         )
+        throw refused
       }
     } else {
       throw new Error(

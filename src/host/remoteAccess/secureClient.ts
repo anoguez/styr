@@ -32,6 +32,8 @@ export interface SecureClientOptions {
 
 export class SecureHandshakeError extends Error {}
 
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
+
 export type SecureClientStep =
   | { kind: 'send'; frames: string[] }
   | { kind: 'pending' }
@@ -64,11 +66,11 @@ export function createSecureClientHandshake(options: SecureClientOptions) {
     let host: z.infer<typeof hostPayloadSchema>
     try {
       const { payload, hashBeforePayload } = noise.read(decodeFrame(frame))
-      host = hostPayloadSchema.parse(JSON.parse(payload.toString('utf8')))
+      host = hostPayloadSchema.parse(JSON.parse(utf8.decode(payload)))
       if (fingerprintOf(host.identityKey) !== options.pinnedFingerprint) {
         return fail('the host is not the one this device paired with')
       }
-      const signed = identitySignedData(noise.remoteStatic!, hashBeforePayload)
+      const signed = identitySignedData('host', noise.remoteStatic!, hashBeforePayload)
       if (!signatureValid(host.identityKey, signed, host.signature)) {
         return fail('the host is not the one this device paired with')
       }
@@ -79,7 +81,7 @@ export function createSecureClientHandshake(options: SecureClientOptions) {
     const reply = noise.write((hash) => {
       const signature = sign(
         null,
-        identitySignedData(staticKey.publicKey, hash),
+        identitySignedData('device', staticKey.publicKey, hash),
         options.identity.privateKey
       ).toString('base64')
       const body =
@@ -105,9 +107,16 @@ export function createSecureClientHandshake(options: SecureClientOptions) {
   }
 
   function status(frame: string): SecureClientStep {
-    const text = channel!.open(frame)
-    if (text === undefined) return { kind: 'pending' }
-    const message = statusSchema.safeParse(JSON.parse(text))
+    let text: string | undefined
+    let parsed: unknown
+    try {
+      text = channel!.open(frame)
+      if (text === undefined) return { kind: 'pending' }
+      parsed = JSON.parse(text)
+    } catch (error) {
+      return fail(`bad status message: ${String(error)}`)
+    }
+    const message = statusSchema.safeParse(parsed)
     if (!message.success) return fail('expected paired or ready')
     if (message.data.type === 'paired') {
       deviceId = message.data.deviceId

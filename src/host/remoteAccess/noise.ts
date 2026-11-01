@@ -188,6 +188,8 @@ export class NoiseXX {
   private key: Buffer | undefined
   private counter = 0
   private step = 0
+  private broken = false
+  private split = false
   private ephemeral: NoiseKeyPair | undefined
   private remoteEphemeral: Buffer | undefined
   private remoteStaticKey: Buffer | undefined
@@ -223,6 +225,10 @@ export class NoiseXX {
    */
   write(payload: Buffer | ((hashBeforePayload: Buffer) => Buffer) = Buffer.alloc(0)): Buffer {
     this.expect('write')
+    return this.once(() => this.writeMessage(payload))
+  }
+
+  private writeMessage(payload: Buffer | ((hashBeforePayload: Buffer) => Buffer)): Buffer {
     const parts: Buffer[] = []
     if (this.step === 0 || this.step === 1) {
       this.ephemeral = this.presetEphemeral ?? generateNoiseKeyPair()
@@ -240,15 +246,19 @@ export class NoiseXX {
     }
     const body = typeof payload === 'function' ? payload(this.hash) : payload
     parts.push(this.encryptAndHash(body))
-    this.step++
     const message = Buffer.concat(parts)
     if (message.length > NOISE_MAX_MESSAGE) throw new Error('Noise: message too large.')
+    this.step++
     return message
   }
 
   /** Reads the peer's next message; `hashBeforePayload` is what its payload signature covers. */
   read(message: Buffer): { payload: Buffer; hashBeforePayload: Buffer } {
     this.expect('read')
+    return this.once(() => this.readMessage(message))
+  }
+
+  private readMessage(message: Buffer): { payload: Buffer; hashBeforePayload: Buffer } {
     if (message.length > NOISE_MAX_MESSAGE) throw new Error('Noise: message too large.')
     let offset = 0
     const take = (length: number): Buffer => {
@@ -278,9 +288,16 @@ export class NoiseXX {
     return { payload, hashBeforePayload }
   }
 
+  /** The two ciphers; once only, since a second pair would reuse the first one's nonces. */
   transport(): NoiseTransport {
     if (!this.finished) throw new Error('Noise: the handshake is not finished.')
+    if (this.split) throw new Error('Noise: the transport was already taken.')
+    this.split = true
     const [first, second] = hkdf2(this.chainingKey, Buffer.alloc(0))
+    // Nothing of the handshake's keys is needed any more.
+    this.chainingKey.fill(0)
+    this.key?.fill(0)
+    this.key = undefined
     return {
       send: new NoiseCipher(this.initiator ? first : second),
       receive: new NoiseCipher(this.initiator ? second : first),
@@ -290,10 +307,21 @@ export class NoiseXX {
 
   /** Whose turn it is: the initiator writes on even steps, the responder on odd ones. */
   private expect(action: 'read' | 'write'): void {
+    if (this.broken) throw new Error('Noise: the handshake failed.')
     if (this.step >= 3) throw new Error('Noise: the handshake is finished.')
     const myTurn = this.initiator === (this.step % 2 === 0)
     if ((action === 'write') !== myTurn)
       throw new Error(`Noise: not this side's turn to ${action}.`)
+  }
+
+  /** A message that fails leaves the state half-mixed: the handshake cannot go on after it. */
+  private once<T>(run: () => T): T {
+    try {
+      return run()
+    } catch (error) {
+      this.broken = true
+      throw error
+    }
   }
 
   private mixHash(data: Buffer): void {
