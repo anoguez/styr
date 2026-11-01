@@ -1,4 +1,4 @@
-// Questions an agent put to the owner (`ask_owner`). Pure: the renderer, the prompt and the store use it.
+// Questions for the owner in the task file (`questions:`). Pure: the renderer, the prompt and the store use it.
 import type { Task, TaskQuestion } from './types.js'
 
 /** A task holds at most this many unanswered questions; the 21st is refused. */
