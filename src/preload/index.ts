@@ -290,7 +290,11 @@ const api = {
     pair: (): Promise<AccessPairing> => ipcRenderer.invoke('access:pair'),
     cancelPair: (): Promise<void> => ipcRenderer.invoke('access:cancelPair'),
     revoke: (deviceId: string): Promise<AccessState> =>
-      ipcRenderer.invoke('access:revoke', deviceId)
+      ipcRenderer.invoke('access:revoke', deviceId),
+    /** Asks Tailscale whether Shields Up is on; the answer lands in `shieldsUp`. */
+    checkNetwork: (): Promise<AccessState> => ipcRenderer.invoke('access:checkNetwork'),
+    /** Turns `remoteAccess` on for the open workspace and saves it. */
+    shareWorkspace: (): Promise<AccessState> => ipcRenderer.invoke('access:shareWorkspace')
   },
   settings: {
     get: (workspaceId?: string): Promise<Settings> =>

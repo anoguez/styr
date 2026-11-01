@@ -22,6 +22,9 @@ export interface NetworkAccessOptions {
   broadcast(state: AccessState): void
   log(message: string): void
   store?: AccessStore
+  /** Only where a screen can show the answers (the desktop): see `AccessServicePorts`. */
+  shieldsUp?(): Promise<boolean | undefined>
+  workspaceShared?(): boolean
 }
 
 /**
@@ -52,7 +55,9 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
     interfaces: () => allowedInterfaces(),
     keepAwake: options.keepAwake,
     broadcast: options.broadcast,
-    log: options.log
+    log: options.log,
+    ...(options.shieldsUp ? { shieldsUp: options.shieldsUp } : {}),
+    ...(options.workspaceShared ? { workspaceShared: options.workspaceShared } : {})
   })
   return { service, store }
 }
