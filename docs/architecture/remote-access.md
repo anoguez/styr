@@ -52,7 +52,10 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   message, forcing a rescan; anyone who sees the QR during its 2 minutes can pair.
 - Loopback is allowed (for an ssh tunnel), so a local tunnel agent (ngrok, cloudflared) pointed at
   the listener would expose it; devices would still need their key.
-- `remote-access.json` holds the host's private key in plaintext (mode 0600).
+- `styr serve` keeps the host's private key in `remote-access.json` in plaintext (mode 0600). The
+  desktop seals it with `safeStorage` (Keychain, DPAPI, libsecret; not Linux's `basic_text`
+  fallback) and drops the plaintext. A `styr serve` on the same machine shares the file, so once
+  the desktop has sealed the key it cannot sign and says so; the fingerprint is never replaced.
 
 ## Files
 
@@ -64,6 +67,9 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   the in-memory pairing offer. Not in `Settings`: those reach the renderer and the clients.
 - `src/host/remoteAccess/handshake.ts`: the handshake, as a pure state machine plus the proof
   functions a client uses.
+- `src/host/remoteAccess/noise.ts`, `secureSession.ts`, `secureClient.ts`: protocol 2 (below):
+  Noise XX on `node:crypto`, the host's handshake and `SecureFrameChannel`, and the device's side
+  (tests and the transcript vector only; the phone has its own in Dart).
 - `src/host/remoteAccess/gate.ts`: `createNetworkPolicy`, the per-client filter the hub applies.
 - `src/host/remoteAccess/accessService.ts`: what Settings drives: switch on/off, move, pair, revoke,
   the keep-awake hold (`keepAwake.ts`). A listener that cannot start (port in use, interface gone)
@@ -140,6 +146,53 @@ liveness ping is dropped (it reconnects, reattaches, and gets the terminal backl
 Close codes: 4400 bad request, 4401 unauthorized, 4403 revoked, 4408 handshake timeout. A refusal
 by the gate is JSON-RPC error `-32001`.
 
+## Protocol 2: end to end over a path the host does not trust
+
+For a relay (TASK-0212's "Design: relay mode"), the session is end-to-end encrypted with
+`Noise_XX_25519_ChaChaPoly_SHA256` (`noise.ts`, checked against the official vector in
+`noiseXX.vector.json`). The listener's `secureSessions` picks what it takes: `off` (direct mode,
+the default: protocol 1 exactly as above, and a protocol-2 hello gets `{type:'error',
+code:'protocol', protocol:1}`), `allow` (the client's hello picks; `STYR_REMOTE_PROTOCOL2=1` turns
+it on for direct sockets while the phone is being built) and `require` (a relay: a protocol-1
+hello is closed with 4401 and no plaintext answer, so a relay cannot downgrade a session).
+
+Text frames, each one Noise message in strict, padded base64. Prologue `styr-noise-v1`.
+
+```
+C → S  {"type":"hello","protocol":2,"noise":b64(-> e)}                  empty payload
+S → C  b64(<- e, ee, s, es, payload)   payload = JSON {identityKey, signature}
+C → S  b64(-> s, se, payload)          payload = JSON {type:'auth', deviceId, signature}
+                                              or {type:'pair', name, identityKey, signature, proof}
+S → C  sealed {type:'paired', deviceId}  (pairing only), then sealed {type:'ready'}
+       then JSON-RPC, one message per sealed message           any refusal: close 4401, nothing sent
+```
+
+- **Static keys** are X25519 and made per connection. Identity is still the Ed25519 key:
+  `signature` is Ed25519 (base64) over `"styr-noise-v1\n" ‖ sender's Noise static key (32 bytes) ‖
+h`, where `h` is the handshake hash just before that payload is encrypted. `identityKey` is SPKI
+  DER, base64, as in protocol 1.
+- **The device checks the host first:** SHA-256(`identityKey`) must be the QR's fingerprint and the
+  signature must verify over the static key Noise just delivered. Otherwise it closes without
+  writing message 3, so an impostor (a relay among them) learns nothing about the device.
+- **Sign-in:** the host verifies `signature` with the stored key for `deviceId` (a dummy key for an
+  unknown one, so a miss costs the same). **Pairing:** `proof` = hex HMAC-SHA256(key = the QR's
+  secret, utf-8; `"styr-noise-pair-v1\n" ‖ h ‖ "\n" + name + "\n" + identityKey`), and the
+  signature must be by `identityKey`. `h` covers both ephemeral and both static keys, so a relay
+  running a handshake with each side cannot carry a proof from one to the other; the secret never
+  travels, and the attempt spends it.
+- **Records.** Each sealed message is `flag ‖ bytes` (flag 1: the message ends here, 0: more
+  follows); a message longer than 65,518 bytes is split, and every non-final record carries exactly
+  65,518. A message reassembles to at most 8 MiB and must be UTF-8. Noise's counters make any
+  altered, replayed, reordered or dropped frame fail the next decrypt, and the host then closes
+  with 4400: the session cannot recover.
+
+`secureSession.vector.json` holds full transcripts from fixed keys (pairing and sign-in, both
+directions, a split message) plus answers the phone must refuse (another host, a signature over
+another Noise key) and frame sequences the host must refuse (tampered, replayed, reordered,
+dropped). styr-app's Dart client replays the same file; `UPDATE_SECURE_VECTOR=1 yarn vitest run
+src/host/remoteAccess/secureSession.vector.test.ts` rewrites it, which is a wire change on both
+sides.
+
 ## The gate (what a device sees)
 
 `isOpen(workspace)` = flagged, a real folder, not a stub. `createNetworkPolicy` then:
@@ -176,6 +229,9 @@ deleting the shared workspace); there are no per-device scopes in v1.
 ## Tests
 
 `host/remoteAccess/*.test.ts` (addresses, store, handshake pieces, gate, service),
+`host/remoteAccess/secureSession*.test.ts` (protocol 2's release gates: tamper, replay, reorder,
+drop, downgrade, wrong host, a relay that cannot pair; the transcript vector),
+`server/wsListener.secure.test.ts` (protocol 2 over the socket),
 `server/wsListener.test.ts` (hostile input: bad handshakes, binary and oversized frames, proxy
 headers, origins, rate limiting, leakage on every broadcast kind), `server/networkAccess.test.ts`
 (off by default opens no port; pair once, reconnect across a restart, revoke),

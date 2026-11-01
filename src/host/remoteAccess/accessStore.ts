@@ -1,4 +1,11 @@
-import { createHash, createPrivateKey, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
+import {
+  createHash,
+  createPrivateKey,
+  generateKeyPairSync,
+  randomBytes,
+  sign,
+  type KeyObject
+} from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { z } from 'zod'
@@ -54,7 +61,16 @@ const fileSchema = z.object({
     )
     .max(MAX_DEVICES)
     .default([]),
-  hostKey: z.object({ publicKey: z.string(), privateKey: z.string() }).optional()
+  hostKey: z
+    .object({
+      publicKey: z.string(),
+      /** PKCS8 DER, base64: only where no keychain is available (`styr serve`). */
+      privateKey: z.string().optional(),
+      /** The same, sealed by the OS keychain (`AccessStorePorts.secrets`). */
+      sealedPrivateKey: z.string().optional()
+    })
+    .refine((key) => key.privateKey !== undefined || key.sealedPrivateKey !== undefined)
+    .optional()
 })
 
 type StoreFile = z.infer<typeof fileSchema>
@@ -65,6 +81,17 @@ export interface ServerIdentity {
   /** The public key, SPKI DER, base64: sent in the handshake. */
   publicKey: string
   sign(data: string): string
+  /** Ed25519 over raw bytes (the protocol-2 identity signature). */
+  signBytes(data: Buffer): Buffer
+}
+
+/**
+ * The OS keychain, where the desktop keeps the host's private key (Electron `safeStorage`).
+ * Both may throw: the keychain can be locked or refuse this app.
+ */
+export interface SecretBox {
+  seal(plain: string): string
+  open(sealed: string): string
 }
 
 export interface PairingOffer {
@@ -75,6 +102,12 @@ export interface PairingOffer {
 export interface AccessStorePorts {
   path: string
   now(): number
+  /**
+   * Where the host's private key is sealed, asked each time the key is made or read (the desktop's
+   * keychain is only there once the app is ready). Absent (`styr serve`), the key stays in the
+   * file, 0600.
+   */
+  secrets?: () => SecretBox | undefined
 }
 
 /**
@@ -138,19 +171,63 @@ export function createAccessStore(ports: AccessStorePorts) {
     for (const listener of [...listeners]) listener()
   }
 
-  function hostKey(): { publicKey: string; privateKey: string } {
+  /** The host key's public half, made on first use. */
+  function hostKey(): NonNullable<StoreFile['hostKey']> {
     if (!file.hostKey) {
       const pair = generateKeyPairSync('ed25519')
+      const privateKey = pair.privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64')
+      const box = ports.secrets?.()
       file = {
         ...file,
         hostKey: {
           publicKey: pair.publicKey.export({ type: 'spki', format: 'der' }).toString('base64'),
-          privateKey: pair.privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64')
+          ...(box ? { sealedPrivateKey: box.seal(privateKey) } : { privateKey })
         }
       }
       save()
     }
     return file.hostKey!
+  }
+
+  let unsealed: { publicKey: string; key: KeyObject } | undefined
+
+  /**
+   * The private key, read once per process. A plaintext key from before the keychain is sealed and
+   * the plaintext dropped. A key that cannot be read is an error, never a new key: that would change
+   * the fingerprint every paired phone pinned.
+   */
+  function privateKey(): KeyObject {
+    const key = hostKey()
+    if (unsealed?.publicKey === key.publicKey) return unsealed.key
+    const box = ports.secrets?.()
+    let pkcs8: string
+    if (key.privateKey !== undefined) {
+      pkcs8 = key.privateKey
+      if (box) {
+        const sealedPrivateKey = box.seal(pkcs8)
+        file = { ...file, hostKey: { publicKey: key.publicKey, sealedPrivateKey } }
+        save()
+      }
+    } else if (box) {
+      try {
+        pkcs8 = box.open(key.sealedPrivateKey!)
+      } catch (error) {
+        throw new Error(
+          `Could not read this computer's remote access key from the keychain: ${String(error)}`,
+          { cause: error }
+        )
+      }
+    } else {
+      throw new Error(
+        "This computer's remote access key is sealed in the desktop app's keychain, which this " +
+          'process cannot read. Run remote access from the desktop app.'
+      )
+    }
+    unsealed = {
+      publicKey: key.publicKey,
+      key: createPrivateKey({ key: Buffer.from(pkcs8, 'base64'), format: 'der', type: 'pkcs8' })
+    }
+    return unsealed.key
   }
 
   function currentOffer(): PairingOffer | undefined {
@@ -170,21 +247,30 @@ export function createAccessStore(ports: AccessStorePorts) {
 
     /** Made on first use and kept, so a phone's pinned fingerprint holds across restarts. */
     identity(): ServerIdentity {
-      const key = hostKey()
-      const der = Buffer.from(key.publicKey, 'base64')
-      const privateKey = createPrivateKey({
-        key: Buffer.from(key.privateKey, 'base64'),
-        format: 'der',
-        type: 'pkcs8'
-      })
+      const der = Buffer.from(hostKey().publicKey, 'base64')
       return {
         fingerprint: createHash('sha256').update(der).digest('hex'),
-        publicKey: key.publicKey,
-        sign: (data) => sign(null, Buffer.from(data), privateKey).toString('base64')
+        publicKey: hostKey().publicKey,
+        // Unsealed only when something is signed, so showing the fingerprint never asks the keychain.
+        sign: (data) => sign(null, Buffer.from(data), privateKey()).toString('base64'),
+        signBytes: (data) => sign(null, data, privateKey())
       }
     },
 
     reload,
+
+    /**
+     * Seals a plaintext key from before the keychain now, rather than at the next sign-in. Best
+     * effort: a keychain that refuses leaves the key as it was.
+     */
+    sealHostKey(): void {
+      if (file.hostKey?.privateKey === undefined || !ports.secrets?.()) return
+      try {
+        privateKey()
+      } catch {
+        // Kept in the file; the next sign-in tries again.
+      }
+    },
 
     hasDevice: (deviceId: string): boolean => file.devices.some((device) => device.id === deviceId),
 

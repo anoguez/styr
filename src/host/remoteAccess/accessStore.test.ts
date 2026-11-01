@@ -1,8 +1,9 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createAccessStore } from './accessStore.js'
+import { verify, createPublicKey } from 'node:crypto'
+import { createAccessStore, type SecretBox } from './accessStore.js'
 
 describe('access store', () => {
   let dir: string
@@ -56,5 +57,84 @@ describe('access store', () => {
     other.revoke(device.id)
     one.touch(device.id)
     expect(JSON.parse(readFileSync(path, 'utf8')).devices).toEqual([])
+  })
+
+  describe('the host key in the keychain', () => {
+    /** A stand-in keychain: reversible, and visibly not the plaintext. */
+    const keychain = (calls: string[] = []): SecretBox => ({
+      seal: (plain) => {
+        calls.push('seal')
+        return `sealed:${Buffer.from(plain).reverse().toString('base64')}`
+      },
+      open: (sealed) => {
+        calls.push('open')
+        return Buffer.from(sealed.slice('sealed:'.length), 'base64').reverse().toString()
+      }
+    })
+    const withKeychain = (box: SecretBox | undefined) =>
+      createAccessStore({ path, now: () => 1_000_000, secrets: () => box })
+    const saved = () => JSON.parse(readFileSync(path, 'utf8')).hostKey
+    const signs = (store: ReturnType<typeof make>) => {
+      const identity = store.identity()
+      const signature = Buffer.from(identity.sign('data'), 'base64')
+      const key = createPublicKey({
+        key: Buffer.from(identity.publicKey, 'base64'),
+        format: 'der',
+        type: 'spki'
+      })
+      return verify(null, Buffer.from('data'), key, signature)
+    }
+
+    it('makes a new key sealed, with no plaintext in the file', () => {
+      const store = withKeychain(keychain())
+      expect(signs(store)).toBe(true)
+      expect(saved().privateKey).toBeUndefined()
+      expect(saved().sealedPrivateKey).toMatch(/^sealed:/)
+      expect(signs(withKeychain(keychain()))).toBe(true)
+    })
+
+    it('seals a plaintext key from before, keeping the fingerprint', () => {
+      const fingerprint = make().identity().fingerprint
+      expect(saved().privateKey).toBeDefined()
+      const store = withKeychain(keychain())
+      store.sealHostKey()
+      expect(saved().privateKey).toBeUndefined()
+      expect(store.identity().fingerprint).toBe(fingerprint)
+      expect(signs(store)).toBe(true)
+    })
+
+    it('opens the keychain once per process, and not to show the fingerprint', () => {
+      withKeychain(keychain()).identity()
+      const calls: string[] = []
+      const store = withKeychain(keychain(calls))
+      expect(store.identity().fingerprint).toMatch(/^[0-9a-f]{64}$/)
+      expect(calls).toEqual([])
+      signs(store)
+      signs(store)
+      expect(calls).toEqual(['open'])
+    })
+
+    it('never replaces a key it cannot read', () => {
+      const fingerprint = withKeychain(keychain()).identity().fingerprint
+      const refusing = withKeychain({
+        seal: () => 'x',
+        open: () => {
+          throw new Error('user denied')
+        }
+      })
+      expect(() => refusing.identity().sign('data')).toThrow(/keychain: Error: user denied/)
+      // Without a keychain (styr serve on the same machine) the key is out of reach, said so.
+      const serve = withKeychain(undefined)
+      expect(serve.identity().fingerprint).toBe(fingerprint)
+      expect(() => serve.identity().sign('data')).toThrow(/desktop app's keychain/)
+      expect(saved().sealedPrivateKey).toMatch(/^sealed:/)
+    })
+
+    it('keeps the key in the file, 0600, without a keychain', () => {
+      const store = withKeychain(undefined)
+      expect(signs(store)).toBe(true)
+      expect(saved().privateKey).toBeDefined()
+      expect(statSync(path).mode & 0o777).toBe(0o600)
+    })
   })
 })
