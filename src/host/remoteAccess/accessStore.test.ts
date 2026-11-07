@@ -175,7 +175,8 @@ describe('access store', () => {
       const store = withKeychain(undefined)
       expect(signs(store)).toBe(true)
       expect(saved().privateKey).toBeDefined()
-      expect(statSync(path).mode & 0o777).toBe(0o600)
+      // Windows has no POSIX modes; the file is in the user's own profile there.
+      if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600)
     })
   })
 })
