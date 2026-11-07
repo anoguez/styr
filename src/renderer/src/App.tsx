@@ -7,7 +7,6 @@ import {
   DEFAULT_THEME,
   globalSettingsFor,
   workspaceSettingsFor,
-  type AnswerResult,
   type AppInfo,
   type ReviewSent,
   type Task,
@@ -39,7 +38,6 @@ import type { SectionId } from './components/settings/sections.js'
 import { StatusBar } from './components/StatusBar.js'
 import { TaskDialog } from './components/TaskDialog.js'
 import { WhatsNewDialog } from './components/WhatsNewDialog.js'
-import { AnswerSentToast } from './components/task/AnswerSentToast.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
 import { Button } from './components/ui.js'
 import { NewWorkspaceDialog, WorkspaceSwitcher } from './components/WorkspaceSwitcher.js'
@@ -135,8 +133,6 @@ export default function App(): ReactNode {
   useRemoteSessions(remote, terminals.merge)
   const tabRestore = useTabRestore(activeWorkspaceId, terminals.restore)
   const [terminalExpanded, setTerminalExpanded] = useState(false)
-  /** An answer to an agent's question just went out: the toast that says where it went. */
-  const [answered, setAnswered] = useState<AnswerResult | null>(null)
   /** Request changes just went out: the toast that confirms it after the dialog closed. */
   const [reviewSent, setReviewSent] = useState<{ sent: ReviewSent; task: Task } | null>(null)
   const { height: terminalHeight, startResize } = useTerminalHeight(terminalOpen)
@@ -308,7 +304,6 @@ export default function App(): ReactNode {
                       onShowChanges={showChanges}
                       onMove={(task, status) => void window.api.tasks.update(task.id, { status })}
                       onArchive={toggleArchived}
-                      onAnswered={setAnswered}
                     />
                   ) : (
                     <Board
@@ -520,7 +515,6 @@ export default function App(): ReactNode {
                   void launchAgent(taskId, templateId, provider)
                 }
                 onResumeSession={launcher.resumeSession}
-                onAnswered={setAnswered}
                 onShowChanges={showChanges}
               />
             ) : null}
@@ -538,10 +532,6 @@ export default function App(): ReactNode {
                   setReviewSent({ sent, task: changesTask })
                 }}
               />
-            ) : null}
-
-            {answered ? (
-              <AnswerSentToast result={answered} onDismiss={() => setAnswered(null)} />
             ) : null}
 
             {reviewSent ? (

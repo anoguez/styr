@@ -87,11 +87,16 @@ export function validDevicePublicKey(publicKeyBase64: string): boolean {
   }
 }
 
-function signatureValid(publicKeyBase64: string, data: string, signatureBase64: string): boolean {
+/** Whether `signatureBase64` is the Ed25519 signature of `data` by `publicKeyBase64` (SPKI DER). */
+export function signatureValid(
+  publicKeyBase64: string,
+  data: string | Buffer,
+  signatureBase64: string
+): boolean {
   try {
     return verify(
       null,
-      Buffer.from(data),
+      typeof data === 'string' ? Buffer.from(data) : data,
       createPublicKey({ key: Buffer.from(publicKeyBase64, 'base64'), format: 'der', type: 'spki' }),
       Buffer.from(signatureBase64, 'base64')
     )
@@ -101,7 +106,7 @@ function signatureValid(publicKeyBase64: string, data: string, signatureBase64: 
 }
 
 /** Stands in for a device that does not exist, so a miss costs the same as a bad signature. */
-const DUMMY_KEY = generateKeyPairSync('ed25519')
+export const DUMMY_KEY = generateKeyPairSync('ed25519')
   .publicKey.export({ type: 'spki', format: 'der' })
   .toString('base64')
 

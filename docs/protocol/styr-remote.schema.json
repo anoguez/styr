@@ -399,27 +399,6 @@
         "maxItems": 2
       }
     },
-    "tasks:answerQuestion": {
-      "kind": "invoke",
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "array",
-        "prefixItems": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "string"
-          },
-          {
-            "type": "string"
-          }
-        ],
-        "items": false,
-        "minItems": 3,
-        "maxItems": 3
-      }
-    },
     "tasks:delete": {
       "kind": "invoke",
       "params": {

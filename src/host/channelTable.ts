@@ -154,9 +154,6 @@ export function createChannelTable(services: ChannelServices): {
     'tasks:archive': channel(z.tuple([str, z.boolean()]), (id, archived) =>
       tasksService.archive(id, archived)
     ),
-    'tasks:answerQuestion': channel(z.tuple([str, str, str]), (id, questionId, answer) =>
-      tasksService.answerQuestion(id, questionId, answer)
-    ),
     'tasks:delete': channel(z.tuple([str]), (id) => tasksService.delete(id)),
     'tasks:forgetSession': channel(z.tuple([str]), (id) => tasksService.forgetSession(id)),
     'tasks:checkMerged': channel(none, () => checkForMergedWork()),

@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { createAccessStore, type AccessStore } from '@host/remoteAccess/accessStore.js'
 import { createNetworkPolicy, type GatePorts } from '@host/remoteAccess/gate.js'
 import { authSignedData, pairProof, serverChallengeValid } from '@host/remoteAccess/handshake.js'
+import type { SecureSessions } from '@host/remoteAccess/secureSession.js'
 import { RpcPeer } from '@host/rpc/jsonRpc.js'
 import { createHub, PROTOCOL_VERSION, type Hub, type HubPorts } from './hub.js'
 import { startNetworkListener, type NetworkListener } from './wsListener.js'
@@ -110,7 +111,7 @@ export function networkHost() {
 export async function listenOnLoopback(
   host: ReturnType<typeof networkHost>,
   store: AccessStore,
-  extra: { hub?: Hub; pingMs?: number; handshakeMs?: number } = {}
+  extra: { hub?: Hub; pingMs?: number; handshakeMs?: number; secureSessions?: SecureSessions } = {}
 ): Promise<NetworkListener> {
   return startNetworkListener(
     {
@@ -122,6 +123,7 @@ export async function listenOnLoopback(
       now: () => host.state.clock,
       pingMs: extra.pingMs,
       handshakeMs: extra.handshakeMs,
+      secureSessions: extra.secureSessions,
       limitLoopback: true
     },
     '127.0.0.1',

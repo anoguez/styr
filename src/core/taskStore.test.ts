@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -206,34 +206,14 @@ describe('task store blockers', () => {
     expect(task.extraRepos).toEqual([])
   })
 
-  it('asks and answers a question through its own writes, with a note each', async () => {
-    const store = await taskStoreInTemporaryWorkspace()
-    const task = store.createTask({ title: 'Ask', status: 'in_progress' })
-
-    const { questionId, task: asked } = store.askQuestion(task.id, 'claude', 'Is X ok?\nWhy not.')
-    expect(questionId).toBe('q1')
-    expect(asked).toMatchObject({ status: 'in_progress', readiness: 'ready' })
-    expect(asked.activity.at(-1)?.message).toBe('Asked: Is X ok?')
-    expect(store.askQuestion(task.id, 'claude', 'More?').questionId).toBe('q2')
-
-    const answered = store.answerQuestion(task.id, 'q1', ' Yes ')
-    expect(answered.questions[0]).toMatchObject({ answer: 'Yes', answeredBy: 'owner' })
-    expect(answered.questions[1]?.answer).toBeUndefined()
-    expect(answered.activity.at(-1)).toMatchObject({ message: 'Answered q1: Yes' })
-    expect(() => store.answerQuestion(task.id, 'q1', 'No')).toThrow('already answered')
-    expect(() => store.answerQuestion(task.id, 'q9', 'No')).toThrow('not found')
-
-    // update_task cannot clobber a question
-    store.updateTask(task.id, { title: 'Renamed', questions: [] } as never)
-    expect(store.getTask(task.id)?.questions).toHaveLength(2)
-  })
-
-  it('refuses the 21st open question', async () => {
+  it('keeps hand-written questions through a patch', async () => {
     const store = await taskStoreInTemporaryWorkspace()
     const task = store.createTask({ title: 'Ask' })
-    for (let index = 0; index < 20; index++) store.askQuestion(task.id, 'claude', `Q${index}`)
-    expect(() => store.askQuestion(task.id, 'claude', 'One more')).toThrow(/20 open questions/)
-    store.answerQuestion(task.id, 'q1', 'ok')
-    expect(store.askQuestion(task.id, 'claude', 'Now it fits').questionId).toBe('q21')
+    const file = readFileSync(task.filePath, 'utf8')
+    writeFileSync(task.filePath, file.replace(/^---\n/, '---\nquestions:\n  - Is X ok?\n'))
+    expect(store.getTask(task.id)?.questions).toHaveLength(1)
+
+    store.updateTask(task.id, { title: 'Renamed', questions: [] } as never)
+    expect(store.getTask(task.id)?.questions).toHaveLength(1)
   })
 })

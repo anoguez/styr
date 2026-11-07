@@ -1,9 +1,10 @@
-import { app, ipcMain, powerSaveBlocker } from 'electron'
+import { app, ipcMain, powerSaveBlocker, safeStorage } from 'electron'
 import { pinWorkspace, pinnedWorkspaceId } from '@core/config.js'
 import { loadSettings } from '@core/settingsStore.js'
 import { globalSettingsFor } from '@core/types.js'
 import { listWorkspaces } from '@core/workspaces.js'
 import type { AccessConfig } from '@core/types/access.js'
+import type { SecretBox } from '@host/remoteAccess/accessStore.js'
 import { createHub, PROTOCOL_VERSION } from '../server/hub.js'
 import { createNetworkAccess, forwardToHub } from '../server/networkAccess.js'
 import { channelTable, onLocalTray } from './ipc.js'
@@ -45,6 +46,22 @@ function isOpen(workspaceId: string): boolean {
   return loadSettings(workspaceId).remoteAccess === true
 }
 
+/**
+ * The host's private key is sealed with `safeStorage` (the macOS Keychain, DPAPI, libsecret) once
+ * it is there. Linux without a keyring falls back to a fixed key, which is no better than the file,
+ * so the key then stays as it was: plaintext, 0600.
+ */
+function keychain(): SecretBox | undefined {
+  if (!safeStorage.isEncryptionAvailable()) return undefined
+  if (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') {
+    return undefined
+  }
+  return {
+    seal: (plain) => safeStorage.encryptString(plain).toString('base64'),
+    open: (sealed) => safeStorage.decryptString(Buffer.from(sealed, 'base64'))
+  }
+}
+
 const access = createNetworkAccess({
   hub,
   gate: {
@@ -62,7 +79,8 @@ const access = createNetworkAccess({
     release: (id) => powerSaveBlocker.stop(id)
   },
   broadcast: (state) => electronHost.broadcast('access:changed', state),
-  log: (message) => console.warn(message)
+  log: (message) => console.warn(message),
+  secrets: keychain
 })
 
 const configSchemaKeys: (keyof AccessConfig)[] = ['enabled', 'bindAddress', 'port', 'keepAwake']
@@ -74,6 +92,7 @@ export function startNetworkAccess(): void {
     lastTray = { statuses, titles: Object.fromEntries(titles) }
     forwardToHub(hub, 'server:tray', lastTray)
   })
+  access.store.sealHostKey()
   void access.service.start()
 }
 
