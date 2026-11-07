@@ -32,7 +32,7 @@ export interface SecureClientOptions {
 
 export class SecureHandshakeError extends Error {}
 
-const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
+const utf8 = new TextDecoder('utf-8', { fatal: true })
 
 export type SecureClientStep =
   | { kind: 'send'; frames: string[] }

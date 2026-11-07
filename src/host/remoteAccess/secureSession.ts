@@ -116,8 +116,8 @@ export const clientPayloadSchema = z.discriminatedUnion('type', [
 
 export class SecureChannelError extends Error {}
 
-/** Strict, and keeps a BOM as a character, as Dart's decoder does. */
-const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
+/** Strict, and drops a leading BOM, as Dart's `utf8.decode` does. */
+const utf8 = new TextDecoder('utf-8', { fatal: true })
 
 /**
  * A session's messages over Noise transport, as text frames. Any frame that fails (tampered,

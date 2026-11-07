@@ -220,6 +220,12 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
       expect(channel.open(frame.toString('base64'))).toHaveLength(RECORD_CHUNK_BYTES)
     })
 
+    it('drops a leading byte-order mark, as the Dart client does', () => {
+      const { raw, channel } = rawPair()
+      const frame = raw.send.encrypt(record(1, Buffer.from('\uFEFF{}'))).toString('base64')
+      expect(channel.open(frame)).toBe('{}')
+    })
+
     it('refuses a message that is not UTF-8', () => {
       const { raw, channel } = rawPair()
       const frame = raw.send.encrypt(record(1, Buffer.from([0xff, 0xfe]))).toString('base64')
