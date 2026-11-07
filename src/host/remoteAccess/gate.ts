@@ -163,7 +163,6 @@ const BOARD = new Set([
   'tasks:note',
   'tasks:reorder',
   'tasks:archive',
-  'tasks:answerQuestion',
   'tasks:delete',
   'tasks:forgetSession',
   'tasks:checkMerged',

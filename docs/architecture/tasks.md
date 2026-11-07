@@ -224,27 +224,15 @@ the fallback (`core/boardTools.ts`). `set_task_status` and `update_task` are unc
   hand-written one alike. Sections are `## ` lines matched case-insensitively and run to the next `## `;
   headings inside code fences do not count.
 - **No question tool.** Agents put a question to the owner in their own conversation, in the
-  terminal, and nowhere else: `ASK_LINE` says so, and the server has no `ask_owner` /
-  `resolve_question` (both were removed because the owner works in the terminal and does not watch
-  the Inbox or the task dialog). A waiting agent still shows in the Inbox as `waiting`.
+  terminal, and nowhere else: `ASK_LINE` says so. There is no `ask_owner` / `resolve_question`, and
+  the Inbox and the task dialog show no questions, because the owner works in the terminal and does
+  not watch those views. An agent stopped on a question shows in the Inbox as an ordinary `waiting`
+  agent.
 
-**Questions in the file.** `Task.questions` stays for files that already have them (an older
-`ask_owner` call, or hand-written): `id`, `askedAt`, `askedBy`, `text`, and
-`answer`/`answeredAt`/`answeredBy` once answered. They are not in `TaskPatch`: they change only
-through `taskStore.askQuestion` / `answerQuestion`, each with its note in the same write, so
-`update_task` cannot clobber an answer. At most 20 are open. `markdown.ts` normalises hand-written
-entries (a bare string is a question; ids, `askedAt` and `askedBy` are filled in; entries with no
-text are dropped) and never fails the file. The index keeps them in a JSON column.
-
-**Inbox.** An open question is `kind: 'question'` in Needs you, ranked after `waiting` and before the
-rest. It outranks a _working_ agent — a deliberate change of "a working agent outranks everything" —
-so a question to the owner never hides under Running. A waiting agent still wins the kind. A Done or
-archived task is not listed; its questions stay in the file. `summariseInbox` counts `question`.
-
-**Answering.** `tasks:answerQuestion(taskId, questionId, answer)` → `taskWrites.answerQuestion`
-records the answer, then delivers it through the Request changes routes (`reviewRoute` /
-`deliverReview`): queued at the agent's next stop, now, or by resuming its chat. A task with no chat
-(`fresh`) is not launched; the answer is recorded and `buildPrompt`'s `## Questions for the owner`
-block shows it on the next launch. A failed delivery keeps the answer and reports `failed`; an answered
-question is refused, so it is never sent twice. The task's status is not moved. A hand-written
-`answer:` shows as answered with nothing delivered.
+**Questions in the file.** `Task.questions` stays so files that already have them (an older
+`ask_owner` call, or hand-written) still parse and round-trip: `id`, `askedAt`, `askedBy`, `text`,
+and `answer`/`answeredAt`/`answeredBy`. Nothing in the app writes them, and `updateTask` drops a
+`questions` patch. `markdown.ts` normalises hand-written entries (a bare string is a question; ids,
+`askedAt` and `askedBy` are filled in; entries with no text are dropped) and never fails the file.
+The index keeps them in a JSON column. `buildPrompt`'s `## Questions for the owner` block still
+shows them to the agent, and `get_task` / `request_review` report the open count.
