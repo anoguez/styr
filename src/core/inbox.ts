@@ -58,7 +58,7 @@ export function awaitsReview(
  * derived from the same tasks and agent states as the board and writes nothing, so the two views
  * cannot disagree about a task. A working agent outranks a spec or a review: a task being worked on
  * is not waiting for either, whatever its readiness says. Two things outrank a working agent: a
- * waiting agent (it is blocked on you right now) and an open question from `ask_owner` — a
+ * waiting agent (it is blocked on you right now) and an open question in the task file — a
  * question addressed to the owner must not hide under Running while the agent carries on.
  */
 export function classifyTask(

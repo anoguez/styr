@@ -223,18 +223,18 @@ the fallback (`core/boardTools.ts`). `set_task_status` and `update_task` are unc
   `getSection(description, 'Handoff')` (`core/sections.ts`, pure) reads the tool's section and a
   hand-written one alike. Sections are `## ` lines matched case-insensitively and run to the next `## `;
   headings inside code fences do not count.
-- **`ask_owner`** (`taskStore.askQuestion`). Questions are the frontmatter list `Task.questions`
-  (`id`, `askedAt`, `askedBy`, `text`, and `answer`/`answeredAt`/`answeredBy` once answered). They are
-  not in `TaskPatch`: they change only through `askQuestion` / `answerQuestion`, each with its note in
-  the same write, so `update_task` cannot clobber an answer. At most 20 are open. `markdown.ts`
-  normalises hand-written entries (a bare string is a question; ids, `askedAt` and `askedBy` are filled
-  in; entries with no text are dropped) and never fails the file. The index keeps them in a JSON column.
+- **No question tool.** Agents put a question to the owner in their own conversation, in the
+  terminal, and nowhere else: `ASK_LINE` says so, and the server has no `ask_owner` /
+  `resolve_question` (both were removed because the owner works in the terminal and does not watch
+  the Inbox or the task dialog). A waiting agent still shows in the Inbox as `waiting`.
 
-**Terminal first.** The owner is often in a maximised terminal, not the Inbox, so the prompt
-(`ASK_LINE`) tells the agent to put the question in the conversation as well as call `ask_owner`. An
-answer given there is recorded by the agent with `resolve_question` (`taskStore.answerQuestion`, the
-same write as the Inbox's Send answer), so the Inbox entry closes. The Inbox still lists the question
-until then.
+**Questions in the file.** `Task.questions` stays for files that already have them (an older
+`ask_owner` call, or hand-written): `id`, `askedAt`, `askedBy`, `text`, and
+`answer`/`answeredAt`/`answeredBy` once answered. They are not in `TaskPatch`: they change only
+through `taskStore.askQuestion` / `answerQuestion`, each with its note in the same write, so
+`update_task` cannot clobber an answer. At most 20 are open. `markdown.ts` normalises hand-written
+entries (a bare string is a question; ids, `askedAt` and `askedBy` are filled in; entries with no
+text are dropped) and never fails the file. The index keeps them in a JSON column.
 
 **Inbox.** An open question is `kind: 'question'` in Needs you, ranked after `waiting` and before the
 rest. It outranks a _working_ agent — a deliberate change of "a working agent outranks everything" —

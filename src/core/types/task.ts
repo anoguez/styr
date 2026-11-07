@@ -123,7 +123,7 @@ export interface ExternalRef {
   syncedBodyHash?: string
 }
 
-/** A question for the owner (`ask_owner`). Open while it has no `answer`. */
+/** A question for the owner in the task file (`questions:`). Open while it has no `answer`. */
 export interface TaskQuestion {
   id: string
   askedAt: string
