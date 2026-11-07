@@ -10,6 +10,13 @@ import {
   createServerHandshake
 } from '@host/remoteAccess/handshake.js'
 import { createFailureLimiter } from '@host/remoteAccess/rateLimit.js'
+import {
+  SECURE_FRAME_MAX_CHARS,
+  createConnectionHandshake,
+  createSecureServerHandshake,
+  type SecureFrameChannel,
+  type SecureSessions
+} from '@host/remoteAccess/secureSession.js'
 import type { Hub } from './hub.js'
 
 /** The largest message a signed-in client may send. Terminal input and task drafts are far below. */
@@ -45,6 +52,8 @@ export interface NetworkListenerOptions {
   onConnections?(count: number): void
   /** Count failures from loopback too (tests); a tunnel shares one address, so it is off. */
   limitLoopback?: boolean
+  /** Protocol 2 (end-to-end Noise, `secureSession.ts`). Off by default: direct mode is protocol 1. */
+  secureSessions?: SecureSessions
 }
 
 export interface NetworkListener {
@@ -146,7 +155,14 @@ export async function startNetworkListener(
     let phase: 'handshake' | 'open' | 'closed' = 'handshake'
     let deviceId = ''
     let connection: ReturnType<Hub['connect']> | undefined
-    const handshake = createServerHandshake({ store: options.store, protocol: options.protocol })
+    let secure: SecureFrameChannel | undefined
+    const handshake = createConnectionHandshake({
+      secure: options.secureSessions ?? 'off',
+      protocol: options.protocol,
+      plain: () => createServerHandshake({ store: options.store, protocol: options.protocol }),
+      secureHandshake: () =>
+        createSecureServerHandshake({ store: options.store, maxMessageBytes: MAX_FRAME_BYTES })
+    })
     /**
      * Ends the session now: nothing the peer sends after this reaches the hub (a peer that ignores
      * the close frame would otherwise keep calling until `ws` gives up), and the socket is cut
@@ -186,14 +202,31 @@ export async function startNetworkListener(
         if (phase === 'handshake' && countsFailures(source)) limiter.fail(source)
         return end(CLOSE.BAD_REQUEST, 'text frames only')
       }
-      const text = rawToString(data)
+      const frame = rawToString(data)
       if (phase === 'open') {
+        let text: string | undefined = frame
+        if (secure) {
+          try {
+            text = secure.open(frame)
+          } catch (error) {
+            // Tampered, replayed, reordered or after a dropped frame: the session is over.
+            options.log(`Remote access: ended ${deviceId} from ${source} (${String(error)})`)
+            return end(CLOSE.BAD_REQUEST, 'bad frame')
+          }
+          if (text === undefined) return
+        }
         connection?.receive(text.endsWith('\n') ? text : `${text}\n`)
         return
       }
       if (phase !== 'handshake') return
-      const outcome = handshake.receive(text)
-      for (const message of outcome.messages) ws.send(JSON.stringify(message))
+      let outcome: ReturnType<typeof handshake.receive>
+      try {
+        outcome = handshake.receive(frame)
+      } catch (error) {
+        // The host's key could not be read (the keychain refused): this connection cannot go on.
+        outcome = { kind: 'denied', frames: [], reason: String(error) }
+      }
+      for (const reply of outcome.frames) ws.send(reply)
       if (outcome.kind === 'denied') {
         options.log(`Remote access: refused ${source} (${outcome.reason})`)
         if (countsFailures(source)) limiter.fail(source)
@@ -202,6 +235,7 @@ export async function startNetworkListener(
       }
       if (outcome.kind === 'ready') {
         limiter.reset(source)
+        secure = outcome.channel
         open(outcome.deviceId, outcome.paired)
       }
     })
@@ -214,7 +248,8 @@ export async function startNetworkListener(
       handshakeCounted = false
       // Past the handshake the frame limit is the session's, not the handshake's.
       const receiver = (ws as unknown as { _receiver?: { _maxPayload: number } })._receiver
-      if (receiver) receiver._maxPayload = MAX_FRAME_BYTES
+      // Protocol 2 splits a message into Noise records, each one frame.
+      if (receiver) receiver._maxPayload = secure ? SECURE_FRAME_MAX_CHARS : MAX_FRAME_BYTES
       const sessions = byDevice.get(id) ?? new Set<Session>()
       sessions.add(session)
       byDevice.set(id, sessions)
@@ -228,7 +263,9 @@ export async function startNetworkListener(
       connection = options.hub.connect((line) => {
         if (ws.readyState !== ws.OPEN) return
         if (ws.bufferedAmount > MAX_BUFFERED_BYTES) return ws.terminate()
-        ws.send(line.endsWith('\n') ? line.slice(0, -1) : line)
+        const message = line.endsWith('\n') ? line.slice(0, -1) : line
+        if (!secure) return ws.send(message)
+        for (const frame of secure.seal(message)) ws.send(frame)
       }, options.policy())
     }
 

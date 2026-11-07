@@ -1,10 +1,15 @@
 import { join } from 'node:path'
 import { configDir } from '@core/config.js'
 import { createAccessService, type AccessService } from '@host/remoteAccess/accessService.js'
-import { createAccessStore, type AccessStore } from '@host/remoteAccess/accessStore.js'
+import {
+  createAccessStore,
+  type AccessStore,
+  type SecretBox
+} from '@host/remoteAccess/accessStore.js'
 import { allowedInterfaces } from '@host/remoteAccess/addresses.js'
 import { createNetworkPolicy, type GatePorts } from '@host/remoteAccess/gate.js'
 import type { KeepAwakePorts } from '@host/remoteAccess/keepAwake.js'
+import type { SecureSessions } from '@host/remoteAccess/secureSession.js'
 import type { AccessState } from '@core/types/access.js'
 import type { TerminalOutput } from '@core/types.js'
 import { PROTOCOL_VERSION, type Hub } from './hub.js'
@@ -22,6 +27,16 @@ export interface NetworkAccessOptions {
   broadcast(state: AccessState): void
   log(message: string): void
   store?: AccessStore
+  /** The OS keychain for the host's private key (the desktop); without it the key stays 0600. */
+  secrets?: () => SecretBox | undefined
+}
+
+/**
+ * Protocol 2 over a direct socket is for trying it out until the phone speaks it:
+ * `STYR_REMOTE_PROTOCOL2=1` lets a device pick it. Direct mode stays protocol 1 otherwise.
+ */
+export function directSecureSessions(env: NodeJS.ProcessEnv = process.env): SecureSessions {
+  return env.STYR_REMOTE_PROTOCOL2 === '1' ? 'allow' : 'off'
 }
 
 /**
@@ -33,7 +48,9 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
   service: AccessService
   store: AccessStore
 } {
-  const store = options.store ?? createAccessStore({ path: accessStorePath(), now: Date.now })
+  const store =
+    options.store ??
+    createAccessStore({ path: accessStorePath(), now: Date.now, secrets: options.secrets })
   const service: AccessService = createAccessService({
     store,
     listen: (address, port) =>
@@ -43,6 +60,7 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
           store,
           policy: () => createNetworkPolicy(options.gate),
           protocol: PROTOCOL_VERSION,
+          secureSessions: directSecureSessions(),
           log: options.log,
           onConnections: (count) => service.connections(count)
         },
