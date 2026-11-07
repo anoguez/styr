@@ -84,7 +84,7 @@ export interface Task {
   doneAt?: string
   /** Set while the task is archived: off the board, still on disk. Independent of status. */
   archivedAt?: string
-  /** Questions an agent put to the owner. Changed only by `askQuestion` / `answerQuestion`. */
+  /** Questions for the owner already in the file (older `ask_owner` calls or hand-written). Read only. */
   questions: TaskQuestion[]
   createdAt: string
   updatedAt: string
@@ -132,20 +132,6 @@ export interface TaskQuestion {
   answer?: string
   answeredAt?: string
   answeredBy?: string
-}
-
-/**
- * What became of an answer to a question: the route it took to the agent (`queued` at its next
- * stop, `now`, `resume` the chat), `recorded` when there is no chat to send it to (the agent reads
- * it from the prompt on its next launch), or `failed` — recorded, but the delivery threw.
- */
-export type AnswerDelivery = 'queued' | 'now' | 'resume' | 'recorded' | 'failed'
-
-export interface AnswerResult {
-  task: Task
-  delivery: AnswerDelivery
-  /** Why the delivery failed; set only then. */
-  error?: string
 }
 
 export interface ActivityEntry {

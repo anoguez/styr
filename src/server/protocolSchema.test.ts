@@ -27,6 +27,6 @@ describe('the published protocol schema', () => {
       expect(schema.channels[name]).toBeDefined()
     }
     expect(schema.channels['terminal:write']?.kind).toBe('send')
-    expect(Object.keys(schema.channels).length).toBeGreaterThan(80)
+    expect(Object.keys(schema.channels).length).toBeGreaterThan(70)
   })
 })

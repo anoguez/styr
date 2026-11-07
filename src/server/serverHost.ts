@@ -13,7 +13,6 @@ import {
   getTask,
   reorderTasks,
   setArchived,
-  answerQuestion,
   updateTask
 } from '@core/taskStore.js'
 import type { AgentStatus } from '@core/agentState.js'
@@ -116,7 +115,6 @@ export function createServerHost(ports: ServerHostPorts) {
       addNote,
       reorderTasks,
       setArchived,
-      answerQuestion,
       deleteTask: (taskId) => {
         deleteTask(taskId)
         reviewService.forget(taskId)
@@ -126,8 +124,6 @@ export function createServerHost(ports: ServerHostPorts) {
     },
     settings: () => loadSettings(),
     requestLanding: () => requestLanding(),
-    route: (taskId) => agentsService.reviewRoute(taskId),
-    deliver: (taskId, message) => agentsService.deliverReview(taskId, message),
     observeTasks: sources.observeTasks,
     recordNotifyDuration: diagnostics.recordNotifyDuration,
     requestAutoRun: () => dispatchService.requestAutoRun(),

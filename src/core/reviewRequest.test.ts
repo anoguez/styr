@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanStores, storeInTemporaryWorkspace } from './storeFixture.js'
 
@@ -36,7 +37,8 @@ describe('requestReview', () => {
 
   it('replaces the handoff on a second call and counts open questions', async () => {
     const { store, requestReview, taskHandoff, task } = await setup()
-    store.askQuestion(task.id, 'claude', 'Is X ok?')
+    const file = readFileSync(task.filePath, 'utf8')
+    writeFileSync(task.filePath, file.replace(/^---\n/, '---\nquestions:\n  - Is X ok?\n'))
     requestReview({ id: task.id, summary, author: 'claude' })
     const second = requestReview({
       id: task.id,

@@ -20,7 +20,6 @@ import {
   getTask,
   reorderTasks,
   setArchived,
-  answerQuestion,
   updateTask
 } from '@core/taskStore.js'
 import { fetchAndSettle, settleLandedTasks } from './landing.js'
@@ -110,7 +109,6 @@ const tasksService = createTasksService({
     addNote,
     reorderTasks,
     setArchived,
-    answerQuestion,
     deleteTask: (taskId) => {
       deleteTask(taskId)
       reviewService.forget(taskId)
@@ -120,8 +118,6 @@ const tasksService = createTasksService({
   },
   settings: () => loadSettings(),
   requestLanding: () => requestLanding(),
-  route: (taskId) => agentsService.reviewRoute(taskId),
-  deliver: (taskId, message) => agentsService.deliverReview(taskId, message),
   observeTasks,
   recordNotifyDuration,
   requestAutoRun: () => dispatchService.requestAutoRun(),

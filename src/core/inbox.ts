@@ -1,6 +1,5 @@
 import { isAgentArchived, type AgentState, type AgentStatus } from './agentState.js'
 import { indexTasks, openBlockers } from './blocking.js'
-import { openQuestions, questionReason } from './questions.js'
 import type { Task, WorkspaceBoardSummary } from './types.js'
 
 export const INBOX_GROUPS = ['needs', 'running', 'next', 'done'] as const
@@ -16,7 +15,6 @@ export const INBOX_GROUP_LABELS: Record<InboxGroup, string> = {
 /** Why a task sits in its group — picks the wording and the actions the inbox offers for it. */
 export type InboxKind =
   | 'waiting'
-  | 'question'
   | 'review'
   | 'spec'
   | 'running'
@@ -57,9 +55,9 @@ export function awaitsReview(
  * Sorts the board into what needs you, what is running, what is next and what is finished. It is
  * derived from the same tasks and agent states as the board and writes nothing, so the two views
  * cannot disagree about a task. A working agent outranks a spec or a review: a task being worked on
- * is not waiting for either, whatever its readiness says. Two things outrank a working agent: a
- * waiting agent (it is blocked on you right now) and an open question in the task file — a
- * question addressed to the owner must not hide under Running while the agent carries on.
+ * is not waiting for either, whatever its readiness says. A waiting agent (it is blocked on you
+ * right now) outranks a working one. Agents ask their questions in the terminal, so a question
+ * shows here as a waiting agent, never on its own.
  */
 export function classifyTask(
   task: Task,
@@ -77,15 +75,6 @@ export function classifyTask(
       kind: 'waiting',
       reason: agent.lastMessage ?? 'Waiting on you',
       at
-    }
-  }
-  const open = openQuestions(task)
-  if (open.length > 0) {
-    return {
-      group: 'needs',
-      kind: 'question',
-      reason: questionReason(task),
-      at: open[0]?.askedAt ?? fallbackAt
     }
   }
   if (agent?.state === 'working') {
@@ -141,7 +130,7 @@ export function classifyTask(
 /** Most urgent first within a group: waiting agents, then the most recent activity. */
 function compareItems(a: InboxItem, b: InboxItem): number {
   const rank = (item: InboxItem): number =>
-    item.kind === 'waiting' ? 0 : item.kind === 'question' ? 1 : item.kind === 'blocked' ? 3 : 2
+    item.kind === 'waiting' ? 0 : item.kind === 'blocked' ? 2 : 1
   return rank(a) - rank(b) || b.at.localeCompare(a.at)
 }
 
@@ -183,7 +172,6 @@ export function summariseInbox(groups: Record<InboxGroup, InboxItem[]>): Workspa
     running: groups.running.length,
     next: groups.next.length,
     waiting: needsOfKind('waiting'),
-    question: needsOfKind('question'),
     review: needsOfKind('review'),
     spec: needsOfKind('spec')
   }
