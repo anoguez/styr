@@ -53,7 +53,7 @@ describe('allow list', () => {
     const list = createAllowList(path, () => new Date('2026-11-10T00:00:00Z'))
     expect(list.allow(FP)).toBe(true)
     expect(list.allow(FP)).toBe(false)
-    expect(statSync(path).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600)
     expect(createAllowList(path).list()).toEqual([
       { fingerprint: FP, addedAt: '2026-11-10T00:00:00.000Z' }
     ])
@@ -76,51 +76,54 @@ describe('allow list', () => {
   })
 })
 
-describe('styr relay allow | hosts | revoke over the Unix socket', () => {
-  let dir: string
-  let listener: Listener
-  const disconnected: string[] = []
-  const relay: Relay = {
-    address: { address: '127.0.0.1', port: 1 },
-    hosts: () => [{ fingerprint: FP, sessions: 2 }],
-    disconnectHost: (fingerprint) => void disconnected.push(fingerprint),
-    close: async () => undefined
+describe.skipIf(process.platform === 'win32')(
+  'styr relay allow | hosts | revoke over the Unix socket',
+  () => {
+    let dir: string
+    let listener: Listener
+    const disconnected: string[] = []
+    const relay: Relay = {
+      address: { address: '127.0.0.1', port: 1 },
+      hosts: () => [{ fingerprint: FP, sessions: 2 }],
+      disconnectHost: (fingerprint) => void disconnected.push(fingerprint),
+      close: async () => undefined
+    }
+
+    beforeEach(async () => {
+      dir = mkdtempSync(join(tmpdir(), 'styr-ctl-'))
+      const allowList = createAllowList(join(dir, 'relay.json'), () => new Date(0))
+      listener = await listen(join(dir, 'r.sock'), createRelayControl(allowList, relay))
+    })
+    afterEach(async () => {
+      await listener.close()
+      rmSync(dir, { recursive: true, force: true })
+    })
+
+    async function run(args: string[]): Promise<{ code: number; out: string; err: string }> {
+      const out = new PassThrough()
+      const err = new PassThrough()
+      const parsed = parseRelayArgs([...args, '--socket', join(dir, 'r.sock')])
+      const code = await relayControl(parsed as never, join(dir, 'r.sock'), out, err)
+      return { code, out: out.read()?.toString() ?? '', err: err.read()?.toString() ?? '' }
+    }
+
+    it('allows, lists and revokes, ending the revoked host at once', async () => {
+      expect((await run(['hosts'])).out).toContain('No hosts allowed')
+      expect((await run(['allow', FP])).out).toContain(`Allowed ${FP}`)
+      expect((await run(['hosts'])).out).toBe(
+        `${FP}  connected, 2 sessions  allowed 1970-01-01T00:00:00.000Z\n`
+      )
+      expect(await run(['revoke', FP])).toMatchObject({ code: 0 })
+      expect(disconnected).toEqual([FP])
+      expect(await run(['revoke', FP])).toMatchObject({ code: 1 })
+    })
+
+    it('says when no relay is running', async () => {
+      const out = new PassThrough()
+      const err = new PassThrough()
+      const code = await relayControl({ command: 'hosts' }, join(dir, 'none.sock'), out, err)
+      expect(code).toBe(1)
+      expect(err.read().toString()).toContain('no Styr relay is running')
+    })
   }
-
-  beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'styr-ctl-'))
-    const allowList = createAllowList(join(dir, 'relay.json'), () => new Date(0))
-    listener = await listen(join(dir, 'r.sock'), createRelayControl(allowList, relay))
-  })
-  afterEach(async () => {
-    await listener.close()
-    rmSync(dir, { recursive: true, force: true })
-  })
-
-  async function run(args: string[]): Promise<{ code: number; out: string; err: string }> {
-    const out = new PassThrough()
-    const err = new PassThrough()
-    const parsed = parseRelayArgs([...args, '--socket', join(dir, 'r.sock')])
-    const code = await relayControl(parsed as never, join(dir, 'r.sock'), out, err)
-    return { code, out: out.read()?.toString() ?? '', err: err.read()?.toString() ?? '' }
-  }
-
-  it('allows, lists and revokes, ending the revoked host at once', async () => {
-    expect((await run(['hosts'])).out).toContain('No hosts allowed')
-    expect((await run(['allow', FP])).out).toContain(`Allowed ${FP}`)
-    expect((await run(['hosts'])).out).toBe(
-      `${FP}  connected, 2 sessions  allowed 1970-01-01T00:00:00.000Z\n`
-    )
-    expect(await run(['revoke', FP])).toMatchObject({ code: 0 })
-    expect(disconnected).toEqual([FP])
-    expect(await run(['revoke', FP])).toMatchObject({ code: 1 })
-  })
-
-  it('says when no relay is running', async () => {
-    const out = new PassThrough()
-    const err = new PassThrough()
-    const code = await relayControl({ command: 'hosts' }, join(dir, 'none.sock'), out, err)
-    expect(code).toBe(1)
-    expect(err.read().toString()).toContain('no Styr relay is running')
-  })
-})
+)
