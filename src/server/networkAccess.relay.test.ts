@@ -146,7 +146,7 @@ describe('network access through a relay', () => {
     const uri = new URL(service.pair().uri)
     expect(uri.searchParams.get('v')).toBe('2')
     expect(uri.searchParams.get('relay')).toBe(`127.0.0.1:${relay.address.port}`)
-    const fingerprint = uri.searchParams.get('hostfp')!
+    const fingerprint = uri.searchParams.get('fp')!
 
     const phone = new RelayPhone(relay.address.port, fingerprint)
     const identity = deviceIdentity()

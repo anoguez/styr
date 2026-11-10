@@ -1,12 +1,15 @@
 import { z } from 'zod'
 import { createChannelTable, type ChannelServices } from '@host/channelTable.js'
+import { HANDSHAKE_MAX_BYTES, HANDSHAKE_TIMEOUT_MS } from '@host/remoteAccess/handshake.js'
+import { DEFAULT_RELAY_PORT, RELAY_PHONE_PREFIX } from '@host/remoteAccess/relayProtocol.js'
 import {
-  HANDSHAKE_MAX_BYTES,
-  HANDSHAKE_TIMEOUT_MS,
-  authSchema,
-  helloSchema,
-  pairSchema
-} from '@host/remoteAccess/handshake.js'
+  NOISE_PROLOGUE,
+  SECURE_FRAME_MAX_CHARS,
+  SECURE_PROTOCOL,
+  clientPayloadSchema,
+  hostPayloadSchema,
+  secureHelloSchema
+} from '@host/remoteAccess/secureSession.js'
 import { PROTOCOL_VERSION } from './hub.js'
 import { MAX_FRAME_BYTES } from './wsListener.js'
 
@@ -114,12 +117,15 @@ export function buildProtocolSchema(): unknown {
     protocol: PROTOCOL_VERSION,
     transport: {
       url: 'ws://<host>:<port>/',
-      frames: 'text frames only, one JSON-RPC 2.0 message per frame',
+      relayUrl: `ws://<relay>:<port, ${DEFAULT_RELAY_PORT}>${RELAY_PHONE_PREFIX}<host fingerprint>`,
+      frames:
+        'text frames only: the handshake (below), then each one a sealed Noise record of a JSON-RPC 2.0 message',
+      maxRecordFrameChars: SECURE_FRAME_MAX_CHARS,
       handshakeMaxBytes: HANDSHAKE_MAX_BYTES,
       handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
       maxFrameBytes: MAX_FRAME_BYTES,
       closeCodes: {
-        '4400': 'bad request (binary frame)',
+        '4400': 'bad request (binary frame, a frame that fails to decrypt)',
         '4401': 'unauthorized (every handshake failure)',
         '4403': 'the device was revoked',
         '4408': 'handshake timeout',
@@ -128,9 +134,12 @@ export function buildProtocolSchema(): unknown {
       jsonRpcErrors: { '-32001': 'forbidden: the call is not open to remote devices' }
     },
     handshake: {
-      hello: toSchema(helloSchema),
-      auth: toSchema(authSchema),
-      pair: toSchema(pairSchema)
+      protocol: SECURE_PROTOCOL,
+      noise: 'Noise_XX_25519_ChaChaPoly_SHA256',
+      prologue: NOISE_PROLOGUE.toString(),
+      hello: toSchema(secureHelloSchema),
+      hostPayload: toSchema(hostPayloadSchema),
+      devicePayload: toSchema(clientPayloadSchema)
     },
     channels,
     broadcasts: BROADCASTS

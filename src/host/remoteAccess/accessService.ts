@@ -232,9 +232,9 @@ export function createAccessService(ports: AccessServicePorts) {
     },
 
     /**
-     * The QR for one new device: through the relay (`v=2`, end to end) whenever it has registered
-     * this host, otherwise to the listener (`v=1`). Refused while neither can take a device, as
-     * nothing could answer the phone.
+     * The QR for one new device (`v=2`, protocol 2): through the relay (`relay=`) whenever it has
+     * registered this host, otherwise to the listener (`host=`, `port=`). Refused while neither can
+     * take a device, as nothing could answer the phone.
      */
     pair(): AccessPairing {
       const viaRelay = relay?.client.status() === 'connected' ? relay : undefined
@@ -249,12 +249,12 @@ export function createAccessService(ports: AccessServicePorts) {
       }
       const offer = store.startPairing()
       const fingerprint = store.identity().fingerprint
-      const secret = `&secret=${offer.secret}&exp=${offer.expiresAt}`
-      const uri = viaRelay
-        ? `styr://pair?v=2&relay=${encodeURIComponent(`${bracketed(viaRelay.address)}:${viaRelay.port}`)}` +
-          `&hostfp=${fingerprint}&fp=${fingerprint}${secret}`
-        : `styr://pair?v=1&host=${encodeURIComponent(bracketed(running!.address.address))}` +
-          `&port=${running!.address.port}&fp=${fingerprint}${secret}`
+      const where = viaRelay
+        ? `relay=${encodeURIComponent(`${bracketed(viaRelay.address)}:${viaRelay.port}`)}`
+        : `host=${encodeURIComponent(bracketed(running!.address.address))}&port=${running!.address.port}`
+      const uri =
+        `styr://pair?v=2&${where}&fp=${fingerprint}` +
+        `&secret=${offer.secret}&exp=${offer.expiresAt}`
       return { uri, expiresAt: offer.expiresAt, modules: encode(uri, { ecc: 'M', border: 0 }).data }
     },
 

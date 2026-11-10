@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createAccessStore, type AccessStore } from './accessStore.js'
-import { createServerHandshake } from './handshake.js'
 import { NoiseXX, generateNoiseKeyPair } from './noise.js'
 import {
   createSecureClientHandshake,
@@ -16,7 +15,6 @@ import {
   RECORD_CHUNK_BYTES,
   SecureChannelError,
   SecureFrameChannel,
-  createConnectionHandshake,
   createSecureServerHandshake,
   decodeFrame,
   type SecureHandshakeResult
@@ -430,39 +428,9 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
     })
   })
 
-  describe('choosing the protocol', () => {
-    const connection = (secure: 'off' | 'allow' | 'require') =>
-      createConnectionHandshake({
-        secure,
-        protocol: 1,
-        plain: () => createServerHandshake({ store, protocol: 1 }),
-        secureHandshake: server
-      })
+  it('refuses protocol 1 without a plaintext byte, so nothing can downgrade a session', () => {
     const plainHello = JSON.stringify({ type: 'hello', protocol: 1, clientNonce: 'a'.repeat(32) })
-    const secureHello = () => client({ signIn: { type: 'auth', deviceId: 'x' } }).start()
-
-    it('off: direct mode answers protocol 1 as before, and protocol 2 with its protocol error', () => {
-      expect(JSON.parse(connection('off').receive(plainHello).frames[0]!).type).toBe('challenge')
-      const refused = connection('off').receive(secureHello())
-      expect(refused.kind).toBe('denied')
-      expect(JSON.parse(refused.frames[0]!)).toEqual({
-        type: 'error',
-        code: 'protocol',
-        protocol: 1
-      })
-    })
-
-    it('allow: either, as the client picks', () => {
-      expect(connection('allow').receive(plainHello).kind).toBe('reply')
-      const reply = connection('allow').receive(secureHello())
-      expect(reply.kind).toBe('reply')
-      expect(() => decodeFrame(reply.frames[0]!)).not.toThrow()
-    })
-
-    it('require: no downgrade, protocol 1 is refused without a plaintext byte', () => {
-      const refused = connection('require').receive(plainHello)
-      expect(refused).toMatchObject({ kind: 'denied', frames: [] })
-      expect(connection('require').receive('{"type":"hello"}').kind).toBe('denied')
-    })
+    expect(server().receive(plainHello)).toMatchObject({ kind: 'denied', frames: [] })
+    expect(server().receive('{"type":"hello"}')).toMatchObject({ kind: 'denied', frames: [] })
   })
 })

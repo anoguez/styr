@@ -343,7 +343,7 @@ describe('access service', () => {
       const fingerprint = service.state().fingerprint
       expect(pairing.uri).toMatch(
         new RegExp(
-          `^styr://pair\\?v=2&relay=100\\.64\\.0\\.9%3A7879&hostfp=${fingerprint}&fp=${fingerprint}&secret=[0-9a-f]{40}&exp=\\d+$`
+          `^styr://pair\\?v=2&relay=100\\.64\\.0\\.9%3A7879&fp=${fingerprint}&secret=[0-9a-f]{40}&exp=\\d+$`
         )
       )
       relays[0]!.status = 'unreachable'
@@ -353,7 +353,9 @@ describe('access service', () => {
     it('pairs through the relay whenever it is connected, the listener only otherwise', async () => {
       const { service } = setup()
       await service.configure({ enabled: true, bindAddress: '100.101.102.103', relay })
-      expect(service.pair().uri).toMatch(/^styr:\/\/pair\?v=1&host=100\.101\.102\.103/)
+      expect(service.pair().uri).toMatch(
+        /^styr:\/\/pair\?v=2&host=100\.101\.102\.103&port=7878&fp=/
+      )
       relays[0]!.status = 'connected'
       expect(service.pair().uri).toMatch(/^styr:\/\/pair\?v=2&relay=/)
     })

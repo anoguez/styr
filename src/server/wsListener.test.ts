@@ -3,10 +3,20 @@ import { createConnection } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
 import type { AccessStore } from '@host/remoteAccess/accessStore.js'
+import { createSecureClientHandshake } from '@host/remoteAccess/secureClient.js'
 import { CLOSE, type NetworkListener } from './wsListener.js'
 import { listenOnLoopback, networkHost, TestPhone, type Credentials } from './networkFixture.js'
 
 const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** A protocol-2 hello from a device that has nothing else to say. */
+const secureHello = (): string =>
+  createSecureClientHandshake({
+    pinnedFingerprint: '0'.repeat(64),
+    identity: { privateKey: generateKeyPairSync('ed25519').privateKey, publicKey: '' },
+    signIn: { type: 'auth', deviceId: 'x' },
+    maxMessageBytes: 1024
+  }).start()
 
 describe('network listener', () => {
   let host: ReturnType<typeof networkHost>
@@ -151,19 +161,30 @@ describe('network listener', () => {
   it('does not send the server hello to a peer that has not signed in', async () => {
     const device = phone()
     await device.opened()
-    device.send({ type: 'hello', clientNonce: 'a'.repeat(32) })
-    const challenge = JSON.parse(await device.next())
-    expect(challenge.type).toBe('challenge')
+    device.send(secureHello())
+    // The host's Noise message 2: ciphertext, not JSON, and no hub client yet.
+    const reply = await device.next()
+    expect(() => JSON.parse(reply)).toThrow()
     expect(host.hub.clientCount()).toBe(0)
+  })
+
+  it('refuses a protocol-1 hello with 4401 and no answer', async () => {
+    const device = phone()
+    await device.opened()
+    device.send({ type: 'hello', clientNonce: 'a'.repeat(32) })
+    expect((await device.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
+    expect(device.messages).toEqual([])
   })
 
   it('gives a sniffer nothing to sign in with: a captured sign-in or pairing cannot be replayed', async () => {
     const offer = store.startPairing()
-    const sniffed: string[] = []
+    /** Each connection's third handshake message: the device's proof, bound to that session. */
+    const proofs: string[] = []
     const watch = (device: TestPhone): void => {
       const original = device.socket.send.bind(device.socket) as (data: string) => void
+      let count = 0
       device.socket.send = ((data: string) => {
-        sniffed.push(String(data))
+        if (++count === 2) proofs.push(String(data))
         original(data)
       }) as never
     }
@@ -175,35 +196,18 @@ describe('network listener', () => {
     await signing.opened()
     watch(signing)
     await signing.authenticate(credentials)
+    expect(proofs).toHaveLength(2)
 
-    // Replaying the captured pair and auth messages on new connections fails: the nonces differ.
-    for (const captured of sniffed.filter((text) => /"type":"(pair|auth)"/.test(text))) {
+    // Replayed on a new connection, after a fresh hello, it fails: the keys and hash differ.
+    for (const captured of proofs) {
       const attacker = phone()
       await attacker.opened()
-      await attacker.hello()
+      attacker.send(secureHello())
+      await attacker.next()
       attacker.send(captured)
       expect((await attacker.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
     }
     expect(store.devices()).toHaveLength(1)
-  })
-
-  it('refuses to pair a key that is not Ed25519', async () => {
-    const offer = store.startPairing()
-    const device = phone()
-    await device.opened()
-    await device.hello()
-    const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 })
-      .publicKey.export({ type: 'spki', format: 'der' })
-      .toString('base64')
-    device.send({
-      type: 'pair',
-      name: 'rsa',
-      publicKey: rsa.slice(0, 90),
-      proof: 'a'.repeat(64)
-    })
-    expect((await device.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
-    expect(offer).toBeDefined()
-    expect(store.devices()).toHaveLength(0)
   })
 
   it('refuses a token from a different install (another key pair)', async () => {
@@ -320,7 +324,6 @@ describe('network listener', () => {
             currentGlobal: () => ({}),
             sourcesOf: () => []
           }),
-        protocol: 1,
         log: () => {},
         handshakeMs: 50
       },
@@ -379,7 +382,6 @@ describe('network listener', () => {
         hub: host.hub,
         store,
         policy: host.policy,
-        protocol: 1,
         log: () => {},
         onConnections: (count) => counts.push(count)
       },

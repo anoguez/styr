@@ -17,10 +17,9 @@ import {
   type RelaySocketEvents
 } from '@host/remoteAccess/relayClient.js'
 import { RELAY_HOST_MESSAGE_MAX_CHARS } from '@host/remoteAccess/relayProtocol.js'
-import type { SecureSessions } from '@host/remoteAccess/secureSession.js'
 import type { AccessState } from '@core/types/access.js'
 import type { TerminalOutput } from '@core/types.js'
-import { PROTOCOL_VERSION, type Hub } from './hub.js'
+import type { Hub } from './hub.js'
 import {
   MAX_BUFFERED_BYTES,
   MAX_FRAME_BYTES,
@@ -50,14 +49,6 @@ export interface NetworkAccessOptions {
 }
 
 /**
- * Protocol 2 over a direct socket is for trying it out until the phone speaks it:
- * `STYR_REMOTE_PROTOCOL2=1` lets a device pick it. Direct mode stays protocol 1 otherwise.
- */
-export function directSecureSessions(env: NodeJS.ProcessEnv = process.env): SecureSessions {
-  return env.STYR_REMOTE_PROTOCOL2 === '1' ? 'allow' : 'off'
-}
-
-/**
  * Remote access for one host (the desktop app, or `styr serve --listen`): the settings and device
  * store, the policy that filters what a device sees, and the service that starts and stops the
  * WebSocket listener. Nothing listens until the service is switched on.
@@ -77,8 +68,6 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
           hub: options.hub,
           store,
           policy: () => createNetworkPolicy(options.gate),
-          protocol: PROTOCOL_VERSION,
-          secureSessions: directSecureSessions(),
           log: options.log,
           onConnections: (count) => service.connections(count)
         },

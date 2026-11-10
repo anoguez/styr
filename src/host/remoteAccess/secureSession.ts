@@ -5,8 +5,7 @@ import {
   DUMMY_KEY,
   HANDSHAKE_MAX_BYTES,
   signatureValid,
-  validDevicePublicKey,
-  type HandshakeResult
+  validDevicePublicKey
 } from './handshake.js'
 import {
   NOISE_MAX_MESSAGE,
@@ -17,8 +16,8 @@ import {
 } from './noise.js'
 
 /**
- * Protocol 2: the handshake and session of `handshake.ts`, end to end encrypted with Noise XX
- * (`noise.ts`), for a path the host does not trust (a relay). `docs/architecture/remote-access.md`
+ * Protocol 2, the only one: the handshake and session of every network connection, direct or
+ * through a relay, end to end encrypted with Noise XX (`noise.ts`). `docs/architecture/remote-access.md`
  * ("Protocol 2") is the wire description; the Dart client in styr-app implements the same and is
  * checked against `secureSession.vector.json`.
  *
@@ -321,72 +320,6 @@ export function createSecureServerHandshake(options: {
         // A frame Noise refuses, bad JSON, a key the keychain will not give up.
         return deny(error instanceof Error ? error.message : String(error))
       }
-    }
-  }
-}
-
-export type ConnectionHandshakeResult =
-  | { kind: 'reply'; frames: string[] }
-  | {
-      kind: 'ready'
-      frames: string[]
-      deviceId: string
-      paired: boolean
-      /** Set for protocol 2: every later frame goes through it. */
-      channel?: SecureFrameChannel
-    }
-  | { kind: 'denied'; frames: string[]; reason: string }
-
-/**
- * Which protocol-2 sessions a listener takes: `off` (direct mode today), `allow` (either, picked by
- * the client's hello) or `require` (a relay: protocol 1 is refused, so there is no downgrade).
- */
-export type SecureSessions = 'off' | 'allow' | 'require'
-
-/**
- * One connection's handshake, protocol 1 or 2 according to its first frame and `secure`. A
- * protocol-1 server answers a protocol-2 hello with its usual protocol error, so an older host
- * says so instead of hanging.
- */
-export function createConnectionHandshake(options: {
-  secure: SecureSessions
-  /** The protocol the plain handshake speaks, named in its refusal of a protocol-2 hello. */
-  protocol: number
-  plain: () => { receive(text: string): HandshakeResult }
-  secureHandshake: () => ReturnType<typeof createSecureServerHandshake>
-}) {
-  let chosen: ((text: string) => ConnectionHandshakeResult) | undefined
-
-  function choose(text: string): (text: string) => ConnectionHandshakeResult {
-    let wantsSecure = false
-    try {
-      const first = JSON.parse(text) as { protocol?: unknown }
-      wantsSecure = first?.protocol === SECURE_PROTOCOL
-    } catch {
-      // Not JSON: either handshake refuses it.
-    }
-    if (options.secure !== 'off' && (wantsSecure || options.secure === 'require')) {
-      const secure = options.secureHandshake()
-      return (frame) => secure.receive(frame)
-    }
-    if (wantsSecure) {
-      return () => ({
-        kind: 'denied',
-        reason: 'protocol 2 is off',
-        frames: [JSON.stringify({ type: 'error', code: 'protocol', protocol: options.protocol })]
-      })
-    }
-    const plain = options.plain()
-    return (frame) => {
-      const outcome = plain.receive(frame)
-      return { ...outcome, frames: outcome.messages.map((message) => JSON.stringify(message)) }
-    }
-  }
-
-  return {
-    receive(text: string): ConnectionHandshakeResult {
-      chosen ??= choose(text)
-      return chosen(text)
     }
   }
 }

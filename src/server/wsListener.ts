@@ -4,18 +4,12 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 import type { AccessStore } from '@host/remoteAccess/accessStore.js'
 import { addressKind, isPrivateAddress, proxyHeader } from '@host/remoteAccess/addresses.js'
 import type { ClientPolicy } from '@host/remoteAccess/gate.js'
-import {
-  HANDSHAKE_MAX_BYTES,
-  HANDSHAKE_TIMEOUT_MS,
-  createServerHandshake
-} from '@host/remoteAccess/handshake.js'
+import { HANDSHAKE_MAX_BYTES, HANDSHAKE_TIMEOUT_MS } from '@host/remoteAccess/handshake.js'
 import { createFailureLimiter } from '@host/remoteAccess/rateLimit.js'
 import {
   SECURE_FRAME_MAX_CHARS,
-  createConnectionHandshake,
   createSecureServerHandshake,
-  type SecureFrameChannel,
-  type SecureSessions
+  type SecureFrameChannel
 } from '@host/remoteAccess/secureSession.js'
 import type { Hub } from './hub.js'
 
@@ -42,7 +36,6 @@ export interface NetworkListenerOptions {
   store: AccessStore
   /** One per connection: it remembers what that device opened. */
   policy: () => ClientPolicy
-  protocol: number
   log(message: string): void
   now?(): number
   /** Liveness pings, in ms; a phone that left the network is dropped after one missed. */
@@ -52,8 +45,6 @@ export interface NetworkListenerOptions {
   onConnections?(count: number): void
   /** Count failures from loopback too (tests); a tunnel shares one address, so it is off. */
   limitLoopback?: boolean
-  /** Protocol 2 (end-to-end Noise, `secureSession.ts`). Off by default: direct mode is protocol 1. */
-  secureSessions?: SecureSessions
 }
 
 export interface NetworkListener {
@@ -156,12 +147,10 @@ export async function startNetworkListener(
     let deviceId = ''
     let connection: ReturnType<Hub['connect']> | undefined
     let secure: SecureFrameChannel | undefined
-    const handshake = createConnectionHandshake({
-      secure: options.secureSessions ?? 'off',
-      protocol: options.protocol,
-      plain: () => createServerHandshake({ store: options.store, protocol: options.protocol }),
-      secureHandshake: () =>
-        createSecureServerHandshake({ store: options.store, maxMessageBytes: MAX_FRAME_BYTES })
+    // Protocol 2 only: anything else, protocol 1's hello included, is closed with 4401 unanswered.
+    const handshake = createSecureServerHandshake({
+      store: options.store,
+      maxMessageBytes: MAX_FRAME_BYTES
     })
     /** Whether this side has answered yet: where a handshake that went quiet stopped, for the log. */
     let replied = false
@@ -210,17 +199,15 @@ export async function startNetworkListener(
       }
       const frame = rawToString(data)
       if (phase === 'open') {
-        let text: string | undefined = frame
-        if (secure) {
-          try {
-            text = secure.open(frame)
-          } catch (error) {
-            // Tampered, replayed, reordered or after a dropped frame: the session is over.
-            options.log(`Remote access: ended ${deviceId} from ${source} (${String(error)})`)
-            return end(CLOSE.BAD_REQUEST, 'bad frame')
-          }
-          if (text === undefined) return
+        let text: string | undefined
+        try {
+          text = secure!.open(frame)
+        } catch (error) {
+          // Tampered, replayed, reordered or after a dropped frame: the session is over.
+          options.log(`Remote access: ended ${deviceId} from ${source} (${String(error)})`)
+          return end(CLOSE.BAD_REQUEST, 'bad frame')
         }
+        if (text === undefined) return
         connection?.receive(text.endsWith('\n') ? text : `${text}\n`)
         return
       }
@@ -253,9 +240,9 @@ export async function startNetworkListener(
       deviceId = id
       handshaking--
       handshakeCounted = false
-      // Past the handshake the frame limit is the session's, not the handshake's. Protocol 2
-      // splits a message into Noise records, each one frame.
-      setMaxPayload(ws, secure ? SECURE_FRAME_MAX_CHARS : MAX_FRAME_BYTES)
+      // Past the handshake the frame limit is one Noise record's, not the handshake's: a longer
+      // message is split into records, each one frame.
+      setMaxPayload(ws, SECURE_FRAME_MAX_CHARS)
       const sessions = byDevice.get(id) ?? new Set<Session>()
       sessions.add(session)
       byDevice.set(id, sessions)
@@ -270,8 +257,7 @@ export async function startNetworkListener(
         if (ws.readyState !== ws.OPEN) return
         if (ws.bufferedAmount > MAX_BUFFERED_BYTES) return ws.terminate()
         const message = line.endsWith('\n') ? line.slice(0, -1) : line
-        if (!secure) return ws.send(message)
-        for (const frame of secure.seal(message)) ws.send(frame)
+        for (const frame of secure!.seal(message)) ws.send(frame)
       }, options.policy())
     }
 

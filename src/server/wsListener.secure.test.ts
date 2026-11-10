@@ -2,22 +2,22 @@ import { generateKeyPairSync } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AccessStore } from '@host/remoteAccess/accessStore.js'
 import { createSecureClientHandshake } from '@host/remoteAccess/secureClient.js'
-import type { SecureFrameChannel, SecureSessions } from '@host/remoteAccess/secureSession.js'
+import type { SecureFrameChannel } from '@host/remoteAccess/secureSession.js'
 import { RpcPeer } from '@host/rpc/jsonRpc.js'
 import { CLOSE, MAX_FRAME_BYTES, type NetworkListener } from './wsListener.js'
 import { listenOnLoopback, networkHost, TestPhone } from './networkFixture.js'
 
-/** Protocol 2 through the real listener: what a phone on a relay will see. */
+/** Protocol 2 through the real listener, frame by frame: what the phone's Dart client must do. */
 describe('network listener, protocol 2', () => {
   let host: ReturnType<typeof networkHost>
   let store: AccessStore
   let listener: NetworkListener
   const phones: TestPhone[] = []
 
-  async function start(secureSessions: SecureSessions): Promise<void> {
+  async function start(): Promise<void> {
     host = networkHost()
     store = host.store()
-    listener = await listenOnLoopback(host, store, { secureSessions })
+    listener = await listenOnLoopback(host, store)
   }
 
   async function phone(): Promise<TestPhone> {
@@ -87,14 +87,14 @@ describe('network listener, protocol 2', () => {
   })
 
   it('pairs, signs in and carries JSON-RPC end to end', async () => {
-    await start('allow')
+    await start()
     const { socket, channel } = await pairAndSignIn()
     const peer = rpc(socket, channel)
     await expect(peer.request('tasks:list', [])).resolves.toEqual([{ id: 'TASK-1@open' }])
   })
 
   it('ends the session on a tampered frame', async () => {
-    await start('allow')
+    await start()
     const { socket, channel } = await pairAndSignIn()
     const [frame] = channel.seal(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tasks:list' }))
     const bytes = Buffer.from(frame!, 'base64')
@@ -104,7 +104,7 @@ describe('network listener, protocol 2', () => {
   })
 
   it('ends the session on a replayed frame', async () => {
-    await start('allow')
+    await start()
     const { socket, channel } = await pairAndSignIn()
     const [frame] = channel.seal(JSON.stringify({ jsonrpc: '2.0', method: 'noop' }))
     socket.send(frame!)
@@ -112,26 +112,8 @@ describe('network listener, protocol 2', () => {
     expect((await socket.waitClosed()).code).toBe(CLOSE.BAD_REQUEST)
   })
 
-  it('require: refuses protocol 1 with 4401 and no plaintext answer', async () => {
-    await start('require')
-    const socket = await phone()
-    socket.send({ type: 'hello', protocol: 1, clientNonce: 'a'.repeat(32) })
-    expect((await socket.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
-    expect(socket.messages).toEqual([])
-  })
-
-  it('off (direct mode by default): protocol 1 unchanged, protocol 2 refused with its reason', async () => {
-    await start('off')
-    const socket = await phone()
-    const result = await handshake(socket, { type: 'auth', deviceId: 'x' }).catch(
-      (error: Error) => error
-    )
-    expect(result).toBeInstanceOf(Error)
-    expect((await socket.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
-  })
-
   it('a revoked device is cut off', async () => {
-    await start('allow')
+    await start()
     const { socket, deviceId } = await pairAndSignIn()
     store.revoke(deviceId)
     expect((await socket.waitClosed()).code).toBe(CLOSE.REVOKED)
