@@ -1,4 +1,5 @@
 import { isPlanRun } from './planning.js'
+import { isReviewRun } from './reviewRun.js'
 import type { Settings, Task } from './types.js'
 
 /** The tag every "Ask agent" task carries (`askDraft`, `terminalDraft`). Removing it keeps the card. */
@@ -9,8 +10,8 @@ export function isAskTask(task: { tags: readonly string[] }): boolean {
 }
 
 /**
- * Whether the task leaves the board when its agent's terminal exits. Planning runs are throwaway,
- * so they always go. An ask goes only while still In Progress (anyone who moved it on meant to keep
+ * Whether the task leaves the board when its agent's terminal exits. Planning and review runs are
+ * throwaway, so they always go. An ask goes only while still In Progress (anyone who moved it on meant to keep
  * it) and when the workspace archives asks. Pure: no files, no git.
  */
 export function shouldArchiveOnExit(
@@ -18,6 +19,6 @@ export function shouldArchiveOnExit(
   settings: Pick<Settings, 'autoArchiveAsk'>
 ): boolean {
   if (task.archivedAt) return false
-  if (isPlanRun(task)) return true
+  if (isPlanRun(task) || isReviewRun(task)) return true
   return settings.autoArchiveAsk && isAskTask(task) && task.status === 'in_progress'
 }

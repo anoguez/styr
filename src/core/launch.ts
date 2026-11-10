@@ -211,6 +211,11 @@ export interface LaunchOptions {
   prompt?: string
   /** Auto-run is starting it in this lane; recorded on the session's history entry. */
   dispatchLane?: OrchestrationLane
+  /**
+   * A review run (Ask to review): run in this task's checkout and render the prompt for it, since
+   * the run's own throwaway task only carries the chat. Its task records no worktree of its own.
+   */
+  checkoutOf?: Task
 }
 
 export function planLaunch(
@@ -223,7 +228,8 @@ export function planLaunch(
     throw new Error('A literal prompt replaces the template: pass no templateId or promptPreface.')
   }
   const provider = options.provider ? providerById(options.provider) : providerFor(settings, task)
-  const checkout = checkoutFor(settings, task)
+  const subject = options.checkoutOf ?? task
+  const checkout = checkoutFor(settings, subject)
   const existing = task.agentSession?.provider === provider.id ? task.agentSession.id : undefined
 
   clearAgentStatus(settings, task.id)
@@ -232,7 +238,7 @@ export function planLaunch(
 
   const writePrompt = (): string => {
     const file = join(supportDir(settings, 'prompts'), `${task.id}.txt`)
-    const rendered = options.prompt ?? renderPrompt(settings, task, templateId, checkout)
+    const rendered = options.prompt ?? renderPrompt(settings, subject, templateId, checkout)
     const text = options.promptPreface ? `${options.promptPreface}\n\n${rendered}` : rendered
     writeFileSync(file, text, 'utf8')
     return syntax.fileContents(file)
@@ -251,10 +257,10 @@ export function planLaunch(
   const prompt = !resumable || withPrompt ? writePrompt() : undefined
   // A bare resume sends no template, so only the task's own model applies to it.
   const model = launchModel(
-    task,
+    subject,
     settings.defaultProvider,
     provider.id,
-    prompt ? resolveTemplateFor(settings, task, templateId) : undefined
+    prompt ? resolveTemplateFor(settings, subject, templateId) : undefined
   )
 
   return {
@@ -274,10 +280,15 @@ export function planLaunch(
     cwd: checkout.cwd,
     sessionId,
     resumed: resumable,
-    worktreePath: checkout.worktreePath,
-    worktreeBase: checkout.worktreeBase,
+    // The reviewed task's worktree is its own: a review run's task must not record (or remove) it.
+    ...(options.checkoutOf
+      ? { extraWorktrees: [] }
+      : {
+          worktreePath: checkout.worktreePath,
+          worktreeBase: checkout.worktreeBase,
+          extraWorktrees: checkout.extraWorktrees
+        }),
     extraDirs: checkout.extraDirs,
-    extraWorktrees: checkout.extraWorktrees,
     warning: checkout.warning
   }
 }

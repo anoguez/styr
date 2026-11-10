@@ -263,13 +263,27 @@ task back to **Backlog** with `readiness: ready` and the fixes listed in an Acti
 copied the older template, which said `in_progress`, keep their text until they update it.
 
 **Rework resumes the implementer.** `reworkLaunch` in `sessionLifecycle.ts` runs on every launch: an
-implement-lane launch on a task whose current `agentSession` is a review run continues the latest
+implement-lane launch on a task whose current `agentSession`, or latest `Task.sessions` entry not yet
+`sentBack`, is a review run (`pendingReview`) continues the latest
 non-review chat in `Task.sessions` (of the requested provider, when the lane names one) if
 `provider.sessionExists` finds it, else starts fresh. Either way it sends the prompt, led by
 `REWORK_PREFACE` (`LaunchOptions.promptPreface`), which says a review asked for fixes and to read
 the latest Activity note. A run is a review when the template it recorded (`TaskSessionRef.templateId`;
 older entries: its `label`) is the one In Review routes to — never when a pinned template runs both
 lanes. A launch that is `fresh`, names a session or picks another template is left alone.
+
+**Ask to review is a throwaway review run**, treated like a ⌘↵ planning run. `askReview` creates a
+task tagged `review-run` (`reviewDraft`, `core/reviewRun.ts`) and starts a fresh reviewer on it in a
+new tab; the reviewed task's tab stays open (it refuses while that agent is mid-turn). The launch
+passes `LaunchOptions.checkoutOf`: the reviewer runs in the reviewed task's checkout, on the review
+prompt rendered for that task, and the run's own task records no worktree. `saveLaunchMetadata`
+adds the reviewer's chat to the reviewed task's history (`historyPatch`, labelled `Review (TASK-n)`)
+without moving its `agentSession`, so the Agent chats tab lists it and resuming the task goes back to
+the implementer — which is why rework also looks at the latest history entry. The run is found from
+the reviewed task by that chat id (`reviewedTask`), so nothing else links them. On every agent change
+`finishedReviewRuns` picks runs whose reviewer is `idle` while the reviewed task (re-read from its
+file) has left In Review; `agentsService` closes their tab and archives them. Like planning runs,
+`shouldArchiveOnExit` archives a review run whenever its tab exits.
 
 `Task.sessions` is the append-only chat history; `Task.agentSession` is which of them the next
 run continues. They look redundant but are not — Forget clears the pointer while keeping the
