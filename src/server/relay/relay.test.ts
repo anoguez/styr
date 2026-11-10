@@ -346,6 +346,47 @@ describe('styr relay', () => {
     expect(hostSocket.closed).toBeUndefined()
   })
 
+  it('several sessions flooding a host that does not read end one by one, never the host link', async () => {
+    await start()
+    const identity = hostIdentity()
+    allowList.allow(identity.fingerprint)
+    const hostSocket = await host(identity)
+    const phones = []
+    for (let i = 0; i < 5; i++) phones.push((await phone(hostSocket, identity)).socket)
+    ;(hostSocket.socket as unknown as { _socket: { pause(): void } })._socket.pause()
+    // Each phone alone stays under its 8 MiB; together they would pass the host socket's 32 MiB.
+    const chunk = 'x'.repeat(80_000)
+    for (let round = 0; round < 100; round++) {
+      for (const socket of phones) if (!socket.closed) socket.send(chunk)
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const ended = phones.filter((socket) => socket.closed)
+    expect(ended.length).toBeGreaterThan(0)
+    for (const socket of ended) expect(socket.closed!.code).toBe(RELAY_CLOSE.BUSY)
+    expect(relay.hosts()).toHaveLength(1)
+    expect(hostSocket.closed).toBeUndefined()
+  })
+
+  it('ends only the session whose frame grows past the host limit once escaped', async () => {
+    await start()
+    const identity = hostIdentity()
+    allowList.allow(identity.fingerprint)
+    const hostSocket = await host(identity)
+    const quoted = await phone(hostSocket, identity)
+    const kept = await phone(hostSocket, identity)
+    // Under the phone's frame limit, but each `"` is two characters inside the envelope.
+    quoted.socket.send('"'.repeat(RELAY_FRAME_MAX_CHARS - 10))
+    expect((await quoted.socket.waitClosed()).code).toBe(RELAY_CLOSE.BAD_REQUEST)
+    expect(await hostSocket.json()).toEqual({ type: 'close', sessionId: quoted.sessionId })
+    kept.socket.send('still here')
+    expect(await hostSocket.json()).toEqual({
+      type: 'frame',
+      sessionId: kept.sessionId,
+      frame: 'still here'
+    })
+  })
+
   it('carries a protocol-2 session end to end, and sees only ciphertext', async () => {
     await start()
     const store = createAccessStore({ path: join(dir, 'remote-access.json'), now: () => 1 })

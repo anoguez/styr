@@ -74,6 +74,26 @@ describe('allow list', () => {
     expect(list.has(FP)).toBe(true)
     expect(readFileSync(path, 'utf8')).toBe('{ broken')
   })
+
+  it('keeps a hand edit made while it runs, and will not write over a broken file', () => {
+    const path = join(dir, 'relay.json')
+    const other = 'cd'.repeat(32)
+    const list = createAllowList(path)
+    list.allow(FP)
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, hosts: [...list.list(), { fingerprint: other, addedAt: 'x' }] })
+    )
+    list.revoke(FP)
+    expect(
+      createAllowList(path)
+        .list()
+        .map((host) => host.fingerprint)
+    ).toEqual([other])
+    writeFileSync(path, '{ broken')
+    expect(() => list.allow(FP)).toThrow('cannot be read')
+    expect(readFileSync(path, 'utf8')).toBe('{ broken')
+  })
 })
 
 describe.skipIf(process.platform === 'win32')(

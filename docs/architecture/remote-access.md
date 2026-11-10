@@ -283,9 +283,12 @@ R ↔ P  the frames, bare, both ways         or close 4404 at once: the host is 
   bad message, 10 s timeout, a hang-up) from one address in a minute turn it away (429); thirty
   4404s do the same for phones (a phone retries while its host is away). At most 16 hosts
   registering, 8 connections per address (32 from loopback), 32 sessions per host (4429). Each
-  session may have 8 MiB on its way to the host; past that it alone ends (4429). The host's one
-  socket more than 32 MiB behind is cut, ending all its sessions; so is a phone more than 32 MiB
-  behind. Both get a liveness ping every 20 s.
+  session may have 8 MiB on its way to the host, and all of a host's sessions together 16 MiB;
+  the session that would pass either ends alone (4429), so phones cannot take the host link down.
+  A frame is measured as the host receives it, inside its JSON envelope (a `"` escapes to two
+  characters); one over the host's message limit ends that session (4400). The host's socket
+  more than 32 MiB behind (a host that stopped reading) is cut, ending all its sessions; a phone
+  more than 32 MiB behind ends its own. Both get a liveness ping every 20 s.
 - **What a relay still reveals:** a phone that knows a fingerprint learns whether that host is
   online (that is the point of 4404), and 4429 says it is busy.
 

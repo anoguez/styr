@@ -27,11 +27,17 @@ import {
   relayRegistrationData,
   type RelayToHost
 } from '@host/remoteAccess/relayProtocol.js'
-import { MAX_BUFFERED_BYTES, rawToString } from '../wsListener.js'
+import { MAX_BUFFERED_BYTES, rawToString, setMaxPayload } from '../wsListener.js'
 import type { AllowList } from './allowList.js'
 
 /** How far one session may fall behind toward its host before it alone is ended. */
 export const MAX_SESSION_BUFFERED_BYTES = 8 * 1024 * 1024
+/**
+ * How far all of a host's sessions together may fall behind toward it. Kept below
+ * `MAX_BUFFERED_BYTES`, where the host's socket is cut: a session that would pass it is ended
+ * instead, so phones (one address may open several) cannot take the host link down between them.
+ */
+export const MAX_HOST_PENDING_BYTES = 16 * 1024 * 1024
 /** Devices one host may have through the relay at once. */
 export const MAX_SESSIONS_PER_HOST = 32
 const MAX_REGISTERING = 16
@@ -48,8 +54,9 @@ export interface RelayOptions {
   registerMs?: number
   /** Count failures from loopback too (tests); a tunnel shares one address, so it is off. */
   limitLoopback?: boolean
-  /** Tests: a smaller per-session backlog toward the host. */
+  /** Tests: smaller backlogs toward the host, per session and for all of its sessions. */
   maxSessionBufferedBytes?: number
+  maxHostPendingBytes?: number
 }
 
 export interface Relay {
@@ -63,8 +70,11 @@ export interface Relay {
 
 interface HostLink {
   fingerprint: string
+  /** Bytes of phone frames sent toward the host that it has not taken yet, all sessions. */
+  pending: number
   sessions: Map<string, PhoneSession>
-  send(message: RelayToHost, sent?: (error?: Error) => void): void
+  /** Sends a message, or one already serialised (a frame, measured before it is sent). */
+  send(message: RelayToHost | string, sent?: (error?: Error) => void): void
   end(code: number, reason: string): void
 }
 
@@ -100,6 +110,7 @@ export async function startRelay(
   if (problem) throw new Error(problem)
   const now = options.now ?? Date.now
   const sessionLimit = options.maxSessionBufferedBytes ?? MAX_SESSION_BUFFERED_BYTES
+  const hostLimit = options.maxHostPendingBytes ?? MAX_HOST_PENDING_BYTES
   const countsFailures = (source: string): boolean =>
     options.limitLoopback === true || !isLoopback(source)
   /** Failed host registrations: a bad signature, a key not allowed, a stalled or bad message. */
@@ -285,11 +296,13 @@ export async function startRelay(
     const link: HostLink = {
       fingerprint,
       sessions: new Map(),
+      pending: 0,
       send(message, sent) {
         if (ws.readyState !== ws.OPEN) return
         // The host's one socket carries every session: past this it is cut, and all of them end.
+        // Phone frames stop at `hostLimit` before it; this catches a host that stopped reading.
         if (ws.bufferedAmount > MAX_BUFFERED_BYTES) return ws.terminate()
-        ws.send(JSON.stringify(message), sent)
+        ws.send(typeof message === 'string' ? message : JSON.stringify(message), sent)
       },
       end
     }
@@ -352,15 +365,29 @@ export async function startRelay(
     ws.on('message', (data: RawData, isBinary: boolean) => {
       if (!open) return
       if (isBinary) return session.end(RELAY_CLOSE.BAD_REQUEST, 'text frames only')
-      const frame = rawToString(data)
-      const size = Buffer.byteLength(frame)
-      if (session.pending + size > sessionLimit) {
+      // Measured as the host will receive it: JSON escapes a `"` to 2 characters and a control
+      // character to 6, so a frame under the phone's limit can still be over the host's.
+      const message = JSON.stringify({
+        type: 'frame',
+        sessionId: session.id,
+        frame: rawToString(data)
+      })
+      const size = Buffer.byteLength(message)
+      if (size > RELAY_HOST_MESSAGE_MAX_CHARS) {
+        options.log(
+          `Relay: a session to ${fingerprint} sent a frame too large to forward; ending it`
+        )
+        return session.end(RELAY_CLOSE.BAD_REQUEST, 'frame too large')
+      }
+      if (session.pending + size > sessionLimit || link.pending + size > hostLimit) {
         options.log(`Relay: a session to ${fingerprint} fell too far behind; ending it`)
         return session.end(RELAY_CLOSE.BUSY, 'too far behind')
       }
       session.pending += size
-      link.send({ type: 'frame', sessionId: session.id, frame }, () => {
+      link.pending += size
+      link.send(message, () => {
         session.pending -= size
+        link.pending -= size
       })
     })
     ws.once('close', () => {
@@ -403,12 +430,6 @@ export async function startRelay(
       })
     }
   }
-}
-
-/** `ws` takes the limit at construction; past the opening step an endpoint's frames may grow. */
-function setMaxPayload(ws: WebSocket, bytes: number): void {
-  const receiver = (ws as unknown as { _receiver?: { _maxPayload: number } })._receiver
-  if (receiver) receiver._maxPayload = bytes
 }
 
 function parseJson(text: string): unknown {

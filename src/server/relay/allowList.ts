@@ -51,6 +51,16 @@ export function createAllowList(path: string, now: () => Date = () => new Date()
     throw new Error(`${path} cannot be read, so the relay will not start. Fix or remove the file.`)
   }
 
+  /**
+   * Before a change: picks up a hand edit since the last read, so it is kept rather than written
+   * over, and refuses to write over a file that cannot be read now.
+   */
+  function latest(): void {
+    const current = read()
+    if (!current) throw new Error(`${path} cannot be read, so nothing is written over it. Fix it.`)
+    hosts = current
+  }
+
   function save(): void {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
     const temp = `${path}.${process.pid}.tmp`
@@ -64,12 +74,14 @@ export function createAllowList(path: string, now: () => Date = () => new Date()
     list: () => hosts.map((host) => ({ ...host })),
     allow(fingerprint) {
       if (!FINGERPRINT.test(fingerprint)) throw new Error(`Not a host fingerprint: ${fingerprint}`)
+      latest()
       if (hosts.some((host) => host.fingerprint === fingerprint)) return false
       hosts = [...hosts, { fingerprint, addedAt: now().toISOString() }]
       save()
       return true
     },
     revoke(fingerprint) {
+      latest()
       if (!hosts.some((host) => host.fingerprint === fingerprint)) return false
       hosts = hosts.filter((host) => host.fingerprint !== fingerprint)
       save()
