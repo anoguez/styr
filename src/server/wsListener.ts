@@ -253,10 +253,9 @@ export async function startNetworkListener(
       deviceId = id
       handshaking--
       handshakeCounted = false
-      // Past the handshake the frame limit is the session's, not the handshake's.
-      const receiver = (ws as unknown as { _receiver?: { _maxPayload: number } })._receiver
-      // Protocol 2 splits a message into Noise records, each one frame.
-      if (receiver) receiver._maxPayload = secure ? SECURE_FRAME_MAX_CHARS : MAX_FRAME_BYTES
+      // Past the handshake the frame limit is the session's, not the handshake's. Protocol 2
+      // splits a message into Noise records, each one frame.
+      setMaxPayload(ws, secure ? SECURE_FRAME_MAX_CHARS : MAX_FRAME_BYTES)
       const sessions = byDevice.get(id) ?? new Set<Session>()
       sessions.add(session)
       byDevice.set(id, sessions)
@@ -348,7 +347,13 @@ export async function startNetworkListener(
   return listener
 }
 
-function rawToString(data: RawData): string {
+/** `ws` takes the frame limit at construction; past the opening step a peer's frames may grow. */
+export function setMaxPayload(ws: WebSocket, bytes: number): void {
+  const receiver = (ws as unknown as { _receiver?: { _maxPayload: number } })._receiver
+  if (receiver) receiver._maxPayload = bytes
+}
+
+export function rawToString(data: RawData): string {
   if (Array.isArray(data)) return Buffer.concat(data).toString('utf8')
   if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8')
   return data.toString('utf8')

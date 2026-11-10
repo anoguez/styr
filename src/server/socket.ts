@@ -2,7 +2,6 @@ import { chmodSync, mkdirSync, rmSync } from 'node:fs'
 import { connect, createServer, type Socket } from 'node:net'
 import { dirname, join } from 'node:path'
 import { configDir } from '@core/config.js'
-import type { Hub } from './hub.js'
 
 /** `~/.styr/server.sock`, or `$STYR_HOME/server.sock`. */
 export function defaultSocketPath(): string {
@@ -24,6 +23,13 @@ export function isListening(path: string): Promise<boolean> {
 /** `sun_path` holds 104 bytes on macOS and 108 on Linux, including the terminating NUL. */
 const MAX_SOCKET_PATH = 103
 
+/** What answers on the socket: the hub for `styr serve`, the control calls for `styr relay`. */
+export interface LineServer {
+  /** One per client: `write` sends it a line; feed it what the client sends. */
+  connect(write: (line: string) => void): { receive(chunk: Buffer | string): void; close(): void }
+  closeAll(): void
+}
+
 export interface Listener {
   /** Ends every client, stops listening and removes the socket file. */
   close(): Promise<void>
@@ -35,7 +41,7 @@ export interface Listener {
  * to `ssh` in, is the auth. A socket file left by a server that died is replaced; a live server
  * keeps its socket and this one refuses to start.
  */
-export async function listen(path: string, hub: Hub): Promise<Listener> {
+export async function listen(path: string, hub: LineServer): Promise<Listener> {
   if (Buffer.byteLength(path) > MAX_SOCKET_PATH) {
     throw new Error(
       `The socket path is too long for a Unix socket (${MAX_SOCKET_PATH} bytes): ${path}`
@@ -43,7 +49,7 @@ export async function listen(path: string, hub: Hub): Promise<Listener> {
   }
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   if (await isListening(path)) {
-    throw new Error(`A Styr server is already running on ${path}.`)
+    throw new Error(`Styr is already running on ${path}.`)
   }
   rmSync(path, { force: true })
 
@@ -90,7 +96,7 @@ export async function listen(path: string, hub: Hub): Promise<Listener> {
  */
 export const MAX_BUFFERED_BYTES = 32 * 1024 * 1024
 
-function serve(socket: Socket, hub: Hub): void {
+function serve(socket: Socket, hub: LineServer): void {
   const connection = hub.connect((line) => {
     if (socket.destroyed) return
     if (socket.writableLength > MAX_BUFFERED_BYTES) {
