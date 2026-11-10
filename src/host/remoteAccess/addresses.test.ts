@@ -3,6 +3,7 @@ import {
   addressKind,
   allowedInterfaces,
   bindAddressProblem,
+  defaultBindAddress,
   isPrivateAddress,
   portProblem,
   proxyHeader
@@ -99,6 +100,48 @@ describe('allowedInterfaces', () => {
         utun3: [entry('100.90.1.1')]
       })
     ).toEqual([{ name: 'utun3', address: '100.90.1.1', kind: 'tailscale' }])
+  })
+
+  it('lists Tailscale IPv4 first, whatever order the system gives', () => {
+    const v4 = (address: string) => ({
+      address,
+      family: 'IPv4' as const,
+      internal: false,
+      netmask: '',
+      mac: '',
+      cidr: null
+    })
+    const v6 = (address: string) => ({ ...v4(address), family: 'IPv6' as const, scopeid: 0 })
+    const listed = allowedInterfaces({
+      lo0: [v6('::1'), v4('127.0.0.1')],
+      utun3: [v6('fd7a:115c:a1e0::1'), v4('100.90.1.1')]
+    })
+    expect(listed.map((choice) => choice.address)).toEqual([
+      '100.90.1.1',
+      'fd7a:115c:a1e0::1',
+      '127.0.0.1',
+      '::1'
+    ])
+  })
+})
+
+describe('defaultBindAddress', () => {
+  it('picks the Tailscale IPv4 address', () => {
+    expect(
+      defaultBindAddress([
+        { name: 'utun3', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' },
+        { name: 'utun3', address: '100.90.1.1', kind: 'tailscale' }
+      ])
+    ).toBe('100.90.1.1')
+  })
+
+  it('never falls back to IPv6 or loopback', () => {
+    expect(
+      defaultBindAddress([
+        { name: 'utun3', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' },
+        { name: 'lo0', address: '127.0.0.1', kind: 'loopback' }
+      ])
+    ).toBeUndefined()
   })
 })
 

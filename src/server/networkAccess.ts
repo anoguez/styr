@@ -29,6 +29,9 @@ export interface NetworkAccessOptions {
   store?: AccessStore
   /** The OS keychain for the host's private key (the desktop); without it the key stays 0600. */
   secrets?: () => SecretBox | undefined
+  /** Only where a screen can show the answers (the desktop): see `AccessServicePorts`. */
+  shieldsUp?(): Promise<boolean | undefined>
+  workspaceShared?(): boolean
 }
 
 /**
@@ -70,7 +73,9 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
     interfaces: () => allowedInterfaces(),
     keepAwake: options.keepAwake,
     broadcast: options.broadcast,
-    log: options.log
+    log: options.log,
+    ...(options.shieldsUp ? { shieldsUp: options.shieldsUp } : {}),
+    ...(options.workspaceShared ? { workspaceShared: options.workspaceShared } : {})
   })
   return { service, store }
 }

@@ -40,6 +40,13 @@ export interface AccessState extends AccessConfig {
   fingerprint: string
   /** An open pairing offer: when it stops working. The secret is only in the QR. */
   pairingExpiresAt?: number
+  /**
+   * Tailscale's Shields Up is on, so devices cannot connect in. Undefined until checked, or when
+   * Tailscale's CLI could not be asked.
+   */
+  shieldsUp?: boolean
+  /** Some workspace has `remoteAccess` on, so a paired device has something to open. */
+  workspaceShared: boolean
 }
 
 /** The QR to scan: the text it encodes and its modules, dark ones true. */

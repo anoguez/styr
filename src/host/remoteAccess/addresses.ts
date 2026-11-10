@@ -95,7 +95,16 @@ export interface InterfaceChoice {
   kind: AddressKind
 }
 
-/** The addresses this computer has that the listener may use. */
+/** Tailscale before loopback, and IPv4 before IPv6 within each: the order Settings lists them in. */
+function rank(choice: InterfaceChoice): number {
+  return (choice.kind === 'tailscale' ? 0 : 2) + (isIPv4(choice.address) ? 0 : 1)
+}
+
+/**
+ * The addresses this computer has that the listener may use, Tailscale IPv4 first. The QR carries
+ * the address, and a phone reaches a Tailscale IPv4 address on every network it can reach the
+ * IPv6 one on, so IPv6 is listed but never preferred.
+ */
 export function allowedInterfaces(
   interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces()
 ): InterfaceChoice[] {
@@ -106,7 +115,12 @@ export function allowedInterfaces(
       if (kind) choices.push({ name, address: entry.address, kind })
     }
   }
-  return choices
+  return choices.sort((a, b) => rank(a) - rank(b))
+}
+
+/** The address to listen on when none was picked: the Tailscale IPv4 one, never IPv6 or loopback. */
+export function defaultBindAddress(choices: readonly InterfaceChoice[]): string | undefined {
+  return choices.find((choice) => choice.kind === 'tailscale' && isIPv4(choice.address))?.address
 }
 
 /** A request header that says a proxy sits in front, which the listener refuses. */
