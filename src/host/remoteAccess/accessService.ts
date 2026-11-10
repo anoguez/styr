@@ -232,14 +232,12 @@ export function createAccessService(ports: AccessServicePorts) {
     },
 
     /**
-     * The QR for one new device: to the listener when it is up (`v=1`), otherwise (or while Shields
-     * Up blocks the listener) through the relay (`v=2`), which needs it to have registered this host. Refused while neither can take a
-     * device, as nothing could answer the phone.
+     * The QR for one new device: through the relay (`v=2`, end to end) whenever it has registered
+     * this host, otherwise to the listener (`v=1`). Refused while neither can take a device, as
+     * nothing could answer the phone.
      */
     pair(): AccessPairing {
-      // Shields Up drops what connects in, so with it on the relay is the way a phone gets here.
-      const relayUp = relay?.client.status() === 'connected'
-      const viaRelay = relayUp && (!running || shieldsUp === true) ? relay : undefined
+      const viaRelay = relay?.client.status() === 'connected' ? relay : undefined
       if (!running && !viaRelay) {
         if (store.config().relay.enabled) {
           throw new Error(

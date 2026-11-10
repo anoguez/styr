@@ -332,8 +332,8 @@ switch apart from "Allow other devices to connect": either, both or neither can 
   more than 32 MiB behind (a relay that stopped reading) is cut and dialled again.
 
 **Pairing through the relay.** "Pair a device…" makes `styr://pair?v=2&relay=<host:port>&hostfp=<fp>&fp=<fp>&secret=…&exp=…`
-when the relay is the way in: the listener is off, or Tailscale Shields Up blocks it. With the
-listener up it is the `v=1` QR as before. It is refused while the relay has not registered this
+whenever the relay has registered this host, even with the listener up: the session is then end
+to end, and the phone reaches it from any network. Only without a relay is it the `v=1` QR. It is refused while the relay has not registered this
 host ("Styr is not connected to the relay"), as it is while nothing listens. The secret, its 2
 minutes and its single use are the same; the proof is protocol 2's, so a relay cannot pair.
 

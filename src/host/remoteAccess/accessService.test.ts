@@ -350,13 +350,11 @@ describe('access service', () => {
       expect(() => service.pair()).toThrow(/not connected to the relay/)
     })
 
-    it('pairs to the listener when it is up, and through the relay while Shields Up blocks it', async () => {
+    it('pairs through the relay whenever it is connected, the listener only otherwise', async () => {
       const { service } = setup()
       await service.configure({ enabled: true, bindAddress: '100.101.102.103', relay })
-      relays[0]!.status = 'connected'
       expect(service.pair().uri).toMatch(/^styr:\/\/pair\?v=1&host=100\.101\.102\.103/)
-      shields = true
-      await service.checkNetwork()
+      relays[0]!.status = 'connected'
       expect(service.pair().uri).toMatch(/^styr:\/\/pair\?v=2&relay=/)
     })
 
