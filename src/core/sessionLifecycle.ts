@@ -1,6 +1,6 @@
 import { AGENT_ENTER_DELAY_MS, agentPrompt, promptRoute } from './agentPrompt.js'
 import { askTitle, forkDescription } from './askAgent.js'
-import { askDraft, handoffDraft } from './derivedTask.js'
+import { askDraft, handoffDraft, reviewDraft } from './derivedTask.js'
 import {
   agentHandoffPrompt,
   agentProgramProvider,
@@ -149,8 +149,8 @@ export interface LaunchRun {
   sessionLabel?: string
   /** Auto-run started it, in this lane (`TaskSessionRef.dispatch`). */
   dispatchLane?: OrchestrationLane
-  /** History only: the task's `agentSession` stays where it was (`LaunchOptions.besideCurrent`). */
-  besideCurrent?: boolean
+  /** A review run's chat is recorded on the task it reviews too (`historyPatch`). */
+  historyOf?: string
 }
 
 /** The board changes a launch makes to its task, as data. Pure; `sessionLabel` is not the renderer's. */
@@ -162,7 +162,7 @@ export function launchPatch(
   run: LaunchRun = {},
   now: () => string = () => new Date().toISOString()
 ): TaskPatch {
-  const { templateId, sessionId, sessionLabel, dispatchLane, besideCurrent } = run
+  const { templateId, sessionId, sessionLabel, dispatchLane } = run
   const patch: TaskPatch = {}
   if (task.status === 'backlog') patch.status = 'in_progress'
   if (plan.worktreePath && task.worktreePath !== plan.worktreePath) {
@@ -189,10 +189,7 @@ export function launchPatch(
   }
   if (!sessionId) return patch
 
-  if (
-    !besideCurrent &&
-    (task.agentSession?.id !== sessionId || task.agentSession?.provider !== plan.provider)
-  ) {
+  if (task.agentSession?.id !== sessionId || task.agentSession?.provider !== plan.provider) {
     patch.agentSession = { provider: plan.provider, id: sessionId }
   }
   let sessions = task.sessions
@@ -218,6 +215,28 @@ export function launchPatch(
   }
   if (sessions !== task.sessions) patch.sessions = sessions
   return patch
+}
+
+/**
+ * A review run's chat, added to the history of the task it reviews so the task's Agent chats list
+ * it. Only history: the task keeps pointing at its own chat, so resuming it goes back to that one.
+ */
+export function historyPatch(
+  settings: Settings,
+  reviewed: Task,
+  provider: 'claude' | 'codex',
+  sessionId: string,
+  label: string,
+  now: () => string = () => new Date().toISOString()
+): TaskPatch {
+  if (reviewed.sessions.some((entry) => entry.id === sessionId)) return {}
+  const template = resolveTemplateFor(settings, { ...reviewed, status: 'in_review' })
+  return {
+    sessions: [
+      ...reviewed.sessions,
+      { id: sessionId, provider, startedAt: now(), label, templateId: template.id }
+    ]
+  }
 }
 
 /** What an implementer is told when it picks a task back up after a failed review. */
@@ -314,22 +333,29 @@ export function createSessionLifecycle(ports: SessionPorts) {
     run: LaunchRun
   ): void {
     const active = workspaceId === ports.settings().activeWorkspaceId
-    const write = (task: Task): boolean => {
+    const write = (find: (id: string) => Task | null | undefined): boolean => {
+      const task = find(taskId)
+      if (!task) return false
       const patch = launchPatch(ports.settings(), task, plan, run)
       const changed = Object.keys(patch).length > 0
       if (changed) ports.updateTask(task.id, patch)
       if (plan.warning) ports.addNote(task.id, 'styr', plan.warning)
-      return changed || Boolean(plan.warning)
+      return recordOnReviewed(find) || changed || Boolean(plan.warning)
+    }
+    const recordOnReviewed = (find: (id: string) => Task | null | undefined): boolean => {
+      const reviewed = run.historyOf && run.sessionId ? find(run.historyOf) : undefined
+      if (!reviewed || !run.sessionId) return false
+      const label = `Review (${taskId})`
+      const patch = historyPatch(ports.settings(), reviewed, plan.provider, run.sessionId, label)
+      if (Object.keys(patch).length === 0) return false
+      ports.updateTask(reviewed.id, patch)
+      return true
     }
     if (active) {
-      const task = ports.findTask(taskId)
-      if (task && write(task)) ports.notifyTasks()
+      if (write(ports.findTask)) ports.notifyTasks()
       return
     }
-    ports.pinWorkspace(workspaceId, () => {
-      const task = ports.getTask(taskId)
-      if (task) write(task)
-    })
+    ports.pinWorkspace(workspaceId, () => write(ports.getTask))
   }
 
   /**
@@ -407,7 +433,7 @@ export function createSessionLifecycle(ports: SessionPorts) {
       templateId: options.templateId,
       sessionLabel: options.sessionLabel,
       dispatchLane: options.dispatchLane,
-      besideCurrent: options.besideCurrent
+      historyOf: options.checkoutOf?.id
     }
     saveLaunchMetadata(workspaceId, task.id, plan, {
       ...run,
@@ -621,28 +647,34 @@ export function createSessionLifecycle(ports: SessionPorts) {
 
   /**
    * Starts a fresh reviewer on an In Review task — the launch Orchestrate makes for the review lane —
-   * in a tab of its own. Orchestrate skips a task whose tab is open, but this is asked from that very
-   * tab, so it opens beside it: the task's tab stays open and the task keeps its chat, so resuming
-   * the task goes back to the implementer; the reviewer joins the task's history.
+   * as a throwaway review run (`reviewDraft`) with a tab of its own. Orchestrate skips a task whose
+   * tab is open, but this is asked from that very tab, so the task's tab stays open and the task
+   * keeps its chat. The reviewer works in the task's checkout on the task's review prompt; its chat
+   * is recorded in the task's history, and the run is archived once the review is done
+   * (`finishedReviewRuns`).
    */
   async function askReview(taskId: string): Promise<TerminalSessionInfo> {
     const task = ports.findTask(taskId)
     if (!task) throw new Error(`Task ${taskId} not found`)
     if (task.status !== 'in_review') throw new Error(`${taskId} is not in review`)
-    const settings = ports.settings()
     const state = agentState(taskId)
     if (state === 'working' || state === 'waiting') {
       throw new Error('The agent is still working on this task. Ask for a review once it stops.')
     }
-    // Through the gate without its live-tab check: a double press must not open two reviewers.
-    return gate.run(monitorKey(settings.activeWorkspaceId, taskId), () =>
-      start(taskId, {
-        withPrompt: true,
-        fresh: true,
-        besideCurrent: true,
-        provider: providerForLane(settings, 'review')
-      })
-    )
+    const settings = ports.settings()
+    const provider = providerForLane(settings, 'review')
+    const cwd = task.worktreePath || task.repoPath || settings.defaultRepoPath.trim() || undefined
+    const run = ports.createTask(reviewDraft(task, cwd, provider))
+    ports.addNote(task.id, 'styr', `Review started as ${run.id}`)
+    ports.notifyTasks()
+    return startForTask(run.id, {
+      withPrompt: true,
+      fresh: true,
+      provider,
+      templateId: resolveTemplateFor(settings, task).id,
+      checkoutOf: task,
+      sessionLabel: 'Review'
+    })
   }
 
   /**

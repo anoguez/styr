@@ -272,12 +272,18 @@ the latest Activity note. A run is a review when the template it recorded (`Task
 older entries: its `label`) is the one In Review routes to — never when a pinned template runs both
 lanes. A launch that is `fresh`, names a session or picks another template is left alone.
 
-**Ask to review opens beside the task's chat.** The terminal's Ask to review (`askReview`) starts a
-fresh reviewer in a new tab and leaves the task's tab open (it refuses while that agent is mid-turn).
-It launches with `LaunchOptions.besideCurrent`, so `launchPatch` adds the reviewer to `Task.sessions`
-but leaves `Task.agentSession` on the implementer: resuming the task goes back to that chat. That is
-why rework looks at the latest history entry as well as the pointer. It goes through the launch gate's
-`run`, not `startOrReuse`, since the task already has a live tab.
+**Ask to review is a throwaway review run**, treated like a ⌘↵ planning run. `askReview` creates a
+task tagged `review-run` (`reviewDraft`, `core/reviewRun.ts`) and starts a fresh reviewer on it in a
+new tab; the reviewed task's tab stays open (it refuses while that agent is mid-turn). The launch
+passes `LaunchOptions.checkoutOf`: the reviewer runs in the reviewed task's checkout, on the review
+prompt rendered for that task, and the run's own task records no worktree. `saveLaunchMetadata`
+adds the reviewer's chat to the reviewed task's history (`historyPatch`, labelled `Review (TASK-n)`)
+without moving its `agentSession`, so the Agent chats tab lists it and resuming the task goes back to
+the implementer — which is why rework also looks at the latest history entry. The run is found from
+the reviewed task by that chat id (`reviewedTask`), so nothing else links them. On every agent change
+`finishedReviewRuns` picks runs whose reviewer is `idle` while the reviewed task (re-read from its
+file) has left In Review; `agentsService` closes their tab and archives them. Like planning runs,
+`shouldArchiveOnExit` archives a review run whenever its tab exits.
 
 `Task.sessions` is the append-only chat history; `Task.agentSession` is which of them the next
 run continues. They look redundant but are not — Forget clears the pointer while keeping the

@@ -5,6 +5,7 @@ import {
   REWORK_PREFACE,
   createSessionLifecycle,
   isReviewSession,
+  historyPatch,
   launchPatch,
   monitorKey,
   reworkLaunch,
@@ -218,16 +219,26 @@ describe('launchPatch', () => {
     ])
   })
 
-  it('records a session opened beside the current chat in history only', () => {
+  it('adds a review run to the reviewed task as history only', () => {
     const t = task({
       status: 'in_review',
-      worktreePath: '/wt',
       agentSession: { provider: 'claude', id: 'impl' },
       sessions: [{ id: 'impl', provider: 'claude', startedAt: 'x', label: 'y' }]
     } as Partial<Task>)
-    const patch = launchPatch(settings, t, plan, { sessionId: 'rev', besideCurrent: true })
-    expect(patch).not.toHaveProperty('agentSession')
-    expect(patch.sessions?.map((entry) => entry.id)).toEqual(['impl', 'rev'])
+    const patch = historyPatch(settings, t, 'claude', 'rev', 'Review (TASK-2)', () => 'NOW')
+    expect(patch).toEqual({
+      sessions: [
+        t.sessions[0],
+        {
+          id: 'rev',
+          provider: 'claude',
+          startedAt: 'NOW',
+          label: 'Review (TASK-2)',
+          templateId: 'code-review'
+        }
+      ]
+    })
+    expect(historyPatch(settings, { ...t, ...patch } as Task, 'claude', 'rev', 'R')).toEqual({})
   })
 
   it('does not duplicate a known session', () => {
@@ -763,25 +774,38 @@ describe('askReview', () => {
     expect(h.calls).toEqual([])
   })
 
-  it('opens the reviewer in a new tab and leaves the task on its chat', async () => {
+  it('starts a review run in the task checkout and records its chat on the task', async () => {
     const h = harness()
-    h.tasks.set(
-      'TASK-1',
-      task({
-        status: 'in_review',
-        worktreePath: '/repo',
-        agentSession: { provider: 'claude', id: 'impl' },
-        sessions: [{ id: 'impl', provider: 'claude', startedAt: 'x', label: 'Implement' }]
-      } as Partial<Task>)
-    )
+    const reviewed = task({
+      status: 'in_review',
+      worktreePath: '/wt',
+      agentSession: { provider: 'claude', id: 'impl' },
+      sessions: [{ id: 'impl', provider: 'claude', startedAt: 'x', label: 'Implement' }]
+    } as Partial<Task>)
+    h.tasks.set('TASK-1', reviewed)
     h.sessions.push(session())
+    h.ports.findSessionByTask = (taskId) => (taskId === 'TASK-1' ? h.sessions[0] : undefined)
     await createSessionLifecycle(h.ports).askReview('TASK-1')
+
     expect(h.calls.some((call) => call.startsWith('kill'))).toBe(false)
-    expect(h.calls).toContain('session TASK-1 claude')
-    expect(h.launches[0]).toMatchObject({ fresh: true, withPrompt: true, besideCurrent: true })
+    expect(h.calls[0]).toBe('create Review: T')
+    expect(h.calls[1]).toBe('note TASK-1 styr Review started as TASK-2')
+    expect(h.calls).toContain('session TASK-2 claude')
+    const run = h.tasks.get('TASK-2')!
+    expect(run).toMatchObject({ tags: ['review-run'], repoPath: '/wt', useWorktree: false })
+    expect(h.launches[0]).toMatchObject({
+      fresh: true,
+      withPrompt: true,
+      templateId: 'code-review',
+      checkoutOf: reviewed
+    })
+    expect(run.agentSession).toEqual({ provider: 'claude', id: 'sess-1' })
     const saved = h.tasks.get('TASK-1')!
     expect(saved.agentSession).toEqual({ provider: 'claude', id: 'impl' })
-    expect(saved.sessions.map((entry) => entry.id)).toEqual(['impl', 'sess-1'])
+    expect(saved.sessions.map((entry) => [entry.id, entry.label])).toEqual([
+      ['impl', 'Implement'],
+      ['sess-1', 'Review (TASK-2)']
+    ])
   })
 })
 
