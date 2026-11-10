@@ -29,6 +29,7 @@ export const USAGE = `Usage:
   styr serve revoke <id> [--socket <path>]
                                         Remove a paired device and end its connections
   styr serve --version                  Print the server's version
+  styr relay --help                     Run a relay, for hosts that cannot accept connections
 
 Devices see only the workspaces that have "Allow remote clients" switched on in their settings.
 The socket defaults to ~/.styr/server.sock ($STYR_HOME/server.sock), or $STYR_SERVER_SOCKET.`
@@ -80,12 +81,15 @@ export function parseServerArgs(argv: string[]): ServerCommand {
 }
 
 /** `192.168.1.5`, `192.168.1.5:7878`, `[fd7a::1]:7878` or `fd7a::1`. */
-export function parseListen(value: string): ListenSpec | undefined {
+export function parseListen(
+  value: string,
+  defaultPort = DEFAULT_LISTEN_PORT
+): ListenSpec | undefined {
   const bracketed = /^\[([^\]]+)\](?::(\d+))?$/.exec(value)
   const ipv4 = /^([^:]+)(?::(\d+))?$/.exec(value)
   const match = bracketed ?? ipv4
   const address = match?.[1] ?? (value.includes(':') ? value : undefined)
   if (!address) return undefined
-  const port = match?.[2] ? Number(match[2]) : DEFAULT_LISTEN_PORT
+  const port = match?.[2] ? Number(match[2]) : defaultPort
   return { address, port }
 }

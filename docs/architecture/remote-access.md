@@ -33,7 +33,8 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   checked against the same ranges before a byte is read, so a port-forward cannot let the internet
   in. Requests with `X-Forwarded-For`, `Forwarded`, `X-Real-IP` … are refused (no reverse
   proxies), and so is any request with an `Origin` (a web page cannot be a device). Reachability is
-  the user's network: Tailscale, or an ssh tunnel to loopback. No UPnP, relay or hole punching.
+  the user's network: Tailscale, or an ssh tunnel to loopback. No UPnP or hole punching; the only
+  relay is one the owner runs on their own tailnet (`styr relay`, below).
 - **No hub traffic before the handshake.** An unauthenticated peer never reaches `hub.connect`.
   Five failed handshakes from one address in a minute turn that address away (429) for the rest of
   the minute; every refusal is logged. Loopback is not counted (every ssh-tunnelled device shares
@@ -97,6 +98,9 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   service for a host and `forwardToHub` feeds the hub the host's broadcasts. `src/main/networkAccess.ts`
   is the desktop's half (the `access:*` channels, `powerSaveBlocker`, the hub over `ipc.ts`'s table);
   `styr serve --listen <address>[:port] [--pair]` is the server's.
+- `src/host/remoteAccess/relayProtocol.ts`: the relay's wire (paths, messages, close codes, what
+  the host signs). `src/server/relay/`: `styr relay` (`relay.ts` the forwarding, `allowList.ts`,
+  `control.ts` the Unix socket calls, `cli.ts`, `main.ts`).
 
 ## `styr serve` on a machine with no window (a cloud VM)
 
@@ -225,6 +229,66 @@ spend it with one bad attempt, forcing a rescan. The listener's failure limit an
 are per source address; behind a relay every device shares one, so the relay client needs its own
 per-session limits.
 
+## Relay: `styr relay`
+
+For a host that cannot accept connections (Tailscale Shields Up, a firewall), the host and the
+phone each connect _out_ to a relay on the owner's tailnet, which moves the phone's frames to the
+host and back (TASK-0212, "Design: relay mode"). `src/server/relay/` is the relay; the host's
+client and the phone's dial are later steps.
+
+```sh
+styr relay --listen <tailscale-address>[:port]   # default port 7879; loopback or Tailscale only
+styr relay allow <host fingerprint>             # Settings → Remote devices shows it; ':' and case are fine
+styr relay hosts                                # allowed hosts, connected or offline, sessions
+styr relay revoke <host fingerprint>            # removes it and ends its sessions at once
+```
+
+`allow`, `hosts` and `revoke` go over the relay's own Unix socket (`~/.styr/relay.sock`, or
+`$STYR_RELAY_SOCKET`, `--socket`; apart from `server.sock`, so a relay and a server can share a
+machine), with `relay:allow`, `relay:hosts`, `relay:revoke`; nothing on the network can call them.
+The allow list is `~/.styr/relay.json` (fingerprints only, mode 0600, written atomically); a file
+that exists but cannot be read stops the relay from starting. No secret crosses the network to
+enrol a host: it proves its key on every registration.
+
+**Trust.** The relay is trusted for admission and availability only. It cannot read or alter a
+session (protocol 2 is end to end, above, and the host requires it over a relay); it can refuse
+service and see who connects when, and how large each frame is.
+
+Wire (`host/remoteAccess/relayProtocol.ts`, shared with the host's client). Text frames, JSON:
+
+```
+GET /host
+R → H  {type:'challenge', nonce}                      nonce: 16 random bytes, hex
+H → R  {type:'register', hostKey, signature}          hostKey: Ed25519, SPKI DER, base64;
+         signature: Ed25519 over "styr-relay-host-v1\n" + nonce
+R → H  {type:'registered'}       or close 4401 (bad signature), 4403 (not on the allow list)
+R → H  {type:'open', sessionId}  {type:'frame', sessionId, frame}  {type:'close', sessionId}
+H → R  {type:'frame', sessionId, frame}  {type:'close', sessionId, code?}
+
+GET /phone/<host fingerprint, 64 hex>
+R ↔ P  the frames, bare, both ways         or close 4404 at once: the host is not connected
+```
+
+- **Says nothing about hosts.** A phone asking for a host that is offline, unknown or not allowed
+  gets the same close, 4404 `host offline`, after the upgrade, and no frame. The signature is
+  checked before the allow list, so only the key's holder learns it is not allowed. A host that
+  goes away ends its sessions with 4404; one key registered again takes over (the old socket gets
+  4409); a revoked host gets 4403.
+- **Frames are opaque.** The relay never parses a phone's frame; it carries text frames up to
+  one protocol-2 record (`RELAY_FRAME_MAX_CHARS`; larger closes with 1009, binary with 4400).
+  A host's close `code` (1000, or 4000–4999) reaches the phone, so a refused device still sees 4401. A malformed host message closes the host (4400) and its sessions.
+- **Limits, as `wsListener.ts`.** Bound to one loopback or Tailscale address (`bindAddressProblem`);
+  every socket's source is checked before a byte is read; proxy headers and an `Origin` are
+  refused; an unknown path is a plain 404. Five failed registrations (bad signature, not allowed,
+  bad message, 10 s timeout, a hang-up) from one address in a minute turn it away (429); thirty
+  4404s do the same for phones (a phone retries while its host is away). At most 16 hosts
+  registering, 8 connections per address (32 from loopback), 32 sessions per host (4429). Each
+  session may have 8 MiB on its way to the host; past that it alone ends (4429). The host's one
+  socket more than 32 MiB behind is cut, ending all its sessions; so is a phone more than 32 MiB
+  behind. Both get a liveness ping every 20 s.
+- **What a relay still reveals:** a phone that knows a fingerprint learns whether that host is
+  online (that is the point of 4404), and 4429 says it is busy.
+
 ## The gate (what a device sees)
 
 `isOpen(workspace)` = flagged, a real folder, not a stub. `createNetworkPolicy` then:
@@ -267,4 +331,8 @@ drop, downgrade, wrong host, a relay that cannot pair; the transcript vector),
 `server/wsListener.test.ts` (hostile input: bad handshakes, binary and oversized frames, proxy
 headers, origins, rate limiting, leakage on every broadcast kind), `server/networkAccess.test.ts`
 (off by default opens no port; pair once, reconnect across a restart, revoke),
-`server/network.integration.test.ts` (the built `styr serve --listen` with a paired device).
+`server/network.integration.test.ts` (the built `styr serve --listen` with a paired device),
+`server/relay/relay.test.ts` (forwarding, the same 4404 for offline / unknown / not allowed, bad
+and replayed signatures, revoke, takeover, frame and backlog limits, rate limits, bind addresses,
+a protocol-2 pairing through the relay that sees only ciphertext), `server/relay/control.test.ts`
+(the CLI, the allow list file, the Unix socket calls).

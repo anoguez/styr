@@ -7,11 +7,17 @@ import { attach, defaultSocketPath } from './socket.js'
 declare const __STYR_VERSION__: string
 
 /**
- * `styr serve`: the headless Styr server (see `docs/architecture/remote.md`). Built to
+ * `styr serve`: the headless Styr server (see `docs/architecture/remote.md`), and `styr relay`
+ * (`docs/architecture/remote-access.md`). Built to
  * `out/server/index.mjs` and run by plain Node. `attach` loads only the socket code, never the
  * services or their native modules, because `ssh` starts one for every connection.
  */
 async function main(): Promise<number> {
+  if (process.argv[2] === 'relay') {
+    // The relay loads none of the host services: it only moves frames.
+    const { relayMain } = await import('./relay/main.js')
+    return relayMain(process.argv.slice(3))
+  }
   const parsed = parseServerArgs(process.argv.slice(2))
   const socketPath = (command: { socket?: string }): string =>
     command.socket ?? process.env.STYR_SERVER_SOCKET ?? defaultSocketPath()
