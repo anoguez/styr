@@ -53,7 +53,8 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 ## What Settings warns about
 
 - **Shields Up.** With Tailscale's Shields Up on, nothing connects in and the phone only sees a
-  timeout. `tailscale.ts` runs `tailscale debug prefs` (a child process, never synchronous, trying
+  timeout (the warning is not shown while this computer is connected to a relay, which it reaches
+  by connecting out). `tailscale.ts` runs `tailscale debug prefs` (a child process, never synchronous, trying
   the Mac app's binary when `tailscale` is not on the app's PATH) and reads `ShieldsUp` alone; the
   answer is `AccessState.shieldsUp`. It is asked when Settings → Remote devices opens
   (`access:checkNetwork`) and when access is switched on, never on a timer.
@@ -98,6 +99,8 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   service for a host and `forwardToHub` feeds the hub the host's broadcasts. `src/main/networkAccess.ts`
   is the desktop's half (the `access:*` channels, `powerSaveBlocker`, the hub over `ipc.ts`'s table);
   `styr serve --listen <address>[:port] [--pair]` is the server's.
+- `src/host/remoteAccess/relayClient.ts`: the host's side of a relay (below); `dialRelay` in
+  `src/server/networkAccess.ts` gives it its `ws` socket.
 - `src/host/remoteAccess/relayProtocol.ts`: the relay's wire (paths, messages, close codes, what
   the host signs). `src/server/relay/`: `styr relay` (`relay.ts` the forwarding, `allowList.ts`,
   `control.ts` the Unix socket calls, `cli.ts`, `main.ts`).
@@ -105,7 +108,10 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 ## `styr serve` on a machine with no window (a cloud VM)
 
 `styr serve --listen <tailscale-address>[:port] [--pair]` listens for devices (a public address is
-refused, so a VM needs Tailscale). `--pair` prints a QR and the URI at start. Later, without a
+refused, so a VM needs Tailscale). `styr serve --relay <address>[:port] [--pair]` (port 7879 by
+default) takes them through a `styr relay` instead, or as well; it prints the fingerprint to allow
+on the relay, and `--pair` waits up to 10 seconds for the relay to register it before the QR.
+Either flag switches the other path off for the run (the config is the same file the desktop uses). `--pair` prints a QR and the URI at start. Later, without a
 restart (which would end the agents), on the same machine:
 
 ```sh
@@ -233,8 +239,8 @@ per-session limits.
 
 For a host that cannot accept connections (Tailscale Shields Up, a firewall), the host and the
 phone each connect _out_ to a relay on the owner's tailnet, which moves the phone's frames to the
-host and back (TASK-0212, "Design: relay mode"). `src/server/relay/` is the relay; the host's
-client and the phone's dial are later steps.
+host and back (TASK-0212, "Design: relay mode"). `src/server/relay/` is the relay;
+`host/remoteAccess/relayClient.ts` the host's side (below). The phone's dial is a later step.
 
 ```sh
 styr relay --listen <tailscale-address>[:port]   # default port 7879; loopback or Tailscale only
@@ -292,6 +298,50 @@ R ↔ P  the frames, bare, both ways         or close 4404 at once: the host is 
 - **What a relay still reveals:** a phone that knows a fingerprint learns whether that host is
   online (that is the point of 4404), and 4429 says it is busy.
 
+## The host on a relay: `relayClient.ts`
+
+Settings → Remote devices → "Connect through a relay" (`AccessConfig.relay`: `enabled`, `address`,
+`port`, in `remote-access.json`; a file without it reads as off), or `styr serve --relay`. It is a
+switch apart from "Allow other devices to connect": either, both or neither can be on.
+
+- **Loopback or Tailscale only.** `relayAddressProblem` refuses anything else (a hostname, a LAN
+  or public address) before anything is dialled; the setting stays on and says why.
+- **One outbound socket.** It dials `ws://<address>:<port>/host`, signs the relay's nonce with the
+  host's identity key and waits for `registered`. A drop (or a relay that breaks the protocol:
+  bad JSON, a session before `registered`) ends every session through it and dials again after
+  1 s, doubling to 60 s; `registered` resets the delay. A liveness ping every 20 s while connected
+  notices a dead link. 4403 (not on the allow list) shows "Not allowed on this relay" and keeps
+  trying, so `styr relay allow` takes effect without touching the host. 4409 means another process
+  with this key (the desktop and `styr serve` on one machine) registered: this one stops and says
+  so rather than take the link back and forth. No other timers.
+- **One session per `open`.** Each runs `createSecureServerHandshake` alone: protocol 2 or nothing
+  (a protocol-1 hello is closed with 4401 and no plaintext). Then the hub with
+  `createNetworkPolicy`, exactly as a direct socket: the gate and each workspace's `remoteAccess`
+  apply unchanged, `store.touch` marks the device seen and it shows as connected. Close codes to
+  the device match the listener's (4400 a bad frame, 4401, 4403 revoked, 4408 handshake timeout,
+  4429 busy); a session the relay closes is just dropped.
+- **Its own per-session limits.** Every relayed device shares the relay's address, so the
+  listener's per-address failure limit would let one phone lock out the rest; instead at most 16
+  sessions may be mid-handshake (more get 4429), each has the 10 s handshake timeout and the 2 KiB
+  handshake frame limit, and a message reassembles to at most 8 MiB. The relay's own per-address
+  limits (30 4404s a minute, 8 connections) still apply to phones.
+- **Revoke** ends a device's relayed sessions as it ends its direct ones (4403), including a device
+  removed by another process, which is noticed at the next ping.
+- **The link is shared.** The socket's limit on incoming messages allows three bytes per character
+  of the relay's limit, so a phone's frame of non-ASCII characters cannot cut the link; a link
+  more than 32 MiB behind (a relay that stopped reading) is cut and dialled again.
+
+**Pairing through the relay.** "Pair a device…" makes `styr://pair?v=2&relay=<host:port>&hostfp=<fp>&fp=<fp>&secret=…&exp=…`
+when the relay is the way in: the listener is off, or Tailscale Shields Up blocks it. With the
+listener up it is the `v=1` QR as before. It is refused while the relay has not registered this
+host ("Styr is not connected to the relay"), as it is while nothing listens. The secret, its 2
+minutes and its single use are the same; the proof is protocol 2's, so a relay cannot pair.
+
+Settings shows the status ("Connected", "Relay unreachable", "Not allowed on this relay", and why)
+under the switch, with this computer's fingerprint and a button to copy it for `styr relay allow`.
+`AccessState.relayStatus` / `relayError` carry it; `access:configure` takes a `relay` patch, so no
+new channel was added.
+
 ## The gate (what a device sees)
 
 `isOpen(workspace)` = flagged, a real folder, not a stub. `createNetworkPolicy` then:
@@ -335,6 +385,11 @@ drop, downgrade, wrong host, a relay that cannot pair; the transcript vector),
 headers, origins, rate limiting, leakage on every broadcast kind), `server/networkAccess.test.ts`
 (off by default opens no port; pair once, reconnect across a restart, revoke),
 `server/network.integration.test.ts` (the built `styr serve --listen` with a paired device),
+`host/remoteAccess/relayClient.test.ts` (the client on a fake link: registration, pairing and
+sign-in end to end, protocol 1 refused, tampered frames, revoke, handshake timeout and cap, backoff,
+4403 / 4409, a relay that breaks the protocol or stops answering pings),
+`server/networkAccess.relay.test.ts` (the real client, relay and hub: allowed late, pairs, the gate
+refuses an unshared workspace, revoke ends both sessions, the relay going away),
 `server/relay/relay.test.ts` (forwarding, the same 4404 for offline / unknown / not allowed, bad
 and replayed signatures, revoke, takeover, frame and backlog limits, rate limits, bind addresses,
 a protocol-2 pairing through the relay that sees only ciphertext), `server/relay/control.test.ts`

@@ -2,10 +2,20 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { AccessInterface, AccessState } from '@core/types/access.js'
+import type { AccessInterface, AccessState, RelayStatus } from '@core/types/access.js'
 import { createAccessService, type RunningListener } from './accessService.js'
 import { createAccessStore, PAIRING_TTL_MS } from './accessStore.js'
 import { createKeepAwake } from './keepAwake.js'
+import type { RelayClient } from './relayClient.js'
+
+/** A relay client whose link the test moves by hand. */
+interface FakeRelay {
+  address: string
+  port: number
+  status: RelayStatus
+  devices: string[]
+  closed: boolean
+}
 
 describe('access service', () => {
   let dir: string
@@ -20,6 +30,7 @@ describe('access service', () => {
   let interfaces: AccessInterface[]
   let shields: boolean | undefined
   let shared: boolean
+  let relays: FakeRelay[]
 
   function setup() {
     const store = createAccessStore({ path: join(dir, 'access.json'), now: () => clock })
@@ -47,7 +58,20 @@ describe('access service', () => {
       broadcast: (state) => broadcasts.push(state),
       log: (message) => log.push(message),
       shieldsUp: async () => shields,
-      workspaceShared: () => shared
+      workspaceShared: () => shared,
+      relay: (address, port) => {
+        const fake: FakeRelay = { address, port, status: 'connecting', devices: [], closed: false }
+        relays.push(fake)
+        const client: RelayClient = {
+          status: () => fake.status,
+          error: () => (fake.status === 'notAllowed' ? 'Not allowed.' : undefined),
+          connectedDevices: () => fake.devices,
+          sessions: () => fake.devices.length,
+          disconnectDevice: () => undefined,
+          close: async () => void (fake.closed = true)
+        }
+        return client
+      }
     })
     return { store, service, closed }
   }
@@ -65,6 +89,7 @@ describe('access service', () => {
     interfaces = [{ name: 'en0', address: '100.101.102.103', kind: 'tailscale' }]
     shields = undefined
     shared = true
+    relays = []
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -268,6 +293,93 @@ describe('access service', () => {
     service.connections(1)
     await service.stop()
     expect(released).toEqual([1])
+  })
+
+  describe('relay', () => {
+    const relay = { enabled: true, address: '100.64.0.9', port: 7879 }
+
+    it('stays off by default, and connects out once switched on', async () => {
+      const { service, store } = setup()
+      await service.start()
+      expect(relays).toEqual([])
+      expect(service.state().relayStatus).toBe('off')
+      const state = await service.configure({ relay })
+      expect(relays.map((entry) => [entry.address, entry.port])).toEqual([['100.64.0.9', 7879]])
+      expect(state.relayStatus).toBe('connecting')
+      expect(store.config().relay).toEqual(relay)
+      // The listener is a separate switch.
+      expect(listens).toEqual([])
+    })
+
+    it('refuses an address that is not loopback or Tailscale, and dials nothing', async () => {
+      const { service } = setup()
+      for (const address of ['', '192.168.1.5', '8.8.8.8', 'relay.example.com']) {
+        const state = await service.configure({ relay: { ...relay, address } })
+        expect(state.relayStatus).toBe('off')
+        expect(state.relayError).toBeTruthy()
+      }
+      expect(relays).toEqual([])
+    })
+
+    it('redials on a new address, and drops the link when switched off', async () => {
+      const { service } = setup()
+      await service.configure({ relay })
+      await service.configure({ relay: { address: '100.64.0.10' } })
+      expect(relays.map((entry) => [entry.address, entry.closed])).toEqual([
+        ['100.64.0.9', true],
+        ['100.64.0.10', false]
+      ])
+      const state = await service.configure({ relay: { enabled: false } })
+      expect(relays[1]!.closed).toBe(true)
+      expect(state.relayStatus).toBe('off')
+    })
+
+    it('pairs through the relay only while it is connected', async () => {
+      const { service } = setup()
+      await service.configure({ relay })
+      expect(() => service.pair()).toThrow(/not connected to the relay/)
+      relays[0]!.status = 'connected'
+      const pairing = service.pair()
+      const fingerprint = service.state().fingerprint
+      expect(pairing.uri).toMatch(
+        new RegExp(
+          `^styr://pair\\?v=2&relay=100\\.64\\.0\\.9%3A7879&hostfp=${fingerprint}&fp=${fingerprint}&secret=[0-9a-f]{40}&exp=\\d+$`
+        )
+      )
+      relays[0]!.status = 'unreachable'
+      expect(() => service.pair()).toThrow(/not connected to the relay/)
+    })
+
+    it('pairs to the listener when it is up, and through the relay while Shields Up blocks it', async () => {
+      const { service } = setup()
+      await service.configure({ enabled: true, bindAddress: '100.101.102.103', relay })
+      relays[0]!.status = 'connected'
+      expect(service.pair().uri).toMatch(/^styr:\/\/pair\?v=1&host=100\.101\.102\.103/)
+      shields = true
+      await service.checkNetwork()
+      expect(service.pair().uri).toMatch(/^styr:\/\/pair\?v=2&relay=/)
+    })
+
+    it('lists relayed devices as connected and keeps the Mac awake for them', async () => {
+      const { service, store } = setup()
+      await service.configure({ relay, keepAwake: true })
+      const device = store.addDevice('iPhone', 'A'.repeat(60))
+      relays[0]!.devices = [device.id]
+      service.relayConnections(1)
+      expect(service.state().devices).toEqual([expect.objectContaining({ connected: true })])
+      expect(held).toEqual([1])
+      service.connections(0)
+      expect(released).toEqual([])
+      service.relayConnections(0)
+      expect(released).toEqual([1])
+    })
+
+    it('closes the relay link on stop', async () => {
+      const { service } = setup()
+      await service.configure({ relay })
+      await service.stop()
+      expect(relays[0]!.closed).toBe(true)
+    })
   })
 
   // Windows has no POSIX file modes; its profile folder is already private to the user.

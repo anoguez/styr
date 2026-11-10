@@ -2,12 +2,15 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { AccessPairing, AccessState } from '@core/types.js'
 import {
   SHIELDS_UP_WARNING,
+  canPair,
   deviceLine,
   groupedFingerprint,
   interfaceOptions,
   listenerStatus,
   needsSharedWorkspace,
-  qrPath
+  qrPath,
+  relayStatusLine,
+  showShieldsUpWarning
 } from '../../lib/accessView.js'
 import { ipcMessage } from '../../lib/ipcMessage.js'
 import { Button, Card, CardRow, Field, Hint, Select, SwitchRow, inputClass } from '../ui.js'
@@ -98,7 +101,7 @@ export function RemoteAccessSection({
 
   return (
     <div className="flex flex-col gap-4">
-      {state.shieldsUp ? (
+      {showShieldsUpWarning(state) ? (
         <Card>
           <CardRow className="px-3.5 py-3">
             <span role="alert" className="text-[12px] text-danger">
@@ -180,6 +183,8 @@ export function RemoteAccessSection({
         />
       </Card>
 
+      <RelayCard state={state} configure={configure} />
+
       <div className="flex flex-col gap-2.5">
         <span className="text-[12px] font-semibold text-dim">Paired devices</span>
         <Card>
@@ -218,8 +223,12 @@ export function RemoteAccessSection({
           ) : (
             <Button
               className="self-start"
-              disabled={!state.listening}
-              title={state.listening ? undefined : 'Turn on Remote access and pick an interface.'}
+              disabled={!canPair(state)}
+              title={
+                canPair(state)
+                  ? undefined
+                  : 'Turn on Allow other devices to connect, or connect through a relay.'
+              }
               onClick={() => void pair()}
             >
               Pair a device…
@@ -241,6 +250,94 @@ export function RemoteAccessSection({
         </code>
       </Field>
     </div>
+  )
+}
+
+/**
+ * "Connect through a relay": for a computer devices cannot connect in to (Tailscale Shields Up, a
+ * firewall). This computer connects out to a `styr relay` on the owner's tailnet, which has to
+ * allow its fingerprint first; the address and port apply when the field is left.
+ */
+function RelayCard({
+  state,
+  configure
+}: {
+  state: AccessState
+  configure: (patch: Parameters<typeof window.api.access.configure>[0]) => Promise<void>
+}): ReactNode {
+  const [address, setAddress] = useState(state.relay.address)
+  const [port, setPort] = useState(String(state.relay.port))
+  const [copied, setCopied] = useState(false)
+  const status = relayStatusLine(state)
+
+  function saveSpot(): void {
+    const next = { address: address.trim(), port: Number(port) }
+    if (next.address !== state.relay.address || next.port !== state.relay.port) {
+      void configure({ relay: next })
+    }
+  }
+
+  function copyFingerprint(): void {
+    void navigator.clipboard.writeText(state.fingerprint).then(() => setCopied(true))
+  }
+
+  return (
+    <Card>
+      <SwitchRow
+        label="Connect through a relay"
+        hint="For when devices cannot connect in to this computer (Tailscale Shields Up, a firewall): Styr connects out to a styr relay you run on another machine on your tailnet, and devices reach it there. The relay only moves encrypted messages; it cannot read or change them."
+        checked={state.relay.enabled}
+        onChange={(enabled) => void configure({ relay: { enabled, address: address.trim() } })}
+      />
+      <CardRow className="flex flex-col gap-3 px-3.5 py-3">
+        <div className="flex gap-3">
+          <Field label="Relay address">
+            <input
+              aria-label="Relay address"
+              className={`${inputClass} w-56 font-mono`}
+              placeholder="100.x.y.z"
+              spellCheck={false}
+              value={address}
+              onChange={(event) => setAddress(event.target.value)}
+              onBlur={saveSpot}
+            />
+          </Field>
+          <Field label="Port">
+            <input
+              aria-label="Relay port"
+              className={`${inputClass} w-28`}
+              inputMode="numeric"
+              value={port}
+              onChange={(event) => setPort(event.target.value.replace(/\D/g, '').slice(0, 5))}
+              onBlur={saveSpot}
+            />
+          </Field>
+        </div>
+        {status.problem ? (
+          <span role="alert" className="text-[12px] text-danger">
+            {status.text}
+          </span>
+        ) : (
+          <Hint>{status.text}</Hint>
+        )}
+        <div className="flex items-center gap-3">
+          <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
+            {state.fingerprint}
+          </code>
+          <Button
+            className="h-[26px] shrink-0 px-2.5"
+            title="Copies this computer's fingerprint, for styr relay allow on the relay's machine."
+            onClick={copyFingerprint}
+          >
+            {copied ? 'Copied' : 'Copy fingerprint'}
+          </Button>
+        </div>
+        <Hint>
+          On the relay&apos;s machine, run styr relay allow followed by this fingerprint once.
+          Nothing secret is sent to enrol.
+        </Hint>
+      </CardRow>
+    </Card>
   )
 }
 

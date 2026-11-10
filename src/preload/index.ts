@@ -6,7 +6,7 @@ import type { AgentConversation } from '../core/agentConversation.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type { TerminalBenchRecord } from '../core/terminalBench.js'
 import type {
-  AccessConfig,
+  AccessConfigPatch,
   AccessPairing,
   AccessState,
   AgentCliReport,
@@ -280,8 +280,11 @@ const api = {
     state: (): Promise<AccessState> => ipcRenderer.invoke('access:state'),
     onChanged: (handler: (state: AccessState) => void): (() => void) =>
       subscribe('access:changed', handler as (...args: never[]) => void),
-    /** Switches the listener on or off, or moves it; a failure leaves it off with `error` set. */
-    configure: (patch: Partial<AccessConfig>): Promise<AccessState> =>
+    /**
+     * Switches the listener or the relay on or off, or moves it; a listener that fails is left off
+     * with `error` set, a relay that cannot be reached says why in `relayError`.
+     */
+    configure: (patch: AccessConfigPatch): Promise<AccessState> =>
       ipcRenderer.invoke('access:configure', patch),
     /** The QR for one new device, good for two minutes and one use. */
     pair: (): Promise<AccessPairing> => ipcRenderer.invoke('access:pair'),

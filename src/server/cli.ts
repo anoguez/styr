@@ -1,6 +1,8 @@
+import { DEFAULT_RELAY_PORT } from '@host/remoteAccess/relayProtocol.js'
+
 /** What `styr serve …` was asked to do. */
 export type ServerCommand =
-  | { command: 'serve'; socket?: string; listen?: ListenSpec; pair?: boolean }
+  | { command: 'serve'; socket?: string; listen?: ListenSpec; relay?: ListenSpec; pair?: boolean }
   | { command: 'attach'; socket?: string }
   | { command: 'pair'; socket?: string }
   | { command: 'devices'; socket?: string }
@@ -23,6 +25,10 @@ export const USAGE = `Usage:
                                         Also accept paired devices over WebSocket on one
                                         Tailscale or loopback address; --pair
                                         prints a QR to pair a device with
+  styr serve --relay <address>[:port] [--pair]
+                                        Also take paired devices through a styr relay
+                                        (port 7879 by default), for a machine devices
+                                        cannot connect in to. With --listen too, both work
   styr serve attach [--socket <path>]   Pipe stdio to the running server (what ssh runs)
   styr serve pair [--socket <path>]     Show a QR to pair another device with the running server
   styr serve devices [--socket <path>]  List the paired devices
@@ -44,6 +50,7 @@ export function parseServerArgs(argv: string[]): ServerCommand {
   let id: string | undefined
   let socket: string | undefined
   let listen: ListenSpec | undefined
+  let relay: ListenSpec | undefined
   let pair = false
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!
@@ -65,10 +72,17 @@ export function parseServerArgs(argv: string[]): ServerCommand {
       const spec = value ? parseListen(value) : undefined
       if (!spec) return { command: 'invalid', message: '--listen needs <address>[:port]' }
       listen = spec
+    } else if (arg === '--relay' || arg.startsWith('--relay=')) {
+      const value = arg === '--relay' ? args[++i] : arg.slice('--relay='.length)
+      const spec = value ? parseListen(value, DEFAULT_RELAY_PORT) : undefined
+      if (!spec) return { command: 'invalid', message: '--relay needs <address>[:port]' }
+      relay = spec
     } else return { command: 'invalid', message: `Unknown argument: ${arg}` }
   }
-  if (pair && !listen) return { command: 'invalid', message: '--pair needs --listen' }
-  if (command !== 'serve' && (listen || pair)) {
+  if (pair && !listen && !relay) {
+    return { command: 'invalid', message: '--pair needs --listen or --relay' }
+  }
+  if (command !== 'serve' && (listen || relay || pair)) {
     return { command: 'invalid', message: `${command} takes only --socket` }
   }
   if (command === 'revoke') return { command, id: id!, ...(socket ? { socket } : {}) }
@@ -76,6 +90,7 @@ export function parseServerArgs(argv: string[]): ServerCommand {
     command,
     ...(socket ? { socket } : {}),
     ...(listen ? { listen } : {}),
+    ...(relay ? { relay } : {}),
     ...(pair ? { pair } : {})
   } as ServerCommand
 }
