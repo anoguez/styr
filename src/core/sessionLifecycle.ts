@@ -149,6 +149,8 @@ export interface LaunchRun {
   sessionLabel?: string
   /** Auto-run started it, in this lane (`TaskSessionRef.dispatch`). */
   dispatchLane?: OrchestrationLane
+  /** History only: the task's `agentSession` stays where it was (`LaunchOptions.besideCurrent`). */
+  besideCurrent?: boolean
 }
 
 /** The board changes a launch makes to its task, as data. Pure; `sessionLabel` is not the renderer's. */
@@ -160,7 +162,7 @@ export function launchPatch(
   run: LaunchRun = {},
   now: () => string = () => new Date().toISOString()
 ): TaskPatch {
-  const { templateId, sessionId, sessionLabel, dispatchLane } = run
+  const { templateId, sessionId, sessionLabel, dispatchLane, besideCurrent } = run
   const patch: TaskPatch = {}
   if (task.status === 'backlog') patch.status = 'in_progress'
   if (plan.worktreePath && task.worktreePath !== plan.worktreePath) {
@@ -187,21 +189,18 @@ export function launchPatch(
   }
   if (!sessionId) return patch
 
-  if (task.agentSession?.id !== sessionId || task.agentSession?.provider !== plan.provider) {
+  if (
+    !besideCurrent &&
+    (task.agentSession?.id !== sessionId || task.agentSession?.provider !== plan.provider)
+  ) {
     patch.agentSession = { provider: plan.provider, id: sessionId }
   }
   let sessions = task.sessions
-  // An implementer launched over the reviewer's chat: that review asked for fixes. Recorded here,
-  // because the rework run resumes the implementer and so adds no history entry of its own.
-  const current = task.agentSession && task.sessions.find((e) => e.id === task.agentSession?.id)
-  if (
-    current &&
-    current.id !== sessionId &&
-    !current.sentBack &&
-    laneFor(task) === 'implement' &&
-    (current.dispatch === 'review' || isReviewSession(settings, task, current))
-  ) {
-    sessions = sessions.map((entry) => (entry === current ? { ...entry, sentBack: true } : entry))
+  // An implementer launched after a review: that review asked for fixes. Recorded here, because
+  // the rework run resumes the implementer and so adds no history entry of its own.
+  const review = laneFor(task) === 'implement' ? pendingReview(settings, task) : undefined
+  if (review && review.id !== sessionId) {
+    sessions = sessions.map((entry) => (entry === review ? { ...entry, sentBack: true } : entry))
   }
   if (!sessions.some((entry) => entry.id === sessionId)) {
     const template = resolveTemplateFor(settings, task, templateId)
@@ -243,7 +242,23 @@ export function isReviewSession(settings: Settings, task: Task, entry: TaskSessi
 }
 
 /**
- * An implement run on a task whose current chat is a reviewer's — the review failed and sent it back
+ * The review a task's next implement run answers: its current chat, or its latest run (Ask to review
+ * opens the reviewer beside the task's chat, leaving the pointer on the implementer), when that is a
+ * review not yet sent back.
+ */
+function pendingReview(settings: Settings, task: Task): TaskSessionRef | undefined {
+  const pointer = task.agentSession
+  const current = pointer && task.sessions.find((entry) => entry.id === pointer.id)
+  return [current, task.sessions.at(-1)].find(
+    (entry): entry is TaskSessionRef =>
+      entry !== undefined &&
+      !entry.sentBack &&
+      (entry.dispatch === 'review' || isReviewSession(settings, task, entry))
+  )
+}
+
+/**
+ * An implement run on a task whose current chat (or latest run) is a reviewer's — the review failed and sent it back
  * — must not continue the reviewer. It continues the latest implementer chat that still exists on
  * disk, else starts fresh; either way it is sent the prompt, led by `REWORK_PREFACE`. Any other
  * launch, and one that names its own session or asks to start fresh, is returned unchanged.
@@ -262,9 +277,7 @@ export function reworkLaunch(
   ) {
     return options // an explicit pick of another template is the user's call
   }
-  const pointer = task.agentSession
-  const current = pointer && task.sessions.find((entry) => entry.id === pointer.id)
-  if (!current || !isReviewSession(settings, task, current)) return options
+  if (!pendingReview(settings, task)) return options
   const implementer = [...task.sessions]
     .reverse()
     .find(
@@ -393,7 +406,8 @@ export function createSessionLifecycle(ports: SessionPorts) {
     const run: LaunchRun = {
       templateId: options.templateId,
       sessionLabel: options.sessionLabel,
-      dispatchLane: options.dispatchLane
+      dispatchLane: options.dispatchLane,
+      besideCurrent: options.besideCurrent
     }
     saveLaunchMetadata(workspaceId, task.id, plan, {
       ...run,
@@ -606,28 +620,29 @@ export function createSessionLifecycle(ports: SessionPorts) {
   }
 
   /**
-   * Starts a fresh reviewer on an In Review task — the launch Orchestrate makes for the review lane.
-   * Orchestrate skips a task whose tab is open, but this is asked from that very tab, so an agent
-   * that is not mid-turn gives way: its chat stays in the task's history and the reviewer starts clean.
+   * Starts a fresh reviewer on an In Review task — the launch Orchestrate makes for the review lane —
+   * in a tab of its own. Orchestrate skips a task whose tab is open, but this is asked from that very
+   * tab, so it opens beside it: the task's tab stays open and the task keeps its chat, so resuming
+   * the task goes back to the implementer; the reviewer joins the task's history.
    */
   async function askReview(taskId: string): Promise<TerminalSessionInfo> {
     const task = ports.findTask(taskId)
     if (!task) throw new Error(`Task ${taskId} not found`)
     if (task.status !== 'in_review') throw new Error(`${taskId} is not in review`)
     const settings = ports.settings()
-    const live = ports.findSessionByTask(taskId, settings.activeWorkspaceId)
-    if (live) {
-      const state = agentState(taskId)
-      if (state === 'working' || state === 'waiting') {
-        throw new Error('The agent is still working on this task. Ask for a review once it stops.')
-      }
-      ports.killSession(live.id)
+    const state = agentState(taskId)
+    if (state === 'working' || state === 'waiting') {
+      throw new Error('The agent is still working on this task. Ask for a review once it stops.')
     }
-    return startForTask(taskId, {
-      withPrompt: true,
-      fresh: true,
-      provider: providerForLane(settings, 'review')
-    })
+    // Through the gate without its live-tab check: a double press must not open two reviewers.
+    return gate.run(monitorKey(settings.activeWorkspaceId, taskId), () =>
+      start(taskId, {
+        withPrompt: true,
+        fresh: true,
+        besideCurrent: true,
+        provider: providerForLane(settings, 'review')
+      })
+    )
   }
 
   /**

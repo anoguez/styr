@@ -211,6 +211,11 @@ export interface LaunchOptions {
   prompt?: string
   /** Auto-run is starting it in this lane; recorded on the session's history entry. */
   dispatchLane?: OrchestrationLane
+  /**
+   * Opens beside the task's chat (Ask to review): the run joins the task's history, but the task
+   * keeps pointing at the chat it had, so resuming it goes back to that one.
+   */
+  besideCurrent?: boolean
 }
 
 export function planLaunch(

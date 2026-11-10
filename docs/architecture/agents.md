@@ -263,13 +263,21 @@ task back to **Backlog** with `readiness: ready` and the fixes listed in an Acti
 copied the older template, which said `in_progress`, keep their text until they update it.
 
 **Rework resumes the implementer.** `reworkLaunch` in `sessionLifecycle.ts` runs on every launch: an
-implement-lane launch on a task whose current `agentSession` is a review run continues the latest
+implement-lane launch on a task whose current `agentSession`, or latest `Task.sessions` entry not yet
+`sentBack`, is a review run (`pendingReview`) continues the latest
 non-review chat in `Task.sessions` (of the requested provider, when the lane names one) if
 `provider.sessionExists` finds it, else starts fresh. Either way it sends the prompt, led by
 `REWORK_PREFACE` (`LaunchOptions.promptPreface`), which says a review asked for fixes and to read
 the latest Activity note. A run is a review when the template it recorded (`TaskSessionRef.templateId`;
 older entries: its `label`) is the one In Review routes to — never when a pinned template runs both
 lanes. A launch that is `fresh`, names a session or picks another template is left alone.
+
+**Ask to review opens beside the task's chat.** The terminal's Ask to review (`askReview`) starts a
+fresh reviewer in a new tab and leaves the task's tab open (it refuses while that agent is mid-turn).
+It launches with `LaunchOptions.besideCurrent`, so `launchPatch` adds the reviewer to `Task.sessions`
+but leaves `Task.agentSession` on the implementer: resuming the task goes back to that chat. That is
+why rework looks at the latest history entry as well as the pointer. It goes through the launch gate's
+`run`, not `startOrReuse`, since the task already has a live tab.
 
 `Task.sessions` is the append-only chat history; `Task.agentSession` is which of them the next
 run continues. They look redundant but are not — Forget clears the pointer while keeping the
