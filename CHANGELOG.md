@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.1](https://github.com/anoguez/styr/compare/v0.42.0...v0.42.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **remote-access:** never ask the keychain at startup, so the macOS app opens ([#265](https://github.com/anoguez/styr/issues/265)) ([219c94c](https://github.com/anoguez/styr/commit/219c94c575fbac3515a5e19ad35e8ff37516e4a9))
+
 ## [0.42.0](https://github.com/anoguez/styr/compare/v0.41.1...v0.42.0) (2026-11-10)
 
 
