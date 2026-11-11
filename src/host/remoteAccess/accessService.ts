@@ -50,6 +50,8 @@ export function createAccessService(ports: AccessServicePorts) {
 
   function state(): AccessState {
     const config = store.config()
+    // Read, never made here: this runs at startup, before any window is up (see `reconcile`).
+    const fingerprint = store.fingerprint()
     const connected = new Set(running?.connectedDevices() ?? [])
     return {
       ...config,
@@ -59,7 +61,7 @@ export function createAccessService(ports: AccessServicePorts) {
       devices: store
         .devices()
         .map((device) => ({ ...device, connected: connected.has(device.id) })),
-      fingerprint: store.identity().fingerprint,
+      ...(fingerprint !== undefined ? { fingerprint } : {}),
       ...(store.pairing() ? { pairingExpiresAt: store.pairing()!.expiresAt } : {}),
       ...(shieldsUp !== undefined ? { shieldsUp } : {}),
       workspaceShared: ports.workspaceShared?.() ?? true
@@ -119,6 +121,13 @@ export function createAccessService(ports: AccessServicePorts) {
       ports.log(`Remote access: listening on ${config.bindAddress}:${config.port}`)
     } catch (failure) {
       return failed(describe(failure, config))
+    }
+    // The key is made (and sealed) once access is on, so Settings can show its fingerprint. Left on
+    // from before, it already exists and only its public half is read.
+    try {
+      store.identity()
+    } catch {
+      // The keychain would not seal it: pairing or the first sign-in tries again.
     }
     publishQuietly()
   }

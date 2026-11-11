@@ -75,6 +75,9 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   desktop seals it with `safeStorage` (Keychain, DPAPI, libsecret; not Linux's `basic_text`
   fallback) and drops the plaintext. A `styr serve` on the same machine shares the file, so once
   the desktop has sealed the key it cannot sign and says so; the fingerprint is never replaced.
+- The key is made the first time the listener comes up, never at startup or to draw Settings
+  (`AccessStore.fingerprint()` reads without making one): sealing asks the macOS Keychain on the
+  main process, which blocked v0.42.0's start-up before its window on the release runner.
 
 ## Files
 

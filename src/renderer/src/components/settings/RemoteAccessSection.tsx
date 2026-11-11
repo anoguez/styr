@@ -232,14 +232,16 @@ export function RemoteAccessSection({
         </div>
       </div>
 
-      <Field
-        label="This computer's fingerprint"
-        hint="The phone checks it on every connection, so it never sends anything to an impostor on the network."
-      >
-        <code className="break-words font-mono text-[11px] text-dim">
-          {groupedFingerprint(state.fingerprint)}
-        </code>
-      </Field>
+      {state.fingerprint !== undefined && (
+        <Field
+          label="This computer's fingerprint"
+          hint="The phone checks it on every connection, so it never sends anything to an impostor on the network."
+        >
+          <code className="break-words font-mono text-[11px] text-dim">
+            {groupedFingerprint(state.fingerprint)}
+          </code>
+        </Field>
+      )}
     </div>
   )
 }

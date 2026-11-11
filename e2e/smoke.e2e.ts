@@ -9,7 +9,7 @@ import {
   type ElectronApplication,
   type Page
 } from '@playwright/test'
-import { appLaunch, MAIN_ERROR } from './harness'
+import { appLaunch, FIRST_WINDOW_TIMEOUT, MAIN_ERROR } from './harness'
 
 // Drives the built app (`out/`, or the packaged one when STYR_APP_EXECUTABLE is set) through the paths a refactor is most likely to break. Everything
 // lives in a throwaway HOME, so the run never reads or writes real settings, boards or agents.
@@ -141,7 +141,7 @@ test.beforeAll(async () => {
   app = await electron.launch({ ...appLaunch(home), env: env as Record<string, string> })
   app.process().stderr?.on('data', (chunk) => mainLog.push(String(chunk)))
   app.process().stdout?.on('data', (chunk) => mainLog.push(String(chunk)))
-  page = await app.firstWindow().catch((error: Error) => {
+  page = await app.firstWindow({ timeout: FIRST_WINDOW_TIMEOUT }).catch((error: Error) => {
     // Start-up threw before any window opened: show why.
     throw new Error(`${error.message}\n\nMain process output:\n${mainLog.join('')}`)
   })

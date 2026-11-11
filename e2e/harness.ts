@@ -29,6 +29,12 @@ const CRASH =
 const root = resolve(__dirname, '..')
 
 /**
+ * How long a launch may take to show its window: under the 120 s test timeout, so a start-up that
+ * hangs fails with the main process's output rather than a bare timeout.
+ */
+export const FIRST_WINDOW_TIMEOUT = 60_000
+
+/**
  * What to launch: the built app in `out/`, or — when `STYR_APP_EXECUTABLE` names one — the
  * packaged app as shipped (asar, rebuilt native modules, signing), which the release jobs test
  * before they upload anything.
@@ -48,7 +54,10 @@ export function appLaunch(home: string): { executablePath?: string; args: string
       ...(executablePath ? [] : ['.']),
       `--user-data-dir=${join(home, 'userData')}`,
       // CI's Ubuntu forbids the unprivileged user namespaces Chromium's sandbox needs.
-      ...(process.platform === 'linux' ? ['--no-sandbox'] : [])
+      ...(process.platform === 'linux' ? ['--no-sandbox'] : []),
+      // `safeStorage` (remote access seals its key) asks the macOS Keychain, which on a CI runner
+      // can block the main process for good; Chromium's mock keychain answers instead.
+      ...(process.platform === 'darwin' ? ['--use-mock-keychain'] : [])
     ]
   }
 }
@@ -114,7 +123,7 @@ export async function launchStyr(
       mainLog.push(String(chunk))
       mainHistory.push(String(chunk))
     })
-  const page = await app.firstWindow().catch((error: Error) => {
+  const page = await app.firstWindow({ timeout: FIRST_WINDOW_TIMEOUT }).catch((error: Error) => {
     throw new Error(`${error.message}\n\nMain process output:\n${mainLog.join('')}`)
   })
   page.on('console', (message) => {
@@ -127,7 +136,12 @@ export async function launchStyr(
   await page.addInitScript(() => localStorage.setItem('styr.setup.seen', '1'))
   // The window may have run its start-up before the listeners above existed.
   await page.reload()
-  await expect(page.getByRole('button', { name: 'New task', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'New task', exact: true }))
+    .toBeVisible()
+    .catch((error: Error) => {
+      // The window opened but the board never came up: the main process may say why.
+      throw new Error(`${error.message}\n\nMain process output:\n${mainLog.join('')}`)
+    })
 
   return {
     app,

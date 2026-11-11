@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AccessInterface, AccessState } from '@core/types/access.js'
 import { createAccessService, type RunningListener } from './accessService.js'
-import { createAccessStore, PAIRING_TTL_MS } from './accessStore.js'
+import { createAccessStore, PAIRING_TTL_MS, type SecretBox } from './accessStore.js'
 import { createKeepAwake } from './keepAwake.js'
 
 describe('access service', () => {
@@ -21,8 +21,8 @@ describe('access service', () => {
   let shields: boolean | undefined
   let shared: boolean
 
-  function setup() {
-    const store = createAccessStore({ path: join(dir, 'access.json'), now: () => clock })
+  function setup(secrets?: () => SecretBox | undefined) {
+    const store = createAccessStore({ path: join(dir, 'access.json'), now: () => clock, secrets })
     const closed: string[] = []
     const service = createAccessService({
       store,
@@ -73,6 +73,47 @@ describe('access service', () => {
     await service.start()
     expect(listens).toEqual([])
     expect(service.state()).toMatchObject({ enabled: false, listening: false, bindAddress: '' })
+  })
+
+  it('never asks the keychain at startup or to show the state, and makes no key', async () => {
+    // On macOS the keychain call blocks the main process before the window is up (v0.42.0).
+    let asked = 0
+    const { service, store } = setup(() => {
+      asked++
+      return { seal: (plain) => plain, open: (sealed) => sealed }
+    })
+    await service.start()
+    expect(service.state().fingerprint).toBeUndefined()
+    expect(broadcasts.every((state) => state.fingerprint === undefined)).toBe(true)
+    expect(store.fingerprint()).toBeUndefined()
+    expect(asked).toBe(0)
+  })
+
+  it('makes the key once switched on, and shows its fingerprint', async () => {
+    const { service, store } = setup()
+    const state = await service.configure({
+      enabled: true,
+      bindAddress: '100.101.102.103',
+      port: 7878
+    })
+    expect(state.fingerprint).toMatch(/^[0-9a-f]{64}$/)
+    expect(state.fingerprint).toBe(store.identity().fingerprint)
+  })
+
+  it('stays listening when the keychain will not seal the new key', async () => {
+    const { service } = setup(() => ({
+      seal: () => {
+        throw new Error('locked')
+      },
+      open: () => ''
+    }))
+    const state = await service.configure({
+      enabled: true,
+      bindAddress: '100.101.102.103',
+      port: 7878
+    })
+    expect(state).toMatchObject({ enabled: true, listening: true })
+    expect(state.fingerprint).toBeUndefined()
   })
 
   it('listens once switched on with a private interface', async () => {

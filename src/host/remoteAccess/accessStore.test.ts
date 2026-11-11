@@ -1,4 +1,12 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -115,6 +123,16 @@ describe('access store', () => {
       expect(saved().privateKey).toBeUndefined()
       expect(store.identity().fingerprint).toBe(fingerprint)
       expect(signs(store)).toBe(true)
+    })
+
+    it('reads the fingerprint without making a key or asking the keychain', () => {
+      const calls: string[] = []
+      expect(withKeychain(keychain(calls)).fingerprint()).toBeUndefined()
+      expect(existsSync(path)).toBe(false)
+      expect(calls).toEqual([])
+      const fingerprint = withKeychain(keychain()).identity().fingerprint
+      expect(withKeychain(keychain(calls)).fingerprint()).toBe(fingerprint)
+      expect(calls).toEqual([])
     })
 
     it('opens the keychain once per process, and not to show the fingerprint', () => {
