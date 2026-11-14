@@ -288,6 +288,19 @@ export function createAccessStore(ports: AccessStorePorts) {
       return { ...file.config, relay: { ...file.config.relay } }
     },
 
+    /**
+     * The fingerprint of the key already made, or undefined. Never makes one: a new key is sealed
+     * by the keychain, which must not be asked at startup or to draw Settings (on macOS the call
+     * blocks the main process, and on a CI runner it never returns).
+     */
+    fingerprint(): string | undefined {
+      if (!trusted) reload()
+      const publicKey = file.hostKey?.publicKey
+      return publicKey === undefined
+        ? undefined
+        : createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('hex')
+    },
+
     /** Made on first use and kept, so a phone's pinned fingerprint holds across restarts. */
     identity(): ServerIdentity {
       const der = Buffer.from(hostKey().publicKey, 'base64')

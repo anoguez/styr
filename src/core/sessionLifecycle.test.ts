@@ -5,6 +5,7 @@ import {
   REWORK_PREFACE,
   createSessionLifecycle,
   isReviewSession,
+  historyPatch,
   launchPatch,
   monitorKey,
   reworkLaunch,
@@ -218,6 +219,28 @@ describe('launchPatch', () => {
     ])
   })
 
+  it('adds a review run to the reviewed task as history only', () => {
+    const t = task({
+      status: 'in_review',
+      agentSession: { provider: 'claude', id: 'impl' },
+      sessions: [{ id: 'impl', provider: 'claude', startedAt: 'x', label: 'y' }]
+    } as Partial<Task>)
+    const patch = historyPatch(settings, t, 'claude', 'rev', 'Review (TASK-2)', () => 'NOW')
+    expect(patch).toEqual({
+      sessions: [
+        t.sessions[0],
+        {
+          id: 'rev',
+          provider: 'claude',
+          startedAt: 'NOW',
+          label: 'Review (TASK-2)',
+          templateId: 'code-review'
+        }
+      ]
+    })
+    expect(historyPatch(settings, { ...t, ...patch } as Task, 'claude', 'rev', 'R')).toEqual({})
+  })
+
   it('does not duplicate a known session', () => {
     const t = task({
       status: 'in_progress',
@@ -265,6 +288,16 @@ describe('launchPatch', () => {
         ['rev', true],
         ['new', undefined]
       ])
+    })
+
+    it('is the latest run too, when Ask to review left the task on the implementer', () => {
+      const beside = bounced({ agentSession: { provider: 'claude', id: 'impl' } })
+      const patch = launchPatch(settings, beside, plan, { sessionId: 'impl' })
+      expect(patch.sessions).toEqual([implementer, { ...review, sentBack: true }])
+      // Once sent back, the next implement run does not mark it again.
+      expect(
+        launchPatch(settings, { ...beside, sessions: patch.sessions! }, plan, { sessionId: 'impl' })
+      ).not.toHaveProperty('sessions')
     })
 
     it('is a manual review too, told apart by its template', () => {
@@ -348,6 +381,16 @@ describe('rework after a failed review', () => {
     })
   })
 
+  it('reworks after a review Ask to review opened beside the implementer', () => {
+    const beside = bounced({ agentSession: { provider: 'claude', id: 'saved-chat' } })
+    expect(reworkLaunch(settings, beside, {}, onDisk(['saved-chat', 'review-chat']))).toEqual({
+      resume: 'saved-chat',
+      provider: 'claude',
+      withPrompt: true,
+      promptPreface: REWORK_PREFACE
+    })
+  })
+
   it('only resumes an implementer of the provider the lane asked for', () => {
     expect(
       reworkLaunch(settings, bounced(), { provider: 'codex' }, onDisk(['saved-chat']))
@@ -357,8 +400,11 @@ describe('rework after a failed review', () => {
   it('leaves every other launch alone', () => {
     const all = onDisk(['saved-chat', 'review-chat'])
     const options = { withPrompt: true }
-    // The current chat is the implementer's own.
-    const own = bounced({ agentSession: { provider: 'claude', id: 'saved-chat' } })
+    // The current chat is the implementer's own, and the review after it was already sent back.
+    const own = bounced({
+      agentSession: { provider: 'claude', id: 'saved-chat' },
+      sessions: [implementer, { ...reviewer, sentBack: true }]
+    })
     expect(reworkLaunch(settings, own, options, all)).toBe(options)
     // The review lane, a fresh start, a named chat, another template.
     expect(reworkLaunch(settings, bounced({ status: 'in_review' }), options, all)).toBe(options)
@@ -728,17 +774,38 @@ describe('askReview', () => {
     expect(h.calls).toEqual([])
   })
 
-  it('kills an idle agent and starts the reviewer', async () => {
+  it('starts a review run in the task checkout and records its chat on the task', async () => {
     const h = harness()
-    h.tasks.set('TASK-1', task({ status: 'in_review' }))
+    const reviewed = task({
+      status: 'in_review',
+      worktreePath: '/wt',
+      agentSession: { provider: 'claude', id: 'impl' },
+      sessions: [{ id: 'impl', provider: 'claude', startedAt: 'x', label: 'Implement' }]
+    } as Partial<Task>)
+    h.tasks.set('TASK-1', reviewed)
     h.sessions.push(session())
-    h.ports.findSessionByTask = vi
-      .fn()
-      .mockReturnValueOnce(h.sessions[0])
-      .mockReturnValue(undefined)
+    h.ports.findSessionByTask = (taskId) => (taskId === 'TASK-1' ? h.sessions[0] : undefined)
     await createSessionLifecycle(h.ports).askReview('TASK-1')
-    expect(h.calls[0]).toBe('kill s1')
-    expect(h.calls).toContain('session TASK-1 claude')
+
+    expect(h.calls.some((call) => call.startsWith('kill'))).toBe(false)
+    expect(h.calls[0]).toBe('create Review: T')
+    expect(h.calls[1]).toBe('note TASK-1 styr Review started as TASK-2')
+    expect(h.calls).toContain('session TASK-2 claude')
+    const run = h.tasks.get('TASK-2')!
+    expect(run).toMatchObject({ tags: ['review-run'], repoPath: '/wt', useWorktree: false })
+    expect(h.launches[0]).toMatchObject({
+      fresh: true,
+      withPrompt: true,
+      templateId: 'code-review',
+      checkoutOf: reviewed
+    })
+    expect(run.agentSession).toEqual({ provider: 'claude', id: 'sess-1' })
+    const saved = h.tasks.get('TASK-1')!
+    expect(saved.agentSession).toEqual({ provider: 'claude', id: 'impl' })
+    expect(saved.sessions.map((entry) => [entry.id, entry.label])).toEqual([
+      ['impl', 'Implement'],
+      ['sess-1', 'Review (TASK-2)']
+    ])
   })
 })
 

@@ -241,14 +241,16 @@ export function RemoteAccessSection({
         </div>
       </div>
 
-      <Field
-        label="This computer's fingerprint"
-        hint="The phone checks it on every connection, so it never sends anything to an impostor on the network."
-      >
-        <code className="break-words font-mono text-[11px] text-dim">
-          {groupedFingerprint(state.fingerprint)}
-        </code>
-      </Field>
+      {state.fingerprint !== undefined && (
+        <Field
+          label="This computer's fingerprint"
+          hint="The phone checks it on every connection, so it never sends anything to an impostor on the network."
+        >
+          <code className="break-words font-mono text-[11px] text-dim">
+            {groupedFingerprint(state.fingerprint)}
+          </code>
+        </Field>
+      )}
     </div>
   )
 }
@@ -277,8 +279,8 @@ function RelayCard({
     }
   }
 
-  function copyFingerprint(): void {
-    void navigator.clipboard.writeText(state.fingerprint).then(() => setCopied(true))
+  function copyFingerprint(fingerprint: string): void {
+    void navigator.clipboard.writeText(fingerprint).then(() => setCopied(true))
   }
 
   return (
@@ -320,22 +322,32 @@ function RelayCard({
         ) : (
           <Hint>{status.text}</Hint>
         )}
-        <div className="flex items-center gap-3">
-          <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
-            {state.fingerprint}
-          </code>
-          <Button
-            className="h-[26px] shrink-0 px-2.5"
-            title="Copies this computer's fingerprint, for styr relay allow on the relay's machine."
-            onClick={copyFingerprint}
-          >
-            {copied ? 'Copied' : 'Copy fingerprint'}
-          </Button>
-        </div>
-        <Hint>
-          On the relay&apos;s machine, run styr relay allow followed by this fingerprint once.
-          Nothing secret is sent to enrol.
-        </Hint>
+        {state.fingerprint === undefined ? (
+          // The key is made when the relay (or the listener) is first switched on, never just to
+          // show it: that would ask the keychain at startup.
+          <Hint>
+            Switch the relay on to make this computer&apos;s key and show its fingerprint.
+          </Hint>
+        ) : (
+          <>
+            <div className="flex items-center gap-3">
+              <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
+                {state.fingerprint}
+              </code>
+              <Button
+                className="h-[26px] shrink-0 px-2.5"
+                title="Copies this computer's fingerprint, for styr relay allow on the relay's machine."
+                onClick={() => copyFingerprint(state.fingerprint!)}
+              >
+                {copied ? 'Copied' : 'Copy fingerprint'}
+              </Button>
+            </div>
+            <Hint>
+              On the relay&apos;s machine, run styr relay allow followed by this fingerprint once.
+              Nothing secret is sent to enrol.
+            </Hint>
+          </>
+        )}
       </CardRow>
     </Card>
   )

@@ -63,6 +63,8 @@ export function createAccessService(ports: AccessServicePorts) {
 
   function state(): AccessState {
     const config = store.config()
+    // Read, never made here: this runs at startup, before any window is up (see `reconcile`).
+    const fingerprint = store.fingerprint()
     const connected = new Set([
       ...(running?.connectedDevices() ?? []),
       ...(relay?.client.connectedDevices() ?? [])
@@ -76,7 +78,7 @@ export function createAccessService(ports: AccessServicePorts) {
       devices: store
         .devices()
         .map((device) => ({ ...device, connected: connected.has(device.id) })),
-      fingerprint: store.identity().fingerprint,
+      ...(fingerprint !== undefined ? { fingerprint } : {}),
       ...(store.pairing() ? { pairingExpiresAt: store.pairing()!.expiresAt } : {}),
       ...(shieldsUp !== undefined ? { shieldsUp } : {}),
       workspaceShared: ports.workspaceShared?.() ?? true,
@@ -159,6 +161,13 @@ export function createAccessService(ports: AccessServicePorts) {
     } catch (failure) {
       return failed(describe(failure, config))
     }
+    // The key is made (and sealed) once access is on, so Settings can show its fingerprint. Left on
+    // from before, it already exists and only its public half is read.
+    try {
+      store.identity()
+    } catch {
+      // The keychain would not seal it: pairing or the first sign-in tries again.
+    }
     publishQuietly()
   }
 
@@ -178,6 +187,13 @@ export function createAccessService(ports: AccessServicePorts) {
     }
     ports.log(`Remote access: connecting to the relay at ${address}:${config.port}`)
     relay = { client: ports.relay!(address, config.port), address, port: config.port }
+    // As for the listener: the key is made once the relay is on, so Settings can show the
+    // fingerprint to allow. The client signs its registration with it anyway.
+    try {
+      store.identity()
+    } catch {
+      // The keychain would not seal it: the registration says so.
+    }
   }
 
   function failed(message: string): void {

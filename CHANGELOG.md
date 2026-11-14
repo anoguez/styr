@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.42.1](https://github.com/anoguez/styr/compare/v0.42.0...v0.42.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **remote-access:** never ask the keychain at startup, so the macOS app opens ([#265](https://github.com/anoguez/styr/issues/265)) ([219c94c](https://github.com/anoguez/styr/commit/219c94c575fbac3515a5e19ad35e8ff37516e4a9))
+
+## [0.42.0](https://github.com/anoguez/styr/compare/v0.41.1...v0.42.0) (2026-11-10)
+
+
+### Features
+
+* **agents:** ask the owner questions in the terminal, not the Inbox ([#255](https://github.com/anoguez/styr/issues/255)) ([0f7fe15](https://github.com/anoguez/styr/commit/0f7fe15a608890fb2ec05e3d2c6a956d8daf6180))
+* **agents:** Ask to review runs as a throwaway review task ([#263](https://github.com/anoguez/styr/issues/263)) ([69b5912](https://github.com/anoguez/styr/commit/69b59124e5f6e3d00a8d68174a775f0a48b2ff27))
+* **inbox:** remove the question UI from the Inbox and task dialog ([#258](https://github.com/anoguez/styr/issues/258)) ([3fd80af](https://github.com/anoguez/styr/commit/3fd80af4a0de163042454b3cbf597a0f8af74122))
+* **remote-access:** protocol 2, Noise XX end-to-end session with identity binding ([#260](https://github.com/anoguez/styr/issues/260)) ([a92a055](https://github.com/anoguez/styr/commit/a92a0558a3efdb5595026fd6c34436be573c85f4))
+* **remote-access:** styr relay with allow list, opaque forwarding and limits ([#262](https://github.com/anoguez/styr/issues/262)) ([e8cda4e](https://github.com/anoguez/styr/commit/e8cda4e3781b206f7c35ab09db857f83c1ed109c))
+
+
+### Bug Fixes
+
+* **remote-access:** default to Tailscale IPv4, warn on Shields Up, offer to share a workspace, name the failed step ([#254](https://github.com/anoguez/styr/issues/254)) ([e628195](https://github.com/anoguez/styr/commit/e628195f25cfbc05e15ad57aaf93cf319ffbf7d7))
+
 ## [0.41.1](https://github.com/anoguez/styr/compare/v0.41.0...v0.41.1) (2026-10-28)
 
 

@@ -40,8 +40,9 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   the minute; every refusal is logged. Loopback is not counted (every ssh-tunnelled device shares
   127.0.0.1, and sign-in is a signature, so there is nothing to guess) and gets a larger
   connection cap.
-- **No TLS in v1.** The handshake keeps every reusable credential off the wire instead (below). Encryption beyond
-  the private network (Tailscale's WireGuard, an ssh tunnel) is a follow-up.
+- **End to end, and private as well.** Every session is protocol 2 (Noise, below), so a path the
+  host does not trust (a relay) can neither read nor change it; the private network (Tailscale's
+  WireGuard, an ssh tunnel) is kept as a second layer and to keep the port off the internet.
 - **Network clients get a narrower API** (`gate.ts`): no desktop-only channels, no `remote:*`,
   `updates:*`, `access:*` or `server:experimental`, no `workspaces:create`, no `server:notify`, and
   `settings:save` only for a shared workspace with the app-level part unchanged. The local window
@@ -76,6 +77,9 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   desktop seals it with `safeStorage` (Keychain, DPAPI, libsecret; not Linux's `basic_text`
   fallback) and drops the plaintext. A `styr serve` on the same machine shares the file, so once
   the desktop has sealed the key it cannot sign and says so; the fingerprint is never replaced.
+- The key is made the first time the listener comes up, never at startup or to draw Settings
+  (`AccessStore.fingerprint()` reads without making one): sealing asks the macOS Keychain on the
+  main process, which blocked v0.42.0's start-up before its window on the release runner.
 
 ## Files
 
@@ -85,8 +89,8 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 - `src/host/remoteAccess/accessStore.ts`: `~/.styr/remote-access.json` (mode 0600, written
   atomically): the listener's settings, the devices' public keys, this install's Ed25519 key pair and
   the in-memory pairing offer. Not in `Settings`: those reach the renderer and the clients.
-- `src/host/remoteAccess/handshake.ts`: the handshake, as a pure state machine plus the proof
-  functions a client uses.
+- `src/host/remoteAccess/handshake.ts`: the handshake's limits and the Ed25519 key checks the
+  protocol shares.
 - `src/host/remoteAccess/noise.ts`, `secureSession.ts`, `secureClient.ts`: protocol 2 (below):
   Noise XX on `node:crypto`, the host's handshake and `SecureFrameChannel`, and the device's side
   (tests and the transcript vector only; the phone has its own in Dart).
@@ -129,61 +133,25 @@ workspace's Settings → Remote access) or set it in the workspace's `settings.j
 ## Pairing and sign-in
 
 Pairing happens once per device. "Pair a device…" shows a QR for
-`styr://pair?v=1&host=…&port=…&fp=<fingerprint>&secret=<secret>&exp=<ms>`: the address, this
-install's key fingerprint to pin, and a one-time secret that works for 2 minutes and one attempt
-(a wrong guess spends it too). Pairing is refused while nothing is listening. The device makes its
-own Ed25519 key pair and keeps the private key in the platform secure store (Keychain / Keystore)
-with the fingerprint; **the private key never reaches the computer**, which stores only the public
-key, the device's name and its id. The key has no expiry; app, computer or network restarts change
-nothing. It stops working only on Revoke, which also ends that device's live connections; adding
-the device again needs a new QR.
+`styr://pair?v=2&host=…&port=…&fp=<fingerprint>&secret=<secret>&exp=<ms>` (direct), or
+`styr://pair?v=2&relay=<address:port>&fp=…&secret=…&exp=…` while this computer is on a relay (it
+is then used even with the listener up). It carries the way in, this install's key fingerprint to
+pin, and a one-time secret that works for 2 minutes and one attempt (a wrong guess spends it too).
+Pairing is refused while nothing is listening and no relay has registered this host. The device
+makes its own Ed25519 key pair and keeps the private key in the platform secure store (Keychain /
+Keystore) with the fingerprint; **the private key never reaches the computer**, which stores only
+the public key, the device's name and its id. The key has no expiry; app, computer or network
+restarts change nothing. It stops working only on Revoke, which also ends that device's live
+connections; adding the device again needs a new QR.
 
-Text frames, JSON, at most 2 KiB and 10 seconds until `ready`:
+## The session: protocol 2, end to end
 
-```
-C → S  {type:'hello', protocol?, clientNonce}            clientNonce: 16 random bytes, hex
-S → C  {type:'challenge', protocol, serverNonce, serverKey, signature}
-         serverKey: Ed25519 public key (SPKI DER, base64); the client checks SHA-256(serverKey) hex
-         equals the QR's fingerprint, and signature (Ed25519, base64) over
-         "styr-server-v1\n" + clientNonce + "\n" + serverNonce. A mismatch: close, send nothing.
-C → S  {type:'auth', deviceId, signature}
-         signature = base64 Ed25519 (device private key) over
-           "styr-auth-v1\n" + deviceId + "\n" + serverNonce + "\n" + clientNonce + "\n" + fingerprint
-   or   {type:'pair', name, publicKey, proof}
-         publicKey: the device's Ed25519 public key (SPKI DER, base64)
-         proof = hex HMAC-SHA256(key = the QR's secret, utf-8,
-           "styr-pair-v1\n" + serverNonce + "\n" + clientNonce + "\n" + fingerprint + "\n" + name + "\n" + publicKey)
-S → C  [{type:'paired', deviceId}] {type:'ready'}   — then JSON-RPC, one message per text frame
-   or  {type:'error', code:'unauthorized'}, then close 4401   (every failure looks the same)
-```
-
-Nothing a passive listener captures can be replayed: the sign-in signature and the pairing proof
-both cover this connection's two fresh nonces, and the pairing proof is keyed by the QR's secret,
-which is never sent. The device's credential (the private key) is never sent. A server that does
-not hold the pinned key fails the signature check on the phone, so the phone sends nothing to an
-impostor. **What this does not do is encrypt the session:** after `ready`, terminal I/O, tasks and
-settings are cleartext, and a peer that can sit in the path can read them or take over the
-connection. That is why only Tailscale (WireGuard) and loopback (an ssh tunnel) are accepted: a
-LAN address is refused rather than warned about. After `ready` the session is `remote.md`'s protocol, starting with
-`server:hello`; `docs/protocol/styr-remote.schema.json` lists the channels and argument schemas,
-generated from the zod tuples (`protocolSchema.ts`; `UPDATE_PROTOCOL_SCHEMA=1 yarn vitest run
-src/server/protocolSchema.test.ts` rewrites it, and the test fails when it is stale).
-
-Differences from the Unix socket: one JSON-RPC message per frame (no newline needed), frames over
-8 MiB close the connection, a client more than 32 MiB behind is dropped, and a device that misses a
-liveness ping is dropped (it reconnects, reattaches, and gets the terminal backlog as always).
-Close codes: 4400 bad request, 4401 unauthorized, 4403 revoked, 4408 handshake timeout. A refusal
-by the gate is JSON-RPC error `-32001`.
-
-## Protocol 2: end to end over a path the host does not trust
-
-For a relay (TASK-0212's "Design: relay mode"), the session is end-to-end encrypted with
+Every connection, direct or through a relay, is end-to-end encrypted with
 `Noise_XX_25519_ChaChaPoly_SHA256` (`noise.ts`, checked against the official vector in
-`noiseXX.vector.json`). The listener's `secureSessions` picks what it takes: `off` (direct mode,
-the default: protocol 1 exactly as above, and a protocol-2 hello gets `{type:'error',
-code:'protocol', protocol:1}`), `allow` (the client's hello picks; `STYR_REMOTE_PROTOCOL2=1` turns
-it on for direct sockets while the phone is being built) and `require` (a relay: a protocol-1
-hello is closed with 4401 and no plaintext answer, so a relay cannot downgrade a session).
+`noiseXX.vector.json`; `secureSession.ts` the host's side). There is no other protocol: the
+plain handshake of earlier versions is gone, and anything but a protocol-2 hello (an old one
+included) is closed with 4401 without an answer, so nothing can downgrade a session. At most
+2 KiB per handshake frame and 10 seconds until `ready`.
 
 Text frames, each one Noise message in strict, padded base64. Prologue `styr-noise-v1`.
 
@@ -200,7 +168,7 @@ S → C  sealed {type:'paired', deviceId}  (pairing only), then sealed {type:'re
   `signature` is Ed25519 (base64, 64 bytes) over `label ‖ sender's Noise static key (32 bytes) ‖
 h`, where `label` is `"styr-noise-host-v1\n"` for the host and `"styr-noise-device-v1\n"` for the
   device, and `h` is the handshake hash just before that payload is encrypted. `identityKey` is
-  SPKI DER (44 bytes), base64, as in protocol 1. Every base64 field is strict and padded.
+  SPKI DER (44 bytes), base64. Every base64 field is strict and padded.
 - **The device checks the host first:** SHA-256(`identityKey`) must be the QR's fingerprint and the
   signature must verify over the static key Noise just delivered. Otherwise it closes without
   writing message 3, so an impostor (a relay among them) learns nothing about the device.
@@ -224,13 +192,29 @@ dropped). styr-app's Dart client replays the same file; `UPDATE_SECURE_VECTOR=1 
 src/host/remoteAccess/secureSession.vector.test.ts` rewrites it, which is a wire change on both
 sides.
 
-**What the device must do itself** (the host cannot enforce it): over a relay, never fall back to
-protocol 1, whatever the host answers; reject an all-zero X25519 result (small-order key), as
+Nothing a passive listener captures can be replayed or read: the sign-in signature and the
+pairing proof are bound to this connection's handshake hash, the secret and the device's private
+key never travel, and after `ready` every message is sealed. A host that does not hold the pinned
+key fails the device's check, so the device sends nothing to an impostor. After `ready` the session
+is `remote.md`'s protocol, starting with `server:hello`; `docs/protocol/styr-remote.schema.json`
+lists the handshake messages, the channels and their argument schemas, generated from the zod
+schemas (`protocolSchema.ts`; `UPDATE_PROTOCOL_SCHEMA=1 yarn vitest run
+src/server/protocolSchema.test.ts` rewrites it, and the test fails when it is stale).
+
+Differences from the Unix socket: one JSON-RPC message per sealed message (no newline needed), a
+message over 8 MiB closes the connection, a client more than 32 MiB behind is dropped, and a
+device that misses a liveness ping is dropped (it reconnects, reattaches, and gets the terminal
+backlog as always). Close codes: 4400 bad request (and any frame that fails to decrypt), 4401
+unauthorized, 4403 revoked, 4408 handshake timeout. A refusal by the gate is JSON-RPC error
+`-32001`.
+
+**What the device must do itself** (the host cannot enforce it): never speak anything but
+protocol 2, whatever the other end answers; reject an all-zero X25519 result (small-order key), as
 `noise.ts` does; send no JSON-RPC before `ready`; end the session on any failed frame.
 
 **What a relay still learns:** who connects when, each message's length (there is no padding), that a
 session is a pairing (message 3's size and the `paired` record), and the host's identity key, by
-running a handshake with it. Like protocol 1, anyone who can reach the host while a QR is open can
+running a handshake with it. Anyone who can reach the host while a QR is open can
 spend it with one bad attempt, forcing a rescan. The listener's failure limit and connection caps
 are per source address; behind a relay every device shares one, so the relay client needs its own
 per-session limits.
@@ -331,11 +315,11 @@ switch apart from "Allow other devices to connect": either, both or neither can 
   of the relay's limit, so a phone's frame of non-ASCII characters cannot cut the link; a link
   more than 32 MiB behind (a relay that stopped reading) is cut and dialled again.
 
-**Pairing through the relay.** "Pair a device…" makes `styr://pair?v=2&relay=<host:port>&hostfp=<fp>&fp=<fp>&secret=…&exp=…`
-whenever the relay has registered this host, even with the listener up: the session is then end
-to end, and the phone reaches it from any network. Only without a relay is it the `v=1` QR. It is refused while the relay has not registered this
-host ("Styr is not connected to the relay"), as it is while nothing listens. The secret, its 2
-minutes and its single use are the same; the proof is protocol 2's, so a relay cannot pair.
+**Pairing through the relay.** "Pair a device…" makes `styr://pair?v=2&relay=<host:port>&fp=…`
+whenever the relay has registered this host, even with the listener up, since the phone reaches a
+relay from any network. It is refused while the relay has not registered this host ("Styr is not
+connected to the relay") and nothing listens. The secret, its 2 minutes and its single use are as
+for a direct pairing, and the proof is bound to the end-to-end handshake, so a relay cannot pair.
 
 Settings shows the status ("Connected", "Relay unreachable", "Not allowed on this relay", and why)
 under the switch, with this computer's fingerprint and a button to copy it for `styr relay allow`.

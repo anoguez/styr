@@ -141,7 +141,7 @@ describe('network access through a relay', () => {
     await vi.waitFor(() => expect(service.state().relayStatus).toBe('notAllowed'))
     expect(() => service.pair()).toThrow(/not connected to the relay/)
 
-    allowList.allow(service.state().fingerprint)
+    allowList.allow(service.state().fingerprint!)
     await vi.waitFor(() => expect(service.state().relayStatus).toBe('connected'))
     const uri = new URL(service.pair().uri)
     expect(uri.searchParams.get('v')).toBe('2')
@@ -186,7 +186,7 @@ describe('network access through a relay', () => {
     })
     await vi.waitFor(() => expect(service.state().relayStatus).toBe('connected'))
 
-    const phone = new RelayPhone(relay.address.port, service.state().fingerprint)
+    const phone = new RelayPhone(relay.address.port, service.state().fingerprint!)
     await phone.opened()
     phone.socket.send(JSON.stringify({ type: 'hello', protocol: 1, clientNonce: 'ab'.repeat(16) }))
     expect(await phone.next()).toBeUndefined()

@@ -1,5 +1,6 @@
 import type { Settings, Task, TaskDraft } from './types.js'
 import { PLAN_RUN_TAG } from './planning.js'
+import { REVIEW_RUN_TAG } from './reviewRun.js'
 
 /** The settings a derived task takes its defaults from. */
 export type DraftDefaults = Pick<Settings, 'defaultRepoPath' | 'defaultProvider' | 'taskDefaults'>
@@ -108,5 +109,27 @@ export function planDraft(
     repoPath: settings.defaultRepoPath.trim() || undefined,
     useWorktree: false,
     provider: settings.defaultProvider
+  })
+}
+
+/**
+ * The throwaway task behind Ask to review: it carries the reviewer's terminal and status, and is
+ * archived once the review is done (`finishedReviewRuns`). The reviewer runs in the reviewed task's
+ * checkout and its chat is recorded on that task, so this one needs no branch or worktree.
+ */
+export function reviewDraft(
+  source: Pick<Task, 'id' | 'title' | 'priority'>,
+  cwd: string | undefined,
+  provider: 'claude' | 'codex'
+): TaskDraft {
+  return derivedDraft({
+    title: `Review: ${source.title}`,
+    description: `Ask to review on ${source.id}. This task closes itself once the review is done; the chat stays on ${source.id}.`,
+    priority: source.priority,
+    readiness: 'ready',
+    tags: [REVIEW_RUN_TAG],
+    repoPath: cwd,
+    useWorktree: false,
+    provider
   })
 }

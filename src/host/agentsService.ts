@@ -11,6 +11,7 @@ import type { AgentConversation } from '@core/agentConversation.js'
 import type { AgentStatus } from '@core/agentState.js'
 import { renderPrompt, workingDirFor } from '@core/launch.js'
 import { shouldArchiveOnExit } from '@core/archiveOnExit.js'
+import { finishedReviewRuns } from '@core/reviewRun.js'
 import type { ThreadUpdate } from '@core/providers/codexProtocol.js'
 import {
   createSessionLifecycle,
@@ -156,6 +157,7 @@ export function createAgentsService(ports: AgentsServicePorts) {
   function notifyAgentsChanged(): void {
     const statuses = agentStatuses()
     ports.broadcast('agents:changed', statuses)
+    closeFinishedReviews(statuses)
 
     const settings = store.loadSettings()
     const model = buildTrayModel(
@@ -172,6 +174,22 @@ export function createAgentsService(ports: AgentsServicePorts) {
     }
     ports.broadcast('workspaces:activity', latestActivity)
     ports.requestAutoRun()
+  }
+
+  /**
+   * Ask to review's throwaway task goes once its review is done (`finishedReviewRuns`): its terminal
+   * is closed and it is archived. Its chat stays on the reviewed task.
+   */
+  function closeFinishedReviews(statuses: AgentStatus[]): void {
+    const workspaceId = store.loadSettings().activeWorkspaceId
+    const fresh = (task: Task): Task => tasks.getTask(task.id) ?? task
+    const done = finishedReviewRuns(tasks.query(), statuses, fresh)
+    for (const run of done) {
+      const live = terminals.findSessionByTask(run.id, workspaceId)
+      if (live) terminals.killSession(live.id)
+      tasks.setArchived(run.id, true)
+    }
+    if (done.length > 0) ports.notifyTasks()
   }
 
   /**

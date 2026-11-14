@@ -63,8 +63,11 @@ export interface AccessState extends AccessConfig {
   error?: string
   interfaces: AccessInterface[]
   devices: AccessDevice[]
-  /** This install's key fingerprint, which a phone pins when it pairs. */
-  fingerprint: string
+  /**
+   * This install's key fingerprint, which a phone pins when it pairs. Absent until remote access is
+   * first turned on: the key is made then, never just to show this.
+   */
+  fingerprint?: string
   /** An open pairing offer: when it stops working. The secret is only in the QR. */
   pairingExpiresAt?: number
   /**

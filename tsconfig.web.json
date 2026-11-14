@@ -36,6 +36,7 @@
     "src/core/askAgent.ts",
     "src/core/derivedTask.ts",
     "src/core/planning.ts",
+    "src/core/reviewRun.ts",
     "src/core/taskPreset.ts",
     "src/core/diagnostics.ts",
     "src/core/terminalEngine.ts",

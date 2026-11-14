@@ -3,6 +3,7 @@ import { shippedSettings } from '@core/config.js'
 import type { AgentConversation } from '@core/agentConversation.js'
 import type { AgentStatus } from '@core/agentState.js'
 import { PLAN_RUN_TAG } from '@core/planning.js'
+import { REVIEW_RUN_TAG } from '@core/reviewRun.js'
 import type { ThreadUpdate } from '@core/providers/codexProtocol.js'
 import type { Settings, Task, TerminalSessionInfo, WorkspacesActivity } from '@core/types.js'
 import {
@@ -291,6 +292,37 @@ describe('markAgentExited', () => {
       'notifyTasks'
     ])
     expect(h.calls.slice(6)).toEqual(REFRESH)
+  })
+})
+
+describe('a finished review run', () => {
+  const reviewed = (status: Task['status']): Task =>
+    task({ status, sessions: [{ id: 'rev', provider: 'claude', startedAt: 'x', label: 'R' }] })
+  const run = task({
+    id: 'TASK-2',
+    tags: [REVIEW_RUN_TAG],
+    agentSession: { provider: 'claude', id: 'rev' }
+  })
+
+  beforeEach(() => {
+    h.sessions = [{ id: 'term-2', taskId: 'TASK-2', workspaceId: 'default' } as TerminalSessionInfo]
+  })
+
+  it('is closed and archived once the reviewer stops and the task has left In Review', () => {
+    h.rows = [reviewed('done'), run]
+    h.statuses = [status({ taskId: 'TASK-2', state: 'idle' })]
+    service.notifyAgentsChanged()
+    expect(h.calls.slice(1, 4)).toEqual(['kill term-2', 'archive TASK-2 true', 'notifyTasks'])
+  })
+
+  it('stays while the reviewer works or the task is still In Review', () => {
+    h.rows = [reviewed('done'), run]
+    h.statuses = [status({ taskId: 'TASK-2', state: 'working' })]
+    service.notifyAgentsChanged()
+    h.rows = [reviewed('in_review'), run]
+    h.statuses = [status({ taskId: 'TASK-2', state: 'idle' })]
+    service.notifyAgentsChanged()
+    expect(h.calls.filter((call) => /kill|archive/.test(call))).toEqual([])
   })
 })
 

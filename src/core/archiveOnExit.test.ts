@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { shouldArchiveOnExit } from './archiveOnExit.js'
 import { PLAN_RUN_TAG } from './planning.js'
+import { REVIEW_RUN_TAG } from './reviewRun.js'
 import type { Task } from './types.js'
 
 const task = (extra: Partial<Task> = {}) =>
@@ -33,6 +34,11 @@ describe('shouldArchiveOnExit', () => {
 
   it('archives a planning run whatever its status or the setting', () => {
     const run = task({ tags: [PLAN_RUN_TAG], status: 'done' })
+    expect(shouldArchiveOnExit(run, { autoArchiveAsk: false })).toBe(true)
+  })
+
+  it('archives a review run whatever its status or the setting', () => {
+    const run = task({ tags: [REVIEW_RUN_TAG], status: 'in_progress' })
     expect(shouldArchiveOnExit(run, { autoArchiveAsk: false })).toBe(true)
   })
 })
