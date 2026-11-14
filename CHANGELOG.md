@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.43.0](https://github.com/anoguez/styr/compare/v0.42.1...v0.43.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **remote-access:** relay client, styr serve --relay, and protocol 2 only ([#264](https://github.com/anoguez/styr/issues/264))
+
+### Features
+
+* **remote-access:** relay client, styr serve --relay, and protocol 2 only ([#264](https://github.com/anoguez/styr/issues/264)) ([125acc6](https://github.com/anoguez/styr/commit/125acc6943cc993027c8224098788b52def37604))
+
 ## [0.42.1](https://github.com/anoguez/styr/compare/v0.42.0...v0.42.1) (2026-11-11)
 
 
