@@ -9,7 +9,8 @@ import {
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { z } from 'zod'
-import type { AccessConfig } from '@core/types/access.js'
+import type { AccessConfig, AccessConfigPatch } from '@core/types/access.js'
+import { DEFAULT_RELAY_PORT } from './relayProtocol.js'
 
 export type { AccessConfig }
 
@@ -22,7 +23,8 @@ export const DEFAULT_ACCESS_CONFIG: AccessConfig = {
   enabled: false,
   bindAddress: '',
   port: DEFAULT_ACCESS_PORT,
-  keepAwake: false
+  keepAwake: false,
+  relay: { enabled: false, address: '', port: DEFAULT_RELAY_PORT }
 }
 
 export interface DeviceRecord {
@@ -46,7 +48,15 @@ const fileSchema = z.object({
       enabled: z.boolean().default(false),
       bindAddress: z.string().max(100).default(''),
       port: z.number().int().default(DEFAULT_ACCESS_PORT),
-      keepAwake: z.boolean().default(false)
+      keepAwake: z.boolean().default(false),
+      // Added with the relay client: a file from before it reads as relay off.
+      relay: z
+        .object({
+          enabled: z.boolean().default(false),
+          address: z.string().max(100).default(''),
+          port: z.number().int().default(DEFAULT_RELAY_PORT)
+        })
+        .default(DEFAULT_ACCESS_CONFIG.relay)
     })
     .default(DEFAULT_ACCESS_CONFIG),
   devices: z
@@ -264,13 +274,18 @@ export function createAccessStore(ports: AccessStorePorts) {
   }
 
   return {
-    config: (): AccessConfig => ({ ...file.config }),
+    config: (): AccessConfig => ({ ...file.config, relay: { ...file.config.relay } }),
 
-    setConfig(patch: Partial<AccessConfig>): AccessConfig {
-      file = { ...file, config: { ...file.config, ...patch } }
+    /** Merges `patch`; its `relay`, when given, is merged into the saved one. */
+    setConfig(patch: AccessConfigPatch): AccessConfig {
+      const { relay, ...rest } = patch
+      file = {
+        ...file,
+        config: { ...file.config, ...rest, relay: { ...file.config.relay, ...relay } }
+      }
       save()
       changed()
-      return { ...file.config }
+      return { ...file.config, relay: { ...file.config.relay } }
     },
 
     /**

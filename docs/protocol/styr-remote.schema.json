@@ -5,12 +5,14 @@
   "protocol": 1,
   "transport": {
     "url": "ws://<host>:<port>/",
-    "frames": "text frames only, one JSON-RPC 2.0 message per frame",
+    "relayUrl": "ws://<relay>:<port, 7879>/phone/<host fingerprint>",
+    "frames": "text frames only: the handshake (below), then each one a sealed Noise record of a JSON-RPC 2.0 message",
+    "maxRecordFrameChars": 87380,
     "handshakeMaxBytes": 2048,
     "handshakeTimeoutMs": 10000,
     "maxFrameBytes": 8388608,
     "closeCodes": {
-      "4400": "bad request (binary frame)",
+      "4400": "bad request (binary frame, a frame that fails to decrypt)",
       "4401": "unauthorized (every handshake failure)",
       "4403": "the device was revoked",
       "4408": "handshake timeout",
@@ -21,6 +23,9 @@
     }
   },
   "handshake": {
+    "protocol": 2,
+    "noise": "Noise_XX_25519_ChaChaPoly_SHA256",
+    "prologue": "styr-noise-v1",
     "hello": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -30,72 +35,96 @@
           "const": "hello"
         },
         "protocol": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+          "type": "number",
+          "const": 2
         },
-        "clientNonce": {
+        "noise": {
           "type": "string",
-          "pattern": "^[0-9a-f]{32}$"
+          "maxLength": 2048
         }
       },
       "required": [
         "type",
-        "clientNonce"
+        "protocol",
+        "noise"
       ]
     },
-    "auth": {
+    "hostPayload": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "type": {
+        "identityKey": {
           "type": "string",
-          "const": "auth"
-        },
-        "deviceId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
         },
         "signature": {
           "type": "string",
-          "minLength": 80,
-          "maxLength": 100
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
         }
       },
       "required": [
-        "type",
-        "deviceId",
+        "identityKey",
         "signature"
       ]
     },
-    "pair": {
+    "devicePayload": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "type": {
-          "type": "string",
-          "const": "pair"
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "auth"
+            },
+            "deviceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "signature": {
+              "type": "string",
+              "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+            }
+          },
+          "required": [
+            "type",
+            "deviceId",
+            "signature"
+          ]
         },
-        "name": {
-          "type": "string",
-          "maxLength": 200
-        },
-        "publicKey": {
-          "type": "string",
-          "minLength": 40,
-          "maxLength": 100
-        },
-        "proof": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "pair"
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "identityKey": {
+              "type": "string",
+              "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+            },
+            "signature": {
+              "type": "string",
+              "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+            },
+            "proof": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "type",
+            "name",
+            "identityKey",
+            "signature",
+            "proof"
+          ]
         }
-      },
-      "required": [
-        "type",
-        "name",
-        "publicKey",
-        "proof"
       ]
     }
   },

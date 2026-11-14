@@ -49,6 +49,7 @@ async function main(): Promise<number> {
         version: __STYR_VERSION__,
         root,
         listen: parsed.listen,
+        relay: parsed.relay,
         pair: parsed.pair
       })
       return 0

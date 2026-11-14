@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { AccessState } from '@core/types.js'
 import {
+  canPair,
   deviceLine,
   groupedFingerprint,
   interfaceOptions,
   listenerStatus,
   needsSharedWorkspace,
-  qrPath
+  qrPath,
+  relayStatusLine,
+  showShieldsUpWarning
 } from './accessView.js'
 
 const base: AccessState = {
@@ -21,7 +24,9 @@ const base: AccessState = {
   ],
   devices: [],
   fingerprint: 'ab'.repeat(32),
-  workspaceShared: true
+  workspaceShared: true,
+  relay: { enabled: false, address: '', port: 7879 },
+  relayStatus: 'off'
 }
 
 describe('interfaceOptions', () => {
@@ -103,5 +108,36 @@ describe('listenerStatus', () => {
     )
     expect(listenerStatus(base)).toMatch(/Pick a network interface/)
     expect(listenerStatus({ ...base, bindAddress: '127.0.0.1' })).toMatch(/No port is open/)
+  })
+})
+
+describe('relay', () => {
+  const on = { ...base, relay: { enabled: true, address: '100.64.0.9', port: 7879 } }
+
+  it('says whether this computer is on the relay, or why not', () => {
+    expect(relayStatusLine(base)).toEqual({ text: expect.stringMatching(/^Off/), problem: false })
+    expect(relayStatusLine({ ...on, relayStatus: 'connected' })).toEqual({
+      text: 'Connected to the relay at 100.64.0.9:7879.',
+      problem: false
+    })
+    expect(
+      relayStatusLine({ ...on, relayStatus: 'unreachable', relayError: 'Nothing is listening.' })
+    ).toEqual({ text: 'Relay unreachable. Nothing is listening. Trying again.', problem: true })
+    expect(
+      relayStatusLine({ ...on, relayStatus: 'notAllowed', relayError: 'Not allowed.' })
+    ).toEqual({ text: 'Not allowed.', problem: true })
+  })
+
+  it('pairs through the listener or a connected relay', () => {
+    expect(canPair(base)).toBe(false)
+    expect(canPair({ ...on, relayStatus: 'connecting' })).toBe(false)
+    expect(canPair({ ...on, relayStatus: 'connected' })).toBe(true)
+    expect(canPair({ ...base, listening: true })).toBe(true)
+  })
+
+  it('warns about Shields Up only while devices have to connect in', () => {
+    expect(showShieldsUpWarning({ ...base, shieldsUp: true })).toBe(true)
+    expect(showShieldsUpWarning({ ...on, shieldsUp: true, relayStatus: 'connected' })).toBe(false)
+    expect(showShieldsUpWarning({ ...on, shieldsUp: true, relayStatus: 'unreachable' })).toBe(true)
   })
 })

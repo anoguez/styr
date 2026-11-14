@@ -20,6 +20,8 @@ export interface ServeOptions {
   version: string
   /** Also accept paired devices on this private address (`--listen`). */
   listen?: ListenSpec
+  /** Also take paired devices through this `styr relay` (`--relay`). */
+  relay?: ListenSpec
   /** Print a QR to pair a device with, once listening (`--pair`). */
   pair?: boolean
   /** The folder holding `out/server/` and `resources/`: the repo, or the server bundle. */
@@ -82,7 +84,8 @@ export async function serve(options: ServeOptions): Promise<void> {
 
   const listener = await listen(options.socketPath, hub)
   host.start()
-  const network = options.listen ? await startNetwork(options, hub, host, invoke) : undefined
+  const network =
+    options.listen || options.relay ? await startNetwork(options, hub, host, invoke) : undefined
   process.stdout.write(`styr server ${options.version} listening on ${options.socketPath}\n`)
 
   // A crash would kill every agent the server runs; log and carry on, as Electron's main does.
@@ -105,9 +108,14 @@ export async function serve(options: ServeOptions): Promise<void> {
   })
 }
 
+/** How long `--relay --pair` waits for the relay to register this host before showing a QR. */
+const RELAY_PAIR_WAIT_MS = 10_000
+
 /**
- * `--listen`: the same network access as the desktop app (`networkAccess.ts`), switched on for
- * this run on the address given. A bad address or a port in use stops the server before it serves.
+ * `--listen` and `--relay`: the same network access as the desktop app (`networkAccess.ts`),
+ * switched on for this run on the addresses given (and the one not given switched off). A bad
+ * address or a port in use stops the server before it serves; a relay that cannot be reached yet
+ * is dialled again in the background.
  */
 async function startNetwork(
   options: ServeOptions,
@@ -116,6 +124,7 @@ async function startNetwork(
   invoke: ChannelTable
 ): Promise<{ stop(): Promise<void> }> {
   const sessions = () => host.terminals.listSessions()
+  let stateChanged = (): void => undefined
   const { service } = createNetworkAccess({
     hub,
     gate: {
@@ -135,16 +144,26 @@ async function startNetwork(
     },
     // A server has no desktop to keep awake.
     keepAwake: { hold: () => 0, release: () => undefined },
-    broadcast: () => undefined,
+    broadcast: () => stateChanged(),
     log: (message) => process.stdout.write(`${message}\n`)
   })
+  const { listen, relay } = options
   const state = await service.configure({
-    enabled: true,
-    bindAddress: options.listen!.address,
-    port: options.listen!.port
+    enabled: listen !== undefined,
+    ...(listen ? { bindAddress: listen.address, port: listen.port } : {}),
+    relay: relay ? { enabled: true, address: relay.address, port: relay.port } : { enabled: false }
   })
-  if (!state.listening) {
+  if (listen && !state.listening) {
     throw new Error(state.error ?? 'Could not listen for devices.')
+  }
+  if (relay && state.relayStatus === 'off') {
+    throw new Error(state.relayError ?? 'Could not use that relay address.')
+  }
+  if (relay) {
+    process.stdout.write(
+      `This server's fingerprint, to allow on the relay (styr relay allow <fingerprint>):\n` +
+        `${state.fingerprint}\n`
+    )
   }
   invoke[CTL.pair] = { args: z.tuple([]), run: () => service.pair() }
   invoke[CTL.devices] = { args: z.tuple([]), run: () => service.state().devices }
@@ -158,6 +177,27 @@ async function startNetwork(
     }) as never
   }
   if (options.pair) {
+    if (!listen) {
+      // Pairing through the relay needs this host registered on it: wait a moment for that.
+      await new Promise<void>((resolve) => {
+        const done = (): void => {
+          clearTimeout(timer)
+          stateChanged = () => undefined
+          resolve()
+        }
+        const timer = setTimeout(done, RELAY_PAIR_WAIT_MS)
+        stateChanged = () => {
+          if (service.state().relayStatus === 'connected') done()
+        }
+        stateChanged()
+      })
+      if (service.state().relayStatus !== 'connected') {
+        process.stdout.write(
+          'Not connected to the relay yet, so no QR. Once it connects, run styr serve pair.\n'
+        )
+        return { stop: () => service.stop() }
+      }
+    }
     const pairing = service.pair()
     process.stdout.write(
       `Scan this with the Styr app within 2 minutes (it works once):\n\n` +

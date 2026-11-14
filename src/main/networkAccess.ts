@@ -3,7 +3,7 @@ import { pinWorkspace, pinnedWorkspaceId } from '@core/config.js'
 import { loadSettings } from '@core/settingsStore.js'
 import { globalSettingsFor, workspaceSettingsFor, type SettingsChange } from '@core/types.js'
 import { listWorkspaces } from '@core/workspaces.js'
-import type { AccessConfig, AccessState } from '@core/types/access.js'
+import type { AccessConfigPatch, AccessState, RelayConfig } from '@core/types/access.js'
 import type { SecretBox } from '@host/remoteAccess/accessStore.js'
 import { tailscaleShieldsUp } from '@host/remoteAccess/tailscale.js'
 import { createHub, PROTOCOL_VERSION } from '../server/hub.js'
@@ -110,8 +110,6 @@ async function shareActiveWorkspace(): Promise<AccessState> {
 /** What the access state is derived from besides its own store: which workspaces are shared. */
 const SHARING_CHANGES = new Set(['settings:changed', 'workspaces:changed'])
 
-const configSchemaKeys: (keyof AccessConfig)[] = ['enabled', 'bindAddress', 'port', 'keepAwake']
-
 /** Called once the app is ready: feeds the hub what the windows are told, and listens if left on. */
 export function startNetworkAccess(): void {
   onBroadcast((channel, payload) => {
@@ -146,19 +144,24 @@ export function registerAccessHandlers(): void {
   )
 }
 
+const asRecord = (value: unknown): Record<string, unknown> =>
+  (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+
 /** Only the config's own keys, each of the right type: the renderer is not trusted with more. */
-function pickConfig(value: unknown): Partial<AccessConfig> {
-  const raw = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
-  const patch: Partial<AccessConfig> = {}
-  for (const key of configSchemaKeys) {
-    const entry = raw[key]
-    if (key === 'enabled' || key === 'keepAwake') {
-      if (typeof entry === 'boolean') patch[key] = entry
-    } else if (key === 'port') {
-      if (typeof entry === 'number') patch.port = entry
-    } else if (typeof entry === 'string') {
-      patch[key] = entry
-    }
+export function pickConfig(value: unknown): AccessConfigPatch {
+  const raw = asRecord(value)
+  const patch: AccessConfigPatch = {}
+  if (typeof raw.enabled === 'boolean') patch.enabled = raw.enabled
+  if (typeof raw.keepAwake === 'boolean') patch.keepAwake = raw.keepAwake
+  if (typeof raw.port === 'number') patch.port = raw.port
+  if (typeof raw.bindAddress === 'string') patch.bindAddress = raw.bindAddress
+  if (raw.relay !== undefined) {
+    const entry = asRecord(raw.relay)
+    const relay: Partial<RelayConfig> = {}
+    if (typeof entry.enabled === 'boolean') relay.enabled = entry.enabled
+    if (typeof entry.address === 'string') relay.address = entry.address
+    if (typeof entry.port === 'number') relay.port = entry.port
+    patch.relay = relay
   }
   return patch
 }

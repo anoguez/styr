@@ -1,13 +1,17 @@
 import { encode } from 'uqr'
 import type {
   AccessConfig,
+  AccessConfigPatch,
   AccessInterface,
   AccessPairing,
-  AccessState
+  AccessState,
+  RelayConfig,
+  RelayStatus
 } from '@core/types/access.js'
 import type { AccessStore } from './accessStore.js'
 import { bindAddressProblem, defaultBindAddress, portProblem } from './addresses.js'
 import { createKeepAwake, type KeepAwakePorts } from './keepAwake.js'
+import { relayAddressProblem, type RelayClient } from './relayClient.js'
 
 /** What the transport gives back once it listens (`src/server/wsListener.ts`). */
 export interface RunningListener {
@@ -32,6 +36,11 @@ export interface AccessServicePorts {
   shieldsUp?(): Promise<boolean | undefined>
   /** Whether any workspace has `remoteAccess` on. Absent: assumed so. */
   workspaceShared?(): boolean
+  /**
+   * Connects out to a relay (`relayClient.ts`), which reports back through `relayChanged` and
+   * `relayConnections`. Absent: the relay setting is ignored.
+   */
+  relay?(address: string, port: number): RelayClient
 }
 
 /**
@@ -44,6 +53,10 @@ export function createAccessService(ports: AccessServicePorts) {
   const { store } = ports
   let running: RunningListener | undefined
   let error: string | undefined
+  let relay: { client: RelayClient; address: string; port: number } | undefined
+  /** Why the relay could not be started (a bad address); its own refusals are the client's. */
+  let relayProblem: string | undefined
+  const counts = { direct: 0, relay: 0 }
   let shieldsUp: boolean | undefined
   let applying: Promise<void> = Promise.resolve()
   const awake = createKeepAwake(ports.keepAwake)
@@ -52,7 +65,11 @@ export function createAccessService(ports: AccessServicePorts) {
     const config = store.config()
     // Read, never made here: this runs at startup, before any window is up (see `reconcile`).
     const fingerprint = store.fingerprint()
-    const connected = new Set(running?.connectedDevices() ?? [])
+    const connected = new Set([
+      ...(running?.connectedDevices() ?? []),
+      ...(relay?.client.connectedDevices() ?? [])
+    ])
+    const relayError = relayProblem ?? relay?.client.error()
     return {
       ...config,
       listening: running !== undefined,
@@ -64,8 +81,15 @@ export function createAccessService(ports: AccessServicePorts) {
       ...(fingerprint !== undefined ? { fingerprint } : {}),
       ...(store.pairing() ? { pairingExpiresAt: store.pairing()!.expiresAt } : {}),
       ...(shieldsUp !== undefined ? { shieldsUp } : {}),
-      workspaceShared: ports.workspaceShared?.() ?? true
+      workspaceShared: ports.workspaceShared?.() ?? true,
+      relayStatus: relayStatus(config.relay),
+      ...(relayError ? { relayError } : {})
     }
+  }
+
+  function relayStatus(config: RelayConfig): RelayStatus {
+    if (!config.enabled || relayProblem) return 'off'
+    return relay?.client.status() ?? 'connecting'
   }
 
   /**
@@ -91,12 +115,25 @@ export function createAccessService(ports: AccessServicePorts) {
 
   store.onChange(() => publish())
 
-  async function stop(): Promise<void> {
+  async function stopListener(): Promise<void> {
     const listener = running
     running = undefined
-    store.cancelPairing()
-    awake.connections(0)
+    counts.direct = 0
+    awake.connections(counts.relay)
     if (listener) await listener.close()
+  }
+
+  async function stopRelay(): Promise<void> {
+    const current = relay
+    relay = undefined
+    counts.relay = 0
+    awake.connections(counts.direct)
+    if (current) await current.client.close()
+  }
+
+  async function stop(): Promise<void> {
+    store.cancelPairing()
+    await Promise.all([stopListener(), stopRelay()])
   }
 
   /** Brings the listener in line with the saved config. Serialised, so quick changes apply in order. */
@@ -109,9 +146,11 @@ export function createAccessService(ports: AccessServicePorts) {
     const config = store.config()
     awake.enabled(config.keepAwake)
     const wanted = config.enabled
+    await reconcileRelay(config.relay)
     const sameSpot =
       running?.address.address === config.bindAddress && running.address.port === config.port
-    if (running && (!wanted || !sameSpot)) await stop()
+    if (running && (!wanted || !sameSpot)) await stopListener()
+    if (!running && !relay) store.cancelPairing()
     if (!wanted || running) return publishQuietly()
     const problem = bindAddressProblem(config.bindAddress) ?? portProblem(config.port)
     if (problem) return failed(problem)
@@ -132,6 +171,31 @@ export function createAccessService(ports: AccessServicePorts) {
     publishQuietly()
   }
 
+  /** The relay link in line with its config: dialled, moved or dropped. */
+  async function reconcileRelay(config: RelayConfig): Promise<void> {
+    const wanted = config.enabled && ports.relay !== undefined
+    const address = config.address.trim()
+    if (relay && (!wanted || relay.address !== address || relay.port !== config.port)) {
+      await stopRelay()
+    }
+    if (!wanted) relayProblem = undefined
+    if (!wanted || relay) return
+    relayProblem = relayAddressProblem(address) ?? portProblem(config.port)
+    if (relayProblem) {
+      ports.log(`Remote access: relay: ${relayProblem}`)
+      return
+    }
+    ports.log(`Remote access: connecting to the relay at ${address}:${config.port}`)
+    relay = { client: ports.relay!(address, config.port), address, port: config.port }
+    // As for the listener: the key is made once the relay is on, so Settings can show the
+    // fingerprint to allow. The client signs its registration with it anyway.
+    try {
+      store.identity()
+    } catch {
+      // The keychain would not seal it: the registration says so.
+    }
+  }
+
   function failed(message: string): void {
     error = message
     ports.log(`Remote access: ${message}`)
@@ -149,8 +213,12 @@ export function createAccessService(ports: AccessServicePorts) {
     /** At startup: listens if it was left on. */
     start: (): Promise<void> => apply(),
 
-    async configure(patch: Partial<AccessConfig>): Promise<AccessState> {
-      const next: Partial<AccessConfig> = {}
+    async configure(patch: AccessConfigPatch): Promise<AccessState> {
+      const next: AccessConfigPatch = {}
+      if (patch.relay !== undefined) {
+        next.relay = { ...patch.relay }
+        if (next.relay.address !== undefined) next.relay.address = next.relay.address.trim()
+      }
       if (patch.bindAddress !== undefined) next.bindAddress = patch.bindAddress.trim()
       if (patch.port !== undefined) next.port = patch.port
       if (patch.enabled !== undefined) next.enabled = patch.enabled
@@ -161,13 +229,15 @@ export function createAccessService(ports: AccessServicePorts) {
         const fallback = defaultBindAddress(ports.interfaces())
         if (fallback) next.bindAddress = fallback
       }
-      const merged = { ...store.config(), ...next }
+      const { relay: _relay, ...direct } = next
+      const merged = { ...store.config(), ...direct }
       if (next.enabled) void checkNetwork()
       if (merged.enabled) {
         const problem = bindAddressProblem(merged.bindAddress) ?? portProblem(merged.port)
         if (problem) {
           error = problem
           store.setConfig({ ...next, enabled: false })
+          await apply()
           return publish()
         }
       }
@@ -177,15 +247,30 @@ export function createAccessService(ports: AccessServicePorts) {
       return state()
     },
 
-    /** The QR for one new device. Refused while nothing is listening. */
+    /**
+     * The QR for one new device (`v=2`, protocol 2): through the relay (`relay=`) whenever it has
+     * registered this host, otherwise to the listener (`host=`, `port=`). Refused while neither can
+     * take a device, as nothing could answer the phone.
+     */
     pair(): AccessPairing {
-      if (!running) throw new Error('Turn on Remote access and pick a network interface first.')
+      const viaRelay = relay?.client.status() === 'connected' ? relay : undefined
+      if (!running && !viaRelay) {
+        if (store.config().relay.enabled) {
+          throw new Error(
+            'Styr is not connected to the relay, so a device cannot pair through it. ' +
+              'Check the relay status above, or turn on Allow other devices to connect.'
+          )
+        }
+        throw new Error('Turn on Remote access and pick a network interface first.')
+      }
       const offer = store.startPairing()
-      const { address, port } = running.address
-      const host = address.includes(':') ? `[${address}]` : address
+      const fingerprint = store.identity().fingerprint
+      const where = viaRelay
+        ? `relay=${encodeURIComponent(`${bracketed(viaRelay.address)}:${viaRelay.port}`)}`
+        : `host=${encodeURIComponent(bracketed(running!.address.address))}&port=${running!.address.port}`
       const uri =
-        `styr://pair?v=1&host=${encodeURIComponent(host)}&port=${port}` +
-        `&fp=${store.identity().fingerprint}&secret=${offer.secret}&exp=${offer.expiresAt}`
+        `styr://pair?v=2&${where}&fp=${fingerprint}` +
+        `&secret=${offer.secret}&exp=${offer.expiresAt}`
       return { uri, expiresAt: offer.expiresAt, modules: encode(uri, { ecc: 'M', border: 0 }).data }
     },
 
@@ -201,11 +286,22 @@ export function createAccessService(ports: AccessServicePorts) {
       return state()
     },
 
-    /** The transport reports how many devices are connected. */
+    /** The listener reports how many devices are connected. */
     connections(count: number): void {
-      awake.connections(count)
+      counts.direct = count
+      awake.connections(counts.direct + counts.relay)
       publish()
     },
+
+    /** The relay client reports how many devices are signed in through it. */
+    relayConnections(count: number): void {
+      counts.relay = count
+      awake.connections(counts.direct + counts.relay)
+      publish()
+    },
+
+    /** The relay link changed (connected, refused, dropped). */
+    relayChanged: (): AccessState => publish(),
 
     stop,
     dispose: stop
@@ -213,6 +309,8 @@ export function createAccessService(ports: AccessServicePorts) {
 }
 
 export type AccessService = ReturnType<typeof createAccessService>
+
+const bracketed = (address: string): string => (address.includes(':') ? `[${address}]` : address)
 
 function describe(failure: unknown, config: AccessConfig): string {
   const code = (failure as NodeJS.ErrnoException | undefined)?.code

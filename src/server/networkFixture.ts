@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomBytes, sign, createPrivateKey } from 'node:crypto'
+import { createPrivateKey, createPublicKey, generateKeyPairSync } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,11 +6,11 @@ import { WebSocket } from 'ws'
 import { z } from 'zod'
 import { createAccessStore, type AccessStore } from '@host/remoteAccess/accessStore.js'
 import { createNetworkPolicy, type GatePorts } from '@host/remoteAccess/gate.js'
-import { authSignedData, pairProof, serverChallengeValid } from '@host/remoteAccess/handshake.js'
-import type { SecureSessions } from '@host/remoteAccess/secureSession.js'
+import { createSecureClientHandshake } from '@host/remoteAccess/secureClient.js'
+import type { SecureFrameChannel } from '@host/remoteAccess/secureSession.js'
 import { RpcPeer } from '@host/rpc/jsonRpc.js'
 import { createHub, PROTOCOL_VERSION, type Hub, type HubPorts } from './hub.js'
-import { startNetworkListener, type NetworkListener } from './wsListener.js'
+import { MAX_FRAME_BYTES, startNetworkListener, type NetworkListener } from './wsListener.js'
 
 /** A fake host for the network tests: workspaces `open` and `closed`, with `open` flagged. */
 export function networkHost() {
@@ -111,19 +111,17 @@ export function networkHost() {
 export async function listenOnLoopback(
   host: ReturnType<typeof networkHost>,
   store: AccessStore,
-  extra: { hub?: Hub; pingMs?: number; handshakeMs?: number; secureSessions?: SecureSessions } = {}
+  extra: { hub?: Hub; pingMs?: number; handshakeMs?: number } = {}
 ): Promise<NetworkListener> {
   return startNetworkListener(
     {
       hub: extra.hub ?? host.hub,
       store,
       policy: host.policy,
-      protocol: PROTOCOL_VERSION,
       log: (message) => host.state.log.push(message),
       now: () => host.state.clock,
       pingMs: extra.pingMs,
       handshakeMs: extra.handshakeMs,
-      secureSessions: extra.secureSessions,
       limitLoopback: true
     },
     '127.0.0.1',
@@ -137,14 +135,14 @@ export interface Credentials {
   privateKey: string
 }
 
-/** The phone's side of the handshake, as the protocol document describes it. */
+/** The phone's side of protocol 2, as the protocol document describes it. */
 export class TestPhone {
   socket!: WebSocket
   readonly messages: string[] = []
   private waiting: ((text: string) => void)[] = []
   closed?: { code: number; reason: string }
-  private clientNonce = randomBytes(16).toString('hex')
-  serverNonce = ''
+  /** The session once signed in: every later frame goes through it. */
+  channel?: SecureFrameChannel
 
   constructor(
     port: number,
@@ -175,9 +173,11 @@ export class TestPhone {
     })
   }
 
+  /** The next frame; '' once the socket has closed. */
   next(): Promise<string> {
     const queued = this.messages.shift()
     if (queued !== undefined) return Promise.resolve(queued)
+    if (this.closed) return Promise.resolve('')
     return new Promise((resolve) => this.waiting.push(resolve))
   }
 
@@ -190,84 +190,86 @@ export class TestPhone {
     this.socket.send(typeof value === 'string' ? value : JSON.stringify(value))
   }
 
-  /** hello → challenge, checking the server against the pinned fingerprint. */
-  async hello(): Promise<{ ok: boolean }> {
-    this.send({ type: 'hello', protocol: PROTOCOL_VERSION, clientNonce: this.clientNonce })
-    const challenge = JSON.parse(await this.next()) as {
-      serverNonce: string
-      serverKey: string
-      signature: string
+  /**
+   * Runs the handshake; the device id the host gave (pairing) or true (sign-in), or undefined when
+   * the host refused, hung up or is not the pinned one (then this side hangs up, sending nothing).
+   */
+  private async handshake(
+    privateKey: ReturnType<typeof createPrivateKey>,
+    signIn: { type: 'auth'; deviceId: string } | { type: 'pair'; name: string; secret: string }
+  ): Promise<{ deviceId?: string } | undefined> {
+    const client = createSecureClientHandshake({
+      pinnedFingerprint: this.fingerprint,
+      identity: {
+        privateKey,
+        publicKey: createPublicKey(privateKey)
+          .export({ type: 'spki', format: 'der' })
+          .toString('base64')
+      },
+      signIn,
+      maxMessageBytes: MAX_FRAME_BYTES
+    })
+    this.send(client.start())
+    try {
+      for (;;) {
+        const frame = await this.next()
+        if (frame === '') return undefined
+        const step = client.receive(frame)
+        if (step.kind === 'send') for (const out of step.frames) this.send(out)
+        if (step.kind === 'ready') {
+          this.channel = step.channel
+          return { deviceId: step.deviceId }
+        }
+      }
+    } catch {
+      this.socket.close()
+      return undefined
     }
-    this.serverNonce = challenge.serverNonce
-    return { ok: serverChallengeValid(challenge, this.clientNonce, this.fingerprint) }
   }
 
   async authenticate(credentials: Credentials): Promise<boolean> {
-    const hello = await this.hello()
-    if (!hello.ok) return false
     const key = createPrivateKey({
       key: Buffer.from(credentials.privateKey, 'base64'),
       format: 'der',
       type: 'pkcs8'
     })
-    this.send({
-      type: 'auth',
-      deviceId: credentials.deviceId,
-      signature: sign(
-        null,
-        Buffer.from(
-          authSignedData(credentials.deviceId, this.serverNonce, this.clientNonce, this.fingerprint)
-        ),
-        key
-      ).toString('base64')
-    })
-    return JSON.parse(await this.next()).type === 'ready'
+    return (
+      (await this.handshake(key, { type: 'auth', deviceId: credentials.deviceId })) !== undefined
+    )
   }
 
   async pair(secret: string, name: string): Promise<Credentials | undefined> {
-    const hello = await this.hello()
-    if (!hello.ok) return undefined
     const pair = generateKeyPairSync('ed25519')
-    const publicKey = pair.publicKey.export({ type: 'spki', format: 'der' }).toString('base64')
-    this.send({
-      type: 'pair',
-      name,
-      publicKey,
-      proof: pairProof(
-        secret,
-        this.serverNonce,
-        this.clientNonce,
-        this.fingerprint,
-        name,
-        publicKey
-      )
-    })
-    const paired = JSON.parse(await this.next()) as { type: string; deviceId?: string }
-    if (paired.type !== 'paired') return undefined
-    expectReady(JSON.parse(await this.next()))
+    const result = await this.handshake(pair.privateKey, { type: 'pair', name, secret })
+    if (!result?.deviceId) return undefined
     return {
-      deviceId: paired.deviceId!,
+      deviceId: result.deviceId,
       privateKey: pair.privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64')
     }
   }
 
-  /** After `ready`: a JSON-RPC peer over the socket, and everything pushed to it. */
+  /** After `ready`: a JSON-RPC peer over the sealed session, and everything pushed to it. */
   rpc(): { peer: RpcPeer; pushed: [string, unknown[]][] } {
+    const channel = this.channel!
     const pushed: [string, unknown[]][] = []
-    const peer = new RpcPeer((line) => this.socket.send(line.replace(/\n$/, '')), {
-      notification: (method, params) => pushed.push([method, params])
-    })
+    const peer = new RpcPeer(
+      (line) => {
+        for (const frame of channel.seal(line.replace(/\n$/, ''))) this.socket.send(frame)
+      },
+      { notification: (method, params) => pushed.push([method, params]) }
+    )
+    const deliver = (frame: string): void => {
+      const text = channel.open(frame)
+      if (text !== undefined) peer.receive(`${text}\n`)
+    }
     this.socket.removeAllListeners('message')
-    this.socket.on('message', (data) => peer.receive(`${data.toString()}\n`))
-    for (const queued of this.messages.splice(0)) peer.receive(`${queued}\n`)
+    this.socket.on('message', (data) => deliver(data.toString()))
+    // Frames that came in before this, in order: skipping one would break the channel.
+    for (const queued of this.messages.splice(0)) deliver(queued)
     return { peer, pushed }
   }
 
   close(): void {
     this.socket.terminate()
   }
-}
-
-function expectReady(message: { type: string }): void {
-  if (message.type !== 'ready') throw new Error(`expected ready, got ${message.type}`)
 }

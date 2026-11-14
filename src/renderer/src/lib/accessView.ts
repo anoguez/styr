@@ -19,6 +19,16 @@ export function interfaceLabel(choice: AccessInterface): string {
 export const SHIELDS_UP_WARNING =
   'Tailscale Shields Up is on, so this computer blocks incoming connections from your devices: pairing and sign-in time out. In Tailscale, turn on Allow incoming connections (or run tailscale set --shields-up=false), then pair again.'
 
+/**
+ * Shields Up matters while devices have to connect in: not once this computer is on a relay,
+ * which it reaches by connecting out.
+ */
+export function showShieldsUpWarning(
+  state: Pick<AccessState, 'shieldsUp' | 'relayStatus'>
+): boolean {
+  return state.shieldsUp === true && state.relayStatus !== 'connected'
+}
+
 /** A device is paired but no workspace is shared, so it has nothing to open. */
 export function needsSharedWorkspace(
   state: Pick<AccessState, 'devices' | 'workspaceShared'>
@@ -93,4 +103,33 @@ export function listenerStatus(state: AccessState): string {
   }
   if (!state.bindAddress) return 'Pick a network interface to listen on.'
   return 'Not listening. No port is open.'
+}
+
+/** The line under "Connect through a relay": whether this computer is registered on it, or why not. */
+export function relayStatusLine(state: AccessState): { text: string; problem: boolean } {
+  const { relay, relayStatus, relayError } = state
+  if (!relay.enabled)
+    return { text: 'Off. Devices connect in directly, if at all.', problem: false }
+  const where = `${relay.address}:${relay.port}`
+  switch (relayStatus) {
+    case 'connected':
+      return { text: `Connected to the relay at ${where}.`, problem: false }
+    case 'connecting':
+      return { text: `Connecting to the relay at ${where}…`, problem: false }
+    case 'notAllowed':
+      return { text: relayError ?? 'Not allowed on this relay.', problem: true }
+    case 'unreachable':
+      return {
+        text: ['Relay unreachable.', relayError, 'Trying again.'].filter(Boolean).join(' '),
+        problem: true
+      }
+    case 'replaced':
+    case 'off':
+      return { text: relayError ?? 'Not connected.', problem: true }
+  }
+}
+
+/** A device can pair while the listener is up, or this computer is registered on the relay. */
+export function canPair(state: Pick<AccessState, 'listening' | 'relayStatus'>): boolean {
+  return state.listening || state.relayStatus === 'connected'
 }

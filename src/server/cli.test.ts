@@ -57,11 +57,26 @@ describe('parseServerArgs', () => {
     })
   })
 
+  it('takes a relay, alone or beside --listen, with the relay port by default', () => {
+    expect(parseServerArgs(['serve', '--relay', '100.64.0.9', '--pair'])).toEqual({
+      command: 'serve',
+      relay: { address: '100.64.0.9', port: 7879 },
+      pair: true
+    })
+    expect(parseServerArgs(['serve', '--listen', '127.0.0.1', '--relay=100.64.0.9:9000'])).toEqual({
+      command: 'serve',
+      listen: { address: '127.0.0.1', port: 7878 },
+      relay: { address: '100.64.0.9', port: 9000 }
+    })
+    expect(parseServerArgs(['serve', '--relay']).command).toBe('invalid')
+    expect(parseServerArgs(['attach', '--relay', '127.0.0.1']).command).toBe('invalid')
+  })
+
   it('refuses --listen without an address, --pair without --listen, and attach with either', () => {
     expect(parseServerArgs(['serve', '--listen']).command).toBe('invalid')
     expect(parseServerArgs(['serve', '--pair'])).toEqual({
       command: 'invalid',
-      message: '--pair needs --listen'
+      message: '--pair needs --listen or --relay'
     })
     expect(parseServerArgs(['attach', '--listen', '127.0.0.1']).command).toBe('invalid')
   })
