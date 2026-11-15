@@ -598,7 +598,9 @@ export const remoteServerHelloSchema = z.object({
   pid: z.number().int().min(0),
   startedAt: short,
   storageDir: remotePathSchema,
-  platform: short
+  platform: short,
+  /** Absent from a host that predates it. */
+  name: short.optional()
 })
 
 export const remoteAutoStateSchema = z.object({

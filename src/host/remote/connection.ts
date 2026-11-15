@@ -49,6 +49,7 @@ export interface ServerHello {
   startedAt: string
   storageDir: string
   platform: string
+  name?: string
 }
 
 export interface ConnectionEvents {
