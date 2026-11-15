@@ -76,8 +76,10 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 
 - A peer on the private network can spend the single-use pairing secret with a bad `pair`
   message, forcing a rescan; anyone who sees the QR during its 2 minutes can pair.
-- A 100.64.0.0/10 address typed in by hand is not checked against its interface, so one on a
-  carrier-grade NAT network card would be listened on; devices would still need their key.
+- A 100.64.0.0/10 address typed in by hand on a network card (likely carrier-grade NAT) is
+  listened on, with a warning (`sharedNetworkWarning`, `AccessState.bindWarning`) in Settings and
+  in the log, `styr serve`'s included; it is not refused, because interface names are a guess.
+  Devices would still need their key.
 - Loopback is allowed (for an ssh tunnel), so a local tunnel agent (ngrok, cloudflared) pointed at
   the listener would expose it; devices would still need their key.
 - `styr serve` keeps the host's private key in `remote-access.json` in plaintext (mode 0600). The

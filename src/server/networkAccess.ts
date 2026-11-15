@@ -7,7 +7,7 @@ import {
   type AccessStore,
   type SecretBox
 } from '@host/remoteAccess/accessStore.js'
-import { allowedInterfaces } from '@host/remoteAccess/addresses.js'
+import { allowedInterfaces, sharedNetworkWarning } from '@host/remoteAccess/addresses.js'
 import { createNetworkPolicy, type GatePorts } from '@host/remoteAccess/gate.js'
 import type { KeepAwakePorts } from '@host/remoteAccess/keepAwake.js'
 import {
@@ -94,6 +94,7 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
         port
       ),
     interfaces: () => allowedInterfaces(),
+    addressWarning: (address) => sharedNetworkWarning(address),
     keepAwake: options.keepAwake,
     broadcast: options.broadcast,
     log: options.log,

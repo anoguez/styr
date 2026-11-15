@@ -169,6 +169,11 @@ export function RemoteAccessSection({
           ) : (
             <Hint>{listenerStatus(state)}</Hint>
           )}
+          {state.bindWarning ? (
+            <span role="alert" className="text-[12px] text-danger">
+              {state.bindWarning}
+            </span>
+          ) : null}
           {error ? (
             <span role="alert" className="text-[12px] text-danger">
               {error}

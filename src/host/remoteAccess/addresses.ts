@@ -126,6 +126,29 @@ export function allowedInterfaces(
   return choices.sort((a, b) => rank(a) - rank(b))
 }
 
+/**
+ * A warning when `address` is in 100.64.0.0/10 but sits on a network card rather than a tunnel: then
+ * it is most likely the ISP's carrier-grade NAT, shared with its other customers, who could reach
+ * the listener (they would still need a paired key). Undefined otherwise, and for an address this
+ * computer does not have. A warning, not a refusal: interface names are a guess.
+ */
+export function sharedNetworkWarning(
+  address: string,
+  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces()
+): string | undefined {
+  const trimmed = address.trim()
+  if (!isIPv4(trimmed) || addressKind(trimmed) !== 'tailscale') return undefined
+  for (const [name, entries] of Object.entries(interfaces)) {
+    if (!entries?.some((entry) => entry.address === trimmed)) continue
+    if (TUNNEL_INTERFACE.test(name)) return undefined
+    return (
+      `${trimmed} is on ${name}, not on Tailscale: it looks like your internet provider's shared ` +
+      "network, whose other customers could reach Styr. Pick this computer's Tailscale address."
+    )
+  }
+  return undefined
+}
+
 /** The address to listen on when none was picked: the Tailscale IPv4 one, never IPv6 or loopback. */
 export function defaultBindAddress(choices: readonly InterfaceChoice[]): string | undefined {
   return choices.find((choice) => choice.kind === 'tailscale' && isIPv4(choice.address))?.address

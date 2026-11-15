@@ -31,6 +31,7 @@ describe('access service', () => {
   let shields: boolean | undefined
   let shared: boolean
   let relays: FakeRelay[]
+  let warnings: Record<string, string>
 
   function setup(secrets?: () => SecretBox | undefined) {
     const store = createAccessStore({ path: join(dir, 'access.json'), now: () => clock, secrets })
@@ -48,6 +49,7 @@ describe('access service', () => {
         return listener
       },
       interfaces: () => interfaces,
+      addressWarning: (address) => warnings[address],
       keepAwake: {
         hold: () => {
           held.push(held.length + 1)
@@ -90,6 +92,7 @@ describe('access service', () => {
     shields = undefined
     shared = true
     relays = []
+    warnings = {}
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -112,6 +115,16 @@ describe('access service', () => {
     expect(broadcasts.every((state) => state.fingerprint === undefined)).toBe(true)
     expect(store.fingerprint()).toBeUndefined()
     expect(asked).toBe(0)
+  })
+
+  it('warns about an address on a shared network, and listens on it all the same', async () => {
+    warnings['100.70.3.4'] = 'shared network'
+    const { service } = setup()
+    const state = await service.configure({ enabled: true, bindAddress: '100.70.3.4', port: 7878 })
+    expect(state).toMatchObject({ listening: true, bindWarning: 'shared network' })
+    expect(log).toContain('Remote access: warning: shared network')
+    const tailscale = await service.configure({ bindAddress: '100.101.102.103' })
+    expect(tailscale.bindWarning).toBeUndefined()
   })
 
   it('makes the key once switched on, and shows its fingerprint', async () => {
