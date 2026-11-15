@@ -81,7 +81,9 @@ desktop main ──ssh -T host styr serve attach──▶ attach (stdio ↔ sock
 | server → client | notification | `server:tray`, the tray model                  | `[{ statuses, titles }]`                |
 | server → client | notification | `server:notify`, a notification for the client | `[{ title, body }]`                     |
 
-`ServerInfo` is `{ protocol, version, pid, startedAt, storageDir, platform }`. `version` is Styr's
+`ServerInfo` is `{ protocol, version, pid, startedAt, storageDir, platform, name? }`. `name` is
+the computer's host name up to its first dot (`computerName` in `src/server/hub.ts`), so a phone can
+tell two paired computers apart; it is optional, and absent from a host that predates it. `version` is Styr's
 version, set at build time from package.json. The client compares it with its own (the version
 lock, below). `protocol` (`PROTOCOL_VERSION` in `src/host/rpc/jsonRpc.ts`, shared by both sides) is
 bumped only when the wire format changes.

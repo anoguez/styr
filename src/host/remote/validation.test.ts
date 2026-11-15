@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { REMOTE_LIMITS, remoteBoundsProblem } from '@core/taskSchema.js'
+import { REMOTE_LIMITS, remoteBoundsProblem, remoteServerHelloSchema } from '@core/taskSchema.js'
 import { BOARD_BROADCASTS, SESSION_BROADCASTS, channelRoute } from './channels.js'
 import { remoteSettings, remoteTask } from './remoteFixture.js'
 import {
@@ -99,6 +99,29 @@ describe('the client’s schemas', () => {
 
   it('refuses an answer to a call it has no schema for', () => {
     expect(() => parseResponse('devbox', 'tasks:somethingNew', [])).toThrow(RemoteInvalidResponse)
+  })
+})
+
+describe('remoteServerHelloSchema', () => {
+  const hello = {
+    protocol: 2,
+    version: '1.0.0',
+    pid: 1,
+    startedAt: '2026-11-15T00:00:00.000Z',
+    storageDir: '/srv/Styr',
+    platform: 'linux x64'
+  }
+
+  it('accepts a host that predates the computer name', () => {
+    expect(remoteServerHelloSchema.safeParse(hello).success).toBe(true)
+  })
+
+  it('carries the name, and refuses one that is not a short string', () => {
+    const named = remoteServerHelloSchema.parse({ ...hello, name: 'Andersons-MacBook-Pro' })
+    expect(named.name).toBe('Andersons-MacBook-Pro')
+    expect(remoteServerHelloSchema.safeParse({ ...hello, name: 7 }).success).toBe(false)
+    const long = 'x'.repeat(REMOTE_LIMITS.short + 1)
+    expect(remoteServerHelloSchema.safeParse({ ...hello, name: long }).success).toBe(false)
   })
 })
 

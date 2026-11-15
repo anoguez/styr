@@ -8,7 +8,14 @@ import { listWorkspaces } from '@core/workspaces.js'
 import { renderUnicodeCompact } from 'uqr'
 import { nodePtySpawn } from '@host/terminals/nodePty.js'
 import type { AppPaths } from '@host/ports.js'
-import { PROTOCOL_VERSION, createHub, type ChannelTable, type Hub, type ServerInfo } from './hub.js'
+import {
+  PROTOCOL_VERSION,
+  computerName,
+  createHub,
+  type ChannelTable,
+  type Hub,
+  type ServerInfo
+} from './hub.js'
 import { createServerHost, type ServerHost } from './serverHost.js'
 import type { ListenSpec } from './cli.js'
 import { createNetworkAccess, forwardToHub } from './networkAccess.js'
@@ -50,7 +57,8 @@ export async function serve(options: ServeOptions): Promise<void> {
     pid: process.pid,
     startedAt,
     storageDir: loadSettings().storageDir,
-    platform: `${process.platform} ${process.arch}`
+    platform: `${process.platform} ${process.arch}`,
+    name: computerName()
   })
 
   // The last tray model, so a client that (re)connects can ask for it (`server:tray`).

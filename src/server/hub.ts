@@ -1,3 +1,4 @@
+import { hostname } from 'node:os'
 import { z } from 'zod'
 import { RPC_ERRORS, RpcError, RpcPeer } from '@host/rpc/jsonRpc.js'
 import type { ClientPolicy } from '@host/remoteAccess/gate.js'
@@ -17,6 +18,18 @@ export interface ServerInfo {
   startedAt: string
   storageDir: string
   platform: string
+  /** The computer's name for display (`computerName`); left out when the host has none. */
+  name?: string
+}
+
+/**
+ * The computer's name as a phone shows it: the host name up to its first dot (so
+ * `Andersons-MacBook-Pro.local` is `Andersons-MacBook-Pro`), trimmed and cut to 64 characters.
+ * Undefined when nothing is left.
+ */
+export function computerName(host: string = hostname()): string | undefined {
+  const name = host.split('.')[0]!.trim().slice(0, 64).trim()
+  return name || undefined
 }
 
 export { PROTOCOL_VERSION } from '@host/rpc/jsonRpc.js'

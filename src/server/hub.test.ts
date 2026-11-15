@@ -1,7 +1,8 @@
+import { hostname } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { RPC_ERRORS, RpcPeer } from '@host/rpc/jsonRpc.js'
-import { createHub, PROTOCOL_VERSION, type HubPorts, type ServerInfo } from './hub.js'
+import { computerName, createHub, PROTOCOL_VERSION, type HubPorts, type ServerInfo } from './hub.js'
 
 const INFO: ServerInfo = {
   protocol: PROTOCOL_VERSION,
@@ -267,5 +268,28 @@ describe('hub', () => {
     hub.broadcast('tasks:changed')
     expect(hub.clientCount()).toBe(0)
     expect([...a.pushed, ...b.pushed]).toEqual([])
+  })
+})
+
+describe('computerName', () => {
+  it('drops the DNS suffix after the first dot', () => {
+    expect(computerName('Andersons-MacBook-Pro.local')).toBe('Andersons-MacBook-Pro')
+    expect(computerName('build-01.corp.example.com')).toBe('build-01')
+    expect(computerName('desktop')).toBe('desktop')
+  })
+
+  it('trims, and leaves the name out when nothing is left', () => {
+    expect(computerName('  studio  .local')).toBe('studio')
+    expect(computerName('')).toBeUndefined()
+    expect(computerName('   ')).toBeUndefined()
+    expect(computerName('.local')).toBeUndefined()
+  })
+
+  it('cuts a long name to 64 characters', () => {
+    expect(computerName('a'.repeat(100) + '.local')).toBe('a'.repeat(64))
+  })
+
+  it('reads the host name by default', () => {
+    expect(computerName()).toBe(computerName(hostname()))
   })
 })

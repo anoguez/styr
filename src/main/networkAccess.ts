@@ -6,7 +6,7 @@ import { listWorkspaces } from '@core/workspaces.js'
 import type { AccessConfigPatch, AccessState, RelayConfig } from '@core/types/access.js'
 import type { SecretBox } from '@host/remoteAccess/accessStore.js'
 import { tailscaleShieldsUp } from '@host/remoteAccess/tailscale.js'
-import { createHub, PROTOCOL_VERSION } from '../server/hub.js'
+import { computerName, createHub, PROTOCOL_VERSION } from '../server/hub.js'
 import { createNetworkAccess, forwardToHub } from '../server/networkAccess.js'
 import { channelTable, onLocalTray } from './ipc.js'
 import { electronHost, onBroadcast } from './electronHost.js'
@@ -30,7 +30,8 @@ const hub = createHub({
     pid: process.pid,
     startedAt,
     storageDir: loadSettings().storageDir,
-    platform: `${process.platform} ${process.arch}`
+    platform: `${process.platform} ${process.arch}`,
+    name: computerName()
   }),
   tray: () => lastTray,
   // The experimental switches are the desktop's own; the policy refuses the call.
