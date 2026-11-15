@@ -101,17 +101,7 @@ export async function startNetworkListener(
     response.writeHead(426, { 'content-length': '0', connection: 'close' }).end()
   })
 
-  server.on('connection', (socket) => {
-    const source = sourceOf(socket)
-    if (!isPrivateAddress(source)) {
-      options.log(`Remote access: dropped a connection from the public address ${source || '?'}`)
-      socket.destroy()
-      return
-    }
-    sockets.add(socket)
-    socket.on('close', () => sockets.delete(socket))
-    socket.on('error', () => socket.destroy())
-  })
+  guardSockets(server, sockets, (message) => options.log(`Remote access: ${message}`))
 
   server.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
     const source = sourceOf(socket)
@@ -331,6 +321,45 @@ export async function startNetworkListener(
     }
   }
   return listener
+}
+
+/** Open TCP sockets one address may hold, upgraded or not: above every per-address cap. */
+export const MAX_SOCKETS_PER_ADDRESS = 2 * MAX_PER_ADDRESS
+const MAX_SOCKETS_PER_LOOPBACK = 2 * MAX_PER_LOOPBACK
+
+/**
+ * What every socket goes through before HTTP reads a byte (the listener's and the relay's): a
+ * public source is dropped, and so is one address's socket past `MAX_SOCKETS_PER_ADDRESS`, since
+ * the per-address caps count only upgraded connections and an idle one would otherwise hold a
+ * file descriptor until Node's header timeout. That timeout is the handshake's here.
+ */
+export function guardSockets(server: Server, sockets: Set<Socket>, log: (message: string) => void) {
+  server.headersTimeout = HANDSHAKE_TIMEOUT_MS
+  server.requestTimeout = HANDSHAKE_TIMEOUT_MS
+  const perAddress = new Map<string, number>()
+  server.on('connection', (socket: Socket) => {
+    const source = sourceOf(socket)
+    if (!isPrivateAddress(source)) {
+      log(`dropped a connection from the public address ${source || '?'}`)
+      socket.destroy()
+      return
+    }
+    const open = perAddress.get(source) ?? 0
+    if (open >= (isLoopback(source) ? MAX_SOCKETS_PER_LOOPBACK : MAX_SOCKETS_PER_ADDRESS)) {
+      log(`dropped ${source} (too many open sockets)`)
+      socket.destroy()
+      return
+    }
+    perAddress.set(source, open + 1)
+    sockets.add(socket)
+    socket.once('close', () => {
+      sockets.delete(socket)
+      const left = (perAddress.get(source) ?? 1) - 1
+      if (left > 0) perAddress.set(source, left)
+      else perAddress.delete(source)
+    })
+    socket.on('error', () => socket.destroy())
+  })
 }
 
 /** `ws` takes the frame limit at construction; past the opening step a peer's frames may grow. */

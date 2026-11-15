@@ -26,12 +26,17 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 - **Tailscale (and loopback) only, enforced in code** (`host/remoteAccess/addresses.ts`). The listener
   binds only to loopback or Tailscale addresses (`100.64.0.0/10`,
   `fd7a:115c:a1e0::/48`; the IPv4 range also covers carrier-grade NAT); `0.0.0.0`, `::`, a hostname, a LAN (RFC 1918 / link-local) or public address and "nothing picked" are
-  refused with a message. Settings lists the Tailscale IPv4 address first, and switching access on
+  refused with a message. 100.64.0.0/10 is also carrier-grade NAT (an ISP's network shared with
+  its other customers), so Settings and the default offer such an address only on a tunnel
+  interface (`utun*`, `tailscale0`, `wg*`, "Tailscale"), never on a network card such as `en0`.
+  Settings lists the Tailscale IPv4 address first, and switching access on
   with nothing picked listens there (`defaultBindAddress`); it never picks IPv6 or loopback by
   itself, and never replaces an address the user chose (the QR carries it, and an IPv6 host fails
   on networks that reach the IPv4 one). Every accepted socket's source address is
   checked against the same ranges before a byte is read, so a port-forward cannot let the internet
-  in. Requests with `X-Forwarded-For`, `Forwarded`, `X-Real-IP` … are refused (no reverse
+  in, and one address may hold at most twice its connection cap in sockets, upgraded or not
+  (`guardSockets`, which also gives HTTP the handshake's 10 s to send its headers). Requests with
+  `X-Forwarded-For`, `Forwarded`, `X-Real-IP` … are refused (no reverse
   proxies), and so is any request with an `Origin` (a web page cannot be a device). Reachability is
   the user's network: Tailscale, or an ssh tunnel to loopback. No UPnP or hole punching; the only
   relay is one the owner runs on their own tailnet (`styr relay`, below).
@@ -71,6 +76,8 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 
 - A peer on the private network can spend the single-use pairing secret with a bad `pair`
   message, forcing a rescan; anyone who sees the QR during its 2 minutes can pair.
+- A 100.64.0.0/10 address typed in by hand is not checked against its interface, so one on a
+  carrier-grade NAT network card would be listened on; devices would still need their key.
 - Loopback is allowed (for an ssh tunnel), so a local tunnel agent (ngrok, cloudflared) pointed at
   the listener would expose it; devices would still need their key.
 - `styr serve` keeps the host's private key in `remote-access.json` in plaintext (mode 0600). The

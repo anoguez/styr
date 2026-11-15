@@ -102,6 +102,26 @@ describe('allowedInterfaces', () => {
     ).toEqual([{ name: 'utun3', address: '100.90.1.1', kind: 'tailscale' }])
   })
 
+  it('never offers a carrier-grade NAT address on a network card', () => {
+    const entry = (address: string) => ({
+      address,
+      family: 'IPv4' as const,
+      internal: false,
+      netmask: '',
+      mac: '',
+      cidr: null
+    })
+    expect(
+      allowedInterfaces({
+        en0: [entry('100.70.3.4')],
+        eth0: [entry('100.70.3.5')],
+        tailscale0: [entry('100.90.1.2')],
+        Tailscale: [entry('100.90.1.3')],
+        wg0: [entry('100.90.1.4')]
+      }).map((choice) => choice.name)
+    ).toEqual(['tailscale0', 'Tailscale', 'wg0'])
+  })
+
   it('lists Tailscale IPv4 first, whatever order the system gives', () => {
     const v4 = (address: string) => ({
       address,

@@ -101,6 +101,13 @@ function rank(choice: InterfaceChoice): number {
 }
 
 /**
+ * A VPN tunnel's interface: `utun*` (macOS), `tailscale0` / `tun*` / `wg*` (Linux), "Tailscale"
+ * (Windows). 100.64.0.0/10 is also carrier-grade NAT, so the same address on a network card
+ * (`en0`, `eth0`) is the ISP's network, shared with its other customers, and never offered.
+ */
+const TUNNEL_INTERFACE = /^(utun|tun|wg)\d*$|tailscale/i
+
+/**
  * The addresses this computer has that the listener may use, Tailscale IPv4 first. The QR carries
  * the address, and a phone reaches a Tailscale IPv4 address on every network it can reach the
  * IPv6 one on, so IPv6 is listed but never preferred.
@@ -112,6 +119,7 @@ export function allowedInterfaces(
   for (const [name, addresses] of Object.entries(interfaces)) {
     for (const entry of addresses ?? []) {
       const kind = addressKind(entry.address)
+      if (kind === 'tailscale' && isIPv4(entry.address) && !TUNNEL_INTERFACE.test(name)) continue
       if (kind) choices.push({ name, address: entry.address, kind })
     }
   }
