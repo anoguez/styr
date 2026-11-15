@@ -25,6 +25,11 @@ export interface AccessServicePorts {
   /** Opens the listener. Rejects with the reason it could not (`EADDRINUSE` …). */
   listen(address: string, port: number): Promise<RunningListener>
   interfaces(): AccessInterface[]
+  /**
+   * Why `address` looks like an internet provider's shared network rather than Tailscale
+   * (`sharedNetworkWarning`), or undefined. Absent: no warning.
+   */
+  addressWarning?(address: string): string | undefined
   keepAwake: KeepAwakePorts
   /** `access:changed`, to the Settings screen. */
   broadcast(state: AccessState): void
@@ -70,6 +75,7 @@ export function createAccessService(ports: AccessServicePorts) {
       ...(relay?.client.connectedDevices() ?? [])
     ])
     const relayError = relayProblem ?? relay?.client.error()
+    const bindWarning = config.bindAddress ? ports.addressWarning?.(config.bindAddress) : undefined
     return {
       ...config,
       listening: running !== undefined,
@@ -81,6 +87,7 @@ export function createAccessService(ports: AccessServicePorts) {
       ...(fingerprint !== undefined ? { fingerprint } : {}),
       ...(store.pairing() ? { pairingExpiresAt: store.pairing()!.expiresAt } : {}),
       ...(shieldsUp !== undefined ? { shieldsUp } : {}),
+      ...(bindWarning ? { bindWarning } : {}),
       workspaceShared: ports.workspaceShared?.() ?? true,
       relayStatus: relayStatus(config.relay),
       ...(relayError ? { relayError } : {})
@@ -158,6 +165,8 @@ export function createAccessService(ports: AccessServicePorts) {
       running = await ports.listen(config.bindAddress, config.port)
       error = undefined
       ports.log(`Remote access: listening on ${config.bindAddress}:${config.port}`)
+      const warning = ports.addressWarning?.(config.bindAddress)
+      if (warning) ports.log(`Remote access: warning: ${warning}`)
     } catch (failure) {
       return failed(describe(failure, config))
     }

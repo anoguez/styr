@@ -27,7 +27,7 @@ import {
   relayRegistrationData,
   type RelayToHost
 } from '@host/remoteAccess/relayProtocol.js'
-import { MAX_BUFFERED_BYTES, rawToString, setMaxPayload } from '../wsListener.js'
+import { MAX_BUFFERED_BYTES, guardSockets, rawToString, setMaxPayload } from '../wsListener.js'
 import type { AllowList } from './allowList.js'
 
 /** How far one session may fall behind toward its host before it alone is ended. */
@@ -128,17 +128,7 @@ export async function startRelay(
     response.writeHead(426, { 'content-length': '0', connection: 'close' }).end()
   })
 
-  server.on('connection', (socket) => {
-    const source = socket.remoteAddress ?? ''
-    if (!isPrivateAddress(source)) {
-      options.log(`Relay: dropped a connection from the public address ${source || '?'}`)
-      socket.destroy()
-      return
-    }
-    sockets.add(socket)
-    socket.on('close', () => sockets.delete(socket))
-    socket.on('error', () => socket.destroy())
-  })
+  guardSockets(server, sockets, (message) => options.log(`Relay: ${message}`))
 
   server.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
     const source = socket.remoteAddress ?? ''

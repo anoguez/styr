@@ -75,6 +75,11 @@ export interface AccessState extends AccessConfig {
    * Tailscale's CLI could not be asked.
    */
   shieldsUp?: boolean
+  /**
+   * The address listened on looks like an internet provider's shared network rather than
+   * Tailscale (`sharedNetworkWarning`). Shown, never enforced.
+   */
+  bindWarning?: string
   /** Some workspace has `remoteAccess` on, so a paired device has something to open. */
   workspaceShared: boolean
   /** The link to the relay, when `relay.enabled`. */

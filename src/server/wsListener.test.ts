@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from 'node:crypto'
-import { createConnection } from 'node:net'
+import { createConnection, type Socket } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
 import type { AccessStore } from '@host/remoteAccess/accessStore.js'
@@ -366,6 +366,28 @@ describe('network listener', () => {
       socket.on('error', () => resolve())
       setTimeout(() => socket.destroy(), 100)
     })
+    const credentials = await pairDevice()
+    const device = phone()
+    await device.opened()
+    await expect(device.authenticate(credentials)).resolves.toBe(true)
+  })
+
+  it('drops idle sockets past the per-address cap, and takes new ones once they close', async () => {
+    const open = (): Promise<{ socket: Socket; closed: Promise<void> }> =>
+      new Promise((resolve) => {
+        const socket = createConnection(listener.address.port, '127.0.0.1', () =>
+          resolve({ socket, closed })
+        )
+        const closed = new Promise<void>((done) => socket.once('close', () => done()))
+        socket.on('error', () => undefined)
+      })
+    // Loopback's cap is twice the listener's 32 connections.
+    const held = await Promise.all(Array.from({ length: 64 }, open))
+    const extra = await open()
+    await expect(extra.closed).resolves.toBeUndefined()
+    for (const { socket } of held) socket.destroy()
+    await Promise.all(held.map(({ closed }) => closed))
+    await tick()
     const credentials = await pairDevice()
     const device = phone()
     await device.opened()

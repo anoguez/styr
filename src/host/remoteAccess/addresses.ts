@@ -101,6 +101,13 @@ function rank(choice: InterfaceChoice): number {
 }
 
 /**
+ * A VPN tunnel's interface: `utun*` (macOS), `tailscale0` / `tun*` / `wg*` (Linux), "Tailscale"
+ * (Windows). 100.64.0.0/10 is also carrier-grade NAT, so the same address on a network card
+ * (`en0`, `eth0`) is the ISP's network, shared with its other customers, and never offered.
+ */
+const TUNNEL_INTERFACE = /^(utun|tun|wg)\d*$|tailscale/i
+
+/**
  * The addresses this computer has that the listener may use, Tailscale IPv4 first. The QR carries
  * the address, and a phone reaches a Tailscale IPv4 address on every network it can reach the
  * IPv6 one on, so IPv6 is listed but never preferred.
@@ -112,10 +119,34 @@ export function allowedInterfaces(
   for (const [name, addresses] of Object.entries(interfaces)) {
     for (const entry of addresses ?? []) {
       const kind = addressKind(entry.address)
+      if (kind === 'tailscale' && isIPv4(entry.address) && !TUNNEL_INTERFACE.test(name)) continue
       if (kind) choices.push({ name, address: entry.address, kind })
     }
   }
   return choices.sort((a, b) => rank(a) - rank(b))
+}
+
+/**
+ * A warning when `address` is in 100.64.0.0/10 but sits on a network card rather than a tunnel: then
+ * it is most likely the ISP's carrier-grade NAT, shared with its other customers, who could reach
+ * the listener (they would still need a paired key). Undefined otherwise, and for an address this
+ * computer does not have. A warning, not a refusal: interface names are a guess.
+ */
+export function sharedNetworkWarning(
+  address: string,
+  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces()
+): string | undefined {
+  const trimmed = address.trim()
+  if (!isIPv4(trimmed) || addressKind(trimmed) !== 'tailscale') return undefined
+  for (const [name, entries] of Object.entries(interfaces)) {
+    if (!entries?.some((entry) => entry.address === trimmed)) continue
+    if (TUNNEL_INTERFACE.test(name)) return undefined
+    return (
+      `${trimmed} is on ${name}, not on Tailscale: it looks like your internet provider's shared ` +
+      "network, whose other customers could reach Styr. Pick this computer's Tailscale address."
+    )
+  }
+  return undefined
 }
 
 /** The address to listen on when none was picked: the Tailscale IPv4 one, never IPv6 or loopback. */

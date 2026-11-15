@@ -6,7 +6,8 @@ import {
   defaultBindAddress,
   isPrivateAddress,
   portProblem,
-  proxyHeader
+  proxyHeader,
+  sharedNetworkWarning
 } from './addresses.js'
 
 describe('addressKind', () => {
@@ -102,6 +103,26 @@ describe('allowedInterfaces', () => {
     ).toEqual([{ name: 'utun3', address: '100.90.1.1', kind: 'tailscale' }])
   })
 
+  it('never offers a carrier-grade NAT address on a network card', () => {
+    const entry = (address: string) => ({
+      address,
+      family: 'IPv4' as const,
+      internal: false,
+      netmask: '',
+      mac: '',
+      cidr: null
+    })
+    expect(
+      allowedInterfaces({
+        en0: [entry('100.70.3.4')],
+        eth0: [entry('100.70.3.5')],
+        tailscale0: [entry('100.90.1.2')],
+        Tailscale: [entry('100.90.1.3')],
+        wg0: [entry('100.90.1.4')]
+      }).map((choice) => choice.name)
+    ).toEqual(['tailscale0', 'Tailscale', 'wg0'])
+  })
+
   it('lists Tailscale IPv4 first, whatever order the system gives', () => {
     const v4 = (address: string) => ({
       address,
@@ -150,5 +171,32 @@ describe('proxyHeader', () => {
     expect(proxyHeader({ 'x-forwarded-for': '1.2.3.4' })).toBe('x-forwarded-for')
     expect(proxyHeader({ forwarded: 'for=1.2.3.4' })).toBe('forwarded')
     expect(proxyHeader({ host: 'a' })).toBeUndefined()
+  })
+})
+
+describe('sharedNetworkWarning', () => {
+  const entry = (address: string) => ({
+    address,
+    family: 'IPv4' as const,
+    internal: false,
+    netmask: '',
+    mac: '',
+    cidr: null
+  })
+  const interfaces = {
+    en0: [entry('100.70.3.4')],
+    utun3: [entry('100.90.1.1')],
+    lo0: [entry('127.0.0.1')]
+  }
+
+  it('warns about a 100.64/10 address on a network card', () => {
+    expect(sharedNetworkWarning('100.70.3.4', interfaces)).toMatch(/on en0, not on Tailscale/)
+  })
+
+  it('says nothing for a tunnel, loopback, or an address this computer does not have', () => {
+    expect(sharedNetworkWarning('100.90.1.1', interfaces)).toBeUndefined()
+    expect(sharedNetworkWarning('127.0.0.1', interfaces)).toBeUndefined()
+    expect(sharedNetworkWarning('100.70.9.9', interfaces)).toBeUndefined()
+    expect(sharedNetworkWarning('', interfaces)).toBeUndefined()
   })
 })
