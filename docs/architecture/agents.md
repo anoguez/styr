@@ -262,6 +262,11 @@ task back to **Backlog** with `readiness: ready` and the fixes listed in an Acti
 `code-review` template says so). Backlog's lane is implement, so the fixes are dispatched. Users who
 copied the older template, which said `in_progress`, keep their text until they update it.
 
+**Every review finding is a fix.** The `code-review` template passes work only when the reviewer has
+nothing left to raise: a nit or an open question sends the task back like a bug does. A reviewer
+never approves with "non-blocking" follow-ups or files follow-up tasks for them, because nothing
+then makes sure they are done.
+
 **Rework resumes the implementer.** `reworkLaunch` in `sessionLifecycle.ts` runs on every launch: an
 implement-lane launch on a task whose current `agentSession`, or latest `Task.sessions` entry not yet
 `sentBack`, is a review run (`pendingReview`) continues the latest

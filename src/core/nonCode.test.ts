@@ -48,6 +48,12 @@ describe('shipped defaults', () => {
     }
   })
 
+  it('sends every review finding back instead of passing with follow-ups', () => {
+    const template = shippedSettings().promptTemplates.find((t) => t.id === 'code-review')!.template
+    expect(template).toContain('Every finding counts')
+    expect(template).toContain('do not create tasks for them')
+  })
+
   it('ships Research and Writing presets with the worktree off', () => {
     for (const id of ['research', 'writing']) {
       const preset = DEFAULT_TASK_PRESETS.find((p) => p.id === id)
