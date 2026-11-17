@@ -26,8 +26,10 @@ desktop main ──ssh -T host styr serve attach──▶ attach (stdio ↔ sock
   `ipc.ts` and is listed by name in `channels.test.ts`. When you add an IPC channel, add its line
   to the table, or keep it in `ipc.ts` and list it there, and give it a route in the client
   router (`src/host/remote/router.ts`: the active workspace's, a session's, or one the router
-  answers itself; the tables are `src/host/remote/channels.ts`). `channels.test.ts` fails for a
-  server channel with no route. Its answer (and any new broadcast the router acts on) also needs a
+  answers itself): one entry in `src/core/channelCatalog.ts`, which says its `route` and whether
+  it is a `write`, keeps a `snapshot`, has an `offline` default or answers with a new session
+  (`sessionResult`). `channels.test.ts` fails for a server channel with no route, and
+  `channelCatalog.test.ts` for an entry that contradicts itself (a write with an offline default). Its answer (and any new broadcast the router acts on) also needs a
   schema in `src/host/remote/validation.ts`; `validation.test.ts` fails without one (see Trust
   boundary).
 - **Arguments are checked with zod at the boundary.** Each entry in `channelTable.ts` has a
@@ -224,8 +226,11 @@ defaults to `~/.styr/server/current/bin/styr`, where setup and `install.sh` put 
   local broadcasts (`fromLocal`). Electron-free; its ports are the flag, the local workspaces,
   `connect`, `broadcast`, `notify`, `updateTray`, `openExternal`, `isLocalSession` and
   `saveGlobalSettings`. Its parts, each one concern:
-  - `channels.ts`: the routing tables, pure data: which channels follow the active workspace or a
-    session, which the router answers, which are writes, which reads keep a snapshot.
+  - `channels.ts`: the routing tables (`ACTIVE_CHANNELS`, `SESSION_CHANNELS`, `SESSION_SENDS`,
+    `SPECIAL_CHANNELS`, `WRITE_CHANNELS`, `SNAPSHOT_CHANNELS`, `OFFLINE_DEFAULTS`,
+    `SESSION_RESULT_CHANNELS`), each derived from the channel catalog (`core/channelCatalog.ts`,
+    one entry per channel, plain data), plus the two broadcast sets. Never hand-list a channel in
+    a table: give it a catalog entry.
   - `registry.ts`: `RemoteRegistry`, which workspaces are remote and each host's state
     (`HostEntry`): `target`, `isLive`, `stubFor` and `mapIn`, the server-id-to-stub mapping.
   - `forwarding.ts`: sending a board call to a server, the `Snapshots` kept for reads, and
@@ -295,7 +300,7 @@ server's (`server:tray`, re-tagged with the stubs' ids and names).
 
 A remote board is **live** when its host is connected and the server's active workspace is the
 stub's remote id. Only then are writes sent. Otherwise reads return the last answer the router
-kept for them (`SNAPSHOT_CHANNELS`), or an empty board, and writes are refused with a message
+kept for them (catalog `snapshot`), or an empty board (catalog `offline`), and writes are refused with a message
 saying why ("devbox is offline … Nothing was changed or queued"). The renderer shows the same:
 `boardAccess` (`renderer/lib/remoteStatus.ts`) makes the board read-only, disables New task,
 Dispatch, dragging and the task dialog's Save with the reason as tooltip, and terminal tabs on a
