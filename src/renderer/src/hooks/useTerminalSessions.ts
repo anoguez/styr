@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import type { RemoteState, TerminalSessionInfo } from '@core/types.js'
 import {
   findTaskSession,
   initialTerminalSessions,
+  stripSessions,
   terminalSessionsReducer
 } from '../lib/terminalSessions'
 
@@ -12,12 +13,33 @@ export function useTerminalSessions() {
 
   useEffect(() => {
     void window.api.terminal.list().then((sessions) => dispatch({ type: 'load', sessions }))
-    return window.api.terminal.onExit(({ id }) => dispatch({ type: 'remove', id }))
+    void window.api.terminal.detachedList().then((ids) => dispatch({ type: 'detached', ids }))
+    const offDetached = window.api.terminal.onDetachedChanged((ids) =>
+      dispatch({ type: 'detached', ids })
+    )
+    const offExit = window.api.terminal.onExit(({ id }) => dispatch({ type: 'remove', id }))
+    return () => {
+      offDetached()
+      offExit()
+    }
+  }, [])
+
+  // Read through a ref, so `select` and `adopt` stay stable for their many callers.
+  const detachedRef = useRef(state.detached)
+  detachedRef.current = state.detached
+  /** A tab in its own window is focused there; true when that is where it went. */
+  const focusDetached = useCallback((id: string): boolean => {
+    if (!detachedRef.current.includes(id)) return false
+    void window.api.terminal.detach(id)
+    return true
   }, [])
 
   const adopt = useCallback(
-    (session: TerminalSessionInfo) => dispatch({ type: 'adopt', session }),
-    []
+    (session: TerminalSessionInfo) => {
+      focusDetached(session.id)
+      dispatch({ type: 'adopt', session })
+    },
+    [focusDetached]
   )
   const merge = useCallback(
     (sessions: TerminalSessionInfo[]) => dispatch({ type: 'merge', sessions }),
@@ -28,7 +50,14 @@ export function useTerminalSessions() {
       dispatch({ type: 'restore', sessions, activeId }),
     []
   )
-  const select = useCallback((id: string) => dispatch({ type: 'select', id }), [])
+  const select = useCallback(
+    (id: string) => {
+      if (!focusDetached(id)) dispatch({ type: 'select', id })
+    },
+    [focusDetached]
+  )
+  /** Moves a tab into its own window; the strip follows `terminal:detachedChanged`. */
+  const detach = useCallback((id: string) => void window.api.terminal.detach(id), [])
   const reorder = useCallback((ids: string[]) => dispatch({ type: 'reorder', ids }), [])
   const toggleTerminal = useCallback(() => dispatch({ type: 'toggleTerminal' }), [])
   const close = useCallback(async (id: string) => {
@@ -47,14 +76,18 @@ export function useTerminalSessions() {
     (taskId: string, workspaceId: string): boolean => {
       const session = findTaskSession(sessions, taskId, workspaceId)
       if (!session) return false
-      dispatch({ type: 'select', id: session.id })
+      select(session.id)
       return true
     },
-    [sessions]
+    [sessions, select]
   )
+  const strip = useMemo(() => stripSessions(state), [state])
 
   return {
     ...state,
+    /** The tabs the strip shows, in order: `sessions` without the detached ones. */
+    strip,
+    detach,
     adopt,
     merge,
     restore,

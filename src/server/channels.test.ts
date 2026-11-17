@@ -50,6 +50,10 @@ const DESKTOP_ONLY = new Set([
   'terminal:pendingLayout',
   'terminal:restoreLayout',
   'terminal:dismissLayout',
+  // Detached terminals are windows of this machine (`src/main/detachedTerminals.ts`).
+  'terminal:detach',
+  'terminal:dock',
+  'terminal:detachedList',
   'settings:listApps',
   'settings:pickDirectory',
   'settings:pickApp',

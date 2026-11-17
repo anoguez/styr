@@ -346,7 +346,8 @@ export default function App(): ReactNode {
                       style={terminalExpanded ? undefined : { height: terminalHeight }}
                     >
                       <TerminalPanel
-                        sessions={sessions}
+                        sessions={terminals.strip}
+                        detachedCount={terminals.detached.length}
                         agents={agents}
                         shownAgents={shown}
                         activeId={activeSession}
@@ -374,6 +375,7 @@ export default function App(): ReactNode {
                           void window.api.tasks.get(id).then((task) => task && editTask(task))
                         }
                         onCloseSession={(id) => void closeSession(id)}
+                        onDetachSession={terminals.detach}
                         onOpenTask={editTask}
                       />
                     </div>

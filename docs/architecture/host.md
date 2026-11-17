@@ -199,4 +199,6 @@ nature and a headless host has no desktop to act on:
   the folders through
   `src/host/directories.ts`, so `styr serve` answers it with the remote machine's folders;
 - the title-bar overlay (`app:titleBarColors`) and `app:info`;
+- detached terminal windows (`terminal:detach`, `terminal:dock`, `terminal:detachedList`; the
+  window is `src/main/detachedTerminals.ts`, the rules are `src/host/detachedTerminals.ts`);
 - the updater (`updater.ts`), the tray (`tray.ts`) and the window and app lifecycle in `index.ts`.

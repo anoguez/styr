@@ -32,7 +32,8 @@ describe('the preload under the sandbox', () => {
   })
 
   it('is loaded sandboxed, as one CommonJS script', () => {
-    const main = read('../main/index.ts')
+    // Every window (the main one and each detached terminal) is built from these options.
+    const main = read('../main/windows.ts')
     expect(main).toMatch(/sandbox: true/)
     expect(main).toMatch(/preload\/index\.cjs/)
     expect(read('../../electron.vite.config.ts')).toMatch(

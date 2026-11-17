@@ -70,6 +70,12 @@ events only gather it. An acknowledgement for a replaced engine is ignored.
 A view's engine is chosen once, at mount. Toggling the setting affects new terminals only, since
 remounting would cost the running one its scrollback.
 
+A detached or docked terminal (`ui.md`, Detached terminals) is a new view in another window, and
+picks its engine the same way. The old view's `terminal:nativeDetach` carries its `attachId`, so
+when it arrives after the new window has attached it ends nothing; a view unmounted mid-attach
+detaches the attachment its reply names. Both engines behave the same here, so there is no
+capability for it.
+
 ## NativeTerminalView file map
 
 `components/NativeTerminalView.tsx` only composes: props, the host `div` and which of

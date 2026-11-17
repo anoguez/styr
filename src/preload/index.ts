@@ -376,6 +376,14 @@ const api = {
     pendingLayout: (): Promise<TabsOffer | null> => ipcRenderer.invoke('terminal:pendingLayout'),
     restoreLayout: (): Promise<TabsRestoreResult> => ipcRenderer.invoke('terminal:restoreLayout'),
     dismissLayout: (): Promise<void> => ipcRenderer.invoke('terminal:dismissLayout'),
+    /** Shows the session in its own window, or focuses the window it already has. */
+    detach: (id: string): Promise<void> => ipcRenderer.invoke('terminal:detach', id),
+    /** Closes the session's own window; its tab comes back in the main window. */
+    dock: (id: string): Promise<void> => ipcRenderer.invoke('terminal:dock', id),
+    /** The sessions shown in their own window. */
+    detachedList: (): Promise<string[]> => ipcRenderer.invoke('terminal:detachedList'),
+    onDetachedChanged: (handler: (ids: string[]) => void): (() => void) =>
+      subscribe('terminal:detachedChanged', handler as (...args: never[]) => void),
     onData: (handler: (payload: { id: string } & TerminalOutput) => void): (() => void) =>
       subscribe('terminal:data', handler as (...args: never[]) => void),
     onExit: (handler: (payload: { id: string; exitCode: number }) => void): (() => void) =>
@@ -412,7 +420,9 @@ const api = {
       /** Absolute lines [from, to) as styled rows, for copying a selection past the screen. */
       styledLines: (id: string, from: number, to: number): Promise<EngineFrameLine[]> =>
         ipcRenderer.invoke('terminal:nativeStyledLines', id, from, to),
-      detach: (id: string): void => ipcRenderer.send('terminal:nativeDetach', id),
+      /** `attachId` names the attachment ended, so a late detach never ends the next window's. */
+      detach: (id: string, attachId?: number): void =>
+        ipcRenderer.send('terminal:nativeDetach', id, attachId),
       clearBlocks: (id: string): void => ipcRenderer.send('terminal:nativeClearBlocks', id),
       /** The view took in a frame or block event; the host holds the next one until it does. */
       received: (id: string, attachId: number): void =>

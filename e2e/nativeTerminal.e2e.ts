@@ -51,3 +51,57 @@ test('a Styr Terminal tab runs a command in the sandboxed window', async () => {
   await expect.poll(sessions).toEqual(before)
   styr.expectNoErrors()
 })
+
+test('a Styr Terminal tab detaches into its own window and docks back', async () => {
+  const { app, page, errors } = styr
+  const sessions = (): Promise<string[]> =>
+    page.evaluate(async () => (await window.api.terminal.list()).map((session) => session.id))
+  const before = await sessions()
+  await page.getByRole('button', { name: '+ Shell' }).click()
+  await expect.poll(async () => (await sessions()).length).toBe(before.length + 1)
+  const id = (await sessions()).find((session) => !before.includes(session))!
+  await expect
+    .poll(() =>
+      page.evaluate(async (id) => (await window.api.terminal.runtimeState(id))?.promptReady, id)
+    )
+    .toBe(true)
+  const terminal = page.locator('.styr-native-terminal').last()
+  await terminal.click()
+  await page.keyboard.type('echo native-before\n')
+  await expect(terminal.getByText(/^native-before\s*$/)).toHaveCount(1)
+
+  const opened = app.waitForEvent('window')
+  await page
+    .getByRole('button', { name: /^Close / })
+    .last()
+    .locator('..')
+    .click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /^Detach to window/ }).click()
+  const detached = await opened
+  detached.on('console', (message) => {
+    if (message.type() === 'error') errors.push(`detached console.error: ${message.text()}`)
+  })
+  detached.on('pageerror', (error) => errors.push(`detached pageerror: ${error.message}`))
+  // The new window's engine attaches after the main window's let go, and draws the scrollback.
+  const away = detached.locator('.styr-native-terminal')
+  await expect(away.getByText(/^native-before\s*$/)).toHaveCount(1)
+  await away.click()
+  await detached.keyboard.type('echo native-detached\n')
+  await expect(away.getByText(/^native-detached\s*$/)).toHaveCount(1)
+
+  const closed = detached.waitForEvent('close')
+  await detached.getByRole('button', { name: 'Dock to main window' }).click()
+  await closed
+  await expect(
+    page
+      .locator('.styr-native-terminal')
+      .last()
+      .getByText(/^native-detached\s*$/)
+  ).toHaveCount(1)
+  await page
+    .getByRole('button', { name: /^Close / })
+    .last()
+    .click()
+  await expect.poll(sessions).toEqual(before)
+  styr.expectNoErrors()
+})
