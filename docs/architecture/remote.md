@@ -407,9 +407,12 @@ sees it; the one-off setup session (`session.ts`) does the same, and the hello i
 `connection.ts`. Notifications pass `NotificationGuard` (`NOTIFICATION_SCHEMAS`) before
 `onNotification`.
 
-- **The schemas** are the `remote*` ones at the end of `core/taskSchema.ts`, bounded copies of the
-  shapes in `types/`, next to the schemas the server checks with. The unbounded ones that read local
-  task files are untouched: local workspaces behave as before. Unknown keys are dropped.
+- **The schemas** are in `core/remoteSchemas.ts`, bounded copies of the shapes in `types/`, apart
+  from the unbounded ones in `core/taskSchema.ts` that read local task files and check calls on the
+  server: local workspaces behave as before. Unknown keys are dropped, so `SchemaChecks` at the end
+  of the file ties each schema to its type, and a field added to the type fails the build until the
+  schema has it too. A difference on purpose (`host` on a terminal session, which the client
+  stamps) is an `Omit` with its reason. A new remote schema gets its line there.
 - **Bounds** (`REMOTE_LIMITS`): every answer is first walked by `remoteBoundsProblem` (depth 24,
   strings 1 MiB, 20,000 entries per list or object, no `__proto__`/`constructor`/`prototype`
   keys), then each field has its own cap: a task body 1 MiB, 10,000 activity bullets, 500

@@ -6,23 +6,20 @@ import { supportDir } from '@core/agentStore.js'
 import type { DiffResult, PatchResult } from '@core/diff.js'
 import { buildRows } from '@core/diffView.js'
 import { groupComments, placeComments, plural, reviewMessage } from '@core/review.js'
+import { reviewCommentsSchema, taskReviewSchema } from '@core/remoteSchemas.js'
 import { loadSettings } from '@core/settingsStore.js'
+import { TASK_ID_RE } from '@core/taskSchema.js'
 import {
   REVIEW_LIMITS,
-  TASK_ID_RE,
-  reviewCommentsSchema,
-  taskReviewSchema
-} from '@core/taskSchema.js'
-import type {
-  ReviewComment,
-  ReviewPreparation,
-  ReviewRoute,
-  ReviewSent,
-  ReviewTarget,
-  Task,
-  TaskPatch,
-  TaskReview,
-  TerminalSessionInfo
+  type ReviewComment,
+  type ReviewPreparation,
+  type ReviewRoute,
+  type ReviewSent,
+  type ReviewTarget,
+  type Task,
+  type TaskPatch,
+  type TaskReview,
+  type TerminalSessionInfo
 } from '@core/types.js'
 import type { HostPorts } from './ports.js'
 

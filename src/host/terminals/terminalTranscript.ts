@@ -1,4 +1,4 @@
-import { REMOTE_LIMITS } from '@core/taskSchema.js'
+import { REMOTE_LIMITS } from '@core/remoteSchemas.js'
 import type { TerminalMark, TerminalOutput, TerminalRuntimeState } from '@core/types.js'
 import { TerminalProtocolParser } from './terminalProtocol.js'
 import { TerminalRuntime, type TerminalRuntimeEvent } from './terminalRuntime.js'

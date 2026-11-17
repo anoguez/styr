@@ -1,6 +1,6 @@
 import { reconnectDelay } from '@core/remote.js'
 import { isHostKeyProblem } from '@core/remoteSetup.js'
-import { remoteServerHelloSchema } from '@core/taskSchema.js'
+import { remoteServerHelloSchema, type Assert, type Same } from '@core/remoteSchemas.js'
 import type { RemoteConnectionStatus, RemoteHostState } from '@core/types.js'
 import { PROTOCOL_VERSION, RPC_ERRORS, RpcError, RpcPeer } from '../rpc/jsonRpc.js'
 
@@ -51,6 +51,9 @@ export interface ServerHello {
   platform: string
   name?: string
 }
+
+/** Fails the build when `remoteServerHelloSchema` and `ServerHello` part (see `SchemaChecks`). */
+export type ServerHelloCheck = Assert<Same<typeof remoteServerHelloSchema, ServerHello>>
 
 export interface ConnectionEvents {
   /** The state changed (status, error, retry time or server version). */

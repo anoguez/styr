@@ -33,16 +33,16 @@ import {
   remoteWorkspacesActivitySchema,
   reviewPreparationSchema,
   reviewSentSchema,
-  settingsSchema,
   taskReviewSchema
-} from '@core/taskSchema.js'
+} from '@core/remoteSchemas.js'
+import { settingsSchema } from '@core/taskSchema.js'
 import { RemoteUnavailable } from './forwarding.js'
 import type { Connection } from './registry.js'
 
 /**
  * The client's side of the trust boundary (`docs/architecture/remote.md`, Trust boundary): every
  * answer and notification from a server is checked here, against the bounded schemas in
- * `core/taskSchema.ts`, before any part of the router, the main process or the renderer sees it.
+ * `core/remoteSchemas.ts`, before any part of the router, the main process or the renderer sees it.
  * A compromised host may send anything; what passes is the shape the app expects, within
  * `REMOTE_LIMITS`, with unknown keys dropped.
  *

@@ -1,6 +1,6 @@
 import type { AgentStatus } from '@core/agentState.js'
 import { notificationText, remoteEditorFor, remoteEditorUri } from '@core/remote.js'
-import { REMOTE_LIMITS } from '@core/taskSchema.js'
+import { REMOTE_LIMITS } from '@core/remoteSchemas.js'
 import type {
   BrokenSettingsFile,
   GlobalSettings,
