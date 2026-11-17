@@ -126,6 +126,10 @@ describe('relay', () => {
     expect(
       relayStatusLine({ ...on, relayStatus: 'notAllowed', relayError: 'Not allowed.' })
     ).toEqual({ text: 'Not allowed.', problem: true })
+    // Stopped, not retrying: no "Trying again."
+    expect(
+      relayStatusLine({ ...on, relayStatus: 'keychain', relayError: 'Styr stopped connecting.' })
+    ).toEqual({ text: 'Styr stopped connecting.', problem: true })
   })
 
   it('pairs through the listener or a connected relay', () => {

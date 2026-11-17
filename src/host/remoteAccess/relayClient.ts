@@ -19,8 +19,8 @@ import { createSecureServerHandshake, type SecureFrameChannel } from './secureSe
  * must not be able to downgrade it) and then joins the hub with the network policy, so the gate and
  * each workspace's `remoteAccess` apply as they do to a direct connection.
  *
- * The only timers are the reconnect backoff, the liveness ping while connected and each session's
- * handshake timeout, as on the listener.
+ * The only timers are the reconnect backoff, the registration deadline on each dial, the liveness
+ * ping while connected and each session's handshake timeout, as on the listener.
  */
 
 /** The socket to the relay, as the transport gives it (`ws` in `src/server/networkAccess.ts`). */
@@ -64,6 +64,7 @@ export interface RelayClientPorts {
   maxBufferedBytes: number
   /** Liveness pings, in ms; a relay that missed one is dropped and dialled again. */
   pingMs?: number
+  /** A device's handshake, and this host's registration on each dial, must finish within this. */
   handshakeMs?: number
   /** Reconnect delays: doubled from `firstMs` after each failure, up to `maxMs`. */
   backoff?: { firstMs: number; maxMs: number }
@@ -134,6 +135,8 @@ export function startRelayClient(
   let alive = true
   let ping: ReturnType<typeof setInterval> | undefined
   let retry: ReturnType<typeof setTimeout> | undefined
+  /** From dial to `registered`: a relay that takes the socket and never registers is dropped. */
+  let deadline: ReturnType<typeof setTimeout> | undefined
   let attempts = 0
   let stopped = false
   let status: RelayStatus = 'connecting'
@@ -268,6 +271,8 @@ export function startRelayClient(
     if (link !== socket) return
     socket = undefined
     registered = false
+    clearTimeout(deadline)
+    deadline = undefined
     if (ping) clearInterval(ping)
     ping = undefined
     for (const session of [...sessions.values()]) endSession(session)
@@ -297,8 +302,13 @@ export function startRelayClient(
             signature: identity.sign(relayRegistrationData(challenge.data.nonce))
           })
         } catch (failure) {
-          // The keychain would not give up the key: retrying will not help until it does.
-          setStatus('unreachable', failure instanceof Error ? failure.message : String(failure))
+          // The keychain would not give up the key. Dialling again would ask it again on every
+          // retry, so this stops and says so; switching the relay off and on tries once more.
+          const why = failure instanceof Error ? failure.message : String(failure)
+          setStatus(
+            'keychain',
+            `Styr stopped connecting to the relay: the keychain did not give up this computer's key (${why}). Switch the relay off and on again to retry.`
+          )
           return dropLink(link, 1000)
         }
         link.send(message)
@@ -311,6 +321,8 @@ export function startRelayClient(
     if (message.type === 'registered') {
       if (registered) return refuseRelay(link, 'registered this host twice')
       registered = true
+      clearTimeout(deadline)
+      deadline = undefined
       attempts = 0
       ports.log(`Remote access: connected to the relay at ${where}`)
       setStatus('connected')
@@ -420,6 +432,17 @@ export function startRelayClient(
       return
     }
     socket = link
+    const current = link
+    deadline = setTimeout(() => {
+      deadline = undefined
+      if (current !== socket || registered) return
+      const seconds = Math.round((ports.handshakeMs ?? HANDSHAKE_TIMEOUT_MS) / 1000)
+      ports.log(`Remote access: the relay at ${where} did not register this host; reconnecting`)
+      dialError = `The relay at ${where} did not register this computer within ${seconds} s.`
+      dropLink(current)
+      closed(1006)
+    }, ports.handshakeMs ?? HANDSHAKE_TIMEOUT_MS)
+    deadline.unref?.()
   }
 
   const unsubscribe = ports.store.onRevoked((deviceId) => {
