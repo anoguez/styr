@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AccessPairing, AccessState } from '@core/types.js'
 import {
   SHIELDS_UP_WARNING,
@@ -263,7 +263,8 @@ export function RemoteAccessSection({
 /**
  * "Connect through a relay": for a computer devices cannot connect in to (Tailscale Shields Up, a
  * firewall). This computer connects out to a `styr relay` on the owner's tailnet, which has to
- * allow its fingerprint first; the address and port apply when the field is left.
+ * allow its fingerprint first; the address and port apply when the field is left. A change made
+ * elsewhere (another window, the CLI) shows in the fields unless one of them is being edited.
  */
 function RelayCard({
   state,
@@ -275,9 +276,24 @@ function RelayCard({
   const [address, setAddress] = useState(state.relay.address)
   const [port, setPort] = useState(String(state.relay.port))
   const [copied, setCopied] = useState(false)
+  /** The address or port field has focus: what is typed there wins over a change from elsewhere. */
+  const editing = useRef(false)
   const status = relayStatusLine(state)
 
+  useEffect(() => {
+    if (editing.current) return
+    setAddress(state.relay.address)
+    setPort(String(state.relay.port))
+  }, [state.relay.address, state.relay.port])
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1600)
+    return () => clearTimeout(timer)
+  }, [copied])
+
   function saveSpot(): void {
+    editing.current = false
     const next = { address: address.trim(), port: Number(port) }
     if (next.address !== state.relay.address || next.port !== state.relay.port) {
       void configure({ relay: next })
@@ -306,6 +322,7 @@ function RelayCard({
               spellCheck={false}
               value={address}
               onChange={(event) => setAddress(event.target.value)}
+              onFocus={() => (editing.current = true)}
               onBlur={saveSpot}
             />
           </Field>
@@ -316,6 +333,7 @@ function RelayCard({
               inputMode="numeric"
               value={port}
               onChange={(event) => setPort(event.target.value.replace(/\D/g, '').slice(0, 5))}
+              onFocus={() => (editing.current = true)}
               onBlur={saveSpot}
             />
           </Field>

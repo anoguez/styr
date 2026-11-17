@@ -302,11 +302,15 @@ switch apart from "Allow other devices to connect": either, both or neither can 
 - **One outbound socket.** It dials `ws://<address>:<port>/host`, signs the relay's nonce with the
   host's identity key and waits for `registered`. A drop (or a relay that breaks the protocol:
   bad JSON, a session before `registered`) ends every session through it and dials again after
-  1 s, doubling to 60 s; `registered` resets the delay. A liveness ping every 20 s while connected
-  notices a dead link. 4403 (not on the allow list) shows "Not allowed on this relay" and keeps
-  trying, so `styr relay allow` takes effect without touching the host. 4409 means another process
-  with this key (the desktop and `styr serve` on one machine) registered: this one stops and says
-  so rather than take the link back and forth. No other timers.
+  1 s, doubling to 60 s; `registered` resets the delay. Each dial has 10 s (`HANDSHAKE_TIMEOUT_MS`,
+  as the relay gives a host to register) to reach `registered`, so a relay that takes the socket
+  and never challenges is dropped and backed off rather than left at "connecting". A liveness ping
+  every 20 s notices a dead link. 4403 (not on the allow list) shows "Not allowed on this relay"
+  and keeps trying, so `styr relay allow` takes effect without touching the host. 4409 means
+  another process with this key (the desktop and `styr serve` on one machine) registered: this one
+  stops and says so rather than take the link back and forth. A keychain that will not give up the
+  key to sign the registration also stops it (`keychain`), since each retry would ask again;
+  switching the relay off and on tries once more. No other timers.
 - **One session per `open`.** Each runs `createSecureServerHandshake` alone: protocol 2 or nothing
   (a protocol-1 hello is closed with 4401 and no plaintext). Then the hub with
   `createNetworkPolicy`, exactly as a direct socket: the gate and each workspace's `remoteAccess`

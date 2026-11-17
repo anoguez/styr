@@ -358,6 +358,63 @@ describe('relay client', () => {
     expect(links).toHaveLength(1)
   })
 
+  it('stops, and says why, when the keychain will not give up the key', () => {
+    start()
+    vi.spyOn(store, 'identity').mockImplementation(() => {
+      throw new Error('User canceled the operation.')
+    })
+    link().events.open()
+    link().deliver({ type: 'challenge', nonce: 'ab'.repeat(16) })
+    expect(link().closedWith).toBe(1000)
+    expect(client!.status()).toBe('keychain')
+    expect(client!.error()).toMatch(/keychain did not give up .*User canceled the operation\./)
+    expect(client!.error()).toMatch(/Switch the relay off and on again/)
+    link().hangUp(1000)
+    vi.advanceTimersByTime(120_000)
+    expect(links).toHaveLength(1)
+  })
+
+  it('drops a relay that takes the socket but never registers this host, and backs off', () => {
+    /** Time passing on a relay that answers every ping (as `ws` does) and nothing else. */
+    function idle(ms: number): void {
+      for (let left = ms; left > 0; left -= 500) {
+        vi.advanceTimersByTime(Math.min(500, left))
+        link().events.pong()
+      }
+    }
+    start()
+    link().events.open()
+    idle(4_999)
+    expect(link().terminated).toBe(false)
+    idle(1)
+    expect(link().terminated).toBe(true)
+    expect(client!.status()).toBe('unreachable')
+    expect(client!.error()).toBe(
+      'The relay at 100.64.0.9:7879 did not register this computer within 5 s.'
+    )
+    // Its late close changes nothing; the retry comes after the usual backoff.
+    link().hangUp(1006)
+    expect(links).toHaveLength(1)
+    vi.advanceTimersByTime(1_000)
+    expect(links).toHaveLength(2)
+
+    // A challenge answered but never `registered`: the same deadline, and a longer backoff.
+    link().events.open()
+    link().deliver({ type: 'challenge', nonce: 'ab'.repeat(16) })
+    idle(5_000)
+    expect(link().terminated).toBe(true)
+    vi.advanceTimersByTime(1_999)
+    expect(links).toHaveLength(2)
+    vi.advanceTimersByTime(1)
+    expect(links).toHaveLength(3)
+
+    // Registered in time: the deadline is gone, and only the pings remain.
+    link().register()
+    idle(10_000)
+    expect(link().terminated).toBe(false)
+    expect(client!.status()).toBe('connected')
+  })
+
   it('drops a relay that breaks the protocol, and one that stops answering pings', () => {
     start()
     link().events.open()

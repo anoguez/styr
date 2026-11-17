@@ -124,6 +124,7 @@ export function relayStatusLine(state: AccessState): { text: string; problem: bo
         problem: true
       }
     case 'replaced':
+    case 'keychain':
     case 'off':
       return { text: relayError ?? 'Not connected.', problem: true }
   }

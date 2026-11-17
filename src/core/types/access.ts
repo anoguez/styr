@@ -33,6 +33,8 @@ export type RelayStatus =
   | 'notAllowed'
   /** Another process with this computer's key registered on the relay; this one stopped. */
   | 'replaced'
+  /** The keychain would not give up this computer's key to sign the registration; this one stopped. */
+  | 'keychain'
 
 /** A change to the config: any of its keys, and any of the relay's. */
 export type AccessConfigPatch = Partial<Omit<AccessConfig, 'relay'>> & {
