@@ -1,4 +1,4 @@
-import { remoteServerHelloSchema } from '@core/taskSchema.js'
+import { remoteServerHelloSchema } from '@core/remoteSchemas.js'
 import { PROTOCOL_VERSION, RpcPeer } from '../rpc/jsonRpc.js'
 import { HELLO_TIMEOUT_MS, exitReason, incompatibleMessage } from './connection.js'
 import type { ServerHello, TransportChild } from './connection.js'
