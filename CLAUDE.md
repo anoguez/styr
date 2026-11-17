@@ -17,7 +17,7 @@ Electron + React kanban board. See README.md for what it does and how to run it.
   server build enforce it. The channels both hosts answer are one table, `src/host/channelTable.ts`
   (`ipc.ts` registers it, `styr serve` and the desktop's network listener serve it), so a new
   shared channel goes there, or in the desktop-only list in `src/server/channels.test.ts`, and
-  gets a route in the client router (`src/host/remote/channels.ts`). Every IPC handler is
+  gets a route in the client router: one entry in `src/core/channelCatalog.ts`. Every IPC handler is
   registered on `routedIpcMain`, so a remote workspace's calls reach its server (see
   `docs/architecture/remote.md`). Devices on the network reach the same table through the gate in
   `src/host/remoteAccess/gate.ts`; a new channel is open to them only while the active workspace
