@@ -230,10 +230,15 @@ export class NativeTerminalHost {
     this.scheduleFlush(id)
   }
 
-  /** Frees the engine; the panel closed, the session exited or the renderer fell back. */
-  detach(id: string): void {
+  /**
+   * Frees the engine; the panel closed, the session exited or the renderer fell back. With
+   * `attachId`, only that attachment: a view in one window can let go after a view in another (a
+   * terminal detached or docked) has attached, and must not end the newer one.
+   */
+  detach(id: string, attachId?: number): void {
     const entry = this.attached.get(id)
     if (!entry) return
+    if (attachId !== undefined && entry.attachId !== attachId) return
     this.attached.delete(id)
     entry.blockList?.dispose()
     safeDispose(entry.engine)

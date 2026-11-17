@@ -161,6 +161,8 @@ export interface CommandPort {
   activeSession: string | null
   selectSession: (id: string) => void
   closeSession: (id: string) => void
+  /** Moves a tab into its own window (`terminalDetach`; a detached window docks it instead). */
+  detachSession: (id: string) => void
   /** The active terminal owns what these act on; it answers the event. */
   terminal: (command: TerminalCommand) => void
 }
@@ -215,6 +217,8 @@ export function runShortcutCommand(command: ShortcutCommand, port: CommandPort):
       return port.newShell()
     case 'closeShell':
       return port.activeSession ? port.closeSession(port.activeSession) : undefined
+    case 'terminalDetach':
+      return port.activeSession ? port.detachSession(port.activeSession) : undefined
     case 'switchWorkspace':
       return dispatch({ type: 'set', toggle: 'switcher', open: true })
     case 'newWorkspace':

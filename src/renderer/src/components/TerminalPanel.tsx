@@ -32,6 +32,7 @@ import type {
 } from '@core/types.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
 import { Button } from './ui.js'
+import { ActionsMenu } from './TerminalMenu.js'
 import { TerminalSurface, type TerminalTaskRequest } from './TerminalSurface.js'
 import { useTerminalRuntimes } from '../lib/useTerminalRuntimes.js'
 import { sessionLabel, type SessionLabel } from '../lib/sessionLabel.js'
@@ -51,7 +52,8 @@ function TerminalTab({
   runtime,
   active,
   onSelect,
-  onClose
+  onClose,
+  onMenu
 }: {
   session: TerminalSessionInfo
   label: SessionLabel
@@ -60,6 +62,8 @@ function TerminalTab({
   active: boolean
   onSelect: (id: string) => void
   onClose: (id: string) => void
+  /** Right-click: the tab's menu, at the pointer. */
+  onMenu: (id: string, at: { x: number; y: number }) => void
 }): ReactNode {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: session.id
@@ -83,6 +87,10 @@ function TerminalTab({
         node.current = element
       }}
       style={{ transform: CSS.Translate.toString(transform), transition }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        onMenu(session.id, { x: event.clientX, y: event.clientY })
+      }}
       className={`group relative -mb-px flex shrink-0 cursor-grab items-center gap-2 rounded-t-lg border border-b-0 py-0 pl-3.5 pr-3 text-[12.5px] transition-colors active:cursor-grabbing ${
         active
           ? 'border-edge-strong bg-chrome font-medium text-ink shadow-[inset_0_2px_0_var(--color-accent-soft)]'
@@ -143,6 +151,7 @@ function TerminalTab({
 
 export function TerminalPanel({
   sessions,
+  detachedCount,
   agents,
   shownAgents,
   activeId,
@@ -160,6 +169,7 @@ export function TerminalPanel({
   onReorder,
   onNewSession,
   onCloseSession,
+  onDetachSession,
   onCreateTask,
   onLaunchTask,
   onOpenTaskById,
@@ -167,7 +177,10 @@ export function TerminalPanel({
   onAskFork,
   onOpenTask
 }: {
+  /** The tabs of the strip: detached ones are drawn in their own windows instead. */
   sessions: TerminalSessionInfo[]
+  /** How many tabs are in windows of their own, for the empty strip. */
+  detachedCount: number
   agents: Map<string, AgentStatus>
   /** `agents` as the views label them (`shownAgents`); `agents` gates the PR and review buttons. */
   shownAgents: Map<string, AgentStatus>
@@ -188,6 +201,8 @@ export function TerminalPanel({
   onReorder: (orderedIds: string[]) => void
   onNewSession: (cwd?: string) => void
   onCloseSession: (id: string) => void
+  /** Moves a tab into a window of its own. */
+  onDetachSession: (id: string) => void
   onCreateTask: (request: TerminalTaskRequest) => Promise<string>
   onLaunchTask: (taskId: string) => Promise<void>
   onOpenTaskById: (taskId: string) => void
@@ -238,6 +253,10 @@ export function TerminalPanel({
   const activityHint = shortcutHint(bindings, 'terminalActivity')
   const toggleActivity = (): void => setActivityOpen((open) => !open)
 
+  // The tab menu, opened by right-clicking a tab. Drawn outside the strip, which clips overflow.
+  const [tabMenu, setTabMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const closeTabMenu = useCallback(() => setTabMenu(null), [])
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
   function handleDragEnd(event: DragEndEvent): void {
@@ -283,6 +302,7 @@ export function TerminalPanel({
                   active={session.id === activeId}
                   onSelect={onSelect}
                   onClose={onCloseSession}
+                  onMenu={(id, at) => setTabMenu({ id, ...at })}
                 />
               ))}
             </SortableContext>
@@ -361,10 +381,39 @@ export function TerminalPanel({
         </div>
       </header>
 
+      {tabMenu ? (
+        <div className="fixed z-30" style={{ left: tabMenu.x, top: tabMenu.y }}>
+          <ActionsMenu
+            className="left-0 top-1"
+            onClose={closeTabMenu}
+            groups={[
+              [
+                {
+                  label: 'Detach to window',
+                  kbd: shortcutHint(bindings, 'terminalDetach'),
+                  run: () => onDetachSession(tabMenu.id)
+                }
+              ],
+              [
+                {
+                  label: 'Close tab',
+                  kbd: shortcutHint(bindings, 'closeShell'),
+                  run: () => onCloseSession(tabMenu.id)
+                }
+              ]
+            ]}
+          />
+        </div>
+      ) : null}
+
       <div className="relative min-h-0 flex-1 p-2">
         {sessions.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1.5">
-            <p className="text-[12.5px] text-dim">No terminal sessions</p>
+            <p className="text-[12.5px] text-dim">
+              {detachedCount > 0
+                ? `${detachedCount} terminal${detachedCount === 1 ? ' is' : 's are'} in ${detachedCount === 1 ? 'its own window' : 'their own windows'}`
+                : 'No terminal sessions'}
+            </p>
             <p className="text-[11.5px] text-faint">
               Start one with <span className="text-dim">+ Shell</span>, or launch Claude from a task
             </p>

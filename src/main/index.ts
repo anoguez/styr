@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import { app, BrowserWindow, Menu, shell } from 'electron'
 import { loadSettings, tasksDir } from '@core/settingsStore.js'
 import { listWorkspaces } from '@core/workspaces.js'
@@ -31,15 +30,15 @@ import {
   sessionTask
 } from './terminal/ptyManager.js'
 import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
-import { linuxIconPath } from './appIcon.js'
-import { guardNavigation, openHandler } from './windowSecurity.js'
+import { guardNavigation } from './windowSecurity.js'
+import { detachedTerminals } from './detachedTerminals.js'
+import { loadStyrWindow, mainWindow, setMainWindow, styrWindowOptions } from './windows.js'
 import { syncAppImageMcp } from './mcpEntry.js'
 import { onBroadcast } from './electronHost.js'
 import { createTray, destroyTray, setTrayAutoRun, watchWindow } from './tray.js'
 import { initUpdater } from './updater.js'
 import { registerAccessHandlers, startNetworkAccess, stopNetworkAccess } from './networkAccess.js'
 import { forgetContext, initUsage } from './usage.js'
-import { watchFullscreen } from './windowFullscreen.js'
 
 /**
  * Electron's default menu binds ⌘W to Close Window, and a menu accelerator is handled before the
@@ -139,8 +138,7 @@ function followBroadcastsInTray(): void {
 }
 
 function showWindow(): void {
-  const [existing] = BrowserWindow.getAllWindows()
-  const window = existing ?? createWindow()
+  const window = mainWindow() ?? createWindow()
   if (window.isMinimized()) window.restore()
   window.show()
   window.focus()
@@ -148,44 +146,15 @@ function showWindow(): void {
 }
 
 function createWindow(): BrowserWindow {
-  const window = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1000,
-    minHeight: 640,
-    show: false,
-    ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 15 } }
-      : {
-          // Native minimise/maximise/close drawn over the renderer's 44px header; the renderer
-          // recolours them to the theme through `app:titleBarColors`.
-          titleBarStyle: 'hidden',
-          titleBarOverlay: { color: '#0f1c27', symbolColor: '#97a7b4', height: 44 },
-          // Windows takes the icon from the .exe; Linux has to be given one.
-          ...(process.platform === 'linux' ? { icon: linuxIconPath() } : {})
-        }),
-    backgroundColor: '#0b0d12',
-    webPreferences: {
-      // A sandboxed preload is one CommonJS script (`electron.vite.config.ts`).
-      preload: join(__dirname, '../preload/index.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      // The renderer shows what remote hosts wrote: whatever got into it stays in Chromium's
-      // sandbox, with only `window.api` (`docs/architecture/remote.md`, Trust boundary).
-      sandbox: true
-    }
-  })
-
-  window.on('ready-to-show', () => window.show())
+  const window = new BrowserWindow(
+    styrWindowOptions({ width: 1440, height: 900, minWidth: 1000, minHeight: 640 })
+  )
+  setMainWindow(window)
   watchWindow(window)
-  watchFullscreen(window)
-  window.webContents.setWindowOpenHandler(openHandler((url) => void shell.openExternal(url)))
-
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    void window.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  // Detached terminals dock back when the board's window closes, so no tab is left without it and
+  // a quit saves every tab as an ordinary one.
+  window.on('close', () => detachedTerminals.dockAll())
+  loadStyrWindow(window)
   return window
 }
 
@@ -272,8 +241,9 @@ app.whenReady().then(() => {
   // You merge a PR in the browser and come back: that is when to look for it. Throttled per repo.
   app.on('browser-window-focus', () => checkMergedOnFocus())
 
+  // The dock icon brings the board back, even while a detached terminal is the only window open.
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (!mainWindow()) createWindow()
   })
 })
 

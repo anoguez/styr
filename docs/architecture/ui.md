@@ -149,6 +149,44 @@ folder or task gone, no saved chat, a disabled provider, a missing CLI or repo) 
 listed in the banner; the others still restore. An unparseable file or another version is ignored
 and overwritten by the next save.
 
+### Detached terminals
+
+A tab can be popped out into a window of its own (a second monitor for an agent or a dev server):
+the tab's right-click menu (**Detach to window**), the `terminalDetach` shortcut (⇧⌘D, terminal
+scope; it docks in a detached window) or its palette entry. One tab per window. Detaching moves
+only where the session is drawn: the PTY stays in `ptyManager`, and the session, its agent state
+and its task link are unchanged.
+
+- **Main process.** `src/host/detachedTerminals.ts` holds the rules (which session has a window,
+  where a new one opens) behind a window port; `src/main/detachedTerminals.ts` implements it with a
+  `BrowserWindow` built from the same `styrWindowOptions` as the main window (`windows.ts`: opaque,
+  hidden title bar, sandboxed preload) and loads the renderer at `#detached=<terminal id>`. Keyed
+  by terminal id, which is unique across workspaces and hosts (task ids are not). Detaching a
+  session that already has a window focuses it. Desktop-only channels: `terminal:detach`,
+  `terminal:dock`, `terminal:detachedList`, and the `terminal:detachedChanged` broadcast.
+- **Main window.** `useTerminalSessions` keeps detached tabs in `sessions` (so docking puts them
+  back in place, and `terminal:setLayout` saves them) and leaves them out of `strip`, which the tab
+  strip, `terminalTabN` and `closeShell` use. Their `TerminalView` is unmounted there. `select` and
+  `activateForTask` focus a detached tab's window instead, so the sidebar, the palette's Terminals
+  group and the tray (`tasks:activate`) reach it. A docked tab comes back focused.
+- **The window.** `main.tsx` renders `DetachedTerminal` for the hash: a 44px header (drag region,
+  traffic-light inset on macOS, overlay inset elsewhere; the Dock button is `no-drag`) and one
+  `TerminalSurface` keyed by session id. It rebuilds from `terminal:backlog` and continues with live
+  chunks like any first mount, so scrollback survives as far as the backlog holds it. Theme and
+  bindings arrive through `settings:changed`. Board actions (create task, Ask agent, review) stay in
+  the main window; the terminal's own keys and menus work.
+- **Output.** No new routing: terminal events already reach every window and each view filters by
+  session id. Only the window showing a session writes to it and sizes its PTY.
+- **Closing.** Closing the window docks the tab and never kills the session. Close (⌘W there) kills
+  the session and closes the window. A session that exits on its own leaves the window showing the
+  exited state until it is closed. Closing the main window docks every detached one first, so a
+  quit saves them as ordinary tabs; they come back docked through the restore flow, never as
+  windows. The last window's position and size are kept in `~/.styr/detached-terminal.json`
+  (machine-local) and placed back on a connected display (`placeDetachedWindow`).
+- **One main window.** Detached windows are windows too, so nothing may take "the window" from
+  `BrowserWindow.getAllWindows()`: `mainWindow()` (`windows.ts`) is what `showWindow`, `activate`,
+  the tray and the updater's dialog use.
+
 ### Task activity panel
 
 A task session's terminal can show its task's activity log (`TerminalActivity.tsx`) floating over

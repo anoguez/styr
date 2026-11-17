@@ -29,11 +29,15 @@ export function useCommands({
   /** The Changes viewer is modal: its own keys must not reach the board. */
   changesOpen: boolean
   terminals: {
+    /** Every tab, detached ones included: the palette lists them all. */
     sessions: TerminalSessionInfo[]
+    /** The tabs in the strip, which tab N counts. */
+    strip: TerminalSessionInfo[]
     activeSession: string | null
     toggleTerminal: () => void
     select: (id: string) => void
     close: (id: string) => Promise<void>
+    detach: (id: string) => void
   }
   newShell: () => Promise<void>
   autoRun: { on: boolean; setOn: (on: boolean) => void }
@@ -41,7 +45,7 @@ export function useCommands({
   palette: Omit<PaletteSource, 'sessions' | 'autoRunOn'>
   actions: Pick<PaletteActions, 'switchWorkspace' | 'archiveTask' | 'launchAgent' | 'activateTask'>
 }): { runCommand: (command: ShortcutCommand) => void; entries: CommandEntry[] } {
-  const { sessions, activeSession, toggleTerminal, select, close } = terminals
+  const { sessions, strip, activeSession, toggleTerminal, select, close, detach } = terminals
   const { on: autoRunOn, setOn: setAutoOn } = autoRun
 
   const { experimental } = palette
@@ -55,10 +59,11 @@ export function useCommands({
         autoRunOn,
         startAutoRun: () => setAutoOn(true),
         newShell: () => void newShell(),
-        sessions,
+        sessions: strip,
         activeSession,
         selectSession: select,
         closeSession: (id) => void close(id),
+        detachSession: detach,
         terminal: dispatchTerminalCommand
       }),
     [
@@ -68,10 +73,11 @@ export function useCommands({
       autoRunOn,
       setAutoOn,
       newShell,
-      sessions,
+      strip,
       activeSession,
       select,
-      close
+      close,
+      detach
     ]
   )
 
