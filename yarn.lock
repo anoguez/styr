@@ -1476,10 +1476,10 @@ baseline-browser-mapping@^2.11.26:
   resolved "https://registry.yarnpkg.com/baseline-browser-mapping/-/baseline-browser-mapping-2.11.26.tgz#01bf6774efb3fbb9de20afc6b923ab85c7d230a6"
   integrity sha512-GLQdD3y6UF8iVuMJl5fHgE4jdn/ua7n+toKfLgNlg3BqQtOZjpy68T8Tup8/wGWZCDlm7KMg7tPb4MPn7oN0TQ==
 
-better-sqlite3@^13.0.3:
-  version "13.0.3"
-  resolved "https://registry.yarnpkg.com/better-sqlite3/-/better-sqlite3-13.0.3.tgz#b6ea0dc7fff7e28d04d9093e81051d38f7beabe2"
-  integrity sha512-RbOBxmLBG8uvFUc15X9+9SFemKcQ0WBuISBVkpuiaUB2qblC8UWlHEjdWVoZ8AdhSwmoEgsiXKfopX0CQxaACQ==
+better-sqlite3@^13.1.1:
+  version "13.1.1"
+  resolved "https://registry.yarnpkg.com/better-sqlite3/-/better-sqlite3-13.1.1.tgz#12aad5404a17f51a1d88bdfd95b0d36e350d9b28"
+  integrity sha512-JjyLCATp+VLxZVFyWkicyzKYwpEFLCrV4MmshW97xv3JXdhw5jBDcsbEWRGm2L/96E+k7rtjON8q9nml05h3Pw==
   dependencies:
     node-addon-api "^8.0.0"
 
