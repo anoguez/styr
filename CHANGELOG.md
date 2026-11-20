@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.43.0](https://github.com/anoguez/styr/compare/v0.42.1...v0.43.0) (2026-11-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **remote-access:** relay client, styr serve --relay, and protocol 2 only ([#264](https://github.com/anoguez/styr/issues/264))
+
+### Features
+
+* **mcp:** start_task starts a task exactly as the card's Start does ([#282](https://github.com/anoguez/styr/issues/282)) ([c58cf78](https://github.com/anoguez/styr/commit/c58cf78c2961fc682aebcd7239b79edadecd89f7))
+* **remote-access:** relay client, styr serve --relay, and protocol 2 only ([#264](https://github.com/anoguez/styr/issues/264)) ([125acc6](https://github.com/anoguez/styr/commit/125acc6943cc993027c8224098788b52def37604))
+* **remote-access:** report the computer's name in server:info ([#273](https://github.com/anoguez/styr/issues/273)) ([5c93f9f](https://github.com/anoguez/styr/commit/5c93f9fd7cfaa51ef062aa7f52a949d4b9be7b74))
+
+
+### Bug Fixes
+
+* **prompts:** a review passes only with no findings, never with follow-ups ([#271](https://github.com/anoguez/styr/issues/271)) ([cd4dce9](https://github.com/anoguez/styr/commit/cd4dce9c32958d2f7c5016d78df062c0820a97fc))
+* **remote-access:** never offer a carrier-grade NAT address, and cap idle sockets per address ([#272](https://github.com/anoguez/styr/issues/272)) ([594304b](https://github.com/anoguez/styr/commit/594304b347cc48107e36902e33f511e09f894510))
+
 ## [0.42.1](https://github.com/anoguez/styr/compare/v0.42.0...v0.42.1) (2026-11-11)
 
 
