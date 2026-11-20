@@ -79,6 +79,7 @@ const BROADCASTS: Record<string, string> = {
   'sources:state': 'SourceSyncState[]',
   'orchestrate:autoState': 'AutoDispatchState',
   'orchestrate:autoStarted': 'the session Auto-run started',
+  'terminal:launched': 'the session an MCP start_task started',
   'usage:claude': 'ProviderUsage',
   'usage:context': 'ContextUsage',
   'agent:conversation': 'AgentConversation',

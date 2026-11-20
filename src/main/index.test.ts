@@ -57,6 +57,7 @@ vi.mock('./ipc.js', () => ({
   markAgentExited: record('markAgentExited'),
   notifyAgentsChanged: record('notifyAgentsChanged'),
   notifyTasksChanged: record('notifyTasksChanged'),
+  processLaunchRequests: record('processLaunchRequests'),
   freezeTerminalLayout: record('freezeTerminalLayout'),
   registerIpcHandlers: record('registerIpcHandlers'),
   sendWindowCommand: record('sendWindowCommand'),
@@ -86,6 +87,7 @@ vi.mock('./terminal/ptyManager.js', () => ({
 vi.mock('./watcher.js', () => ({
   startWatching: record('startWatching'),
   startWatchingAgents: record('startWatchingAgents'),
+  startWatchingLaunchRequests: record('startWatchingLaunchRequests'),
   stopWatching: async () => {}
 }))
 vi.mock('./appIcon.js', () => ({ linuxIconPath: () => '' }))
@@ -134,6 +136,7 @@ describe('start-up order', () => {
       'onBroadcast',
       'startWatching',
       'startWatchingAgents',
+      'startWatchingLaunchRequests',
       'notifyAgentsChanged',
       'window:create',
       'window:on',

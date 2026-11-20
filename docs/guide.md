@@ -346,7 +346,9 @@ Tools: `list_tasks`, `get_task`, `create_task`, `update_task`, `set_task_status`
 `delete_task`, and two that say what an agent means to do: `split_task` (break a task into
 children, with the parent becoming their blocked umbrella), `request_review` (move to In Review with a
 handoff summary, the `## Handoff` section of the task; on a multi-repo task it also takes each repository's PR in
-`extraRepos`). An agent that needs a decision asks you in its terminal, not the Inbox. Each also works by editing the task file. `create_task` and `update_task` both take `contextFiles`, so Claude can attach
+`extraRepos`). `start_task` starts a task's agent exactly as clicking Start on its card does, and its tab
+opens in Styr, even for a task in a workspace other than the one on screen, without switching to it;
+it needs Styr (or `styr serve`) running, and a blocked task starts only with `startAnyway: true`. An agent that needs a decision asks you in its terminal, not the Inbox. Each also works by editing the task file. `create_task` and `update_task` both take `contextFiles`, so Claude can attach
 files it finds to a task. `list_tasks` filters on `readiness`, and `update_task` sets it — that is how a
 specking session promotes a task from `needs_spec` to `ready` when it is done. Notes are attributed to `claude` unless `STYR_MCP_AUTHOR` says otherwise.
 

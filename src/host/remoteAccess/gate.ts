@@ -250,6 +250,7 @@ const BOARD_BROADCASTS = new Set([
   'sources:state',
   'orchestrate:autoState',
   'orchestrate:autoStarted',
+  'terminal:launched',
   'usage:claude',
   'tasks:activate'
 ])

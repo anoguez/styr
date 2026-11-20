@@ -37,7 +37,17 @@ import {
   type TerminalsPorts
 } from '@host/terminals/terminalsService.js'
 import { createUsage, watchFiles } from '@host/usage.js'
-import { startWatching, startWatchingAgents, stopWatching } from '@host/watcher.js'
+import {
+  startWatching,
+  startWatchingAgents,
+  startWatchingLaunchRequests,
+  stopWatching
+} from '@host/watcher.js'
+import {
+  createLaunchRequestsService,
+  diskLaunchRequests,
+  tasksInWorkspace
+} from '@host/launchRequestsService.js'
 import { createWorklogService } from '@host/worklogService.js'
 import { createReviewService, diskReviewStore } from '@host/reviewService.js'
 import {
@@ -234,6 +244,13 @@ export function createServerHost(ports: ServerHostPorts) {
     clock: realClock
   })
 
+  const launchRequests = createLaunchRequestsService({
+    broadcast,
+    ...diskLaunchRequests,
+    tasks: (workspaceId) => tasksInWorkspace(workspaceId, queryTasks, inOtherWorkspace),
+    launch: agentsService.launch
+  })
+
   const settingsService = createSettingsService({
     store: diskSettingsStore,
     afterSave: (folderBefore, workspaceId) =>
@@ -305,6 +322,7 @@ export function createServerHost(ports: ServerHostPorts) {
 
     startWatching(notifyTasksChanged)
     startWatchingAgents(notifyAgentsChanged)
+    startWatchingLaunchRequests((id) => void launchRequests.process(id))
     notifyAgentsChanged()
     usage.start()
   }

@@ -201,6 +201,7 @@ export const NOTIFICATION_SCHEMAS: Readonly<Record<string, z.ZodType | typeof NO
   'agents:changed': z.array(remoteAgentStatusSchema).max(REMOTE_LIMITS.entries),
   'orchestrate:autoState': remoteAutoStateSchema,
   'orchestrate:autoStarted': remoteTerminalSessionSchema,
+  'terminal:launched': remoteTerminalSessionSchema,
   'sources:state': syncStates,
   'usage:claude': remoteProviderUsageSchema.nullable(),
   'review:changed': z.object({ taskId: short }),

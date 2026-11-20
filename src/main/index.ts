@@ -12,6 +12,7 @@ import {
   markAgentExited,
   notifyAgentsChanged,
   notifyTasksChanged,
+  processLaunchRequests,
   registerIpcHandlers,
   sendWindowCommand,
   startAutoDispatch,
@@ -30,7 +31,12 @@ import {
   onTerminalRuntimeState,
   sessionTask
 } from './terminal/ptyManager.js'
-import { startWatching, startWatchingAgents, stopWatching } from './watcher.js'
+import {
+  startWatching,
+  startWatchingAgents,
+  startWatchingLaunchRequests,
+  stopWatching
+} from './watcher.js'
 import { linuxIconPath } from './appIcon.js'
 import { guardNavigation, openHandler } from './windowSecurity.js'
 import { syncAppImageMcp } from './mcpEntry.js'
@@ -262,6 +268,7 @@ app.whenReady().then(() => {
 
   startWatching(() => notifyTasksChanged())
   startWatchingAgents(() => notifyAgentsChanged())
+  startWatchingLaunchRequests(processLaunchRequests)
   notifyAgentsChanged()
 
   createWindow()
