@@ -211,8 +211,8 @@ server.registerTool(
     description:
       "Start a task's agent exactly as clicking Start on its card in Styr does: the same worktree, " +
       'prompt template, provider and session (an existing chat is resumed, a task already running ' +
-      'keeps its session), and its terminal tab opens in Styr. Needs the Styr app (or `styr serve`) ' +
-      'running with this workspace open. A blocked task is refused with the reason unless ' +
+      'keeps its session), and its terminal tab opens in Styr without switching workspace. Needs the ' +
+      'Styr app (or `styr serve`) running. A blocked task is refused with the reason unless ' +
       'startAnyway is true, as the card asks before starting one. Leave templateId and provider unset ' +
       "to use the task's own routing, as the card does.",
     inputSchema: {

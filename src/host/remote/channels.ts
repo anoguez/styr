@@ -170,7 +170,6 @@ export const BOARD_BROADCASTS: ReadonlySet<string> = new Set([
   'agents:changed',
   'orchestrate:autoState',
   'orchestrate:autoStarted',
-  'terminal:launched',
   'sources:state',
   'usage:claude',
   'review:changed'

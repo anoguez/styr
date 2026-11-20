@@ -445,6 +445,46 @@ describe('startForTask', () => {
     ])
   })
 
+  it("starts a background workspace's task there, from its files, without switching", async () => {
+    const h = harness()
+    let pinned: string | undefined
+    const requests: Parameters<SessionPorts['createSession']>[0][] = []
+    const ports: SessionPorts = {
+      ...h.ports,
+      settings: () => ({ ...h.settings, activeWorkspaceId: pinned ?? 'default' }),
+      // The index is the active board's; the background task is only in its files.
+      findTask: () => undefined,
+      pinWorkspace: (ws, work) => {
+        h.calls.push(`pin ${ws}`)
+        pinned = ws
+        try {
+          return work()
+        } finally {
+          pinned = undefined
+          h.calls.push('unpin')
+        }
+      },
+      createSession: (request) => {
+        requests.push(request)
+        return h.ports.createSession(request)
+      }
+    }
+    await createSessionLifecycle(ports).startForTask('TASK-1', {}, 'other')
+    expect(requests[0]).toMatchObject({
+      workspaceId: 'other',
+      env: { STYR_WORKSPACE_ID: 'other', STYR_TASK_ID: 'TASK-1' }
+    })
+    // Every pin is released before the launch awaits anything, and the board is not re-indexed.
+    expect(h.calls).toEqual([
+      'pin other',
+      'unpin',
+      'pin other',
+      'update TASK-1 agentSession,sessions,status,worktreePath',
+      'unpin',
+      'session TASK-1 claude'
+    ])
+  })
+
   it('returns the live session instead of starting another', async () => {
     const h = harness()
     h.sessions.push(session({ id: 'live' }))

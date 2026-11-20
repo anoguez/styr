@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LaunchOptions } from '@core/launch.js'
 import type { LaunchRequest, LaunchResult } from '@core/launchRequests.js'
-import type { Settings, Task, TerminalSessionInfo } from '@core/types.js'
+import type { Task, TerminalSessionInfo } from '@core/types.js'
 import { createLaunchRequestsService } from './launchRequestsService.js'
 
 function task(id: string, extra: Partial<Task> = {}): Task {
@@ -13,26 +13,29 @@ function request(taskId: string, extra: Partial<LaunchRequest> = {}): LaunchRequ
 }
 
 function harness(tasks: Task[], pending: LaunchRequest[], options: { fail?: string } = {}) {
-  const launched: { taskId: string; options: LaunchOptions }[] = []
+  const launched: { taskId: string; options: LaunchOptions; workspaceId: string }[] = []
   const sent: { channel: string; payload?: unknown }[] = []
   const answers: { workspaceId: string; id: string; result: LaunchResult }[] = []
   const claimed: string[] = []
+  const read: string[] = []
   const service = createLaunchRequestsService({
     broadcast: (channel, payload) => sent.push({ channel, payload }),
-    settings: () => ({ activeWorkspaceId: 'default' }) as Settings,
-    tasks: () => tasks,
+    tasks: (workspaceId) => {
+      read.push(workspaceId)
+      return tasks
+    },
     claim: (workspaceId) => {
       claimed.push(workspaceId)
       return pending.splice(0)
     },
     answer: (workspaceId, id, result) => answers.push({ workspaceId, id, result }),
-    launch: async (taskId, launchOptions) => {
+    launch: async (taskId, launchOptions, workspaceId) => {
       if (options.fail) throw new Error(options.fail)
-      launched.push({ taskId, options: launchOptions })
+      launched.push({ taskId, options: launchOptions, workspaceId })
       return { id: `s-${taskId}`, taskId, provider: 'claude' } as TerminalSessionInfo
     }
   })
-  return { service, launched, sent, answers, claimed }
+  return { service, launched, sent, answers, claimed, read }
 }
 
 describe('launch requests (MCP start_task)', () => {
@@ -40,7 +43,11 @@ describe('launch requests (MCP start_task)', () => {
     const h = harness([task('TASK-0001')], [request('TASK-0001')])
     await h.service.process('default')
     expect(h.launched).toEqual([
-      { taskId: 'TASK-0001', options: { templateId: undefined, provider: undefined } }
+      {
+        taskId: 'TASK-0001',
+        options: { templateId: undefined, provider: undefined },
+        workspaceId: 'default'
+      }
     ])
     expect(h.sent).toEqual([
       {
@@ -92,12 +99,16 @@ describe('launch requests (MCP start_task)', () => {
     expect(h.launched.map((entry) => entry.taskId)).toEqual(['TASK-0001'])
   })
 
-  it('refuses a request from a workspace that is not open, and an unknown task', async () => {
-    const other = harness([task('TASK-0001')], [request('TASK-0001')])
-    await other.service.process('elsewhere')
-    expect(other.launched).toEqual([])
-    expect(other.answers[0]).toMatchObject({ workspaceId: 'elsewhere', result: { ok: false } })
+  it("starts a background workspace's task there and opens its tab, without switching", async () => {
+    const h = harness([task('TASK-0001')], [request('TASK-0001')])
+    await h.service.process('elsewhere')
+    expect(h.read).toEqual(['elsewhere'])
+    expect(h.launched.map((entry) => entry.workspaceId)).toEqual(['elsewhere'])
+    expect(h.sent.map((entry) => entry.channel)).toEqual(['terminal:launched'])
+    expect(h.answers[0]).toMatchObject({ workspaceId: 'elsewhere', result: { ok: true } })
+  })
 
+  it('refuses an unknown task', async () => {
     const missing = harness([], [request('TASK-0009')])
     await missing.service.process('default')
     expect(missing.answers[0]?.result).toEqual({ ok: false, error: 'Task TASK-0009 not found' })

@@ -654,6 +654,26 @@ describe('remote router: edge cases', () => {
     expect(t.channels()).toContain('settings:changed')
   })
 
+  it('opens the tab of a session start_task started even while another board is on screen', async () => {
+    const t = setup()
+    t.router.refresh()
+    await t.connectAll()
+    t.broadcasts.length = 0
+    t.devbox.server.push('terminal:launched', {
+      id: 's3',
+      title: 'x',
+      cwd: '/',
+      workspaceId: 'default'
+    })
+    await settle()
+    expect(t.broadcasts).toEqual([
+      [
+        'terminal:launched',
+        { id: 's3', title: 'x', cwd: '/', workspaceId: 'remote-main', host: 'devbox' }
+      ]
+    ])
+  })
+
   it('suspends every host while asleep and reconnects on wake', async () => {
     const t = setup()
     t.router.refresh()

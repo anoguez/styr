@@ -227,8 +227,9 @@ the fallback (`core/boardTools.ts`). `set_task_status` and `update_task` are unc
   it writes no task file and has no file-only form. It is the card's Start, asked for by an agent. The MCP server has no terminals, so it writes a request file to the
   workspace's `.styr/launches/` and polls for `<id>.result.json`. The host's watcher
   (`startWatchingLaunchRequests`, every workspace, restarted with the agents watcher) claims each
-  request by renaming it, then does what the card does: refuses a workspace that is not the active
-  one, warns about open blockers (unless the task has a chat to resume) by answering with an error
+  request by renaming it, then does what the card does in the request's workspace, active or not
+  (`startForTask`'s `workspaceId`: a background task is read from its files with its settings in one
+  synchronous pin, and the board is not switched). It warns about open blockers (unless the task has a chat to resume) by answering with an error
   that names them until `startAnyway: true` is the confirm, and calls `agentsService.launch` with
   the optional `templateId`/`provider` the launch menu offers. The new session goes out as
   `terminal:launched`, which the renderer adopts like the click's result (no Dispatch run chip,

@@ -137,8 +137,7 @@ export async function awaitLaunchResult(
         unlinkSync(join(dir, `${id}.json`))
         return {
           ok: false,
-          error:
-            'Styr did not pick up the request. Is the Styr app (or `styr serve`) running with this workspace?'
+          error: 'Styr did not pick up the request. Is the Styr app (or `styr serve`) running?'
         }
       } catch {
         claimed = true // The host took it; give the launch itself time to finish.

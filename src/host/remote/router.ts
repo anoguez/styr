@@ -279,9 +279,16 @@ export function createRemoteRouter(ports: RouterPorts) {
       ports.broadcast(method, registry.mapIn(entry.host, payload))
       return
     }
+    if (method === 'terminal:launched') {
+      // An MCP `start_task` may start a task in a workspace that is not on screen, and its tab
+      // opens all the same, so this is not held back with the board's broadcasts.
+      const launched = registry.mapIn(entry.host, payload) as TerminalSessionInfo
+      if (terminals.tagSession(entry, launched)) ports.broadcast(method, launched)
+      return
+    }
     if (!BOARD_BROADCASTS.has(method) || !registry.activeOnLive(entry)) return
     const mapped = registry.mapIn(entry.host, payload)
-    if (method === 'orchestrate:autoStarted' || method === 'terminal:launched') {
+    if (method === 'orchestrate:autoStarted') {
       if (!terminals.tagSession(entry, mapped as TerminalSessionInfo)) return
     }
     if (params.length === 0) ports.broadcast(method)

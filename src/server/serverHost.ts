@@ -43,7 +43,11 @@ import {
   startWatchingLaunchRequests,
   stopWatching
 } from '@host/watcher.js'
-import { createLaunchRequestsService, diskLaunchRequests } from '@host/launchRequestsService.js'
+import {
+  createLaunchRequestsService,
+  diskLaunchRequests,
+  tasksInWorkspace
+} from '@host/launchRequestsService.js'
 import { createWorklogService } from '@host/worklogService.js'
 import { createReviewService, diskReviewStore } from '@host/reviewService.js'
 import {
@@ -242,9 +246,8 @@ export function createServerHost(ports: ServerHostPorts) {
 
   const launchRequests = createLaunchRequestsService({
     broadcast,
-    settings: () => loadSettings(),
-    tasks: () => queryTasks(),
     ...diskLaunchRequests,
+    tasks: (workspaceId) => tasksInWorkspace(workspaceId, queryTasks, inOtherWorkspace),
     launch: agentsService.launch
   })
 
