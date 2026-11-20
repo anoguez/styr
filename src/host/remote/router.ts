@@ -281,7 +281,7 @@ export function createRemoteRouter(ports: RouterPorts) {
     }
     if (!BOARD_BROADCASTS.has(method) || !registry.activeOnLive(entry)) return
     const mapped = registry.mapIn(entry.host, payload)
-    if (method === 'orchestrate:autoStarted') {
+    if (method === 'orchestrate:autoStarted' || method === 'terminal:launched') {
       if (!terminals.tagSession(entry, mapped as TerminalSessionInfo)) return
     }
     if (params.length === 0) ports.broadcast(method)

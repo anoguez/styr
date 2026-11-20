@@ -378,6 +378,9 @@ const api = {
     dismissLayout: (): Promise<void> => ipcRenderer.invoke('terminal:dismissLayout'),
     onData: (handler: (payload: { id: string } & TerminalOutput) => void): (() => void) =>
       subscribe('terminal:data', handler as (...args: never[]) => void),
+    /** A task session started outside the window (the MCP server's `start_task`). */
+    onLaunched: (handler: (session: TerminalSessionInfo) => void): (() => void) =>
+      subscribe('terminal:launched', handler as (...args: never[]) => void),
     onExit: (handler: (payload: { id: string; exitCode: number }) => void): (() => void) =>
       subscribe('terminal:exit', handler as (...args: never[]) => void),
     onRuntimeState: (handler: (state: TerminalRuntimeState) => void): (() => void) =>

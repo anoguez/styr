@@ -62,6 +62,7 @@ import {
 import { electronHost, electronWindows } from './electronHost.js'
 import { closeIndex, findTask, queryTasks, syncIndex } from './taskIndex.js'
 import { startWatching, startWatchingAgents } from './watcher.js'
+import { createLaunchRequestsService, diskLaunchRequests } from '@host/launchRequestsService.js'
 import {
   createSession,
   findSessionByTask,
@@ -207,6 +208,19 @@ const agentsService = createAgentsService({
   },
   requestAutoRun: () => dispatchService.requestAutoRun()
 })
+
+/** The MCP server's `start_task`: the card's Start, asked for through a request file. */
+const launchRequests = createLaunchRequestsService({
+  broadcast,
+  settings: () => loadSettings(),
+  tasks: () => queryTasks(),
+  ...diskLaunchRequests,
+  launch: (taskId, options) => agentsService.launch(taskId, options)
+})
+
+export function processLaunchRequests(workspaceId: string): void {
+  void launchRequests.process(workspaceId)
+}
 
 /**
  * The terminal tabs across a relaunch (`terminalTabs.ts`). A tab created or closed saves the layout;
