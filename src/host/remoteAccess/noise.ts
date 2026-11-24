@@ -12,7 +12,7 @@ import {
 
 /**
  * `Noise_XX_25519_ChaChaPoly_SHA256` (https://noiseprotocol.org/noise.html, rev 34), the end-to-end
- * layer of a relayed session (`docs/architecture/remote-access.md`). Plain `node:crypto`, no native
+ * layer of every network session (`docs/architecture/remote-access.md`). Plain `node:crypto`, no native
  * module, so the MCP/server path can import it. Checked against the official test vectors
  * (`noiseXX.vector.json`).
  *

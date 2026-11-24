@@ -18,8 +18,8 @@ export function WorkspaceSharingSection({ draft, patch }: SectionProps): ReactNo
         />
       </Card>
       <Hint>
-        Other workspaces are not affected. Needs Settings → Remote devices → Allow other devices to
-        connect to be on.
+        Other workspaces are not affected. Needs Settings → Remote devices → Allow devices on your
+        network to connect to be on.
       </Hint>
     </div>
   )

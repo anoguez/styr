@@ -1,55 +1,46 @@
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { AccessInterface, AccessState, RelayStatus } from '@core/types/access.js'
-import { createAccessService, type RunningListener } from './accessService.js'
+import type { AccessInterface, AccessState } from '@core/types/access.js'
+import { createAccessService, PORT_ATTEMPTS, type RunningListener } from './accessService.js'
 import { createAccessStore, PAIRING_TTL_MS, type SecretBox } from './accessStore.js'
 import { createKeepAwake } from './keepAwake.js'
-import type { RelayClient } from './relayClient.js'
-
-/** A relay client whose link the test moves by hand. */
-interface FakeRelay {
-  address: string
-  port: number
-  status: RelayStatus
-  devices: string[]
-  closed: boolean
-}
 
 describe('access service', () => {
   let dir: string
   let clock: number
   let log: string[]
   let broadcasts: AccessState[]
-  let listens: [string, number][]
-  let failWith: (Error & { code?: string }) | undefined
+  let listens: number[]
+  /** The ports that fail, and how. */
+  let failing: Map<number, Error & { code?: string }>
   let connected: string[]
   let held: number[]
   let released: number[]
   let interfaces: AccessInterface[]
   let shields: boolean | undefined
   let shared: boolean
-  let relays: FakeRelay[]
-  let warnings: Record<string, string>
+
+  const inUse = () => Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' })
 
   function setup(secrets?: () => SecretBox | undefined) {
     const store = createAccessStore({ path: join(dir, 'access.json'), now: () => clock, secrets })
-    const closed: string[] = []
+    const closed: number[] = []
     const service = createAccessService({
       store,
-      listen: async (address, port) => {
-        listens.push([address, port])
-        if (failWith) throw failWith
+      listen: async (port) => {
+        listens.push(port)
+        const failure = failing.get(port)
+        if (failure) throw failure
         const listener: RunningListener = {
-          address: { address, port },
+          address: { address: '::', port },
           connectedDevices: () => connected,
-          close: async () => void closed.push(`${address}:${port}`)
+          close: async () => void closed.push(port)
         }
         return listener
       },
       interfaces: () => interfaces,
-      addressWarning: (address) => warnings[address],
       keepAwake: {
         hold: () => {
           held.push(held.length + 1)
@@ -60,20 +51,7 @@ describe('access service', () => {
       broadcast: (state) => broadcasts.push(state),
       log: (message) => log.push(message),
       shieldsUp: async () => shields,
-      workspaceShared: () => shared,
-      relay: (address, port) => {
-        const fake: FakeRelay = { address, port, status: 'connecting', devices: [], closed: false }
-        relays.push(fake)
-        const client: RelayClient = {
-          status: () => fake.status,
-          error: () => (fake.status === 'notAllowed' ? 'Not allowed.' : undefined),
-          connectedDevices: () => fake.devices,
-          sessions: () => fake.devices.length,
-          disconnectDevice: () => undefined,
-          close: async () => void (fake.closed = true)
-        }
-        return client
-      }
+      workspaceShared: () => shared
     })
     return { store, service, closed }
   }
@@ -84,15 +62,16 @@ describe('access service', () => {
     log = []
     broadcasts = []
     listens = []
-    failWith = undefined
+    failing = new Map()
     connected = []
     held = []
     released = []
-    interfaces = [{ name: 'en0', address: '100.101.102.103', kind: 'tailscale' }]
+    interfaces = [
+      { name: 'en0', address: '192.168.1.20', kind: 'lan' },
+      { name: 'utun3', address: '100.101.102.103', kind: 'tailscale' }
+    ]
     shields = undefined
     shared = true
-    relays = []
-    warnings = {}
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -100,7 +79,7 @@ describe('access service', () => {
     const { service } = setup()
     await service.start()
     expect(listens).toEqual([])
-    expect(service.state()).toMatchObject({ enabled: false, listening: false, bindAddress: '' })
+    expect(service.state()).toMatchObject({ enabled: false, listening: false, port: 7878 })
   })
 
   it('never asks the keychain at startup or to show the state, and makes no key', async () => {
@@ -117,23 +96,21 @@ describe('access service', () => {
     expect(asked).toBe(0)
   })
 
-  it('warns about an address on a shared network, and listens on it all the same', async () => {
-    warnings['100.70.3.4'] = 'shared network'
+  it('listens with one switch: nothing to pick', async () => {
     const { service } = setup()
-    const state = await service.configure({ enabled: true, bindAddress: '100.70.3.4', port: 7878 })
-    expect(state).toMatchObject({ listening: true, bindWarning: 'shared network' })
-    expect(log).toContain('Remote access: warning: shared network')
-    const tailscale = await service.configure({ bindAddress: '100.101.102.103' })
-    expect(tailscale.bindWarning).toBeUndefined()
+    const state = await service.configure({ enabled: true })
+    expect(listens).toEqual([7878])
+    expect(state).toMatchObject({ enabled: true, listening: true, port: 7878 })
+    expect(state.error).toBeUndefined()
+    expect(state.interfaces.map((entry) => entry.address)).toEqual([
+      '192.168.1.20',
+      '100.101.102.103'
+    ])
   })
 
   it('makes the key once switched on, and shows its fingerprint', async () => {
     const { service, store } = setup()
-    const state = await service.configure({
-      enabled: true,
-      bindAddress: '100.101.102.103',
-      port: 7878
-    })
+    const state = await service.configure({ enabled: true })
     expect(state.fingerprint).toMatch(/^[0-9a-f]{64}$/)
     expect(state.fingerprint).toBe(store.identity().fingerprint)
   })
@@ -145,65 +122,43 @@ describe('access service', () => {
       },
       open: () => ''
     }))
-    const state = await service.configure({
-      enabled: true,
-      bindAddress: '100.101.102.103',
-      port: 7878
-    })
+    const state = await service.configure({ enabled: true })
     expect(state).toMatchObject({ enabled: true, listening: true })
     expect(state.fingerprint).toBeUndefined()
   })
 
-  it('listens once switched on with a private interface', async () => {
-    const { service } = setup()
-    const state = await service.configure({
-      enabled: true,
-      bindAddress: '100.101.102.103',
-      port: 7878
-    })
-    expect(listens).toEqual([['100.101.102.103', 7878]])
-    expect(state).toMatchObject({ enabled: true, listening: true })
-    expect(state.error).toBeUndefined()
-  })
-
-  it('refuses to switch on with no interface, every interface or a public one, and stays off', async () => {
-    const { service } = setup()
-    for (const bindAddress of ['', '0.0.0.0', '::', '8.8.8.8', 'example.com']) {
-      const state = await service.configure({ enabled: true, bindAddress })
-      expect(state).toMatchObject({ enabled: false, listening: false })
-      expect(state.error).toBeTruthy()
-    }
-    expect(listens).toEqual([])
-  })
-
-  it('switched on with nothing picked, listens on the Tailscale IPv4 address', async () => {
-    interfaces = [
-      { name: 'utun3', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' },
-      { name: 'utun3', address: '100.90.1.1', kind: 'tailscale' }
-    ]
+  it('moves to the next free port when the saved one is taken, and keeps it', async () => {
+    failing.set(7878, inUse())
+    failing.set(7879, inUse())
     const { service, store } = setup()
     const state = await service.configure({ enabled: true })
-    expect(state).toMatchObject({ enabled: true, listening: true, bindAddress: '100.90.1.1' })
-    expect(store.config().bindAddress).toBe('100.90.1.1')
+    expect(listens).toEqual([7878, 7879, 7880])
+    expect(state).toMatchObject({ listening: true, port: 7880 })
+    // Saved, so a paired device finds the computer there after a restart.
+    expect(store.config().port).toBe(7880)
   })
 
-  it('keeps an address the user picked, IPv6 included, across switching off and on', async () => {
-    interfaces = [
-      { name: 'utun3', address: '100.90.1.1', kind: 'tailscale' },
-      { name: 'utun3', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' }
-    ]
-    const { service } = setup()
-    await service.configure({ enabled: true, bindAddress: 'fd7a:115c:a1e0::1' })
-    await service.configure({ enabled: false })
+  it('keeps the setting off and says why when no port is free', async () => {
+    for (let port = 7878; port < 7878 + PORT_ATTEMPTS; port++) failing.set(port, inUse())
+    const { service, store } = setup()
     const state = await service.configure({ enabled: true })
-    expect(state.bindAddress).toBe('fd7a:115c:a1e0::1')
+    expect(listens).toHaveLength(PORT_ATTEMPTS)
+    expect(state).toMatchObject({ enabled: false, listening: false })
+    expect(state.error).toMatch(/Ports 7878 to 7887 are all in use/)
+    expect(store.config().enabled).toBe(false)
   })
 
-  it('never picks IPv6 by itself', async () => {
-    interfaces = [{ name: 'utun3', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' }]
+  it('does not try other ports for any other failure, and never throws', async () => {
+    failing.set(7878, Object.assign(new Error('nope'), { code: 'EACCES' }))
     const { service } = setup()
     const state = await service.configure({ enabled: true })
-    expect(state).toMatchObject({ enabled: false, bindAddress: '' })
+    expect(listens).toEqual([7878])
+    expect(state.error).toMatch(/Not allowed to listen on port 7878/)
+  })
+
+  it('refuses a bad port', async () => {
+    const { service } = setup()
+    await expect(service.configure({ enabled: true, port: 80 })).rejects.toThrow(/port/)
     expect(listens).toEqual([])
   })
 
@@ -226,77 +181,96 @@ describe('access service', () => {
     expect(service.refresh().workspaceShared).toBe(true)
   })
 
-  it('refuses a bad port', async () => {
-    const { service } = setup()
-    const state = await service.configure({ enabled: true, bindAddress: '127.0.0.1', port: 80 })
-    expect(state.enabled).toBe(false)
-    expect(state.error).toMatch(/port/)
-  })
-
-  it('keeps the setting off and says why when the port is taken', async () => {
-    const { service, store } = setup()
-    failWith = Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' })
-    const state = await service.configure({ enabled: true, bindAddress: '127.0.0.1', port: 7000 })
-    expect(state).toMatchObject({ enabled: false, listening: false })
-    expect(state.error).toBe('Port 7000 is already in use on 127.0.0.1.')
-    expect(store.config().enabled).toBe(false)
-  })
-
-  it('says so when the interface is gone, and never throws', async () => {
-    const { service } = setup()
-    failWith = Object.assign(new Error('x'), { code: 'EADDRNOTAVAIL' })
-    const state = await service.configure({ enabled: true, bindAddress: '100.64.9.9' })
-    expect(state.error).toMatch(/not an address of this computer/)
-  })
-
-  it('restarts on another interface and closes on switch-off', async () => {
+  it('closes on switch-off', async () => {
     const { service, closed } = setup()
-    await service.configure({ enabled: true, bindAddress: '127.0.0.1', port: 7000 })
-    await service.configure({ bindAddress: '100.101.102.103' })
-    expect(listens).toEqual([
-      ['127.0.0.1', 7000],
-      ['100.101.102.103', 7000]
-    ])
-    expect(closed).toEqual(['127.0.0.1:7000'])
+    await service.configure({ enabled: true })
     await service.configure({ enabled: false })
-    expect(closed).toEqual(['127.0.0.1:7000', '100.101.102.103:7000'])
+    expect(closed).toEqual([7878])
     expect(service.state().listening).toBe(false)
   })
 
   it('listens again at startup when it was left on', async () => {
     const first = setup()
-    await first.service.configure({ enabled: true, bindAddress: '127.0.0.1', port: 7000 })
+    await first.service.configure({ enabled: true, port: 7000 })
     const second = setup()
     await second.service.start()
-    expect(listens.at(-1)).toEqual(['127.0.0.1', 7000])
+    expect(listens.at(-1)).toBe(7000)
+  })
+
+  it('reads a config from before same-network access as switched off', async () => {
+    // It listened on one Tailscale address; on now, it would take every network.
+    writeFileSync(
+      join(dir, 'access.json'),
+      JSON.stringify({
+        config: {
+          enabled: true,
+          bindAddress: '100.90.1.1',
+          port: 7000,
+          keepAwake: true,
+          relay: { enabled: false, address: '', port: 7879 }
+        },
+        devices: [
+          {
+            id: 'dev1',
+            name: 'iPhone',
+            publicKey: 'a'.repeat(60),
+            createdAt: '2026-01-01T00:00:00Z'
+          }
+        ]
+      })
+    )
+    const { service, store } = setup()
+    await service.start()
+    expect(listens).toEqual([])
+    expect(store.config()).toEqual({ enabled: false, port: 7000, keepAwake: true })
+    // The devices stay paired.
+    expect(service.state().devices.map((device) => device.id)).toEqual(['dev1'])
+    // Once switched on again the old keys are gone from the file, so it stays on.
+    await service.configure({ enabled: true })
+    const again = setup()
+    await again.service.start()
+    expect(again.service.state()).toMatchObject({ enabled: true, listening: true })
   })
 
   it('refuses to pair while nothing listens', async () => {
     const { service } = setup()
-    expect(() => service.pair()).toThrow(/Turn on Remote access/)
+    expect(() => service.pair()).toThrow(/Turn on Allow devices on your network/)
   })
 
-  it('pairs with a QR that carries the address, the fingerprint and a one-time secret', async () => {
+  it('refuses to pair while this computer is on no network a device could reach', async () => {
+    interfaces = []
     const { service, store } = setup()
-    await service.configure({ enabled: true, bindAddress: '100.100.1.1', port: 7878 })
+    await service.configure({ enabled: true })
+    expect(() => service.pair()).toThrow(/not on a network/)
+    expect(store.pairing()).toBeUndefined()
+  })
+
+  it('pairs with a QR that carries every address, the fingerprint and a one-time secret', async () => {
+    const { service, store } = setup()
+    await service.configure({ enabled: true })
     const pairing = service.pair()
     const uri = new URL(pairing.uri)
     expect(uri.protocol).toBe('styr:')
-    expect(uri.searchParams.get('host')).toBe('100.100.1.1')
+    expect(uri.searchParams.get('v')).toBe('2')
+    expect(uri.searchParams.get('host')).toBe('192.168.1.20')
+    expect(uri.searchParams.get('hosts')).toBe('192.168.1.20,100.101.102.103')
     expect(uri.searchParams.get('port')).toBe('7878')
     expect(uri.searchParams.get('fp')).toBe(store.identity().fingerprint)
     expect(uri.searchParams.get('secret')).toBe(store.pairing()!.secret)
     expect(pairing.expiresAt).toBe(clock + PAIRING_TTL_MS)
     expect(pairing.modules.length).toBeGreaterThan(20)
     expect(pairing.modules.every((row) => row.length === pairing.modules.length)).toBe(true)
-    // The long-lived token is not in the QR, nor in the state the screen gets.
+    // The secret is in the QR only, never in the state the screen gets.
     expect(JSON.stringify(service.state())).not.toContain(store.pairing()!.secret)
   })
 
   it('writes an IPv6 host with brackets', async () => {
+    interfaces = [{ name: 'en0', address: 'fd12:3456::20', kind: 'lan' }]
     const { service } = setup()
-    await service.configure({ enabled: true, bindAddress: 'fd7a:115c:a1e0::1', port: 7878 })
-    expect(new URL(service.pair().uri).searchParams.get('host')).toBe('[fd7a:115c:a1e0::1]')
+    await service.configure({ enabled: true })
+    const uri = new URL(service.pair().uri)
+    expect(uri.searchParams.get('host')).toBe('[fd12:3456::20]')
+    expect(uri.searchParams.get('hosts')).toBe('[fd12:3456::20]')
   })
 
   it('lists devices without verifiers, marks the connected ones and revokes', async () => {
@@ -306,7 +280,7 @@ describe('access service', () => {
     const state = service.state()
     expect(state.devices).toEqual([expect.objectContaining({ id: device.id, connected: false })])
     expect(JSON.stringify(state)).not.toContain('a'.repeat(60))
-    await service.configure({ enabled: true, bindAddress: '127.0.0.1', port: 7000 })
+    await service.configure({ enabled: true })
     expect(service.state().devices[0]?.connected).toBe(true)
     expect(service.revoke(device.id).devices).toEqual([])
     expect(store.publicKeyFor(device.id)).toBeUndefined()
@@ -314,14 +288,14 @@ describe('access service', () => {
 
   it('announces every change to the screen', async () => {
     const { service } = setup()
-    await service.configure({ enabled: true, bindAddress: '127.0.0.1', port: 7000 })
+    await service.configure({ enabled: true })
     expect(broadcasts.length).toBeGreaterThan(0)
     expect(broadcasts.at(-1)?.listening).toBe(true)
   })
 
-  it('holds the Mac awake only while asked and while a device is connected', async () => {
+  it('holds the computer awake only while asked and while a device is connected', async () => {
     const { service } = setup()
-    await service.configure({ enabled: true, bindAddress: '127.0.0.1', port: 7000 })
+    await service.configure({ enabled: true })
     service.connections(1)
     expect(held).toEqual([])
     await service.configure({ keepAwake: true })
@@ -338,108 +312,15 @@ describe('access service', () => {
 
   it('lets go of the hold when the listener stops', async () => {
     const { service } = setup()
-    await service.configure({
-      enabled: true,
-      bindAddress: '127.0.0.1',
-      port: 7000,
-      keepAwake: true
-    })
+    await service.configure({ enabled: true, keepAwake: true })
     service.connections(1)
     await service.stop()
     expect(released).toEqual([1])
   })
 
-  describe('relay', () => {
-    const relay = { enabled: true, address: '100.64.0.9', port: 7879 }
-
-    it('stays off by default, and connects out once switched on', async () => {
-      const { service, store } = setup()
-      await service.start()
-      expect(relays).toEqual([])
-      expect(service.state().relayStatus).toBe('off')
-      const state = await service.configure({ relay })
-      expect(relays.map((entry) => [entry.address, entry.port])).toEqual([['100.64.0.9', 7879]])
-      expect(state.relayStatus).toBe('connecting')
-      expect(store.config().relay).toEqual(relay)
-      // The listener is a separate switch.
-      expect(listens).toEqual([])
-    })
-
-    it('refuses an address that is not loopback or Tailscale, and dials nothing', async () => {
-      const { service } = setup()
-      for (const address of ['', '192.168.1.5', '8.8.8.8', 'relay.example.com']) {
-        const state = await service.configure({ relay: { ...relay, address } })
-        expect(state.relayStatus).toBe('off')
-        expect(state.relayError).toBeTruthy()
-      }
-      expect(relays).toEqual([])
-    })
-
-    it('redials on a new address, and drops the link when switched off', async () => {
-      const { service } = setup()
-      await service.configure({ relay })
-      await service.configure({ relay: { address: '100.64.0.10' } })
-      expect(relays.map((entry) => [entry.address, entry.closed])).toEqual([
-        ['100.64.0.9', true],
-        ['100.64.0.10', false]
-      ])
-      const state = await service.configure({ relay: { enabled: false } })
-      expect(relays[1]!.closed).toBe(true)
-      expect(state.relayStatus).toBe('off')
-    })
-
-    it('pairs through the relay only while it is connected', async () => {
-      const { service } = setup()
-      await service.configure({ relay })
-      expect(() => service.pair()).toThrow(/not connected to the relay/)
-      relays[0]!.status = 'connected'
-      const pairing = service.pair()
-      const fingerprint = service.state().fingerprint
-      expect(pairing.uri).toMatch(
-        new RegExp(
-          `^styr://pair\\?v=2&relay=100\\.64\\.0\\.9%3A7879&fp=${fingerprint}&secret=[0-9a-f]{40}&exp=\\d+$`
-        )
-      )
-      relays[0]!.status = 'unreachable'
-      expect(() => service.pair()).toThrow(/not connected to the relay/)
-    })
-
-    it('pairs through the relay whenever it is connected, the listener only otherwise', async () => {
-      const { service } = setup()
-      await service.configure({ enabled: true, bindAddress: '100.101.102.103', relay })
-      expect(service.pair().uri).toMatch(
-        /^styr:\/\/pair\?v=2&host=100\.101\.102\.103&port=7878&fp=/
-      )
-      relays[0]!.status = 'connected'
-      expect(service.pair().uri).toMatch(/^styr:\/\/pair\?v=2&relay=/)
-    })
-
-    it('lists relayed devices as connected and keeps the Mac awake for them', async () => {
-      const { service, store } = setup()
-      await service.configure({ relay, keepAwake: true })
-      const device = store.addDevice('iPhone', 'A'.repeat(60))
-      relays[0]!.devices = [device.id]
-      service.relayConnections(1)
-      expect(service.state().devices).toEqual([expect.objectContaining({ connected: true })])
-      expect(held).toEqual([1])
-      service.connections(0)
-      expect(released).toEqual([])
-      service.relayConnections(0)
-      expect(released).toEqual([1])
-    })
-
-    it('closes the relay link on stop', async () => {
-      const { service } = setup()
-      await service.configure({ relay })
-      await service.stop()
-      expect(relays[0]!.closed).toBe(true)
-    })
-  })
-
-  // Windows has no POSIX file modes; its profile folder is already private to the user.
   it.skipIf(process.platform === 'win32')('stores its file for the user only', async () => {
     const { service } = setup()
-    await service.configure({ enabled: true, bindAddress: '127.0.0.1', port: 7000 })
+    await service.configure({ enabled: true })
     expect(statSync(join(dir, 'access.json')).mode & 0o777).toBe(0o600)
   })
 })

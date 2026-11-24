@@ -16,8 +16,8 @@ import {
 } from './noise.js'
 
 /**
- * Protocol 2, the only one: the handshake and session of every network connection, direct or
- * through a relay, end to end encrypted with Noise XX (`noise.ts`). `docs/architecture/remote-access.md`
+ * Protocol 2, the only one: the handshake and session of every network connection, end to end
+ * encrypted with Noise XX (`noise.ts`). `docs/architecture/remote-access.md`
  * ("Protocol 2") is the wire description; the Dart client in styr-app implements the same and is
  * checked against `secureSession.vector.json`.
  *
@@ -71,7 +71,7 @@ export function identitySignedData(
 
 /**
  * The pairing proof: keyed by the QR's secret, which never travels, and covering the handshake
- * hash (both ephemeral and both static keys), so a relay in the middle cannot make one.
+ * hash (both ephemeral and both static keys), so anyone in the middle cannot make one.
  */
 export function securePairProof(
   secret: string,

@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { createChannelTable, type ChannelServices } from '@host/channelTable.js'
 import { HANDSHAKE_MAX_BYTES, HANDSHAKE_TIMEOUT_MS } from '@host/remoteAccess/handshake.js'
-import { DEFAULT_RELAY_PORT, RELAY_PHONE_PREFIX } from '@host/remoteAccess/relayProtocol.js'
 import {
   NOISE_PROLOGUE,
   SECURE_FRAME_MAX_CHARS,
@@ -118,7 +117,6 @@ export function buildProtocolSchema(): unknown {
     protocol: PROTOCOL_VERSION,
     transport: {
       url: 'ws://<host>:<port>/',
-      relayUrl: `ws://<relay>:<port, ${DEFAULT_RELAY_PORT}>${RELAY_PHONE_PREFIX}<host fingerprint>`,
       frames:
         'text frames only: the handshake (below), then each one a sealed Noise record of a JSON-RPC 2.0 message',
       maxRecordFrameChars: SECURE_FRAME_MAX_CHARS,

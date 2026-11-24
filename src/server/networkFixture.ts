@@ -122,9 +122,9 @@ export async function listenOnLoopback(
       now: () => host.state.clock,
       pingMs: extra.pingMs,
       handshakeMs: extra.handshakeMs,
-      limitLoopback: true
+      limitLoopback: true,
+      host: '127.0.0.1'
     },
-    '127.0.0.1',
     0
   )
 }

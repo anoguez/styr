@@ -3,7 +3,7 @@ import { pinWorkspace, pinnedWorkspaceId } from '@core/config.js'
 import { loadSettings } from '@core/settingsStore.js'
 import { globalSettingsFor, workspaceSettingsFor, type SettingsChange } from '@core/types.js'
 import { listWorkspaces } from '@core/workspaces.js'
-import type { AccessConfigPatch, AccessState, RelayConfig } from '@core/types/access.js'
+import type { AccessConfigPatch, AccessState } from '@core/types/access.js'
 import type { SecretBox } from '@host/remoteAccess/accessStore.js'
 import { tailscaleShieldsUp } from '@host/remoteAccess/tailscale.js'
 import { computerName, createHub, PROTOCOL_VERSION } from '../server/hub.js'
@@ -15,8 +15,8 @@ import { listSessions, resizeSession, sessionBacklog } from './terminal/ptyManag
 /**
  * Remote access in the desktop app (`docs/architecture/remote-access.md`): the same hub `styr
  * serve` runs, answering the same channel table (`ipc.ts`), over a WebSocket that devices paired
- * with a QR can open. It lives in the main process, never the renderer, and listens only when
- * Settings → Remote access is on.
+ * with a QR can open, from this computer's networks only. It lives in the main process, never the
+ * renderer, and listens only when Settings → Remote devices is on.
  */
 const startedAt = new Date().toISOString()
 let lastTray: unknown = { statuses: [], titles: {} }
@@ -148,21 +148,14 @@ export function registerAccessHandlers(): void {
 const asRecord = (value: unknown): Record<string, unknown> =>
   (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
 
-/** Only the config's own keys, each of the right type: the renderer is not trusted with more. */
+/**
+ * Only the switches, each of the right type: the renderer is not trusted with more. The port is
+ * not the renderer's to set; it is `styr serve --port`'s, or found free by the service.
+ */
 export function pickConfig(value: unknown): AccessConfigPatch {
   const raw = asRecord(value)
   const patch: AccessConfigPatch = {}
   if (typeof raw.enabled === 'boolean') patch.enabled = raw.enabled
   if (typeof raw.keepAwake === 'boolean') patch.keepAwake = raw.keepAwake
-  if (typeof raw.port === 'number') patch.port = raw.port
-  if (typeof raw.bindAddress === 'string') patch.bindAddress = raw.bindAddress
-  if (raw.relay !== undefined) {
-    const entry = asRecord(raw.relay)
-    const relay: Partial<RelayConfig> = {}
-    if (typeof entry.enabled === 'boolean') relay.enabled = entry.enabled
-    if (typeof entry.address === 'string') relay.address = entry.address
-    if (typeof entry.port === 'number') relay.port = entry.port
-    patch.relay = relay
-  }
   return patch
 }

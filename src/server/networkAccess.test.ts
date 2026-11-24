@@ -44,7 +44,9 @@ describe('network access for a host', () => {
       },
       broadcast: () => {},
       log: (message) => host.state.log.push(message),
-      store: createAccessStore({ path: host.storePath, now: () => host.state.clock })
+      store: createAccessStore({ path: host.storePath, now: () => host.state.clock }),
+      host: '127.0.0.1',
+      interfaces: () => [{ name: 'en0', address: '192.168.1.20', kind: 'lan' }]
     })
     open.push(access.service)
     return access
@@ -74,7 +76,7 @@ describe('network access for a host', () => {
   it('pairs from the QR once, then reconnects after a restart with only the stored token', async () => {
     const port = await freePort()
     const first = create()
-    await first.service.configure({ enabled: true, bindAddress: '127.0.0.1', port })
+    await first.service.configure({ enabled: true, port })
     const uri = new URL(first.service.pair().uri)
     expect(uri.searchParams.get('port')).toBe(String(port))
 
@@ -107,7 +109,7 @@ describe('network access for a host', () => {
   it('holds the Mac awake while a paired device is connected', async () => {
     const port = await freePort()
     const { service } = create()
-    await service.configure({ enabled: true, bindAddress: '127.0.0.1', port, keepAwake: true })
+    await service.configure({ enabled: true, port, keepAwake: true })
     const uri = new URL(service.pair().uri)
     const phone = new TestPhone(port, uri.searchParams.get('fp')!)
     await phone.opened()
@@ -120,7 +122,7 @@ describe('network access for a host', () => {
   it('shows a paired device as connected', async () => {
     const port = await freePort()
     const { service } = create()
-    await service.configure({ enabled: true, bindAddress: '127.0.0.1', port })
+    await service.configure({ enabled: true, port })
     const uri = new URL(service.pair().uri)
     const phone = new TestPhone(port, uri.searchParams.get('fp')!)
     await phone.opened()

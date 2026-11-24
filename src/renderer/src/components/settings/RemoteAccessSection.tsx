@@ -5,20 +5,19 @@ import {
   canPair,
   deviceLine,
   groupedFingerprint,
-  interfaceOptions,
+  interfaceLabel,
   listenerStatus,
   needsSharedWorkspace,
   qrPath,
-  relayStatusLine,
   showShieldsUpWarning
 } from '../../lib/accessView.js'
 import { ipcMessage } from '../../lib/ipcMessage.js'
-import { Button, Card, CardRow, Field, Hint, Select, SwitchRow, inputClass } from '../ui.js'
+import { Button, Card, CardRow, Field, Hint, SwitchRow } from '../ui.js'
 
 /**
- * Settings → Remote devices (all workspaces): lets devices you pair reach this computer over a
- * private network (`docs/architecture/remote-access.md`). Off until switched on, and then only on
- * one private address you pick. Which workspaces they may open is decided per workspace, under
+ * Settings → Remote devices (all workspaces): lets devices you pair reach this computer from the
+ * same network, or its VPN (`docs/architecture/remote-access.md`). Off until switched on; there is
+ * nothing else to set up. Which workspaces they may open is decided per workspace, under
  * Settings → Remote access (`WorkspaceSharingSection`). These controls act at once, like Remote
  * hosts: they are not part of Save.
  */
@@ -34,13 +33,9 @@ export function RemoteAccessSection({
   const [state, setState] = useState<AccessState>()
   const [error, setError] = useState('')
   const [pairing, setPairing] = useState<AccessPairing>()
-  const [port, setPort] = useState('')
 
   useEffect(() => {
-    void window.api.access.state().then((initial) => {
-      setState(initial)
-      setPort(String(initial.port))
-    })
+    void window.api.access.state().then(setState)
     // Shields Up is asked about when the page opens (and by the service when switched on), not
     // polled: the answer comes back through `access:changed`.
     void window.api.access.checkNetwork().catch(() => undefined)
@@ -96,7 +91,6 @@ export function RemoteAccessSection({
     void window.api.access.cancelPair()
   }
 
-  const options = interfaceOptions(state)
   const now = Date.now()
 
   return (
@@ -129,39 +123,29 @@ export function RemoteAccessSection({
       ) : null}
       <Card>
         <SwitchRow
-          label="Allow other devices to connect"
-          hint="Opens a listener in this app so devices you pair can use the workspaces you share. Reached over Tailscale (or an ssh tunnel to this computer) only; nothing else is allowed. Quitting Styr, or this Mac sleeping, ends the connection."
+          label="Allow devices on your network to connect"
+          hint="Devices you pair can use the workspaces you share, from the same network as this computer (your Wi-Fi or office network) or a VPN it is on, such as Tailscale. Never from the internet. Quitting Styr, or this computer sleeping, ends the connection."
           checked={state.enabled}
           onChange={(enabled) => void configure({ enabled })}
         />
         <CardRow className="flex flex-col gap-3 px-3.5 py-3">
-          <Field label="Listen on">
-            <Select
-              aria-label="Network interface to listen on"
-              value={state.bindAddress}
-              onChange={(event) => void configure({ bindAddress: event.target.value })}
+          {state.listening && state.interfaces.length > 0 ? (
+            <Field
+              label="Devices reach this computer at"
+              hint="Found by themselves from the QR; shown here to check a device is on one of these networks."
             >
-              <option value="">Pick an interface…</option>
-              {options.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Port">
-            <input
-              aria-label="Port"
-              className={`${inputClass} w-28`}
-              inputMode="numeric"
-              value={port}
-              onChange={(event) => setPort(event.target.value.replace(/\D/g, '').slice(0, 5))}
-              onBlur={() => {
-                const next = Number(port)
-                if (next !== state.port) void configure({ port: next })
-              }}
-            />
-          </Field>
+              <ul className="flex flex-col gap-1">
+                {state.interfaces.map((entry) => (
+                  <li
+                    key={`${entry.name}-${entry.address}`}
+                    className="font-mono text-[11px] text-dim"
+                  >
+                    {interfaceLabel(entry)}
+                  </li>
+                ))}
+              </ul>
+            </Field>
+          ) : null}
           {state.error ? (
             <span role="alert" className="text-[12px] text-danger">
               {state.error}
@@ -169,11 +153,6 @@ export function RemoteAccessSection({
           ) : (
             <Hint>{listenerStatus(state)}</Hint>
           )}
-          {state.bindWarning ? (
-            <span role="alert" className="text-[12px] text-danger">
-              {state.bindWarning}
-            </span>
-          ) : null}
           {error ? (
             <span role="alert" className="text-[12px] text-danger">
               {error}
@@ -181,14 +160,12 @@ export function RemoteAccessSection({
           ) : null}
         </CardRow>
         <SwitchRow
-          label="Keep this Mac awake while a device is connected"
+          label="Keep this computer awake while a device is connected"
           hint="Stops the computer sleeping while a paired device is connected, so a task started from the phone is not cut off. Released when the last device leaves."
           checked={state.keepAwake}
           onChange={(keepAwake) => void configure({ keepAwake })}
         />
       </Card>
-
-      <RelayCard state={state} configure={configure} />
 
       <div className="flex flex-col gap-2.5">
         <span className="text-[12px] font-semibold text-dim">Paired devices</span>
@@ -232,7 +209,7 @@ export function RemoteAccessSection({
               title={
                 canPair(state)
                   ? undefined
-                  : 'Turn on Allow other devices to connect, or connect through a relay.'
+                  : 'Turn on Allow devices on your network to connect, with this computer on a network.'
               }
               onClick={() => void pair()}
             >
@@ -257,104 +234,6 @@ export function RemoteAccessSection({
         </Field>
       )}
     </div>
-  )
-}
-
-/**
- * "Connect through a relay": for a computer devices cannot connect in to (Tailscale Shields Up, a
- * firewall). This computer connects out to a `styr relay` on the owner's tailnet, which has to
- * allow its fingerprint first; the address and port apply when the field is left.
- */
-function RelayCard({
-  state,
-  configure
-}: {
-  state: AccessState
-  configure: (patch: Parameters<typeof window.api.access.configure>[0]) => Promise<void>
-}): ReactNode {
-  const [address, setAddress] = useState(state.relay.address)
-  const [port, setPort] = useState(String(state.relay.port))
-  const [copied, setCopied] = useState(false)
-  const status = relayStatusLine(state)
-
-  function saveSpot(): void {
-    const next = { address: address.trim(), port: Number(port) }
-    if (next.address !== state.relay.address || next.port !== state.relay.port) {
-      void configure({ relay: next })
-    }
-  }
-
-  function copyFingerprint(fingerprint: string): void {
-    void navigator.clipboard.writeText(fingerprint).then(() => setCopied(true))
-  }
-
-  return (
-    <Card>
-      <SwitchRow
-        label="Connect through a relay"
-        hint="For when devices cannot connect in to this computer (Tailscale Shields Up, a firewall): Styr connects out to a styr relay you run on another machine on your tailnet, and devices reach it there. The relay only moves encrypted messages; it cannot read or change them."
-        checked={state.relay.enabled}
-        onChange={(enabled) => void configure({ relay: { enabled, address: address.trim() } })}
-      />
-      <CardRow className="flex flex-col gap-3 px-3.5 py-3">
-        <div className="flex gap-3">
-          <Field label="Relay address">
-            <input
-              aria-label="Relay address"
-              className={`${inputClass} w-56 font-mono`}
-              placeholder="100.x.y.z"
-              spellCheck={false}
-              value={address}
-              onChange={(event) => setAddress(event.target.value)}
-              onBlur={saveSpot}
-            />
-          </Field>
-          <Field label="Port">
-            <input
-              aria-label="Relay port"
-              className={`${inputClass} w-28`}
-              inputMode="numeric"
-              value={port}
-              onChange={(event) => setPort(event.target.value.replace(/\D/g, '').slice(0, 5))}
-              onBlur={saveSpot}
-            />
-          </Field>
-        </div>
-        {status.problem ? (
-          <span role="alert" className="text-[12px] text-danger">
-            {status.text}
-          </span>
-        ) : (
-          <Hint>{status.text}</Hint>
-        )}
-        {state.fingerprint === undefined ? (
-          // The key is made when the relay (or the listener) is first switched on, never just to
-          // show it: that would ask the keychain at startup.
-          <Hint>
-            Switch the relay on to make this computer&apos;s key and show its fingerprint.
-          </Hint>
-        ) : (
-          <>
-            <div className="flex items-center gap-3">
-              <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-dim">
-                {state.fingerprint}
-              </code>
-              <Button
-                className="h-[26px] shrink-0 px-2.5"
-                title="Copies this computer's fingerprint, for styr relay allow on the relay's machine."
-                onClick={() => copyFingerprint(state.fingerprint!)}
-              >
-                {copied ? 'Copied' : 'Copy fingerprint'}
-              </Button>
-            </div>
-            <Hint>
-              On the relay&apos;s machine, run styr relay allow followed by this fingerprint once.
-              Nothing secret is sent to enrol.
-            </Hint>
-          </>
-        )}
-      </CardRow>
-    </Card>
   )
 }
 

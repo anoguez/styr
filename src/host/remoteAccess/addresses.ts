@@ -1,14 +1,27 @@
 import { isIPv4, isIPv6 } from 'node:net'
 import { networkInterfaces } from 'node:os'
-import type { AddressKind } from '@core/types/access.js'
+import type { AccessInterface, AddressKind } from '@core/types/access.js'
 
 export type { AddressKind }
 
 /**
- * Network access is for Tailscale and loopback only: the listener binds to, and accepts connections
- * from, loopback (for an ssh tunnel) and Tailscale's ranges, never anything else: a LAN address
- * would carry the session unencrypted, and a public one would expose it.
+ * Remote access is for devices on the same network as this computer, and nothing else: the same
+ * home or office network, or a VPN both are on (Tailscale, WireGuard …). Never the internet.
+ *
+ * The listener takes connections on every interface, so it follows the computer from one network
+ * to the next without being set up again, and `admitConnection` decides, for every socket before
+ * a byte of it is read, whether the peer is on one of this computer's networks:
+ *
+ * - on a network card (Wi-Fi, Ethernet) the peer must be inside that interface's own subnet, so a
+ *   router cannot route the internet, or another network, in;
+ * - on a VPN's tunnel interface the peer must have a private address;
+ * - on loopback (an ssh tunnel) the peer must be loopback too;
+ * - a public address on either end is refused, and so is the carrier-grade NAT range on a network
+ *   card (that is an internet provider's network, shared with its other customers).
+ *
  * It is enforced here, in code, so a port-forward or a wrong route cannot let the internet in.
+ * Being on the network is not being let in: every session is end-to-end encrypted and a device
+ * still has to be paired (`secureSession.ts`).
  */
 
 /** The Tailscale prefix of IPv6 addresses (`fd7a:115c:a1e0::/48`). */
@@ -47,40 +60,43 @@ function inV4(value: number, base: string, bits: number): boolean {
   return Math.floor(value / 2 ** shift) === Math.floor(prefix / 2 ** shift)
 }
 
+/**
+ * An address as the listener compares it: an IPv4 address that reached a dual-stack socket as
+ * `::ffff:a.b.c.d` is that IPv4 address, and an IPv6 zone (`%en0`) is dropped.
+ */
+export function normalizeAddress(address: string): string {
+  const bare = address.split('%')[0] ?? ''
+  const v6 = parseIPv6(bare)
+  if (v6 !== undefined && v6 >> 32n === 0xffffn) {
+    return [24, 16, 8, 0].map((s) => Number((v6 >> BigInt(s)) & 0xffn)).join('.')
+  }
+  return bare
+}
+
 /** What kind of private address `address` is, or undefined for a public one or a non-address. */
-export function addressKind(address: string): AddressKind | undefined {
+export function addressKind(input: string): AddressKind | undefined {
+  const address = normalizeAddress(input)
   const v4 = parseIPv4(address)
   if (v4 !== undefined) {
     if (inV4(v4, '127.0.0.0', 8)) return 'loopback'
+    if (inV4(v4, '10.0.0.0', 8) || inV4(v4, '172.16.0.0', 12) || inV4(v4, '192.168.0.0', 16)) {
+      return 'lan'
+    }
+    if (inV4(v4, '169.254.0.0', 16)) return 'lan'
     if (inV4(v4, '100.64.0.0', 10)) return 'tailscale'
     return undefined
   }
   const v6 = parseIPv6(address)
   if (v6 === undefined) return undefined
   if (v6 === 1n) return 'loopback'
-  // ::ffff:a.b.c.d is an IPv4 address on a dual-stack socket.
-  if (v6 >> 32n === 0xffffn)
-    return addressKind([24, 16, 8, 0].map((s) => Number((v6 >> BigInt(s)) & 0xffn)).join('.'))
   if (v6 >> 80n === TAILSCALE_V6 >> 80n) return 'tailscale'
+  // fc00::/7, unique local; fe80::/10, link-local.
+  if (v6 >> 121n === 0x7en || v6 >> 118n === 0x3fan) return 'lan'
   return undefined
 }
 
 export function isPrivateAddress(address: string | undefined): boolean {
   return address !== undefined && addressKind(address) !== undefined
-}
-
-/** Why `address` cannot be listened on, or undefined when it can. */
-export function bindAddressProblem(address: string): string | undefined {
-  const trimmed = address.trim()
-  if (!trimmed) return 'Pick a network interface to listen on.'
-  if (trimmed === '0.0.0.0' || trimmed === '::' || /^(::)?0*$/.test(trimmed)) {
-    return 'Listening on every interface is not allowed. Pick one private address.'
-  }
-  if (!isIPv4(trimmed) && !isIPv6(trimmed)) return `${trimmed} is not an IP address.`
-  if (!isPrivateAddress(trimmed)) {
-    return `${trimmed} is not a Tailscale or loopback address. Remote access works over Tailscale (100.64.0.0/10) or an ssh tunnel to 127.0.0.1 only.`
-  }
-  return undefined
 }
 
 export function portProblem(port: number): string | undefined {
@@ -89,69 +105,101 @@ export function portProblem(port: number): string | undefined {
     : 'The port must be a whole number from 1024 to 65535.'
 }
 
-export interface InterfaceChoice {
-  name: string
-  address: string
-  kind: AddressKind
-}
+/**
+ * A VPN's tunnel interface: `utun*` (macOS), `tailscale0` / `tun*` / `wg*` (Linux), ZeroTier's
+ * `zt*`, and the names Windows gives Tailscale, WireGuard and ZeroTier adapters. A tunnel's peers
+ * are not in its own subnet (Tailscale gives each machine a /32), so they are checked by range.
+ */
+const TUNNEL_INTERFACE = /^(utun|tun|wg|zt)\w*$|tailscale|wireguard|zerotier/i
 
-/** Tailscale before loopback, and IPv4 before IPv6 within each: the order Settings lists them in. */
-function rank(choice: InterfaceChoice): number {
-  return (choice.kind === 'tailscale' ? 0 : 2) + (isIPv4(choice.address) ? 0 : 1)
+/**
+ * Interfaces a phone cannot reach this computer through: containers and virtual machines on this
+ * computer. Their peers are admitted like any network's, but their addresses are listed last.
+ */
+const VIRTUAL_INTERFACE = /^(docker|br-|veth|virbr|vboxnet|vmnet|vethernet|lxc|lxd|cni|podman)/i
+
+type Interfaces = ReturnType<typeof networkInterfaces>
+
+/** Whether `address` is inside `cidr` (`192.168.1.5/24`, `fd00::1/64`). */
+export function inSubnet(address: string, cidr: string | null | undefined): boolean {
+  if (!cidr) return false
+  const [base = '', bitsText = ''] = cidr.split('/')
+  const bits = Number(bitsText)
+  const a4 = parseIPv4(normalizeAddress(address))
+  const b4 = parseIPv4(base)
+  if (a4 !== undefined && b4 !== undefined) {
+    if (!(bits >= 0 && bits <= 32)) return false
+    const shift = 32 - bits
+    return Math.floor(a4 / 2 ** shift) === Math.floor(b4 / 2 ** shift)
+  }
+  const a6 = parseIPv6(normalizeAddress(address))
+  const b6 = parseIPv6(base)
+  if (a6 === undefined || b6 === undefined || a4 !== undefined || b4 !== undefined) return false
+  if (!(bits >= 0 && bits <= 128)) return false
+  const shift = BigInt(128 - bits)
+  return a6 >> shift === b6 >> shift
 }
 
 /**
- * A VPN tunnel's interface: `utun*` (macOS), `tailscale0` / `tun*` / `wg*` (Linux), "Tailscale"
- * (Windows). 100.64.0.0/10 is also carrier-grade NAT, so the same address on a network card
- * (`en0`, `eth0`) is the ISP's network, shared with its other customers, and never offered.
+ * Whether a connection from `remote` that arrived on this computer's `local` address may be read
+ * at all: undefined when it may, else the reason it may not (for the log). See the top of this
+ * file for the rules.
  */
-const TUNNEL_INTERFACE = /^(utun|tun|wg)\d*$|tailscale/i
+export function admitConnection(
+  local: string | undefined,
+  remote: string | undefined,
+  interfaces: Interfaces = networkInterfaces()
+): string | undefined {
+  const source = normalizeAddress(remote ?? '')
+  const target = normalizeAddress(local ?? '')
+  const sourceKind = addressKind(source)
+  const targetKind = addressKind(target)
+  if (!sourceKind) return `${source || '?'} is not a private address`
+  if (!targetKind) return `it arrived on ${target || '?'}, which is not a private address`
+  if (targetKind === 'loopback' || sourceKind === 'loopback') {
+    return targetKind === sourceKind ? undefined : 'loopback only talks to loopback'
+  }
+  for (const [name, entries] of Object.entries(interfaces)) {
+    for (const entry of entries ?? []) {
+      if (normalizeAddress(entry.address) !== target) continue
+      if (TUNNEL_INTERFACE.test(name)) return undefined
+      if (targetKind === 'tailscale') {
+        return `${target} is on ${name}, not a VPN: it looks like an internet provider's shared network`
+      }
+      if (inSubnet(source, entry.cidr)) return undefined
+      return `${source} is not on ${name}'s network (${entry.cidr ?? '?'})`
+    }
+  }
+  return `it arrived on ${target}, which is not an address of this computer`
+}
+
+/** Network cards before VPNs before virtual machines; IPv4 before IPv6 within each. */
+function rank(choice: AccessInterface): number {
+  const where = VIRTUAL_INTERFACE.test(choice.name) ? 4 : TUNNEL_INTERFACE.test(choice.name) ? 2 : 0
+  return where + (isIPv4(choice.address) ? 0 : 1)
+}
 
 /**
- * The addresses this computer has that the listener may use, Tailscale IPv4 first. The QR carries
- * the address, and a phone reaches a Tailscale IPv4 address on every network it can reach the
- * IPv6 one on, so IPv6 is listed but never preferred.
+ * Where a device on one of this computer's networks can reach it, best first: what Settings shows
+ * and the pairing QR carries. Leaves out loopback, link-local addresses (no DHCP, or an IPv6
+ * address that needs a zone) and the carrier-grade NAT range on a network card, which
+ * `admitConnection` would refuse.
  */
-export function allowedInterfaces(
-  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces()
-): InterfaceChoice[] {
-  const choices: InterfaceChoice[] = []
-  for (const [name, addresses] of Object.entries(interfaces)) {
-    for (const entry of addresses ?? []) {
+export function reachableAddresses(
+  interfaces: Interfaces = networkInterfaces()
+): AccessInterface[] {
+  const choices: AccessInterface[] = []
+  for (const [name, entries] of Object.entries(interfaces)) {
+    for (const entry of entries ?? []) {
+      if (entry.internal) continue
       const kind = addressKind(entry.address)
-      if (kind === 'tailscale' && isIPv4(entry.address) && !TUNNEL_INTERFACE.test(name)) continue
-      if (kind) choices.push({ name, address: entry.address, kind })
+      if (!kind || kind === 'loopback') continue
+      if (/^(169\.254\.|fe[89ab])/i.test(entry.address)) continue
+      if (kind === 'tailscale' && !TUNNEL_INTERFACE.test(name)) continue
+      choices.push({ name, address: entry.address, kind })
     }
   }
   return choices.sort((a, b) => rank(a) - rank(b))
-}
-
-/**
- * A warning when `address` is in 100.64.0.0/10 but sits on a network card rather than a tunnel: then
- * it is most likely the ISP's carrier-grade NAT, shared with its other customers, who could reach
- * the listener (they would still need a paired key). Undefined otherwise, and for an address this
- * computer does not have. A warning, not a refusal: interface names are a guess.
- */
-export function sharedNetworkWarning(
-  address: string,
-  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces()
-): string | undefined {
-  const trimmed = address.trim()
-  if (!isIPv4(trimmed) || addressKind(trimmed) !== 'tailscale') return undefined
-  for (const [name, entries] of Object.entries(interfaces)) {
-    if (!entries?.some((entry) => entry.address === trimmed)) continue
-    if (TUNNEL_INTERFACE.test(name)) return undefined
-    return (
-      `${trimmed} is on ${name}, not on Tailscale: it looks like your internet provider's shared ` +
-      "network, whose other customers could reach Styr. Pick this computer's Tailscale address."
-    )
-  }
-  return undefined
-}
-
-/** The address to listen on when none was picked: the Tailscale IPv4 one, never IPv6 or loopback. */
-export function defaultBindAddress(choices: readonly InterfaceChoice[]): string | undefined {
-  return choices.find((choice) => choice.kind === 'tailscale' && isIPv4(choice.address))?.address
 }
 
 /** A request header that says a proxy sits in front, which the listener refuses. */

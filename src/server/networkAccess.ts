@@ -1,5 +1,4 @@
 import { join } from 'node:path'
-import { WebSocket } from 'ws'
 import { configDir } from '@core/config.js'
 import { createAccessService, type AccessService } from '@host/remoteAccess/accessService.js'
 import {
@@ -7,25 +6,13 @@ import {
   type AccessStore,
   type SecretBox
 } from '@host/remoteAccess/accessStore.js'
-import { allowedInterfaces, sharedNetworkWarning } from '@host/remoteAccess/addresses.js'
+import { reachableAddresses } from '@host/remoteAccess/addresses.js'
 import { createNetworkPolicy, type GatePorts } from '@host/remoteAccess/gate.js'
 import type { KeepAwakePorts } from '@host/remoteAccess/keepAwake.js'
-import {
-  startRelayClient,
-  type RelayClientPorts,
-  type RelaySocket,
-  type RelaySocketEvents
-} from '@host/remoteAccess/relayClient.js'
-import { RELAY_HOST_MESSAGE_MAX_CHARS } from '@host/remoteAccess/relayProtocol.js'
-import type { AccessState } from '@core/types/access.js'
+import type { AccessInterface, AccessState } from '@core/types/access.js'
 import type { TerminalOutput } from '@core/types.js'
 import type { Hub } from './hub.js'
-import {
-  MAX_BUFFERED_BYTES,
-  MAX_FRAME_BYTES,
-  rawToString,
-  startNetworkListener
-} from './wsListener.js'
+import { startNetworkListener, type Admit } from './wsListener.js'
 
 /** Where remote access keeps its settings, devices and key: `~/.styr/remote-access.json`. */
 export function accessStorePath(): string {
@@ -41,8 +28,11 @@ export interface NetworkAccessOptions {
   store?: AccessStore
   /** The OS keychain for the host's private key (the desktop); without it the key stays 0600. */
   secrets?: () => SecretBox | undefined
-  /** Tests: the relay client's timings. */
-  relayTimings?: Pick<RelayClientPorts, 'pingMs' | 'handshakeMs' | 'backoff'>
+  /** Tests: the admission rule and the address to listen on (see `NetworkListenerOptions`). */
+  admit?: Admit
+  host?: string
+  /** Tests: this machine's reachable addresses (`reachableAddresses`). */
+  interfaces?: () => AccessInterface[]
   /** Only where a screen can show the answers (the desktop): see `AccessServicePorts`. */
   shieldsUp?(): Promise<boolean | undefined>
   workspaceShared?(): boolean
@@ -62,39 +52,20 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
     createAccessStore({ path: accessStorePath(), now: Date.now, secrets: options.secrets })
   const service: AccessService = createAccessService({
     store,
-    listen: (address, port) =>
+    listen: (port) =>
       startNetworkListener(
         {
           hub: options.hub,
           store,
           policy: () => createNetworkPolicy(options.gate),
           log: options.log,
-          onConnections: (count) => service.connections(count)
+          onConnections: (count) => service.connections(count),
+          ...(options.admit ? { admit: options.admit } : {}),
+          ...(options.host ? { host: options.host } : {})
         },
-        address,
         port
       ),
-    relay: (address, port) =>
-      startRelayClient(
-        {
-          store,
-          dial: dialRelay,
-          connect: (send) => {
-            const connection = options.hub.connect(send, createNetworkPolicy(options.gate))
-            return { receive: (text) => connection.receive(text), close: () => connection.close() }
-          },
-          log: options.log,
-          onStatus: () => service.relayChanged(),
-          onConnections: (count) => service.relayConnections(count),
-          maxMessageBytes: MAX_FRAME_BYTES,
-          maxBufferedBytes: MAX_BUFFERED_BYTES,
-          ...options.relayTimings
-        },
-        address,
-        port
-      ),
-    interfaces: () => allowedInterfaces(),
-    addressWarning: (address) => sharedNetworkWarning(address),
+    interfaces: options.interfaces ?? (() => reachableAddresses()),
     keepAwake: options.keepAwake,
     broadcast: options.broadcast,
     log: options.log,
@@ -102,44 +73,6 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
     ...(options.workspaceShared ? { workspaceShared: options.workspaceShared } : {})
   })
   return { service, store }
-}
-
-/**
- * The relay client's socket, on `ws`. A relay frame is ASCII when the phone behaves, but one a
- * phone made of other characters would be up to three bytes each: the limit is in bytes, and a
- * frame over it would cut the whole link, so it allows for that and the relay's own character
- * limit holds the rest.
- */
-export function dialRelay(url: string, events: RelaySocketEvents): RelaySocket {
-  const ws = new WebSocket(url, {
-    maxPayload: RELAY_HOST_MESSAGE_MAX_CHARS * 3,
-    handshakeTimeout: 10_000,
-    perMessageDeflate: false,
-    followRedirects: false
-  })
-  ws.on('open', () => events.open())
-  ws.on('message', (data, isBinary) => events.message(rawToString(data), isBinary))
-  ws.on('pong', () => events.pong())
-  ws.on('close', (code, reason) => events.close(code, reason.toString()))
-  ws.on('error', (error) => events.error(error))
-  // An HTTP answer instead of an upgrade (a 429, a 404): the socket closes after it.
-  ws.on('unexpected-response', (_request, response) => {
-    events.error(
-      Object.assign(new Error(`the relay answered HTTP ${response.statusCode ?? '?'}`), {
-        statusCode: response.statusCode
-      })
-    )
-    ws.terminate()
-  })
-  return {
-    get bufferedAmount() {
-      return ws.bufferedAmount
-    },
-    send: (text) => ws.send(text),
-    ping: () => ws.ping(),
-    close: (code, reason) => ws.close(code, reason),
-    terminate: () => ws.terminate()
-  }
 }
 
 /** Broadcasts after which what network clients may hold has to be checked again. */

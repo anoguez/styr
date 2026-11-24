@@ -276,14 +276,11 @@ const api = {
     connect: (host: string): Promise<void> => ipcRenderer.invoke('remote:connect', host)
   },
   access: {
-    /** Settings → Remote access: the listener, the interfaces to pick from and the paired devices. */
+    /** Settings → Remote devices: the switch, where devices reach this computer, the paired devices. */
     state: (): Promise<AccessState> => ipcRenderer.invoke('access:state'),
     onChanged: (handler: (state: AccessState) => void): (() => void) =>
       subscribe('access:changed', handler as (...args: never[]) => void),
-    /**
-     * Switches the listener or the relay on or off, or moves it; a listener that fails is left off
-     * with `error` set, a relay that cannot be reached says why in `relayError`.
-     */
+    /** Switches access on or off, or keep-awake; a listener that fails is left off with `error` set. */
     configure: (patch: AccessConfigPatch): Promise<AccessState> =>
       ipcRenderer.invoke('access:configure', patch),
     /** The QR for one new device, good for two minutes and one use. */

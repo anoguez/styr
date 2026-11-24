@@ -4,50 +4,39 @@ import {
   canPair,
   deviceLine,
   groupedFingerprint,
-  interfaceOptions,
+  interfaceLabel,
   listenerStatus,
   needsSharedWorkspace,
   qrPath,
-  relayStatusLine,
   showShieldsUpWarning
 } from './accessView.js'
 
 const base: AccessState = {
   enabled: false,
-  bindAddress: '',
   port: 7878,
   keepAwake: false,
   listening: false,
   interfaces: [
-    { name: 'lo0', address: '127.0.0.1', kind: 'loopback' },
+    { name: 'en0', address: '192.168.1.20', kind: 'lan' },
     { name: 'utun4', address: '100.101.102.103', kind: 'tailscale' }
   ],
   devices: [],
   fingerprint: 'ab'.repeat(32),
-  workspaceShared: true,
-  relay: { enabled: false, address: '', port: 7879 },
-  relayStatus: 'off'
+  workspaceShared: true
 }
 
-describe('interfaceOptions', () => {
-  it('lists each private address with where it is', () => {
-    expect(interfaceOptions(base)).toEqual([
-      { value: '127.0.0.1', label: '127.0.0.1 · lo0 · this computer only' },
-      { value: '100.101.102.103', label: '100.101.102.103 · utun4 · Tailscale' }
+describe('interfaceLabel', () => {
+  it('says where each address is', () => {
+    expect(base.interfaces.map(interfaceLabel)).toEqual([
+      '192.168.1.20 · en0 · local network',
+      '100.101.102.103 · utun4 · VPN'
     ])
   })
 
-  it('keeps a saved address whose interface is gone, marked', () => {
-    const options = interfaceOptions({ ...base, bindAddress: '10.9.9.9' })
-    expect(options.at(-1)).toEqual({ value: '10.9.9.9', label: '10.9.9.9 · not available now' })
-  })
-
   it('marks an IPv6 address as such', () => {
-    const options = interfaceOptions({
-      ...base,
-      interfaces: [{ name: 'utun4', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' }]
-    })
-    expect(options[0]?.label).toBe('fd7a:115c:a1e0::1 · utun4 · Tailscale IPv6')
+    expect(interfaceLabel({ name: 'utun4', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' })).toBe(
+      'fd7a:115c:a1e0::1 · utun4 · VPN IPv6'
+    )
   })
 })
 
@@ -102,42 +91,29 @@ describe('groupedFingerprint', () => {
 })
 
 describe('listenerStatus', () => {
-  it('says what it listens on, or why it does not', () => {
-    expect(listenerStatus({ ...base, bindAddress: '127.0.0.1', listening: true })).toMatch(
-      /^Listening on 127\.0\.0\.1:7878/
+  it('says who can connect, or that nothing is open', () => {
+    expect(listenerStatus({ ...base, enabled: true, listening: true })).toMatch(
+      /^On\. Devices on the same network/
     )
-    expect(listenerStatus(base)).toMatch(/Pick a network interface/)
-    expect(listenerStatus({ ...base, bindAddress: '127.0.0.1' })).toMatch(/No port is open/)
+    expect(listenerStatus({ ...base, enabled: true, listening: true, interfaces: [] })).toMatch(
+      /no network a device could reach/
+    )
+    expect(listenerStatus(base)).toMatch(/No port is open/)
   })
 })
 
-describe('relay', () => {
-  const on = { ...base, relay: { enabled: true, address: '100.64.0.9', port: 7879 } }
-
-  it('says whether this computer is on the relay, or why not', () => {
-    expect(relayStatusLine(base)).toEqual({ text: expect.stringMatching(/^Off/), problem: false })
-    expect(relayStatusLine({ ...on, relayStatus: 'connected' })).toEqual({
-      text: 'Connected to the relay at 100.64.0.9:7879.',
-      problem: false
-    })
-    expect(
-      relayStatusLine({ ...on, relayStatus: 'unreachable', relayError: 'Nothing is listening.' })
-    ).toEqual({ text: 'Relay unreachable. Nothing is listening. Trying again.', problem: true })
-    expect(
-      relayStatusLine({ ...on, relayStatus: 'notAllowed', relayError: 'Not allowed.' })
-    ).toEqual({ text: 'Not allowed.', problem: true })
-  })
-
-  it('pairs through the listener or a connected relay', () => {
+describe('canPair', () => {
+  it('pairs only while listening on a network', () => {
     expect(canPair(base)).toBe(false)
-    expect(canPair({ ...on, relayStatus: 'connecting' })).toBe(false)
-    expect(canPair({ ...on, relayStatus: 'connected' })).toBe(true)
     expect(canPair({ ...base, listening: true })).toBe(true)
+    expect(canPair({ ...base, listening: true, interfaces: [] })).toBe(false)
   })
+})
 
-  it('warns about Shields Up only while devices have to connect in', () => {
-    expect(showShieldsUpWarning({ ...base, shieldsUp: true })).toBe(true)
-    expect(showShieldsUpWarning({ ...on, shieldsUp: true, relayStatus: 'connected' })).toBe(false)
-    expect(showShieldsUpWarning({ ...on, shieldsUp: true, relayStatus: 'unreachable' })).toBe(true)
+describe('showShieldsUpWarning', () => {
+  it('warns about Shields Up only while devices may connect', () => {
+    expect(showShieldsUpWarning({ ...base, enabled: true, shieldsUp: true })).toBe(true)
+    expect(showShieldsUpWarning({ ...base, enabled: false, shieldsUp: true })).toBe(false)
+    expect(showShieldsUpWarning({ ...base, enabled: true, shieldsUp: false })).toBe(false)
   })
 })

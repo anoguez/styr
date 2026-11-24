@@ -325,14 +325,68 @@ describe('network listener', () => {
             sourcesOf: () => []
           }),
         log: () => {},
-        handshakeMs: 50
+        handshakeMs: 50,
+        host: '127.0.0.1'
       },
-      '127.0.0.1',
       0
     )
     const device = phone()
     await device.opened()
     expect((await device.waitClosed()).code).toBe(CLOSE.TIMEOUT)
+  })
+
+  /** A listener whose admission rule the test decides, on loopback. */
+  async function listenWith(admit: (local: string, remote: string) => string | undefined) {
+    await listener.close()
+    store = host.store()
+    const { startNetworkListener } = await import('./wsListener.js')
+    listener = await startNetworkListener(
+      {
+        hub: host.hub,
+        store,
+        policy: host.policy,
+        log: (message) => host.state.log.push(message),
+        host: '127.0.0.1',
+        admit
+      },
+      0
+    )
+  }
+
+  it("drops a socket from outside this computer's networks before reading a byte", async () => {
+    const seen: [string, string][] = []
+    await listenWith((local, remote) => {
+      seen.push([local, remote])
+      return 'not on this network'
+    })
+    // A pairing offer is open: from outside the network it cannot even be tried.
+    const offer = store.startPairing()
+    const device = phone()
+    await expect(device.opened()).rejects.toThrow()
+    // A raw socket gets no answer at all, not even an HTTP status.
+    const raw: Socket = createConnection({ host: '127.0.0.1', port: listener.address.port })
+    let answered = ''
+    raw.on('data', (chunk) => (answered += chunk.toString()))
+    raw.on('error', () => undefined)
+    raw.write('GET / HTTP/1.1\r\nHost: x\r\n\r\n')
+    await new Promise((resolve) => raw.once('close', resolve))
+    expect(answered).toBe('')
+    expect(seen[0]).toEqual(['127.0.0.1', '127.0.0.1'])
+    expect(host.state.log.some((line) => line.includes('not on this network'))).toBe(true)
+    expect(host.hub.clientCount()).toBe(0)
+    // The pairing offer was not spent: nothing reached the handshake.
+    expect(store.pairing()?.secret).toBe(offer.secret)
+  })
+
+  it('checks again at the upgrade, in case this computer left the network meanwhile', async () => {
+    let calls = 0
+    // Admitted when the socket opens, refused when it asks to upgrade.
+    await listenWith(() => (++calls > 1 ? 'left the network' : undefined))
+    const device = phone()
+    await expect(device.opened()).rejects.toThrow()
+    expect(calls).toBe(2)
+    expect(host.state.log.some((line) => line.includes('left the network'))).toBe(true)
+    expect(host.hub.clientCount()).toBe(0)
   })
 
   it('refuses proxy headers, browser origins and unknown paths', async () => {
@@ -405,9 +459,9 @@ describe('network listener', () => {
         store,
         policy: host.policy,
         log: () => {},
-        onConnections: (count) => counts.push(count)
+        onConnections: (count) => counts.push(count),
+        host: '127.0.0.1'
       },
-      '127.0.0.1',
       0
     )
     const credentials = await pairDevice()

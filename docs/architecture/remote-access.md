@@ -1,4 +1,4 @@
-# Remote access: devices reaching a workspace over a private network
+# Remote access: devices on the same network reaching a workspace
 
 A phone (the Flutter app) can use a workspace that lives in the desktop app, or on a `styr serve`,
 without that workspace ever having been "remote". Everything stays on the computer: tasks, agents,
@@ -12,42 +12,56 @@ This is separate from the ssh remote workspaces of `remote.md`, where the deskto
 Here the desktop (or `styr serve --listen`) is the server, and the client is a device.
 
 ```
-device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ hub ─▶ gate ─▶ channel table
+device ──ws://<this computer's LAN or VPN address>:7878──▶ wsListener ─admit─handshake─▶ hub ─▶ gate ─▶ channel table
                                                                               │
                                   desktop: ipc.ts services       styr serve: serverHost services
 ```
 
 ## Rules
 
-- **Off by default, two switches.** Settings → Remote devices → "Allow other devices to connect"
-  starts the listener; each workspace then opts in with `remoteAccess` (Settings → Remote access,
-  "Allow remote clients to open this workspace", a workspace setting, default `false`). Neither
-  alone exposes a workspace. The flag is ignored for an ssh remote workspace's stub.
-- **Tailscale (and loopback) only, enforced in code** (`host/remoteAccess/addresses.ts`). The listener
-  binds only to loopback or Tailscale addresses (`100.64.0.0/10`,
-  `fd7a:115c:a1e0::/48`; the IPv4 range also covers carrier-grade NAT); `0.0.0.0`, `::`, a hostname, a LAN (RFC 1918 / link-local) or public address and "nothing picked" are
-  refused with a message. 100.64.0.0/10 is also carrier-grade NAT (an ISP's network shared with
-  its other customers), so Settings and the default offer such an address only on a tunnel
-  interface (`utun*`, `tailscale0`, `wg*`, "Tailscale"), never on a network card such as `en0`.
-  Settings lists the Tailscale IPv4 address first, and switching access on
-  with nothing picked listens there (`defaultBindAddress`); it never picks IPv6 or loopback by
-  itself, and never replaces an address the user chose (the QR carries it, and an IPv6 host fails
-  on networks that reach the IPv4 one). Every accepted socket's source address is
-  checked against the same ranges before a byte is read, so a port-forward cannot let the internet
-  in, and one address may hold at most twice its connection cap in sockets, upgraded or not
-  (`guardSockets`, which also gives HTTP the handshake's 10 s to send its headers). Requests with
-  `X-Forwarded-For`, `Forwarded`, `X-Real-IP` … are refused (no reverse
-  proxies), and so is any request with an `Origin` (a web page cannot be a device). Reachability is
-  the user's network: Tailscale, or an ssh tunnel to loopback. No UPnP or hole punching; the only
-  relay is one the owner runs on their own tailnet (`styr relay`, below).
+- **Off by default, two switches.** Settings → Remote devices → "Allow devices on your network to
+  connect" starts the listener; each workspace then opts in with `remoteAccess` (Settings → Remote
+  access, "Allow remote clients to open this workspace", a workspace setting, default `false`).
+  Neither alone exposes a workspace. The flag is ignored for an ssh remote workspace's stub. There
+  is nothing else to set up: no address to pick, no port to type.
+- **Same network only, enforced in code** (`host/remoteAccess/addresses.ts`, `admitConnection`).
+  The listener binds every interface (one dual-stack `::` socket, `0.0.0.0` where IPv6 is off), so
+  it follows the computer from one network to the next, and decides per socket, from its local and
+  remote address and `os.networkInterfaces()` as they are at that moment, before a byte is read:
+  - arrived on a **network card** (Wi-Fi, Ethernet): the peer must be inside that interface's own
+    subnet (`cidr`). A router that forwards a port, or routes another subnet in, is refused even
+    with a private source address.
+  - arrived on a **VPN tunnel** (`utun*`, `tun*`, `wg*`, `zt*`, `tailscale0`, or a Windows adapter
+    named Tailscale, WireGuard, ZeroTier): the peer must have a private address. A tunnel's peers
+    are not in its subnet (Tailscale gives each machine a /32).
+  - **loopback** (an ssh tunnel) only from loopback.
+  - refused: a public address on either end; 100.64.0.0/10 on a network card (carrier-grade NAT, an
+    internet provider's network shared with its other customers; it used to be only a warning); an
+    address the computer no longer has (it left that network).
+
+  Private is RFC 1918, 169.254/16, IPv6 unique local (`fc00::/7`) and link-local (`fe80::/10`),
+  Tailscale's 100.64/10 and `fd7a:115c:a1e0::/48`, and loopback; a dual-stack socket's
+  `::ffff:a.b.c.d` is read as IPv4 first (`normalizeAddress`). The rule runs on `connection` and
+  again on `upgrade`. One address may hold at most twice its connection cap in sockets, upgraded or
+  not (`guardSockets`, which also gives HTTP the handshake's 10 s to send its headers). Requests
+  with `X-Forwarded-For`, `Forwarded`, `X-Real-IP` … are refused (no reverse proxies), and so is
+  any request with an `Origin` (a web page cannot be a device). No UPnP, hole punching or relay.
+
+- **The port finds itself.** 7878 by default (`AccessConfig.port`, not in Settings); when it is
+  taken the service tries the next nine (`PORT_ATTEMPTS`) and saves the one it got, so a paired
+  device finds it there after a restart. `styr serve --port` sets it.
+- **An older config reads as off.** A `remote-access.json` with `bindAddress` or `relay` (before
+  same-network access, when the listener took one Tailscale address) loads switched off
+  (`fromOlderConfig`): on, it would reach every network the computer is on, which the user never
+  agreed to. Paired devices stay paired; switching on again writes the new shape.
 - **No hub traffic before the handshake.** An unauthenticated peer never reaches `hub.connect`.
   Five failed handshakes from one address in a minute turn that address away (429) for the rest of
   the minute; every refusal is logged. Loopback is not counted (every ssh-tunnelled device shares
   127.0.0.1, and sign-in is a signature, so there is nothing to guess) and gets a larger
   connection cap.
-- **End to end, and private as well.** Every session is protocol 2 (Noise, below), so a path the
-  host does not trust (a relay) can neither read nor change it; the private network (Tailscale's
-  WireGuard, an ssh tunnel) is kept as a second layer and to keep the port off the internet.
+- **End to end, and on the network as well.** Every session is protocol 2 (Noise, below), so
+  anyone else on the Wi-Fi or the VPN can neither read nor change it, nor sign in without a paired
+  key; the same-network rule is the second layer, keeping the port off the internet.
 - **Network clients get a narrower API** (`gate.ts`): no desktop-only channels, no `remote:*`,
   `updates:*`, `access:*` or `server:experimental`, no `workspaces:create`, no `server:notify`, and
   `settings:save` only for a shared workspace with the app-level part unchanged. The local window
@@ -58,9 +72,8 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 
 ## What Settings warns about
 
-- **Shields Up.** With Tailscale's Shields Up on, nothing connects in and the phone only sees a
-  timeout (the warning is not shown while this computer is connected to a relay, which it reaches
-  by connecting out). `tailscale.ts` runs `tailscale debug prefs` (a child process, never synchronous, trying
+- **Shields Up.** With Tailscale's Shields Up on, nothing connects in over Tailscale and the phone
+  only sees a timeout (shown while access is on). `tailscale.ts` runs `tailscale debug prefs` (a child process, never synchronous, trying
   the Mac app's binary when `tailscale` is not on the app's PATH) and reads `ShieldsUp` alone; the
   answer is `AccessState.shieldsUp`. It is asked when Settings → Remote devices opens
   (`access:checkNetwork`) and when access is switched on, never on a timer.
@@ -74,14 +87,16 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 
 ## Known limits
 
-- A peer on the private network can spend the single-use pairing secret with a bad `pair`
-  message, forcing a rescan; anyone who sees the QR during its 2 minutes can pair.
-- A 100.64.0.0/10 address typed in by hand on a network card (likely carrier-grade NAT) is
-  listened on, with a warning (`sharedNetworkWarning`, `AccessState.bindWarning`) in Settings and
-  in the log, `styr serve`'s included; it is not refused, because interface names are a guess.
-  Devices would still need their key.
+- A peer on the same network can spend the single-use pairing secret with a bad `pair` message,
+  forcing a rescan; anyone who sees the QR during its 2 minutes can pair.
+- A router that forwards a port and rewrites the source to its own LAN address (some do, for
+  "hairpin" NAT) looks like a peer on the network and passes `admitConnection`; Styr never asks for
+  a forward, and the device would still need its paired key.
 - Loopback is allowed (for an ssh tunnel), so a local tunnel agent (ngrok, cloudflared) pointed at
-  the listener would expose it; devices would still need their key.
+  the listener would expose it; devices would still need their key. So are containers and virtual
+  machines on this computer (`docker0`, `vEthernet`), whose subnets are this computer's networks.
+- A VPN whose adapter has none of the tunnel names and gives each peer a /32 (WireGuard on Windows
+  under a custom name) is a network card to the rule, and its peers are refused.
 - `styr serve` keeps the host's private key in `remote-access.json` in plaintext (mode 0600). The
   desktop seals it with `safeStorage` (Keychain, DPAPI, libsecret; not Linux's `basic_text`
   fallback) and drops the plaintext. A `styr serve` on the same machine shares the file, so once
@@ -93,8 +108,8 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
 ## Files
 
 - `src/host/channelTable.ts`: the shared channel table (see `remote.md`).
-- `src/host/remoteAccess/addresses.ts`: the private ranges, `bindAddressProblem`, the interfaces
-  Settings offers, the proxy-header list.
+- `src/host/remoteAccess/addresses.ts`: the private ranges, `admitConnection` (the same-network
+  rule), `reachableAddresses` (what Settings shows and the QR carries), the proxy-header list.
 - `src/host/remoteAccess/accessStore.ts`: `~/.styr/remote-access.json` (mode 0600, written
   atomically): the listener's settings, the devices' public keys, this install's Ed25519 key pair and
   the in-memory pairing offer. Not in `Settings`: those reach the renderer and the clients.
@@ -105,27 +120,21 @@ device ──ws://<private address>:7878──▶ wsListener ─handshake─▶ 
   (tests and the transcript vector only; the phone has its own in Dart).
 - `src/host/remoteAccess/gate.ts`: `createNetworkPolicy`, the per-client filter the hub applies.
 - `src/host/remoteAccess/tailscale.ts`: the Shields Up probe.
-- `src/host/remoteAccess/accessService.ts`: what Settings drives: switch on/off, move, pair, revoke,
-  the keep-awake hold (`keepAwake.ts`). A listener that cannot start (port in use, interface gone)
-  leaves the setting off with the reason in `error`; the app carries on.
+- `src/host/remoteAccess/accessService.ts`: what Settings drives: switch on/off, pair, revoke, the
+  free port, the keep-awake hold (`keepAwake.ts`). A listener that cannot start (no port free, the
+  system refused) leaves the setting off with the reason in `error`; the app carries on.
 - `src/server/wsListener.ts`: the WebSocket transport. `networkAccess.ts` wires store + policy +
   service for a host and `forwardToHub` feeds the hub the host's broadcasts. `src/main/networkAccess.ts`
   is the desktop's half (the `access:*` channels, `powerSaveBlocker`, the hub over `ipc.ts`'s table);
-  `styr serve --listen <address>[:port] [--pair]` is the server's.
-- `src/host/remoteAccess/relayClient.ts`: the host's side of a relay (below); `dialRelay` in
-  `src/server/networkAccess.ts` gives it its `ws` socket.
-- `src/host/remoteAccess/relayProtocol.ts`: the relay's wire (paths, messages, close codes, what
-  the host signs). `src/server/relay/`: `styr relay` (`relay.ts` the forwarding, `allowList.ts`,
-  `control.ts` the Unix socket calls, `cli.ts`, `main.ts`).
+  `styr serve --listen [--port <port>] [--pair]` is the server's.
 
 ## `styr serve` on a machine with no window (a cloud VM)
 
-`styr serve --listen <tailscale-address>[:port] [--pair]` listens for devices (a public address is
-refused, so a VM needs Tailscale). `styr serve --relay <address>[:port] [--pair]` (port 7879 by
-default) takes them through a `styr relay` instead, or as well; it prints the fingerprint to allow
-on the relay, and `--pair` waits up to 10 seconds for the relay to register it before the QR.
-Either flag switches the other path off for the run (the config is the same file the desktop uses). `--pair` prints a QR and the URI at start. Later, without a
-restart (which would end the agents), on the same machine:
+`styr serve --listen [--port <port>] [--pair]` listens for devices on the machine's own networks,
+under the same rule as the desktop (a cloud VM's devices therefore reach it over a VPN such as
+Tailscale). `--listen <address>`, from before, is refused with a message saying so rather than read.
+It prints the addresses devices reach it at; `--pair` prints a QR and the URI at start. Later,
+without a restart (which would end the agents), on the same machine:
 
 ```sh
 styr serve pair          # a new QR, 2 minutes, one use
@@ -142,11 +151,13 @@ workspace's Settings → Remote access) or set it in the workspace's `settings.j
 ## Pairing and sign-in
 
 Pairing happens once per device. "Pair a device…" shows a QR for
-`styr://pair?v=2&host=…&port=…&fp=<fingerprint>&secret=<secret>&exp=<ms>` (direct), or
-`styr://pair?v=2&relay=<address:port>&fp=…&secret=…&exp=…` while this computer is on a relay (it
-is then used even with the listener up). It carries the way in, this install's key fingerprint to
-pin, and a one-time secret that works for 2 minutes and one attempt (a wrong guess spends it too).
-Pairing is refused while nothing is listening and no relay has registered this host. The device
+`styr://pair?v=2&host=…&port=…&hosts=<a,b,…>&fp=<fingerprint>&secret=<secret>&exp=<ms>`. `host` is
+the address a device on the same Wi-Fi reaches first; `hosts` is every address of
+`reachableAddresses`, best first (network cards, then VPNs, then virtual machines; IPv6 in
+brackets), for a device on the computer's VPN. It carries this install's key fingerprint to pin,
+and a one-time secret that works for 2 minutes and one attempt (a wrong guess spends it too).
+Pairing is refused while nothing is listening, or while the computer is on no network a device
+could reach. The device
 makes its own Ed25519 key pair and keeps the private key in the platform secure store (Keychain /
 Keystore) with the fingerprint; **the private key never reaches the computer**, which stores only
 the public key, the device's name and its id. The key has no expiry; app, computer or network
@@ -155,7 +166,7 @@ connections; adding the device again needs a new QR.
 
 ## The session: protocol 2, end to end
 
-Every connection, direct or through a relay, is end-to-end encrypted with
+Every connection is end-to-end encrypted with
 `Noise_XX_25519_ChaChaPoly_SHA256` (`noise.ts`, checked against the official vector in
 `noiseXX.vector.json`; `secureSession.ts` the host's side). There is no other protocol: the
 plain handshake of earlier versions is gone, and anything but a protocol-2 hello (an old one
@@ -180,12 +191,12 @@ h`, where `label` is `"styr-noise-host-v1\n"` for the host and `"styr-noise-devi
   SPKI DER (44 bytes), base64. Every base64 field is strict and padded.
 - **The device checks the host first:** SHA-256(`identityKey`) must be the QR's fingerprint and the
   signature must verify over the static key Noise just delivered. Otherwise it closes without
-  writing message 3, so an impostor (a relay among them) learns nothing about the device.
+  writing message 3, so an impostor on the network learns nothing about the device.
 - **Sign-in:** the host verifies `signature` with the stored key for `deviceId` (a dummy key for an
   unknown one, so a miss costs the same). **Pairing:** `proof` = hex HMAC-SHA256(key = the QR's
   secret, utf-8; `"styr-noise-pair-v1\n" ‖ h ‖ "\n" + name + "\n" + identityKey`), and the
-  signature must be by `identityKey`. `h` covers both ephemeral and both static keys, so a relay
-  running a handshake with each side cannot carry a proof from one to the other; the secret never
+  signature must be by `identityKey`. `h` covers both ephemeral and both static keys, so a machine
+  in the middle running a handshake with each side cannot carry a proof from one to the other; the secret never
   travels, and the attempt spends it. `name` is at most 100 characters, so message 3 fits the 2 KiB
   handshake limit whatever they are.
 - **Records.** Each sealed message is `flag ‖ bytes` (flag 1: the message ends here, 0: more
@@ -221,119 +232,10 @@ unauthorized, 4403 revoked, 4408 handshake timeout. A refusal by the gate is JSO
 protocol 2, whatever the other end answers; reject an all-zero X25519 result (small-order key), as
 `noise.ts` does; send no JSON-RPC before `ready`; end the session on any failed frame.
 
-**What a relay still learns:** who connects when, each message's length (there is no padding), that a
-session is a pairing (message 3's size and the `paired` record), and the host's identity key, by
-running a handshake with it. Anyone who can reach the host while a QR is open can
-spend it with one bad attempt, forcing a rescan. The listener's failure limit and connection caps
-are per source address; behind a relay every device shares one, so the relay client needs its own
-per-session limits.
-
-## Relay: `styr relay`
-
-For a host that cannot accept connections (Tailscale Shields Up, a firewall), the host and the
-phone each connect _out_ to a relay on the owner's tailnet, which moves the phone's frames to the
-host and back (TASK-0212, "Design: relay mode"). `src/server/relay/` is the relay;
-`host/remoteAccess/relayClient.ts` the host's side (below). The phone's dial is a later step.
-
-```sh
-styr relay --listen <tailscale-address>[:port]   # default port 7879; loopback or Tailscale only
-styr relay allow <host fingerprint>             # Settings → Remote devices shows it; ':' and case are fine
-styr relay hosts                                # allowed hosts, connected or offline, sessions
-styr relay revoke <host fingerprint>            # removes it and ends its sessions at once
-```
-
-`allow`, `hosts` and `revoke` go over the relay's own Unix socket (`~/.styr/relay.sock`, or
-`$STYR_RELAY_SOCKET`, `--socket`; apart from `server.sock`, so a relay and a server can share a
-machine), with `relay:allow`, `relay:hosts`, `relay:revoke`; nothing on the network can call them.
-The allow list is `~/.styr/relay.json` (fingerprints only, mode 0600, written atomically); a file
-that exists but cannot be read stops the relay from starting. No secret crosses the network to
-enrol a host: it proves its key on every registration.
-
-**Trust.** The relay is trusted for admission and availability only. It cannot read or alter a
-session (protocol 2 is end to end, above, and the host requires it over a relay); it can refuse
-service and see who connects when, and how large each frame is.
-
-Wire (`host/remoteAccess/relayProtocol.ts`, shared with the host's client). Text frames, JSON:
-
-```
-GET /host
-R → H  {type:'challenge', nonce}                      nonce: 16 random bytes, hex
-H → R  {type:'register', hostKey, signature}          hostKey: Ed25519, SPKI DER, base64;
-         signature: Ed25519 over "styr-relay-host-v1\n" + nonce
-R → H  {type:'registered'}       or close 4401 (bad signature), 4403 (not on the allow list)
-R → H  {type:'open', sessionId}  {type:'frame', sessionId, frame}  {type:'close', sessionId}
-H → R  {type:'frame', sessionId, frame}  {type:'close', sessionId, code?}
-
-GET /phone/<host fingerprint, 64 hex>
-R ↔ P  the frames, bare, both ways         or close 4404 at once: the host is not connected
-```
-
-- **Says nothing about hosts.** A phone asking for a host that is offline, unknown or not allowed
-  gets the same close, 4404 `host offline`, after the upgrade, and no frame. The signature is
-  checked before the allow list, so only the key's holder learns it is not allowed. A host that
-  goes away ends its sessions with 4404; one key registered again takes over (the old socket gets
-  4409); a revoked host gets 4403.
-- **Frames are opaque.** The relay never parses a phone's frame; it carries text frames up to
-  one protocol-2 record (`RELAY_FRAME_MAX_CHARS`; larger closes with 1009, binary with 4400).
-  A host's close `code` (1000, or 4000–4999) reaches the phone, so a refused device still sees 4401. A malformed host message closes the host (4400) and its sessions.
-- **Limits, as `wsListener.ts`.** Bound to one loopback or Tailscale address (`bindAddressProblem`);
-  every socket's source is checked before a byte is read; proxy headers and an `Origin` are
-  refused; an unknown path is a plain 404. Five failed registrations (bad signature, not allowed,
-  bad message, 10 s timeout, a hang-up) from one address in a minute turn it away (429); thirty
-  4404s do the same for phones (a phone retries while its host is away). At most 16 hosts
-  registering, 8 connections per address (32 from loopback), 32 sessions per host (4429). Each
-  session may have 8 MiB on its way to the host, and all of a host's sessions together 16 MiB;
-  the session that would pass either ends alone (4429), so phones cannot take the host link down.
-  A frame is measured as the host receives it, inside its JSON envelope (a `"` escapes to two
-  characters); one over the host's message limit ends that session (4400). The host's socket
-  more than 32 MiB behind (a host that stopped reading) is cut, ending all its sessions; a phone
-  more than 32 MiB behind ends its own. Both get a liveness ping every 20 s.
-- **What a relay still reveals:** a phone that knows a fingerprint learns whether that host is
-  online (that is the point of 4404), and 4429 says it is busy.
-
-## The host on a relay: `relayClient.ts`
-
-Settings → Remote devices → "Connect through a relay" (`AccessConfig.relay`: `enabled`, `address`,
-`port`, in `remote-access.json`; a file without it reads as off), or `styr serve --relay`. It is a
-switch apart from "Allow other devices to connect": either, both or neither can be on.
-
-- **Loopback or Tailscale only.** `relayAddressProblem` refuses anything else (a hostname, a LAN
-  or public address) before anything is dialled; the setting stays on and says why.
-- **One outbound socket.** It dials `ws://<address>:<port>/host`, signs the relay's nonce with the
-  host's identity key and waits for `registered`. A drop (or a relay that breaks the protocol:
-  bad JSON, a session before `registered`) ends every session through it and dials again after
-  1 s, doubling to 60 s; `registered` resets the delay. A liveness ping every 20 s while connected
-  notices a dead link. 4403 (not on the allow list) shows "Not allowed on this relay" and keeps
-  trying, so `styr relay allow` takes effect without touching the host. 4409 means another process
-  with this key (the desktop and `styr serve` on one machine) registered: this one stops and says
-  so rather than take the link back and forth. No other timers.
-- **One session per `open`.** Each runs `createSecureServerHandshake` alone: protocol 2 or nothing
-  (a protocol-1 hello is closed with 4401 and no plaintext). Then the hub with
-  `createNetworkPolicy`, exactly as a direct socket: the gate and each workspace's `remoteAccess`
-  apply unchanged, `store.touch` marks the device seen and it shows as connected. Close codes to
-  the device match the listener's (4400 a bad frame, 4401, 4403 revoked, 4408 handshake timeout,
-  4429 busy); a session the relay closes is just dropped.
-- **Its own per-session limits.** Every relayed device shares the relay's address, so the
-  listener's per-address failure limit would let one phone lock out the rest; instead at most 16
-  sessions may be mid-handshake (more get 4429), each has the 10 s handshake timeout and the 2 KiB
-  handshake frame limit, and a message reassembles to at most 8 MiB. The relay's own per-address
-  limits (30 4404s a minute, 8 connections) still apply to phones.
-- **Revoke** ends a device's relayed sessions as it ends its direct ones (4403), including a device
-  removed by another process, which is noticed at the next ping.
-- **The link is shared.** The socket's limit on incoming messages allows three bytes per character
-  of the relay's limit, so a phone's frame of non-ASCII characters cannot cut the link; a link
-  more than 32 MiB behind (a relay that stopped reading) is cut and dialled again.
-
-**Pairing through the relay.** "Pair a device…" makes `styr://pair?v=2&relay=<host:port>&fp=…`
-whenever the relay has registered this host, even with the listener up, since the phone reaches a
-relay from any network. It is refused while the relay has not registered this host ("Styr is not
-connected to the relay") and nothing listens. The secret, its 2 minutes and its single use are as
-for a direct pairing, and the proof is bound to the end-to-end handshake, so a relay cannot pair.
-
-Settings shows the status ("Connected", "Relay unreachable", "Not allowed on this relay", and why)
-under the switch, with this computer's fingerprint and a button to copy it for `styr relay allow`.
-`AccessState.relayStatus` / `relayError` carry it; `access:configure` takes a `relay` patch, so no
-new channel was added.
+**What someone else on the network still learns:** that a device connects when, each message's
+length (there is no padding), that a session is a pairing (message 3's size and the `paired`
+record), and the host's identity key, by running a handshake with it. Anyone on the network while
+a QR is open can spend it with one bad attempt, forcing a rescan.
 
 ## The gate (what a device sees)
 
@@ -372,18 +274,13 @@ deleting the shared workspace); there are no per-device scopes in v1.
 
 `host/remoteAccess/*.test.ts` (addresses, store, handshake pieces, gate, service),
 `host/remoteAccess/secureSession*.test.ts` (protocol 2's release gates: tamper, replay, reorder,
-drop, downgrade, wrong host, a relay that cannot pair; the transcript vector),
+drop, downgrade, wrong host, a machine in the middle that cannot pair; the transcript vector),
 `server/wsListener.secure.test.ts` (protocol 2 over the socket),
 `server/wsListener.test.ts` (hostile input: bad handshakes, binary and oversized frames, proxy
 headers, origins, rate limiting, leakage on every broadcast kind), `server/networkAccess.test.ts`
 (off by default opens no port; pair once, reconnect across a restart, revoke),
-`server/network.integration.test.ts` (the built `styr serve --listen` with a paired device),
-`host/remoteAccess/relayClient.test.ts` (the client on a fake link: registration, pairing and
-sign-in end to end, protocol 1 refused, tampered frames, revoke, handshake timeout and cap, backoff,
-4403 / 4409, a relay that breaks the protocol or stops answering pings),
-`server/networkAccess.relay.test.ts` (the real client, relay and hub: allowed late, pairs, the gate
-refuses an unshared workspace, revoke ends both sessions, the relay going away),
-`server/relay/relay.test.ts` (forwarding, the same 4404 for offline / unknown / not allowed, bad
-and replayed signatures, revoke, takeover, frame and backlog limits, rate limits, bind addresses,
-a protocol-2 pairing through the relay that sees only ciphertext), `server/relay/control.test.ts`
-(the CLI, the allow list file, the Unix socket calls).
+`server/network.integration.test.ts` (the built `styr serve --listen` with a paired device).
+`host/remoteAccess/addresses.test.ts` holds the same-network rule's cases (the same Wi-Fi, a VPN,
+loopback, a routed or forwarded private address, carrier-grade NAT on a network card, an address
+the computer left), and `server/wsListener.test.ts` that a refused socket gets no byte back and
+never reaches the handshake.

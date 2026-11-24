@@ -23,7 +23,7 @@ export function isListening(path: string): Promise<boolean> {
 /** `sun_path` holds 104 bytes on macOS and 108 on Linux, including the terminating NUL. */
 const MAX_SOCKET_PATH = 103
 
-/** What answers on the socket: the hub for `styr serve`, the control calls for `styr relay`. */
+/** What answers on the socket: the hub for `styr serve`. */
 export interface LineServer {
   /** One per client: `write` sends it a line; feed it what the client sends. */
   connect(write: (line: string) => void): { receive(chunk: Buffer | string): void; close(): void }

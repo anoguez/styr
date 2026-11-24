@@ -9,7 +9,6 @@ import {
   writeFileSync,
   writeSync
 } from 'node:fs'
-import { createServer } from 'node:net'
 import { join, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { card, column, launchStyr, type StyrApp } from './harness'
@@ -108,23 +107,20 @@ test('an earlier release’s profile loads, and the index rebuilds after a schem
 })
 
 test('a device that has not paired is refused by the remote access listener', async () => {
-  const port = await freePort()
   styr = await launchStyr('access')
   const { page } = styr
-  // The workspace is shared and the listener is up, on loopback only: the one address that needs
-  // no network. An unpaired peer must still get nothing.
+  // The workspace is shared and the listener is up; the test connects over loopback, the one
+  // address that needs no network. An unpaired peer must still get nothing.
   const settings = await page.evaluate(() => window.api.settings.get())
   await page.evaluate((change) => window.api.settings.save(change), {
     workspaceId: settings.activeWorkspaceId,
     workspace: { ...settings, remoteAccess: true },
     global: { ...settings }
   } as never)
-  const state = await page.evaluate((patch) => window.api.access.configure(patch), {
-    enabled: true,
-    bindAddress: '127.0.0.1',
-    port
-  })
+  const state = await page.evaluate(() => window.api.access.configure({ enabled: true }))
   expect(state.listening, state.error).toBe(true)
+  // The port it found free (7878, or the next free one).
+  const port = state.port
 
   const outcome = await new Promise<{ code: number; messages: string[] }>((resolveOutcome) => {
     const socket = new WebSocket(`ws://127.0.0.1:${port}`)
@@ -142,14 +138,3 @@ test('a device that has not paired is refused by the remote access listener', as
   await page.evaluate(() => window.api.access.configure({ enabled: false }))
   styr.expectNoErrors()
 })
-
-function freePort(): Promise<number> {
-  return new Promise((resolvePort, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address() as { port: number }
-      server.close(() => resolvePort(port))
-    })
-  })
-}

@@ -145,7 +145,7 @@ export const SECTIONS = [
     // These controls act at once, like Remote hosts: nothing here waits for Save.
     keys: [],
     words:
-      'remote access devices phone mobile pair qr tailscale network listen port token revoke awake sleep flutter app'
+      'remote access devices phone mobile pair qr tailscale vpn lan wifi network local token revoke awake sleep flutter app'
   },
   {
     id: 'remote',

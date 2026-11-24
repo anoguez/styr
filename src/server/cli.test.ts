@@ -37,48 +37,49 @@ describe('parseServerArgs', () => {
     expect(parseServerArgs(['serve', '--socket', '/s', 'attach']).command).toBe('invalid')
   })
 
-  it('listens on one address and pairs, with a default port', () => {
-    expect(parseServerArgs(['serve', '--listen', '100.64.0.3'])).toEqual({
+  it("listens on this machine's networks, with a default port, and pairs", () => {
+    expect(parseServerArgs(['serve', '--listen'])).toEqual({
       command: 'serve',
-      listen: { address: '100.64.0.3', port: 7878 }
+      listen: { port: 7878 }
     })
-    expect(parseServerArgs(['serve', '--listen=192.168.1.5:9000', '--pair'])).toEqual({
+    expect(parseServerArgs(['serve', '--listen', '--port', '9000', '--pair'])).toEqual({
       command: 'serve',
-      listen: { address: '192.168.1.5', port: 9000 },
+      listen: { port: 9000 },
       pair: true
     })
-    expect(parseServerArgs(['serve', '--listen', '[fd7a:115c:a1e0::1]:7000'])).toEqual({
+    expect(parseServerArgs(['serve', '--port=9001', '--listen'])).toEqual({
       command: 'serve',
-      listen: { address: 'fd7a:115c:a1e0::1', port: 7000 }
-    })
-    expect(parseServerArgs(['serve', '--listen', 'fd7a:115c:a1e0::1'])).toEqual({
-      command: 'serve',
-      listen: { address: 'fd7a:115c:a1e0::1', port: 7878 }
+      listen: { port: 9001 }
     })
   })
 
-  it('takes a relay, alone or beside --listen, with the relay port by default', () => {
-    expect(parseServerArgs(['serve', '--relay', '100.64.0.9', '--pair'])).toEqual({
-      command: 'serve',
-      relay: { address: '100.64.0.9', port: 7879 },
-      pair: true
-    })
-    expect(parseServerArgs(['serve', '--listen', '127.0.0.1', '--relay=100.64.0.9:9000'])).toEqual({
-      command: 'serve',
-      listen: { address: '127.0.0.1', port: 7878 },
-      relay: { address: '100.64.0.9', port: 9000 }
-    })
-    expect(parseServerArgs(['serve', '--relay']).command).toBe('invalid')
-    expect(parseServerArgs(['attach', '--relay', '127.0.0.1']).command).toBe('invalid')
+  it('says --listen takes no address any more, rather than read one', () => {
+    for (const args of [
+      ['serve', '--listen', '100.64.0.3'],
+      ['serve', '--listen=192.168.1.5:9000'],
+      ['serve', '--listen', '[fd7a:115c:a1e0::1]:7000']
+    ]) {
+      const parsed = parseServerArgs(args)
+      expect(parsed).toMatchObject({ command: 'invalid' })
+      expect((parsed as { message: string }).message).toMatch(/no longer takes an address/)
+    }
   })
 
-  it('refuses --listen without an address, --pair without --listen, and attach with either', () => {
-    expect(parseServerArgs(['serve', '--listen']).command).toBe('invalid')
+  it('refuses a bad port, --port or --pair without --listen, attach with either, and --relay', () => {
+    for (const port of ['80', '70000', 'abc', '']) {
+      expect(parseServerArgs(['serve', '--listen', '--port', port]).command).toBe('invalid')
+    }
+    expect(parseServerArgs(['serve', '--listen', '--port']).command).toBe('invalid')
     expect(parseServerArgs(['serve', '--pair'])).toEqual({
       command: 'invalid',
-      message: '--pair needs --listen or --relay'
+      message: '--pair needs --listen'
     })
-    expect(parseServerArgs(['attach', '--listen', '127.0.0.1']).command).toBe('invalid')
+    expect(parseServerArgs(['serve', '--port', '9000'])).toEqual({
+      command: 'invalid',
+      message: '--port needs --listen'
+    })
+    expect(parseServerArgs(['attach', '--listen']).command).toBe('invalid')
+    expect(parseServerArgs(['serve', '--relay', '100.64.0.9']).command).toBe('invalid')
   })
 
   it('controls a running server: pair, devices, revoke', () => {
@@ -92,6 +93,6 @@ describe('parseServerArgs', () => {
       id: 'abc123'
     })
     expect(parseServerArgs(['serve', 'revoke']).command).toBe('invalid')
-    expect(parseServerArgs(['serve', 'pair', '--listen', '127.0.0.1']).command).toBe('invalid')
+    expect(parseServerArgs(['serve', 'pair', '--listen']).command).toBe('invalid')
   })
 })

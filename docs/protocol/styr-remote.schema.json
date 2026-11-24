@@ -5,7 +5,6 @@
   "protocol": 1,
   "transport": {
     "url": "ws://<host>:<port>/",
-    "relayUrl": "ws://<relay>:<port, 7879>/phone/<host fingerprint>",
     "frames": "text frames only: the handshake (below), then each one a sealed Noise record of a JSON-RPC 2.0 message",
     "maxRecordFrameChars": 87380,
     "handshakeMaxBytes": 2048,
