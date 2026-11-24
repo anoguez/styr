@@ -9,8 +9,11 @@ import {
   writeFileSync,
   writeSync
 } from 'node:fs'
+import { generateKeyPairSync, createPublicKey, type KeyObject } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
+import { createSecureClientHandshake } from '../src/host/remoteAccess/secureClient'
+import type { SecureFrameChannel } from '../src/host/remoteAccess/secureSession'
 import { card, column, launchStyr, type StyrApp } from './harness'
 
 // What an upgrade and the network listener must survive, on throwaway profiles. See
@@ -134,6 +137,112 @@ test('a device that has not paired is refused by the remote access listener', as
   // 4400/4401: bad request or unauthorized. Never an answer to the call.
   expect([4400, 4401]).toContain(outcome.code)
   expect(outcome.messages.join('')).not.toContain('"result"')
+
+  await page.evaluate(() => window.api.access.configure({ enabled: false }))
+  styr.expectNoErrors()
+})
+
+/**
+ * A phone, as the Styr app is: protocol 2 from the URI a QR carries, its own Ed25519 key, then one
+ * JSON-RPC call over the sealed session. Runs in plain Node against the Electron app, so the two
+ * crypto stacks (Node's OpenSSL here, Electron's BoringSSL there) must agree.
+ */
+class Phone {
+  private readonly key: KeyObject = generateKeyPairSync('ed25519').privateKey
+  deviceId?: string
+
+  constructor(private readonly uri: URL) {}
+
+  /** Pairs with the QR's secret (once), or signs in with the device id; the session or the close code. */
+  async connect(): Promise<{ channel: SecureFrameChannel; socket: WebSocket } | { code: number }> {
+    const client = createSecureClientHandshake({
+      pinnedFingerprint: this.uri.searchParams.get('fp')!,
+      identity: {
+        privateKey: this.key,
+        publicKey: createPublicKey(this.key)
+          .export({ type: 'spki', format: 'der' })
+          .toString('base64')
+      },
+      signIn: this.deviceId
+        ? { type: 'auth', deviceId: this.deviceId }
+        : { type: 'pair', name: 'Test phone', secret: this.uri.searchParams.get('secret')! },
+      maxMessageBytes: 8 * 1024 * 1024
+    })
+    const socket = new WebSocket(`ws://127.0.0.1:${this.uri.searchParams.get('port')}/`)
+    return new Promise((done) => {
+      socket.onopen = () => socket.send(client.start())
+      socket.onclose = (event) => done({ code: event.code })
+      socket.onmessage = (event) => {
+        const step = client.receive(String(event.data))
+        if (step.kind === 'send') for (const frame of step.frames) socket.send(frame)
+        if (step.kind === 'ready') {
+          this.deviceId ??= step.deviceId
+          socket.onmessage = null
+          socket.onclose = null
+          done({ channel: step.channel, socket })
+        }
+      }
+    })
+  }
+}
+
+/** One JSON-RPC call over a signed-in session; skips the server's notifications. */
+function call(
+  session: { channel: SecureFrameChannel; socket: WebSocket },
+  method: string,
+  params: unknown[] = []
+): Promise<{ result?: unknown; error?: { message: string } }> {
+  return new Promise((done) => {
+    session.socket.onmessage = (event) => {
+      const text = session.channel.open(String(event.data))
+      if (text === undefined) return
+      const message = JSON.parse(text) as {
+        id?: number
+        result?: unknown
+        error?: { message: string }
+      }
+      if (message.id === 1) done(message)
+    }
+    for (const frame of session.channel.seal(
+      JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
+    )) {
+      session.socket.send(frame)
+    }
+  })
+}
+
+test('a device pairs with the desktop app from its QR, signs in again, and is cut off on removal', async () => {
+  styr = await launchStyr('pairing')
+  const { page } = styr
+  const settings = await page.evaluate(() => window.api.settings.get())
+  await page.evaluate((change) => window.api.settings.save(change), {
+    workspaceId: settings.activeWorkspaceId,
+    workspace: { ...settings, remoteAccess: true },
+    global: { ...settings }
+  } as never)
+  const state = await page.evaluate(() => window.api.access.configure({ enabled: true }))
+  expect(state.listening, state.error).toBe(true)
+  const pairing = await page.evaluate(() => window.api.access.pair())
+  const phone = new Phone(new URL(pairing.uri))
+
+  // Pairing runs the whole Noise handshake in the Electron main process.
+  const first = await phone.connect()
+  expect('channel' in first, `closed with ${'code' in first ? first.code : ''}`).toBe(true)
+  if (!('channel' in first)) return
+  expect((await call(first, 'tasks:list')).result).toEqual(expect.any(Array))
+  first.socket.close()
+  expect((await page.evaluate(() => window.api.access.state())).devices).toHaveLength(1)
+
+  // Again, without the QR: the device's own key signs it in.
+  const again = await phone.connect()
+  expect('channel' in again).toBe(true)
+  if (!('channel' in again)) return
+  const closed = new Promise<number>((done) => (again.socket.onclose = (event) => done(event.code)))
+
+  // Removing it on the desktop ends the live session at once (4403) and refuses the next.
+  await page.evaluate((id) => window.api.access.revoke(id), phone.deviceId!)
+  expect(await closed).toBe(4403)
+  expect(await phone.connect()).toEqual({ code: 4401 })
 
   await page.evaluate(() => window.api.access.configure({ enabled: false }))
   styr.expectNoErrors()

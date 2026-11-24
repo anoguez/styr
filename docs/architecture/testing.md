@@ -124,7 +124,7 @@ it:
 
 ## Stability tests (`e2e/stability.e2e.ts`)
 
-Two tests on throwaway profiles, run with the others and in the packaged app too:
+Three tests on throwaway profiles, run with the others and in the packaged app too:
 
 1. **Upgrade path.** `launchStyr(name, env, { seed, keepHome })` seeds a profile from
    `e2e/fixtures/upgrade/` (what an earlier release left: `config.json` with the legacy
@@ -137,6 +137,12 @@ Two tests on throwaway profiles, run with the others and in the packaged app too
 2. **Remote access gate.** With the workspace shared and the listener on (the test connects over
    loopback, which needs no network), an unpaired WebSocket peer that sends a call is closed with
    4400/4401 and is never answered.
+3. **Pairing with the desktop.** A phone in the test process (plain Node, `secureClient.ts`) pairs
+   with the Electron app from the URI `access:pair` gives, calls `tasks:list` over the sealed
+   session, signs in again with its own key, and is cut off (4403) and refused (4401) once removed.
+   It runs the Noise handshake across two crypto stacks (Node's OpenSSL, Electron's BoringSSL),
+   which no unit test can: BoringSSL has no `chacha20-poly1305`, which once left the desktop unable
+   to pair anything while every unit test passed.
 
 Every `expectNoErrors()` also fails on an `uncaughtException` or `unhandledRejection` in the main
 process output since launch, whatever a step's `allowed` pattern excuses.

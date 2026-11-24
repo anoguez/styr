@@ -139,7 +139,8 @@ choices are pure helpers in `renderer/lib/accessView.ts`.
 - `src/host/remoteAccess/handshake.ts`: the handshake's limits and the Ed25519 key checks the
   protocol shares.
 - `src/host/remoteAccess/noise.ts`, `secureSession.ts`, `secureClient.ts`: protocol 2 (below):
-  Noise XX on `node:crypto`, the host's handshake and `SecureFrameChannel`, and the device's side
+  Noise XX (`node:crypto` for X25519 and SHA-256; ChaCha20-Poly1305 from `@noble/ciphers`, since
+  Electron's BoringSSL has no such cipher), the host's handshake and `SecureFrameChannel`, and the device's side
   (tests and the transcript vector only; the phone has its own in Dart).
 - `src/host/remoteAccess/gate.ts`: `createNetworkPolicy`, the per-client filter the hub applies.
 - `src/host/remoteAccess/tailscale.ts`: the Shields Up probe.

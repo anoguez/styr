@@ -1,6 +1,4 @@
 import {
-  createCipheriv,
-  createDecipheriv,
   createHash,
   createHmac,
   createPrivateKey,
@@ -9,11 +7,13 @@ import {
   generateKeyPairSync,
   type KeyObject
 } from 'node:crypto'
+import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 
 /**
  * `Noise_XX_25519_ChaChaPoly_SHA256` (https://noiseprotocol.org/noise.html, rev 34), the end-to-end
- * layer of every network session (`docs/architecture/remote-access.md`). Plain `node:crypto`, no native
- * module, so the MCP/server path can import it. Checked against the official test vectors
+ * layer of every network session (`docs/architecture/remote-access.md`). `node:crypto` for X25519 and
+ * SHA-256, `@noble/ciphers` for ChaCha20-Poly1305 (Electron's BoringSSL has none); no native module,
+ * so the MCP/server path can import it. Checked against the official test vectors
  * (`noiseXX.vector.json`).
  *
  *   -> e
@@ -114,25 +114,20 @@ function nonceBytes(counter: number): Buffer {
   return nonce
 }
 
+/**
+ * ChaCha20-Poly1305 (RFC 8439) from `@noble/ciphers`, not `node:crypto`: Electron's crypto is
+ * BoringSSL, which has no `chacha20-poly1305` cipher, so the desktop app could not run a single
+ * session with it (every handshake failed with "Unknown cipher"). The same audited, pure-JS code
+ * runs in Electron, `styr serve` and the tests, checked against the Noise vectors either way.
+ */
 function seal(key: Buffer, counter: number, ad: Buffer, plaintext: Buffer): Buffer {
-  const cipher = createCipheriv('chacha20-poly1305', key, nonceBytes(counter), {
-    authTagLength: TAG_BYTES
-  })
-  cipher.setAAD(ad, { plaintextLength: plaintext.length })
-  const body = Buffer.concat([cipher.update(plaintext), cipher.final()])
-  return Buffer.concat([body, cipher.getAuthTag()])
+  return Buffer.from(chacha20poly1305(key, nonceBytes(counter), ad).encrypt(plaintext))
 }
 
 function open(key: Buffer, counter: number, ad: Buffer, sealed: Buffer): Buffer {
   if (sealed.length < TAG_BYTES) throw new Error('Noise: message too short.')
-  const body = sealed.subarray(0, sealed.length - TAG_BYTES)
-  const decipher = createDecipheriv('chacha20-poly1305', key, nonceBytes(counter), {
-    authTagLength: TAG_BYTES
-  })
-  decipher.setAAD(ad, { plaintextLength: body.length })
-  decipher.setAuthTag(sealed.subarray(sealed.length - TAG_BYTES))
   try {
-    return Buffer.concat([decipher.update(body), decipher.final()])
+    return Buffer.from(chacha20poly1305(key, nonceBytes(counter), ad).decrypt(sealed))
   } catch {
     throw new Error('Noise: message failed authentication.')
   }
