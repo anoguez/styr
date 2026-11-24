@@ -31,6 +31,14 @@ export interface AccessDevice {
   connected: boolean
 }
 
+/** A workspace of this computer, as Settings → Connections lists it for sharing. */
+export interface AccessWorkspace {
+  id: string
+  name: string
+  /** `remoteAccess` is on: paired devices may open it. */
+  shared: boolean
+}
+
 /** One address of this computer a device on the same network can reach it at. */
 export interface AccessInterface {
   name: string
@@ -38,7 +46,7 @@ export interface AccessInterface {
   kind: AddressKind
 }
 
-/** What Settings → Remote devices shows. */
+/** What Settings → Connections shows. */
 export interface AccessState extends AccessConfig {
   /** Devices can connect now: the listener is up, on `port`. */
   listening: boolean
@@ -59,6 +67,11 @@ export interface AccessState extends AccessConfig {
    * checked, or when Tailscale's CLI could not be asked.
    */
   shieldsUp?: boolean
+  /**
+   * This computer's own workspaces (never an ssh remote's stub) and whether each is shared. Empty
+   * where nothing can show them (`styr serve`).
+   */
+  workspaces: AccessWorkspace[]
   /** Some workspace has `remoteAccess` on, so a paired device has something to open. */
   workspaceShared: boolean
 }

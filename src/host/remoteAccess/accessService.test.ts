@@ -51,7 +51,7 @@ describe('access service', () => {
       broadcast: (state) => broadcasts.push(state),
       log: (message) => log.push(message),
       shieldsUp: async () => shields,
-      workspaceShared: () => shared
+      workspaces: () => [{ id: 'default', name: 'Default', shared }]
     })
     return { store, service, closed }
   }
@@ -173,10 +173,13 @@ describe('access service', () => {
     expect(service.state().shieldsUp).toBe(false)
   })
 
-  it('says whether any workspace is shared', () => {
+  it('lists the workspaces and says whether any is shared', () => {
     shared = false
     const { service } = setup()
-    expect(service.state().workspaceShared).toBe(false)
+    expect(service.state()).toMatchObject({
+      workspaces: [{ id: 'default', name: 'Default', shared: false }],
+      workspaceShared: false
+    })
     shared = true
     expect(service.refresh().workspaceShared).toBe(true)
   })

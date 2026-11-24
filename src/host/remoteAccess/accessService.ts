@@ -3,7 +3,8 @@ import type {
   AccessConfigPatch,
   AccessInterface,
   AccessPairing,
-  AccessState
+  AccessState,
+  AccessWorkspace
 } from '@core/types/access.js'
 import type { AccessStore } from './accessStore.js'
 import { portProblem } from './addresses.js'
@@ -34,8 +35,11 @@ export interface AccessServicePorts {
    * a host with no screen to warn on.
    */
   shieldsUp?(): Promise<boolean | undefined>
-  /** Whether any workspace has `remoteAccess` on. Absent: assumed so. */
-  workspaceShared?(): boolean
+  /**
+   * This computer's own workspaces and whether each is shared. Absent (`styr serve`, which has no
+   * screen): none listed, and a workspace is assumed shared.
+   */
+  workspaces?(): AccessWorkspace[]
 }
 
 /**
@@ -63,6 +67,7 @@ export function createAccessService(ports: AccessServicePorts) {
     // Read, never made here: this runs at startup, before any window is up (see `reconcile`).
     const fingerprint = store.fingerprint()
     const connected = new Set(running?.connectedDevices() ?? [])
+    const workspaces = ports.workspaces?.() ?? []
     return {
       ...config,
       ...(running ? { port: running.address.port } : {}),
@@ -75,7 +80,8 @@ export function createAccessService(ports: AccessServicePorts) {
       ...(fingerprint !== undefined ? { fingerprint } : {}),
       ...(store.pairing() ? { pairingExpiresAt: store.pairing()!.expiresAt } : {}),
       ...(shieldsUp !== undefined ? { shieldsUp } : {}),
-      workspaceShared: ports.workspaceShared?.() ?? true
+      workspaces,
+      workspaceShared: ports.workspaces ? workspaces.some((entry) => entry.shared) : true
     }
   }
 

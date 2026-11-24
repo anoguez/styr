@@ -19,11 +19,13 @@ device ──ws://<this computer's LAN or VPN address>:7878──▶ wsListener 
 
 ## Rules
 
-- **Off by default, two switches.** Settings → Remote devices → "Allow devices on your network to
-  connect" starts the listener; each workspace then opts in with `remoteAccess` (Settings → Remote
-  access, "Allow remote clients to open this workspace", a workspace setting, default `false`).
-  Neither alone exposes a workspace. The flag is ignored for an ssh remote workspace's stub. There
-  is nothing else to set up: no address to pick, no port to type.
+- **Off by default, two switches, one page.** Settings → Connections → "Allow devices on your
+  network to connect" starts the listener; each workspace then opts in with `remoteAccess` (a
+  workspace setting, default `false`), switched on the same page under Shared workspaces. Neither
+  alone exposes a workspace. There is nothing else to set up: no address to pick, no port to type.
+  The flag is ignored for an ssh remote workspace's stub; such a workspace's own Settings → Remote
+  access page (`remoteOnly`, shown only while a remote workspace is edited) sets the flag on its
+  host, for devices paired with that host's `styr serve`.
 - **Same network only, enforced in code** (`host/remoteAccess/addresses.ts`, `admitConnection`).
   The listener binds every interface (one dual-stack `::` socket, `0.0.0.0` where IPv6 is off), so
   it follows the computer from one network to the next, and decides per socket, from its local and
@@ -75,12 +77,33 @@ device ──ws://<this computer's LAN or VPN address>:7878──▶ wsListener 
 - **Shields Up.** With Tailscale's Shields Up on, nothing connects in over Tailscale and the phone
   only sees a timeout (shown while access is on). `tailscale.ts` runs `tailscale debug prefs` (a child process, never synchronous, trying
   the Mac app's binary when `tailscale` is not on the app's PATH) and reads `ShieldsUp` alone; the
-  answer is `AccessState.shieldsUp`. It is asked when Settings → Remote devices opens
+  answer is `AccessState.shieldsUp`. It is asked when Settings → Connections opens
   (`access:checkNetwork`) and when access is switched on, never on a timer.
-- **Nothing shared.** `AccessState.workspaceShared` is false while no workspace has `remoteAccess`
-  on; with a device paired, the page offers "Share this workspace" (`access:shareWorkspace`), which
-  saves the flag on the open workspace through `settings:save`. The access state is re-sent on
-  `settings:changed` / `workspaces:changed`.
+- **Nothing shared.** `AccessState.workspaces` lists this computer's own workspaces (never a stub)
+  and whether each is shared; `workspaceShared` is false while none is, and the page says the
+  devices have nothing to open. A switch there calls `access:setShared(id, shared)`, which checks the
+  id names a workspace here and not a stub, then saves the flag through `settings:save` (so the hub
+  re-checks what devices hold, and every window hears `settings:changed`). The access state is
+  re-sent on `settings:changed` / `workspaces:changed`.
+
+## The Connections page
+
+`renderer/components/settings/ConnectionsSection.tsx` and `ConnectDialogs.tsx`; the wording and
+choices are pure helpers in `renderer/lib/accessView.ts`.
+
+- **First run.** Off with no device: one card and a Get started button. It opens an intro
+  (`ConnectIntroDialog`: what a device can do, that it stays on the network, Later / Get started).
+  Get started switches access on, then opens Add device.
+- **Add device** (`AddDeviceDialog`). While nothing is shared it first asks what the device may open
+  (the open workspace ticked when it is this computer's, `initialShareChoice`; Continue needs at
+  least one), so a device never pairs into nothing. Then the QR (`access:pair`), with the start of
+  this computer's fingerprint; the code is made only when that step shows. A device that appears in
+  `AccessState.devices` while the dialog is open (`newlyPaired`) is shown as connected. The QR
+  comes off at its expiry (one timer for that instant) with a New code button, and closing the
+  dialog before a device used it withdraws the offer (`access:cancelPair`), however it closes.
+- **The page once on:** the switch, a status line (`connectionSummary`), keep-awake; Devices with
+  Add device and Remove (confirmed, `access:revoke`); Shared workspaces; Network details (the port,
+  the addresses, the fingerprint) folded away.
 - **The log names the step.** A refusal says whether sign-in, the pairing code or a late message
   failed, and a handshake that went quiet says whether the device sent no `hello` or hung up after
   the challenge (the key check a phone fails without a word).
@@ -145,12 +168,13 @@ styr serve revoke <id>   # removes it and ends its connections at once
 These go over the Unix socket (`access:pair`, `access:devices`, `access:revoke`, answered only
 there; the gate refuses `access:*` from devices). The pairing secret is printed to the terminal,
 so avoid running `--pair` where a service manager logs stdout; use `styr serve pair` from a shell.
-A workspace is shared by `remoteAccess` in its settings: toggle it from the desktop (the remote
-workspace's Settings → Remote access) or set it in the workspace's `settings.json`.
+A workspace is shared by `remoteAccess` in its settings: toggle it from a desktop that has the
+server as a remote host (the remote workspace's Settings → Remote access) or set it in the
+workspace's `settings.json`.
 
 ## Pairing and sign-in
 
-Pairing happens once per device. "Pair a device…" shows a QR for
+Pairing happens once per device. Add device shows a QR for
 `styr://pair?v=2&host=…&port=…&hosts=<a,b,…>&fp=<fingerprint>&secret=<secret>&exp=<ms>`. `host` is
 the address a device on the same Wi-Fi reaches first; `hosts` is every address of
 `reachableAddresses`, best first (network cards, then VPNs, then virtual machines; IPv6 in

@@ -117,6 +117,10 @@ it:
 6. A REST source served by the test itself: the test request is refused with External sources off;
    with them on it reads the items, the preview writes nothing, and applying one item creates only
    that task.
+7. Settings → Connections: Get started opens the intro, which switches access on and asks what to
+   share (the open workspace ticked); Continue shares it and shows the QR with an offer behind it;
+   Cancel withdraws the offer; a workspace's switch unshares it at once; the main switch closes the
+   listener.
 
 ## Stability tests (`e2e/stability.e2e.ts`)
 
@@ -130,9 +134,9 @@ Two tests on throwaway profiles, run with the others and in the packaged app too
    closed, and relaunches: the board and the index must show all three, and `user_version` must be
    `SCHEMA_VERSION` again (read from `taskIndex.ts`). Refresh the fixture when a release changes
    what is on disk in a way the app must still read.
-2. **Remote access gate.** With the workspace shared and the listener on loopback (no network
-   beyond localhost), an unpaired WebSocket peer that sends a call is closed with 4400/4401 and is
-   never answered.
+2. **Remote access gate.** With the workspace shared and the listener on (the test connects over
+   loopback, which needs no network), an unpaired WebSocket peer that sends a call is closed with
+   4400/4401 and is never answered.
 
 Every `expectNoErrors()` also fails on an `uncaughtException` or `unhandledRejection` in the main
 process output since launch, whatever a step's `allowed` pattern excuses.

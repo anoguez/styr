@@ -1,7 +1,7 @@
-import type { AccessDevice, AccessInterface, AccessState } from '@core/types.js'
+import type { AccessDevice, AccessInterface, AccessState, AccessWorkspace } from '@core/types.js'
 
 /**
- * How Settings → Remote access reads (`docs/architecture/remote-access.md`). Pure, so the wording
+ * How Settings → Connections reads (`docs/architecture/remote-access.md`). Pure, so the wording
  * and the QR geometry are tested without a window.
  */
 
@@ -81,12 +81,41 @@ export function listenerStatus(state: AccessState): string {
     if (state.interfaces.length === 0) {
       return 'On, but this computer is on no network a device could reach. Connect it to Wi-Fi, Ethernet or a VPN.'
     }
-    return 'On. Devices on the same network as this computer, or on its VPN, can connect. Only devices you paired can sign in.'
+    return 'Only devices you pair can sign in. Quitting Styr, or this computer sleeping, ends their connections.'
   }
   return 'Off. No port is open.'
 }
 
-/** A device can pair while the listener is up and this computer is on a network. */
-export function canPair(state: Pick<AccessState, 'listening' | 'interfaces'>): boolean {
-  return state.listening && state.interfaces.length > 0
+/** The device that paired while the Add device dialog was open: one whose id was not there before. */
+export function newlyPaired(
+  before: ReadonlySet<string>,
+  devices: readonly AccessDevice[]
+): AccessDevice | undefined {
+  return devices.find((device) => !before.has(device.id))
+}
+
+/**
+ * What the Add device dialog offers to share before showing the QR: the workspaces already shared,
+ * or, when none is, the open one (if it is this computer's). The user confirms the choice; nothing
+ * is shared without it.
+ */
+export function initialShareChoice(
+  workspaces: readonly AccessWorkspace[],
+  openId: string
+): Set<string> {
+  const shared = workspaces.filter((entry) => entry.shared).map((entry) => entry.id)
+  if (shared.length > 0) return new Set(shared)
+  return new Set(workspaces.some((entry) => entry.id === openId) ? [openId] : [])
+}
+
+/** The line beside the page's title: off, waiting, or who is connected. */
+export function connectionSummary(
+  state: Pick<AccessState, 'enabled' | 'listening' | 'devices'>
+): string {
+  if (!state.enabled) return 'Off'
+  if (!state.listening) return 'Not listening'
+  const connected = state.devices.filter((device) => device.connected).length
+  if (connected > 0) return `${connected} ${connected === 1 ? 'device' : 'devices'} connected`
+  const paired = state.devices.length
+  return paired === 0 ? 'On · no devices yet' : `On · ${paired} paired`
 }

@@ -3,7 +3,7 @@ import { pinWorkspace, pinnedWorkspaceId } from '@core/config.js'
 import { loadSettings } from '@core/settingsStore.js'
 import { globalSettingsFor, workspaceSettingsFor, type SettingsChange } from '@core/types.js'
 import { listWorkspaces } from '@core/workspaces.js'
-import type { AccessConfigPatch, AccessState } from '@core/types/access.js'
+import type { AccessConfigPatch, AccessState, AccessWorkspace } from '@core/types/access.js'
 import type { SecretBox } from '@host/remoteAccess/accessStore.js'
 import { tailscaleShieldsUp } from '@host/remoteAccess/tailscale.js'
 import { computerName, createHub, PROTOCOL_VERSION } from '../server/hub.js'
@@ -84,27 +84,46 @@ const access = createNetworkAccess({
   log: (message) => console.warn(message),
   secrets: keychain,
   shieldsUp: () => tailscaleShieldsUp(),
-  workspaceShared: () => listWorkspaces(loadSettings()).some((entry) => isOpen(entry.id))
+  workspaces: localWorkspaces
 })
 
+/** This computer's own workspaces, never an ssh remote's stub, and whether each is shared. */
+function localWorkspaces(): AccessWorkspace[] {
+  return listWorkspaces(loadSettings())
+    .filter((entry) => !entry.remote)
+    .map((entry) => ({ id: entry.id, name: entry.name, shared: isOpen(entry.id) }))
+}
+
 /**
- * "Share this workspace", from the notice Settings shows once a device is paired and nothing is
- * shared: turns `remoteAccess` on for the open workspace through the ordinary save, so the
- * workspaces, the hub and every window hear `settings:changed` as after Settings → Save.
+ * A switch in Settings → Connections: turns `remoteAccess` on or off for one of this computer's
+ * workspaces through the ordinary save, so the workspaces, the hub (which detaches what a device
+ * held in a workspace no longer shared) and every window hear `settings:changed` as after Save.
+ * Only a workspace that exists here, and is not an ssh remote's stub, can be named.
  */
-async function shareActiveWorkspace(): Promise<AccessState> {
+export async function setWorkspaceShared(
+  workspaceId: unknown,
+  shared: unknown
+): Promise<AccessState> {
+  if (typeof workspaceId !== 'string' || typeof shared !== 'boolean') {
+    throw new Error('Expected a workspace id and whether to share it.')
+  }
   const global = loadSettings()
-  const id = global.activeWorkspaceId
-  if (listWorkspaces(global).find((entry) => entry.id === id)?.remote) {
-    throw new Error('The open workspace lives on a remote host, so devices cannot open it here.')
+  const workspace = listWorkspaces(global).find((entry) => entry.id === workspaceId)
+  if (!workspace) throw new Error('That workspace no longer exists.')
+  if (workspace.remote) {
+    throw new Error(
+      `${workspace.name} lives on a remote host; share it in its own settings, on that host.`
+    )
   }
-  const own = loadSettings(id)
-  const change: SettingsChange = {
-    workspaceId: id,
-    workspace: { ...workspaceSettingsFor(own), remoteAccess: true },
-    global: globalSettingsFor(global)
+  const own = loadSettings(workspaceId)
+  if (own.remoteAccess !== shared) {
+    const change: SettingsChange = {
+      workspaceId,
+      workspace: { ...workspaceSettingsFor(own), remoteAccess: shared },
+      global: globalSettingsFor(global)
+    }
+    await channelTable.invoke['settings:save']!.run(change as never)
   }
-  await channelTable.invoke['settings:save']!.run(change as never)
   return access.service.refresh()
 }
 
@@ -139,7 +158,9 @@ export function registerAccessHandlers(): void {
   ipcMain.handle('access:pair', () => access.service.pair())
   ipcMain.handle('access:cancelPair', () => access.service.cancelPairing())
   ipcMain.handle('access:checkNetwork', () => access.service.checkNetwork())
-  ipcMain.handle('access:shareWorkspace', () => shareActiveWorkspace())
+  ipcMain.handle('access:setShared', (_event, workspaceId: unknown, shared: unknown) =>
+    setWorkspaceShared(workspaceId, shared)
+  )
   ipcMain.handle('access:revoke', (_event, deviceId: unknown) =>
     access.service.revoke(String(deviceId))
   )

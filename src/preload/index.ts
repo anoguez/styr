@@ -276,7 +276,7 @@ const api = {
     connect: (host: string): Promise<void> => ipcRenderer.invoke('remote:connect', host)
   },
   access: {
-    /** Settings → Remote devices: the switch, where devices reach this computer, the paired devices. */
+    /** Settings → Connections: the switch, where devices reach this computer, devices, sharing. */
     state: (): Promise<AccessState> => ipcRenderer.invoke('access:state'),
     onChanged: (handler: (state: AccessState) => void): (() => void) =>
       subscribe('access:changed', handler as (...args: never[]) => void),
@@ -290,8 +290,9 @@ const api = {
       ipcRenderer.invoke('access:revoke', deviceId),
     /** Asks Tailscale whether Shields Up is on; the answer lands in `shieldsUp`. */
     checkNetwork: (): Promise<AccessState> => ipcRenderer.invoke('access:checkNetwork'),
-    /** Turns `remoteAccess` on for the open workspace and saves it. */
-    shareWorkspace: (): Promise<AccessState> => ipcRenderer.invoke('access:shareWorkspace')
+    /** Turns `remoteAccess` on or off for one of this computer's workspaces, and saves it. */
+    setShared: (workspaceId: string, shared: boolean): Promise<AccessState> =>
+      ipcRenderer.invoke('access:setShared', workspaceId, shared)
   },
   settings: {
     get: (workspaceId?: string): Promise<Settings> =>

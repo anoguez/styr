@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { AccessState } from '@core/types.js'
 import {
-  canPair,
+  connectionSummary,
   deviceLine,
   groupedFingerprint,
   interfaceLabel,
   listenerStatus,
+  initialShareChoice,
   needsSharedWorkspace,
+  newlyPaired,
   qrPath,
   showShieldsUpWarning
 } from './accessView.js'
@@ -22,6 +24,7 @@ const base: AccessState = {
   ],
   devices: [],
   fingerprint: 'ab'.repeat(32),
+  workspaces: [],
   workspaceShared: true
 }
 
@@ -93,7 +96,7 @@ describe('groupedFingerprint', () => {
 describe('listenerStatus', () => {
   it('says who can connect, or that nothing is open', () => {
     expect(listenerStatus({ ...base, enabled: true, listening: true })).toMatch(
-      /^On\. Devices on the same network/
+      /^Only devices you pair can sign in/
     )
     expect(listenerStatus({ ...base, enabled: true, listening: true, interfaces: [] })).toMatch(
       /no network a device could reach/
@@ -102,18 +105,61 @@ describe('listenerStatus', () => {
   })
 })
 
-describe('canPair', () => {
-  it('pairs only while listening on a network', () => {
-    expect(canPair(base)).toBe(false)
-    expect(canPair({ ...base, listening: true })).toBe(true)
-    expect(canPair({ ...base, listening: true, interfaces: [] })).toBe(false)
-  })
-})
-
 describe('showShieldsUpWarning', () => {
   it('warns about Shields Up only while devices may connect', () => {
     expect(showShieldsUpWarning({ ...base, enabled: true, shieldsUp: true })).toBe(true)
     expect(showShieldsUpWarning({ ...base, enabled: false, shieldsUp: true })).toBe(false)
     expect(showShieldsUpWarning({ ...base, enabled: true, shieldsUp: false })).toBe(false)
+  })
+})
+
+describe('newlyPaired', () => {
+  const device = (id: string) => ({ id, name: id, createdAt: '', connected: false })
+
+  it('finds the device that was not there when the dialog opened', () => {
+    expect(newlyPaired(new Set(['a']), [device('a'), device('b')])?.id).toBe('b')
+    expect(newlyPaired(new Set(['a']), [device('a')])).toBeUndefined()
+  })
+})
+
+describe('initialShareChoice', () => {
+  const ws = (id: string, shared = false) => ({ id, name: id, shared })
+
+  it('keeps what is shared already', () => {
+    expect([...initialShareChoice([ws('a', true), ws('b'), ws('c', true)], 'b')]).toEqual([
+      'a',
+      'c'
+    ])
+  })
+
+  it('offers the open workspace when nothing is shared', () => {
+    expect([...initialShareChoice([ws('a'), ws('b')], 'b')]).toEqual(['b'])
+  })
+
+  it("offers nothing when the open workspace is not this computer's", () => {
+    expect([...initialShareChoice([ws('a')], 'remote-stub')]).toEqual([])
+  })
+})
+
+describe('connectionSummary', () => {
+  const device = (connected: boolean) => ({ id: 'd', name: 'd', createdAt: '', connected })
+
+  it('says off, on, or who is connected', () => {
+    expect(connectionSummary(base)).toBe('Off')
+    expect(connectionSummary({ ...base, enabled: true })).toBe('Not listening')
+    expect(connectionSummary({ ...base, enabled: true, listening: true })).toBe(
+      'On · no devices yet'
+    )
+    expect(
+      connectionSummary({ ...base, enabled: true, listening: true, devices: [device(false)] })
+    ).toBe('On · 1 paired')
+    expect(
+      connectionSummary({
+        ...base,
+        enabled: true,
+        listening: true,
+        devices: [device(true), device(true)]
+      })
+    ).toBe('2 devices connected')
   })
 })

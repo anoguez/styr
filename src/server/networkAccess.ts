@@ -9,7 +9,7 @@ import {
 import { reachableAddresses } from '@host/remoteAccess/addresses.js'
 import { createNetworkPolicy, type GatePorts } from '@host/remoteAccess/gate.js'
 import type { KeepAwakePorts } from '@host/remoteAccess/keepAwake.js'
-import type { AccessInterface, AccessState } from '@core/types/access.js'
+import type { AccessInterface, AccessState, AccessWorkspace } from '@core/types/access.js'
 import type { TerminalOutput } from '@core/types.js'
 import type { Hub } from './hub.js'
 import { startNetworkListener, type Admit } from './wsListener.js'
@@ -35,7 +35,7 @@ export interface NetworkAccessOptions {
   interfaces?: () => AccessInterface[]
   /** Only where a screen can show the answers (the desktop): see `AccessServicePorts`. */
   shieldsUp?(): Promise<boolean | undefined>
-  workspaceShared?(): boolean
+  workspaces?(): AccessWorkspace[]
 }
 
 /**
@@ -70,7 +70,7 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
     broadcast: options.broadcast,
     log: options.log,
     ...(options.shieldsUp ? { shieldsUp: options.shieldsUp } : {}),
-    ...(options.workspaceShared ? { workspaceShared: options.workspaceShared } : {})
+    ...(options.workspaces ? { workspaces: options.workspaces } : {})
   })
   return { service, store }
 }
