@@ -189,6 +189,32 @@ the public key, the device's name and its id. The key has no expiry; app, comput
 restarts change nothing. It stops working only on Revoke, which also ends that device's live
 connections; adding the device again needs a new QR.
 
+### Pairing by approval (no QR)
+
+A device that found the computer on the network (or was given its address) and has no QR asks to
+pair: message 3 is `{type:'request', name, identityKey, signature}`, with no proof, and the device
+pins nothing yet (`pinnedFingerprint` is optional for a request alone; it still checks the host's
+signature binds its key to this session).
+
+- **Only while Add device is open.** The host accepts a request only while a pairing offer is open
+  (`store.pairing()`), that is while the Add device window shows; otherwise it closes with 4401
+  before anyone is asked, so a stranger on the network cannot put a prompt on the screen. `styr
+serve` takes none (`takesRequests` off: nobody is there to answer).
+- **The code.** Both sides derive six digits from the final handshake hash (`approvalCode`:
+  HMAC-SHA256(key = `h`, `"styr-noise-approval-v1\n"`), first four bytes big-endian mod 10⁶).
+  `h` covers both ephemeral and both static keys, so anyone relaying between the two runs two
+  handshakes and the two screens show different codes. The host shows the device's own name (escaped,
+  at most 100 characters), its address and the code, with Turn down / Allow
+  (`AccessState.request`, `access:answer`).
+- **Waiting.** The listener holds the connection (`phase: 'approval'`): nothing reaches the hub and
+  nothing is sent until the answer; anything the device sends meanwhile ends it (4401). One request
+  waits at a time (another gets 4429); it is withdrawn when the device leaves, after 60 s
+  (`APPROVAL_TIMEOUT_MS`, 4408), or turned down when the window closes or access goes off. An answer
+  for a request no longer waiting throws, so a stale click allows nothing.
+- **The answer spends the window**, as a QR attempt spends its secret: allowed, the device is added
+  and gets `paired` then `ready`, as with a QR, and pins the key it was shown; turned down, it gets
+  4401 and counts as a failed attempt for the address's limit.
+
 ## The session: protocol 2, end to end
 
 Every connection is end-to-end encrypted with
@@ -205,6 +231,7 @@ C → S  {"type":"hello","protocol":2,"noise":b64(-> e)}                  empty 
 S → C  b64(<- e, ee, s, es, payload)   payload = JSON {identityKey, signature}
 C → S  b64(-> s, se, payload)          payload = JSON {type:'auth', deviceId, signature}
                                               or {type:'pair', name, identityKey, signature, proof}
+                                              or {type:'request', name, identityKey, signature}
 S → C  sealed {type:'paired', deviceId}  (pairing only), then sealed {type:'ready'}
        then JSON-RPC, one message per sealed message           any refusal: close 4401, nothing sent
 ```

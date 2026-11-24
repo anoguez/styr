@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { AccessDevice, AccessPairing, AccessState } from '@core/types.js'
+import type { AccessDevice, AccessPairing, AccessRequest, AccessState } from '@core/types.js'
 import {
+  groupedCode,
   groupedFingerprint,
   initialShareChoice,
   newlyPaired,
@@ -207,6 +208,20 @@ export function AddDeviceDialog({
     }
   }, [state.devices, step])
 
+  /** The person's answer to a device asking to pair. Turning one down ends this code too. */
+  async function answer(request: AccessRequest, allow: boolean): Promise<void> {
+    setError('')
+    try {
+      await window.api.access.answer(request.id, allow)
+      if (!allow) {
+        offerOpen.current = false
+        setExpired(true)
+      }
+    } catch (failure) {
+      setError(ipcMessage(failure))
+    }
+  }
+
   async function confirmShare(): Promise<void> {
     setBusy(true)
     setError('')
@@ -279,7 +294,14 @@ export function AddDeviceDialog({
         </Card>
       ) : null}
 
-      {step === 'code' ? (
+      {step === 'code' && state.request ? (
+        <ApprovalPrompt
+          request={state.request}
+          onAnswer={(allow) => void answer(state.request!, allow)}
+        />
+      ) : null}
+
+      {step === 'code' && !state.request ? (
         <div className="flex flex-col items-center gap-4 text-center">
           {pairing && !expired ? (
             <PairingCode pairing={pairing} />
@@ -292,6 +314,10 @@ export function AddDeviceDialog({
             <span className="text-[13px] font-medium text-ink">
               Scan this with the Styr app on your device
             </span>
+            <Hint>
+              Or pick this computer in the app&apos;s list of computers nearby: you will be asked
+              here to allow it.
+            </Hint>
             <Hint>
               The device must be on the same network as this computer, or on its VPN. The code works
               once and for two minutes; it is a key to this computer, so show it to nobody else.
@@ -333,6 +359,52 @@ export function AddDeviceDialog({
         </p>
       ) : null}
     </Modal>
+  )
+}
+
+/**
+ * A device on the network asks to pair. Allowed only by hand, after checking the device shows the
+ * same six digits: they come from this one connection's keys, so a device relayed through someone
+ * else would show different ones.
+ */
+export function ApprovalPrompt({
+  request,
+  onAnswer
+}: {
+  request: AccessRequest
+  onAnswer: (allow: boolean) => void
+}): ReactNode {
+  return (
+    <div
+      className="flex flex-col items-center gap-4 py-2 text-center"
+      role="alertdialog"
+      aria-label={`${request.name} wants to connect`}
+    >
+      <DevicesGlyph size={30} />
+      <div className="flex flex-col gap-1">
+        <span className="text-[14px] font-medium text-ink">{request.name} wants to connect</span>
+        <span className="font-mono text-[11px] text-faint">from {request.source}</span>
+      </div>
+      <div className="flex flex-col items-center gap-1.5">
+        <span className="text-[12px] text-dim">Check the device shows this code</span>
+        <span
+          className="font-mono text-[28px] font-semibold tracking-[0.12em] text-ink"
+          aria-label={`Code ${request.code}`}
+        >
+          {groupedCode(request.code)}
+        </span>
+      </div>
+      <Hint>
+        Allow it only if the codes match and you know the device. If they differ, someone else on
+        the network may be in between: turn it down.
+      </Hint>
+      <div className="flex gap-2">
+        <Button onClick={() => onAnswer(false)}>Turn down</Button>
+        <Button variant="primary" onClick={() => onAnswer(true)}>
+          Allow
+        </Button>
+      </div>
+    </div>
   )
 }
 

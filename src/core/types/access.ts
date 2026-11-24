@@ -74,6 +74,19 @@ export interface AccessState extends AccessConfig {
   workspaces: AccessWorkspace[]
   /** Some workspace has `remoteAccess` on, so a paired device has something to open. */
   workspaceShared: boolean
+  /** A device asking to pair, while the Add device window is open. */
+  request?: AccessRequest
+}
+
+/** A device asking to pair by approval, waiting for the person at this computer to answer. */
+export interface AccessRequest {
+  id: string
+  /** The name the device gives itself: its own words, at most 100 characters. */
+  name: string
+  /** Six digits the device shows too; they must match before the request is allowed. */
+  code: string
+  /** The address it connects from. */
+  source: string
 }
 
 /** The QR to scan: the text it encodes and its modules, dark ones true. */

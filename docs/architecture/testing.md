@@ -124,7 +124,7 @@ it:
 
 ## Stability tests (`e2e/stability.e2e.ts`)
 
-Three tests on throwaway profiles, run with the others and in the packaged app too:
+Five tests on throwaway profiles, run with the others and in the packaged app too:
 
 1. **Upgrade path.** `launchStyr(name, env, { seed, keepHome })` seeds a profile from
    `e2e/fixtures/upgrade/` (what an earlier release left: `config.json` with the legacy
@@ -143,6 +143,11 @@ Three tests on throwaway profiles, run with the others and in the packaged app t
    It runs the Noise handshake across two crypto stacks (Node's OpenSSL, Electron's BoringSSL),
    which no unit test can: BoringSSL has no `chacha20-poly1305`, which once left the desktop unable
    to pair anything while every unit test passed.
+4. **Pairing by approval.** With Add device open, a phone that has only the port asks to pair; the
+   prompt shows its name and the same code the phone shows, Allow pairs it, and it calls
+   `tasks:list`.
+5. **No window, no request.** With access on but Add device closed, a request is refused (4401)
+   and nothing is added.
 
 Every `expectNoErrors()` also fails on an `uncaughtException` or `unhandledRejection` in the main
 process output since launch, whatever a step's `allowed` pattern excuses.

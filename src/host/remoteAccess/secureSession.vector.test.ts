@@ -58,6 +58,7 @@ const hostStore: SecureHandshakeStore = {
   }),
   reload: () => undefined,
   publicKeyFor: (id) => (id === DEVICE_ID ? phone.publicKey : undefined),
+  pairing: () => ({ secret: SECRET, expiresAt: Number.MAX_SAFE_INTEGER }),
   consumePairing: () => ({ secret: SECRET, expiresAt: Number.MAX_SAFE_INTEGER }),
   addDevice: (name) => ({ id: DEVICE_ID, name, createdAt: '' })
 }
@@ -84,7 +85,7 @@ const LARGE: Message[] = [
 
 const textOf = (message: Message): string => message.text ?? message.repeat!.repeat(message.count!)
 
-function session(name: 'pair' | 'signIn') {
+function session(name: 'pair' | 'signIn' | 'request') {
   const keys = {
     hostStatic: x25519(`${name} host static`),
     hostEphemeral: x25519(`${name} host ephemeral`),
@@ -98,12 +99,15 @@ function session(name: 'pair' | 'signIn') {
     ephemeralKey: keys.hostEphemeral
   })
   const client = createSecureClientHandshake({
-    pinnedFingerprint: fingerprintOf(host.publicKey),
+    // A request comes from a device that found the host on the network: nothing to pin yet.
+    ...(name === 'request' ? {} : { pinnedFingerprint: fingerprintOf(host.publicKey) }),
     identity: { privateKey: phone.privateKey, publicKey: phone.publicKey },
     signIn:
       name === 'pair'
         ? { type: 'pair', name: NAME, secret: SECRET }
-        : { type: 'auth', deviceId: DEVICE_ID },
+        : name === 'request'
+          ? { type: 'request', name: NAME }
+          : { type: 'auth', deviceId: DEVICE_ID },
     maxMessageBytes: MAX,
     staticKey: keys.phoneStatic,
     ephemeralKey: keys.phoneEphemeral
@@ -112,16 +116,28 @@ function session(name: 'pair' | 'signIn') {
   const toHost = [client.start()]
   let hostChannel: SecureFrameChannel | undefined
   let phoneChannel: SecureFrameChannel | undefined
+  /** A request's code, as both screens show it before the host allows it. */
+  let approvalCode: string | undefined
   while (toHost.length > 0 && !phoneChannel) {
     const frame = toHost.shift()!
     frames.push({ from: 'phone', frame })
-    const outcome = server.receive(frame)
+    let outcome = server.receive(frame)
+    if (outcome.kind === 'approval') {
+      approvalCode = outcome.code
+      outcome = outcome.decide(true)
+    }
     if (outcome.kind === 'denied') throw new Error(outcome.reason)
     if (outcome.kind === 'ready') hostChannel = outcome.channel
     for (const reply of outcome.frames) {
       frames.push({ from: 'host', frame: reply })
       const step = client.receive(reply)
-      if (step.kind === 'send') toHost.push(...step.frames)
+      if (step.kind === 'send') {
+        toHost.push(...step.frames)
+        if (step.approval) approvalCode ??= step.approval.code
+        if (step.approval && step.approval.code !== approvalCode) {
+          throw new Error('the two sides show different codes')
+        }
+      }
       if (step.kind === 'ready') phoneChannel = step.channel
     }
   }
@@ -140,6 +156,7 @@ function session(name: 'pair' | 'signIn') {
     ),
     frames,
     handshakeHash: hostChannel!.handshakeHash.toString('hex'),
+    ...(approvalCode ? { approvalCode } : {}),
     transport
   }
 }
@@ -208,6 +225,7 @@ function refusedTransport(signIn: ReturnType<typeof session>) {
 function build() {
   const pair = session('pair')
   const signIn = session('signIn')
+  const request = session('request')
   return {
     description:
       'Styr protocol 2 (Noise_XX_25519_ChaChaPoly_SHA256 + identity binding) transcripts. ' +
@@ -223,7 +241,7 @@ function build() {
     phone: { identitySeed: phone.seed, identityKey: phone.publicKey, name: NAME },
     secret: SECRET,
     deviceId: DEVICE_ID,
-    sessions: [pair, signIn],
+    sessions: [pair, signIn, request],
     refusedHosts: refusedHosts(),
     refusedTransport: refusedTransport(signIn)
   }

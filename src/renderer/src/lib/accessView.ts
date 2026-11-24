@@ -119,3 +119,8 @@ export function connectionSummary(
   const paired = state.devices.length
   return paired === 0 ? 'On · no devices yet' : `On · ${paired} paired`
 }
+
+/** Six digits as two groups of three, easier to compare at a glance: `482 915`. */
+export function groupedCode(code: string): string {
+  return code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AccessState } from '@core/types.js'
 import {
   connectionSummary,
+  groupedCode,
   deviceLine,
   groupedFingerprint,
   interfaceLabel,
@@ -161,5 +162,12 @@ describe('connectionSummary', () => {
         devices: [device(true), device(true)]
       })
     ).toBe('2 devices connected')
+  })
+})
+
+describe('groupedCode', () => {
+  it('splits six digits in two', () => {
+    expect(groupedCode('482915')).toBe('482 915')
+    expect(groupedCode('12')).toBe('12')
   })
 })

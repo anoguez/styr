@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { AccessState } from '@core/types.js'
-import { AddDeviceDialog, ConnectIntroDialog } from './ConnectDialogs.js'
+import { AddDeviceDialog, ApprovalPrompt, ConnectIntroDialog } from './ConnectDialogs.js'
 
 const state = (over: Partial<AccessState> = {}): AccessState => ({
   enabled: true,
@@ -85,5 +85,39 @@ describe('AddDeviceDialog', () => {
   it("shows the start of this computer's fingerprint to check against", () => {
     const html = add(state({ workspaceShared: true, fingerprint: 'abcdef01'.repeat(8) }))
     expect(html).toContain('abcd ef01')
+  })
+})
+
+describe('ApprovalPrompt', () => {
+  const html = renderToStaticMarkup(
+    createElement(ApprovalPrompt, {
+      request: { id: 'r1', name: 'Pixel <9>', code: '482915', source: '192.168.1.77' },
+      onAnswer: () => undefined
+    })
+  )
+
+  it('names the device (escaped), where it is, and the code to compare', () => {
+    expect(html).toContain('Pixel &lt;9&gt; wants to connect')
+    expect(html).toContain('from 192.168.1.77')
+    expect(html).toContain('482 915')
+    expect(html).toContain('only if the codes match')
+  })
+
+  it('offers Turn down and Allow', () => {
+    expect(html).toContain('>Turn down<')
+    expect(html).toContain('>Allow<')
+  })
+})
+
+describe('AddDeviceDialog with a device asking', () => {
+  it('shows the request in place of the QR', () => {
+    const html = add(
+      state({
+        workspaceShared: true,
+        request: { id: 'r1', name: 'Pixel 9', code: '482915', source: '192.168.1.77' }
+      })
+    )
+    expect(html).toContain('Pixel 9 wants to connect')
+    expect(html).not.toContain('Making a code')
   })
 })

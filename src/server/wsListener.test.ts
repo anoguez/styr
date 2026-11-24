@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto'
 import { createConnection, type Socket } from 'node:net'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import type { AccessStore } from '@host/remoteAccess/accessStore.js'
 import { createSecureClientHandshake } from '@host/remoteAccess/secureClient.js'
@@ -387,6 +387,127 @@ describe('network listener', () => {
     expect(calls).toBe(2)
     expect(host.state.log.some((line) => line.includes('left the network'))).toBe(true)
     expect(host.hub.clientCount()).toBe(0)
+  })
+
+  describe('pairing by approval', () => {
+    /** The host's screen: the questions it got, and an answer to give. */
+    function screen() {
+      const asked: { name: string; code: string; source: string; answer(allow: boolean): void }[] =
+        []
+      let withdrawn = 0
+      let busy = false
+      const port = {
+        ask(
+          question: { name: string; code: string; source: string },
+          answer: (allow: boolean) => void
+        ) {
+          if (busy) return undefined
+          asked.push({ ...question, answer })
+          return { withdraw: () => void withdrawn++ }
+        }
+      }
+      return {
+        port,
+        asked,
+        withdrawn: () => withdrawn,
+        setBusy: (value: boolean) => (busy = value)
+      }
+    }
+
+    async function listenAsking(ui: ReturnType<typeof screen>, approvalMs?: number) {
+      await listener.close()
+      store = host.store()
+      listener = await listenOnLoopback(host, store, { approvals: ui.port, approvalMs })
+    }
+
+    it('waits for the answer, with both screens on the same code, then pairs', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const device = phone()
+      await device.opened()
+      const pending = device.request('Pixel 9')
+      await vi.waitFor(() => expect(ui.asked).toHaveLength(1))
+      expect(ui.asked[0]).toMatchObject({ name: 'Pixel 9', source: '127.0.0.1' })
+      expect(ui.asked[0]!.code).toBe(device.approvalCode)
+      // Nothing reaches the hub while the question waits.
+      expect(host.hub.clientCount()).toBe(0)
+      ui.asked[0]!.answer(true)
+      const credentials = await pending
+      expect(credentials).toBeDefined()
+      expect(store.devices().map((entry) => entry.id)).toEqual([credentials!.deviceId])
+      await vi.waitFor(() => expect(host.hub.clientCount()).toBe(1))
+
+      // It signs in with its own key from then on.
+      const again = phone()
+      await again.opened()
+      await expect(again.authenticate(credentials!)).resolves.toBe(true)
+    })
+
+    it('is let go, with nothing added, when turned down', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const device = phone()
+      await device.opened()
+      const pending = device.request('Pixel 9')
+      await vi.waitFor(() => expect(ui.asked).toHaveLength(1))
+      ui.asked[0]!.answer(false)
+      await expect(pending).resolves.toBeUndefined()
+      expect((await device.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
+      expect(store.devices()).toEqual([])
+    })
+
+    it('is refused at once while no Add device window is open, asking nobody', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      const device = phone()
+      await device.opened()
+      await expect(device.request('Pixel 9')).resolves.toBeUndefined()
+      expect(ui.asked).toEqual([])
+    })
+
+    it('turns a second device away as busy while one question waits', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      ui.setBusy(true)
+      const device = phone()
+      await device.opened()
+      await expect(device.request('Pixel 9')).resolves.toBeUndefined()
+      expect((await device.waitClosed()).code).toBe(CLOSE.BUSY)
+    })
+
+    it('withdraws the question when the device leaves or is not answered in time', async () => {
+      const ui = screen()
+      await listenAsking(ui, 80)
+      store.startPairing()
+      const leaving = phone()
+      await leaving.opened()
+      void leaving.request('Pixel 9')
+      await vi.waitFor(() => expect(ui.asked).toHaveLength(1))
+      leaving.close()
+      await vi.waitFor(() => expect(ui.withdrawn()).toBe(1))
+
+      const slow = phone()
+      await slow.opened()
+      void slow.request('iPad')
+      await vi.waitFor(() => expect(ui.asked).toHaveLength(2))
+      expect((await slow.waitClosed()).code).toBe(CLOSE.TIMEOUT)
+      expect(ui.withdrawn()).toBe(2)
+      // An answer after that changes nothing.
+      ui.asked[1]!.answer(true)
+      expect(store.devices()).toEqual([])
+    })
+
+    it('a host that takes no requests (styr serve) refuses them', async () => {
+      store.startPairing()
+      const device = phone()
+      await device.opened()
+      await expect(device.request('Pixel 9')).resolves.toBeUndefined()
+      expect((await device.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
+      expect(store.devices()).toEqual([])
+    })
   })
 
   it('refuses proxy headers, browser origins and unknown paths', async () => {

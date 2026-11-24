@@ -31,6 +31,13 @@ export interface NetworkAccessOptions {
   /** Tests: the admission rule and the address to listen on (see `NetworkListenerOptions`). */
   admit?: Admit
   host?: string
+  /**
+   * Devices may ask to pair by approval (the desktop, whose Add device window answers). Off for
+   * `styr serve`, which has no one to ask: devices pair with its QR.
+   */
+  takesRequests?: boolean
+  /** Tests: how long a request waits for its answer. */
+  approvalMs?: number
   /** Tests: this machine's reachable addresses (`reachableAddresses`). */
   interfaces?: () => AccessInterface[]
   /** Only where a screen can show the answers (the desktop): see `AccessServicePorts`. */
@@ -61,7 +68,10 @@ export function createNetworkAccess(options: NetworkAccessOptions): {
           log: options.log,
           onConnections: (count) => service.connections(count),
           ...(options.admit ? { admit: options.admit } : {}),
-          ...(options.host ? { host: options.host } : {})
+          ...(options.host ? { host: options.host } : {}),
+          // A request to pair waits for someone at this screen; a server has no screen.
+          ...(options.takesRequests ? { approvals: service.approvals } : {}),
+          ...(options.approvalMs ? { approvalMs: options.approvalMs } : {})
         },
         port
       ),

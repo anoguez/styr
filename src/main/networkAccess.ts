@@ -83,6 +83,7 @@ const access = createNetworkAccess({
   broadcast: (state) => electronHost.broadcast('access:changed', state),
   log: (message) => console.warn(message),
   secrets: keychain,
+  takesRequests: true,
   shieldsUp: () => tailscaleShieldsUp(),
   workspaces: localWorkspaces
 })
@@ -157,6 +158,12 @@ export function registerAccessHandlers(): void {
   )
   ipcMain.handle('access:pair', () => access.service.pair())
   ipcMain.handle('access:cancelPair', () => access.service.cancelPairing())
+  ipcMain.handle('access:answer', (_event, requestId: unknown, allow: unknown) => {
+    if (typeof requestId !== 'string' || typeof allow !== 'boolean') {
+      throw new Error('Expected a request id and an answer.')
+    }
+    return access.service.answer(requestId, allow)
+  })
   ipcMain.handle('access:checkNetwork', () => access.service.checkNetwork())
   ipcMain.handle('access:setShared', (_event, workspaceId: unknown, shared: unknown) =>
     setWorkspaceShared(workspaceId, shared)

@@ -321,6 +321,61 @@ describe('access service', () => {
     expect(released).toEqual([1])
   })
 
+  describe('requests to pair by approval', () => {
+    const question = { name: 'Pixel 9', code: '482915', source: '192.168.1.77' }
+
+    it('asks only while an Add device window is open, and one at a time', async () => {
+      const { service } = setup()
+      await service.configure({ enabled: true })
+      expect(service.approvals.ask(question, () => undefined)).toBeUndefined()
+      service.pair()
+      expect(service.approvals.ask(question, () => undefined)).toBeDefined()
+      expect(service.state().request).toMatchObject(question)
+      expect(service.approvals.ask({ ...question, name: 'iPad' }, () => undefined)).toBeUndefined()
+    })
+
+    it('passes the answer on once, and a stale or repeated one allows nothing', async () => {
+      const { service } = setup()
+      await service.configure({ enabled: true })
+      service.pair()
+      const answers: boolean[] = []
+      service.approvals.ask(question, (allow) => answers.push(allow))
+      const id = service.state().request!.id
+      expect(() => service.answer('someone-else', true)).toThrow(/no longer waiting/)
+      expect(service.answer(id, true).request).toBeUndefined()
+      expect(() => service.answer(id, true)).toThrow(/no longer waiting/)
+      expect(answers).toEqual([true])
+    })
+
+    it('turns the request down when the window closes or access goes off', async () => {
+      const { service } = setup()
+      await service.configure({ enabled: true })
+      service.pair()
+      const answers: boolean[] = []
+      service.approvals.ask(question, (allow) => answers.push(allow))
+      service.cancelPairing()
+      expect(answers).toEqual([false])
+      expect(service.state().request).toBeUndefined()
+
+      service.pair()
+      service.approvals.ask(question, (allow) => answers.push(allow))
+      await service.configure({ enabled: false })
+      expect(answers).toEqual([false, false])
+    })
+
+    it('forgets a request the device withdrew, without answering it', async () => {
+      const { service } = setup()
+      await service.configure({ enabled: true })
+      service.pair()
+      const answers: boolean[] = []
+      const asked = service.approvals.ask(question, (allow) => answers.push(allow))!
+      asked.withdraw()
+      expect(service.state().request).toBeUndefined()
+      expect(answers).toEqual([])
+      expect(broadcasts.at(-1)?.request).toBeUndefined()
+    })
+  })
+
   it.skipIf(process.platform === 'win32')('stores its file for the user only', async () => {
     const { service } = setup()
     await service.configure({ enabled: true })

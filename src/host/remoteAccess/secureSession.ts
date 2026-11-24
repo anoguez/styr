@@ -24,8 +24,13 @@ import {
  *   C → S  {"type":"hello","protocol":2,"noise":b64(-> e)}
  *   S → C  b64(<- e, ee, s, es, payload {identityKey, signature})
  *   C → S  b64(-> s, se, payload {type:'auth', deviceId, signature}
- *                             or {type:'pair', name, identityKey, signature, proof})
+ *                             or {type:'pair', name, identityKey, signature, proof}
+ *                             or {type:'request', name, identityKey, signature})
  *   S → C  sealed {type:'paired', deviceId}? then sealed {type:'ready'}, then JSON-RPC, sealed
+ *
+ * `request` is pairing by approval, for a device that found the host on the network instead of
+ * scanning its QR: accepted only while the host's Add device window is open, it waits until the
+ * person at the host allows it, having checked that both screens show the same `approvalCode`.
  *
  * Each side's Noise static key is made per connection: identity is the Ed25519 key, bound to the
  * session by signing `"styr-noise-v1\n" + static + handshake hash`. The client checks the host's
@@ -41,6 +46,7 @@ const IDENTITY_CONTEXT = {
   device: Buffer.from('styr-noise-device-v1\n')
 } as const
 const PAIR_CONTEXT = Buffer.from('styr-noise-pair-v1\n')
+const APPROVAL_CONTEXT = Buffer.from('styr-noise-approval-v1\n')
 
 /** One record: a flag byte (1 = the message ends here, 0 = more follows) and a piece of it. */
 const RECORD_FINAL = 1
@@ -84,6 +90,18 @@ export function securePairProof(
     .digest('hex')
 }
 
+/**
+ * The six digits both screens show while a device asks to pair by approval: derived from the final
+ * handshake hash, which covers both sides' ephemeral and static keys. Anyone relaying between the
+ * device and the host runs a handshake with each, so the two hashes, and the two codes, differ;
+ * the person comparing them refuses. One guess in a million for an attacker per attempt, and every
+ * attempt has to be allowed by hand.
+ */
+export function approvalCode(handshakeHash: Buffer): string {
+  const digest = createHmac('sha256', handshakeHash).update(APPROVAL_CONTEXT).digest()
+  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, '0')
+}
+
 const base64Text = (max: number) => z.string().max(max)
 const strictBase64 = (bytes: number) =>
   z
@@ -110,6 +128,12 @@ export const clientPayloadSchema = z.discriminatedUnion('type', [
     identityKey,
     signature,
     proof: z.string().regex(/^[0-9a-f]{64}$/)
+  }),
+  z.object({
+    type: z.literal('request'),
+    name: z.string().max(DEVICE_NAME_MAX),
+    identityKey,
+    signature
   })
 ])
 
@@ -196,7 +220,7 @@ export class SecureFrameChannel {
 /** What the server side needs of the store. */
 export type SecureHandshakeStore = Pick<
   AccessStore,
-  'identity' | 'reload' | 'publicKeyFor' | 'consumePairing' | 'addDevice'
+  'identity' | 'reload' | 'publicKeyFor' | 'pairing' | 'consumePairing' | 'addDevice'
 >
 
 export type SecureHandshakeResult =
@@ -209,6 +233,17 @@ export type SecureHandshakeResult =
       channel: SecureFrameChannel
     }
   | { kind: 'denied'; frames: string[]; reason: string }
+  | {
+      /**
+       * A device asks to pair by approval. Nothing is sent until `decide` is called with the
+       * person's answer; the caller holds the connection meanwhile and sends what `decide` returns.
+       */
+      kind: 'approval'
+      frames: []
+      name: string
+      code: string
+      decide(allow: boolean): SecureHandshakeResult
+    }
 
 function equalHex(a: string, b: string): boolean {
   const left = Buffer.from(a, 'hex')
@@ -236,7 +271,7 @@ export function createSecureServerHandshake(options: {
     prologue: NOISE_PROLOGUE,
     ephemeralKey: options.ephemeralKey
   })
-  let state: 'hello' | 'final' | 'done' = 'hello'
+  let state: 'hello' | 'final' | 'approval' | 'done' = 'hello'
 
   const deny = (reason: string): SecureHandshakeResult => {
     state = 'done'
@@ -268,10 +303,47 @@ export function createSecureServerHandshake(options: {
   function final(text: string): SecureHandshakeResult {
     const { payload, hashBeforePayload } = noise.read(decodeFrame(text))
     const parsed = clientPayloadSchema.safeParse(jsonPayload(payload))
-    if (!parsed.success) return deny('expected auth or pair')
+    if (!parsed.success) return deny('expected auth, pair or request')
     const signed = identitySignedData('device', noise.remoteStatic!, hashBeforePayload)
     let deviceId: string
     let paired = false
+    if (parsed.data.type === 'request') {
+      const { name, identityKey } = parsed.data
+      // Only while the Add device window is open: otherwise nobody is there to answer, and a
+      // stranger on the network must not be able to put a prompt on the screen.
+      if (!options.store.pairing()) return deny('not accepting pairing requests now')
+      if (!validDevicePublicKey(identityKey)) return deny('not an Ed25519 key')
+      if (!signatureValid(identityKey, signed, parsed.data.signature)) {
+        return deny('bad device signature')
+      }
+      const channel = new SecureFrameChannel(noise.transport(), options.maxMessageBytes)
+      state = 'approval'
+      return {
+        kind: 'approval',
+        frames: [],
+        name,
+        code: approvalCode(channel.handshakeHash),
+        decide(allow: boolean): SecureHandshakeResult {
+          if (state !== 'approval') return deny('the request was already answered')
+          // The window is spent by the answer either way, as a QR's secret is by an attempt.
+          const offer = options.store.consumePairing()
+          if (!allow) return deny('the request was declined')
+          if (!offer) return deny('the Add device window closed before the answer')
+          let id: string
+          try {
+            id = options.store.addDevice(name, identityKey).id
+          } catch (error) {
+            return deny(error instanceof Error ? error.message : 'could not add the device')
+          }
+          state = 'done'
+          const frames = [
+            ...channel.seal(JSON.stringify({ type: 'paired', deviceId: id })),
+            ...channel.seal(JSON.stringify({ type: 'ready' }))
+          ]
+          return { kind: 'ready', frames, deviceId: id, paired: true, channel }
+        }
+      }
+    }
     if (parsed.data.type === 'auth') {
       // A device removed from another process (the CLI) is gone for the next sign-in.
       options.store.reload()
@@ -313,6 +385,7 @@ export function createSecureServerHandshake(options: {
   return {
     receive(text: string): SecureHandshakeResult {
       if (state === 'done') return deny('message after the handshake ended')
+      if (state === 'approval') return deny('message before the request was answered')
       if (Buffer.byteLength(text) > HANDSHAKE_MAX_BYTES) return deny('handshake message too large')
       try {
         return state === 'hello' ? hello(text) : final(text)

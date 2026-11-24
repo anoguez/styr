@@ -5,6 +5,7 @@ import { NoiseXX, generateNoiseKeyPair, type NoiseKeyPair } from './noise.js'
 import {
   NOISE_PROLOGUE,
   SECURE_PROTOCOL,
+  approvalCode,
   SecureFrameChannel,
   decodeFrame,
   hostPayloadSchema,
@@ -19,11 +20,18 @@ import {
  */
 
 export interface SecureClientOptions {
-  /** SHA-256 of the host's identity key, from the QR. */
-  pinnedFingerprint: string
+  /**
+   * SHA-256 of the host's identity key, from the QR or an earlier pairing. Required to sign in or
+   * pair with a QR; a request (pairing by approval) to a host never met has none, and pins the key
+   * the host shows once the person at the host allows it (`approval.hostFingerprint`).
+   */
+  pinnedFingerprint?: string
   /** The device's Ed25519 key pair; the public half is SPKI DER, base64. */
   identity: { privateKey: KeyObject; publicKey: string }
-  signIn: { type: 'auth'; deviceId: string } | { type: 'pair'; name: string; secret: string }
+  signIn:
+    | { type: 'auth'; deviceId: string }
+    | { type: 'pair'; name: string; secret: string }
+    | { type: 'request'; name: string }
   maxMessageBytes: number
   /** Tests only: fixed keys, for the transcript vector. */
   staticKey?: NoiseKeyPair
@@ -35,7 +43,15 @@ export class SecureHandshakeError extends Error {}
 const utf8 = new TextDecoder('utf-8', { fatal: true })
 
 export type SecureClientStep =
-  | { kind: 'send'; frames: string[] }
+  | {
+      kind: 'send'
+      frames: string[]
+      /**
+       * After a request: the code to show while waiting, which the host shows too, and the host's
+       * fingerprint, to pin once it says `paired`.
+       */
+      approval?: { code: string; hostFingerprint: string }
+    }
   | { kind: 'pending' }
   | { kind: 'ready'; channel: SecureFrameChannel; deviceId?: string }
 
@@ -52,6 +68,9 @@ export function createSecureClientHandshake(options: SecureClientOptions) {
     prologue: NOISE_PROLOGUE,
     ephemeralKey: options.ephemeralKey
   })
+  if (options.signIn.type !== 'request' && !options.pinnedFingerprint) {
+    throw new SecureHandshakeError('signing in or pairing with a QR needs the host fingerprint')
+  }
   let state: 'start' | 'challenge' | 'status' | 'done' = 'start'
   let channel: SecureFrameChannel | undefined
   let deviceId: string | undefined
@@ -67,7 +86,12 @@ export function createSecureClientHandshake(options: SecureClientOptions) {
     try {
       const { payload, hashBeforePayload } = noise.read(decodeFrame(frame))
       host = hostPayloadSchema.parse(JSON.parse(utf8.decode(payload)))
-      if (fingerprintOf(host.identityKey) !== options.pinnedFingerprint) {
+      // A request to a host never met has nothing to pin yet; its key is still checked to sign
+      // this session, and the code shown on both screens is what proves nobody is in between.
+      if (
+        options.pinnedFingerprint !== undefined &&
+        fingerprintOf(host.identityKey) !== options.pinnedFingerprint
+      ) {
         return fail('the host is not the one this device paired with')
       }
       const signed = identitySignedData('host', noise.remoteStatic!, hashBeforePayload)
@@ -87,23 +111,39 @@ export function createSecureClientHandshake(options: SecureClientOptions) {
       const body =
         options.signIn.type === 'auth'
           ? { type: 'auth', deviceId: options.signIn.deviceId, signature }
-          : {
-              type: 'pair',
-              name: options.signIn.name,
-              identityKey: options.identity.publicKey,
-              signature,
-              proof: securePairProof(
-                options.signIn.secret,
-                hash,
-                options.signIn.name,
-                options.identity.publicKey
-              )
-            }
+          : options.signIn.type === 'request'
+            ? {
+                type: 'request',
+                name: options.signIn.name,
+                identityKey: options.identity.publicKey,
+                signature
+              }
+            : {
+                type: 'pair',
+                name: options.signIn.name,
+                identityKey: options.identity.publicKey,
+                signature,
+                proof: securePairProof(
+                  options.signIn.secret,
+                  hash,
+                  options.signIn.name,
+                  options.identity.publicKey
+                )
+              }
       return Buffer.from(JSON.stringify(body))
     })
     channel = new SecureFrameChannel(noise.transport(), options.maxMessageBytes)
     state = 'status'
-    return { kind: 'send', frames: [reply.toString('base64')] }
+    const frames = [reply.toString('base64')]
+    if (options.signIn.type !== 'request') return { kind: 'send', frames }
+    return {
+      kind: 'send',
+      frames,
+      approval: {
+        code: approvalCode(channel.handshakeHash),
+        hostFingerprint: fingerprintOf(host.identityKey)
+      }
+    }
   }
 
   function status(frame: string): SecureClientStep {

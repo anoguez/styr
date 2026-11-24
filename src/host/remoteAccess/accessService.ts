@@ -1,14 +1,32 @@
+import { randomUUID } from 'node:crypto'
 import { encode } from 'uqr'
 import type {
   AccessConfigPatch,
   AccessInterface,
   AccessPairing,
+  AccessRequest,
   AccessState,
   AccessWorkspace
 } from '@core/types/access.js'
 import type { AccessStore } from './accessStore.js'
 import { portProblem } from './addresses.js'
 import { createKeepAwake, type KeepAwakePorts } from './keepAwake.js'
+
+/** A device asking to pair by approval, as the listener hands it over. */
+export type ApprovalQuestion = Omit<AccessRequest, 'id'>
+
+/**
+ * Who answers a device's request to pair (this service, for the listener). `ask` returns undefined
+ * when it cannot take the question now (another is waiting, or no Add device window is open), and
+ * the device is turned away; otherwise the listener calls `withdraw` if the device leaves or its
+ * time runs out first.
+ */
+export interface ApprovalPort {
+  ask(
+    question: ApprovalQuestion,
+    answer: (allow: boolean) => void
+  ): { withdraw(): void } | undefined
+}
 
 /** What the transport gives back once it listens (`src/server/wsListener.ts`). */
 export interface RunningListener {
@@ -60,6 +78,8 @@ export function createAccessService(ports: AccessServicePorts) {
   let error: string | undefined
   let shieldsUp: boolean | undefined
   let applying: Promise<void> = Promise.resolve()
+  /** The one request to pair that waits for an answer, with how to give it. */
+  let pending: (AccessRequest & { answer(allow: boolean): void }) | undefined
   const awake = createKeepAwake(ports.keepAwake)
 
   function state(): AccessState {
@@ -81,7 +101,17 @@ export function createAccessService(ports: AccessServicePorts) {
       ...(store.pairing() ? { pairingExpiresAt: store.pairing()!.expiresAt } : {}),
       ...(shieldsUp !== undefined ? { shieldsUp } : {}),
       workspaces,
-      workspaceShared: ports.workspaces ? workspaces.some((entry) => entry.shared) : true
+      workspaceShared: ports.workspaces ? workspaces.some((entry) => entry.shared) : true,
+      ...(pending
+        ? {
+            request: {
+              id: pending.id,
+              name: pending.name,
+              code: pending.code,
+              source: pending.source
+            }
+          }
+        : {})
     }
   }
 
@@ -108,7 +138,31 @@ export function createAccessService(ports: AccessServicePorts) {
 
   store.onChange(() => publish())
 
+  /** Turns down the waiting request, if any: its window closed, or access went off. */
+  function declinePending(): void {
+    const waiting = pending
+    pending = undefined
+    waiting?.answer(false)
+  }
+
+  const approvals: ApprovalPort = {
+    ask(question, answer) {
+      if (pending || !store.pairing()) return undefined
+      const id = randomUUID()
+      pending = { ...question, id, answer }
+      publish()
+      return {
+        withdraw() {
+          if (pending?.id !== id) return
+          pending = undefined
+          publish()
+        }
+      }
+    }
+  }
+
   async function stop(): Promise<void> {
+    declinePending()
     store.cancelPairing()
     const listener = running
     running = undefined
@@ -214,7 +268,27 @@ export function createAccessService(ports: AccessServicePorts) {
       return { uri, expiresAt: offer.expiresAt, modules: encode(uri, { ecc: 'M', border: 0 }).data }
     },
 
-    cancelPairing: (): void => store.cancelPairing(),
+    /** The Add device window closed: its QR stops working and a waiting request is turned down. */
+    cancelPairing(): void {
+      declinePending()
+      store.cancelPairing()
+    },
+
+    approvals,
+
+    /**
+     * The person's answer to the waiting request. Throws when `requestId` is not the one waiting
+     * (it was withdrawn, or already answered), so a stale click allows nothing.
+     */
+    answer(requestId: string, allow: boolean): AccessState {
+      if (!pending || pending.id !== requestId) {
+        throw new Error('That device is no longer waiting. Ask it to try again.')
+      }
+      const waiting = pending
+      pending = undefined
+      waiting.answer(allow)
+      return publish()
+    },
 
     checkNetwork,
 

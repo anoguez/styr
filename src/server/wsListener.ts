@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import type { Socket } from 'node:net'
 import { WebSocketServer, type RawData, type WebSocket } from 'ws'
+import type { ApprovalPort, ApprovalQuestion } from '@host/remoteAccess/accessService.js'
 import type { AccessStore } from '@host/remoteAccess/accessStore.js'
 import {
   addressKind,
@@ -23,6 +24,8 @@ export const MAX_FRAME_BYTES = 8 * 1024 * 1024
 /** As on the Unix socket: a client this far behind is dropped rather than buffered. */
 export const MAX_BUFFERED_BYTES = 32 * 1024 * 1024
 const MAX_HANDSHAKING = 16
+/** How long a device that asked to pair waits for the person at the host to answer. */
+export const APPROVAL_TIMEOUT_MS = 60_000
 const MAX_PER_ADDRESS = 8
 /** Every device behind an ssh tunnel is 127.0.0.1, so loopback gets a larger share. */
 const MAX_PER_LOOPBACK = 32
@@ -35,6 +38,8 @@ export const CLOSE = {
   TIMEOUT: 4408,
   BUSY: 4429
 } as const
+
+export type { ApprovalPort, ApprovalQuestion }
 
 export interface NetworkListenerOptions {
   hub: Hub
@@ -57,6 +62,10 @@ export interface NetworkListenerOptions {
   admit?(local: string, remote: string): string | undefined
   /** Where to listen; every interface (dual-stack) unless a test pins loopback. */
   host?: string
+  /** Answers requests to pair by approval. Absent (`styr serve`): every request is refused. */
+  approvals?: ApprovalPort
+  /** Tests: how long a request waits for its answer. */
+  approvalMs?: number
 }
 
 export interface NetworkListener {
@@ -154,7 +163,9 @@ export async function startNetworkListener(
   function accept(ws: WebSocket, source: string): void {
     handshaking++
     perAddress.set(source, (perAddress.get(source) ?? 0) + 1)
-    let phase: 'handshake' | 'open' | 'closed' = 'handshake'
+    let phase: 'handshake' | 'approval' | 'open' | 'closed' = 'handshake'
+    /** The question on the host's screen while a request waits, withdrawn if the device goes. */
+    let question: { withdraw(): void } | undefined
     let deviceId = ''
     let connection: ReturnType<Hub['connect']> | undefined
     let secure: SecureFrameChannel | undefined
@@ -177,12 +188,14 @@ export async function startNetworkListener(
     function end(code: number, reason: string): void {
       if (phase === 'closed') return
       phase = 'closed'
+      question?.withdraw()
+      question = undefined
       connection?.close()
       ws.close(code, reason)
       setTimeout(() => ws.terminate(), 1000).unref()
     }
     const session: Session = { end: (code, reason) => end(code, reason) }
-    const timeout = setTimeout(() => {
+    let timeout = setTimeout(() => {
       options.log(`Remote access: ${source} did not finish the handshake (${stalled()})`)
       if (countsFailures(source)) limiter.fail(source)
       end(CLOSE.TIMEOUT, 'timeout')
@@ -222,6 +235,12 @@ export async function startNetworkListener(
         connection?.receive(text.endsWith('\n') ? text : `${text}\n`)
         return
       }
+      if (phase === 'approval') {
+        // Nothing may come before the answer; the handshake refuses it and the device is let go.
+        options.log(`Remote access: ${source} sent a message before its request was answered`)
+        if (countsFailures(source)) limiter.fail(source)
+        return end(CLOSE.UNAUTHORIZED, 'unauthorized')
+      }
       if (phase !== 'handshake') return
       let outcome: ReturnType<typeof handshake.receive>
       try {
@@ -230,6 +249,7 @@ export async function startNetworkListener(
         // The host's key could not be read (the keychain refused): this connection cannot go on.
         outcome = { kind: 'denied', frames: [], reason: String(error) }
       }
+      if (outcome.kind === 'approval') return awaitApproval(outcome)
       for (const reply of outcome.frames) ws.send(reply)
       if (outcome.kind === 'reply') replied = true
       if (outcome.kind === 'denied') {
@@ -244,6 +264,54 @@ export async function startNetworkListener(
         open(outcome.deviceId, outcome.paired)
       }
     })
+
+    /**
+     * A device asks to pair by approval: the question goes to the host's screen and the connection
+     * waits, with no hub and nothing sent, until the person answers, the device leaves or the time
+     * runs out. Only one question at a time; another device asking meanwhile is told the host is busy.
+     */
+    function awaitApproval(
+      request: Extract<ReturnType<typeof handshake.receive>, { kind: 'approval' }>
+    ) {
+      const decided = (allow: boolean): void => {
+        if (phase !== 'approval') return
+        question = undefined
+        const result = request.decide(allow)
+        if (result.kind !== 'ready') {
+          options.log(
+            `Remote access: ${source}'s request was not allowed (${result.kind === 'denied' ? result.reason : '?'})`
+          )
+          if (countsFailures(source)) limiter.fail(source)
+          return end(CLOSE.UNAUTHORIZED, 'unauthorized')
+        }
+        phase = 'handshake'
+        for (const reply of result.frames) ws.send(reply)
+        limiter.reset(source)
+        secure = result.channel
+        open(result.deviceId, true)
+      }
+      const asked = options.approvals?.ask(
+        { name: request.name, code: request.code, source },
+        decided
+      )
+      if (!asked) {
+        options.log(
+          `Remote access: refused ${source}'s request to pair (${options.approvals ? 'another request is waiting' : 'this host takes no requests'})`
+        )
+        return end(options.approvals ? CLOSE.BUSY : CLOSE.UNAUTHORIZED, 'not now')
+      }
+      question = asked
+      phase = 'approval'
+      options.log(
+        `Remote access: ${source} asks to pair as "${request.name}"; waiting for an answer`
+      )
+      clearTimeout(timeout)
+      timeout = setTimeout(() => {
+        options.log(`Remote access: ${source}'s request to pair was not answered in time`)
+        end(CLOSE.TIMEOUT, 'timeout')
+      }, options.approvalMs ?? APPROVAL_TIMEOUT_MS)
+      timeout.unref()
+    }
 
     function open(id: string, paired: boolean): void {
       clearTimeout(timeout)
@@ -278,6 +346,8 @@ export async function startNetworkListener(
     ws.on('close', () => {
       // A phone that does not trust the key it was shown hangs up without a word: say so here,
       // since nothing else in the log would.
+      question?.withdraw()
+      question = undefined
       if (phase === 'handshake' && replied) {
         options.log(`Remote access: ${source} hung up at the key check (${stalled()})`)
       }

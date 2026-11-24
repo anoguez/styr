@@ -286,6 +286,9 @@ const api = {
     /** The QR for one new device, good for two minutes and one use. */
     pair: (): Promise<AccessPairing> => ipcRenderer.invoke('access:pair'),
     cancelPair: (): Promise<void> => ipcRenderer.invoke('access:cancelPair'),
+    /** Allows or turns down the device waiting to pair (`AccessState.request`). */
+    answer: (requestId: string, allow: boolean): Promise<AccessState> =>
+      ipcRenderer.invoke('access:answer', requestId, allow),
     revoke: (deviceId: string): Promise<AccessState> =>
       ipcRenderer.invoke('access:revoke', deviceId),
     /** Asks Tailscale whether Shields Up is on; the answer lands in `shieldsUp`. */

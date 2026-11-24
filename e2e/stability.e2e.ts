@@ -150,13 +150,21 @@ test('a device that has not paired is refused by the remote access listener', as
 class Phone {
   private readonly key: KeyObject = generateKeyPairSync('ed25519').privateKey
   deviceId?: string
+  /** After `request`: the code this phone shows while the desktop decides. */
+  approvalCode?: string
 
-  constructor(private readonly uri: URL) {}
+  constructor(
+    private readonly uri: URL,
+    /** Ask to pair by approval, as a phone that found the computer on the network does. */
+    private readonly asking = false
+  ) {}
 
   /** Pairs with the QR's secret (once), or signs in with the device id; the session or the close code. */
-  async connect(): Promise<{ channel: SecureFrameChannel; socket: WebSocket } | { code: number }> {
+  async connect(): Promise<Session | { code: number }> {
     const client = createSecureClientHandshake({
-      pinnedFingerprint: this.uri.searchParams.get('fp')!,
+      ...(this.asking && !this.deviceId
+        ? {}
+        : { pinnedFingerprint: this.uri.searchParams.get('fp')! }),
       identity: {
         privateKey: this.key,
         publicKey: createPublicKey(this.key)
@@ -165,7 +173,9 @@ class Phone {
       },
       signIn: this.deviceId
         ? { type: 'auth', deviceId: this.deviceId }
-        : { type: 'pair', name: 'Test phone', secret: this.uri.searchParams.get('secret')! },
+        : this.asking
+          ? { type: 'request', name: 'Test phone' }
+          : { type: 'pair', name: 'Test phone', secret: this.uri.searchParams.get('secret')! },
       maxMessageBytes: 8 * 1024 * 1024
     })
     const socket = new WebSocket(`ws://127.0.0.1:${this.uri.searchParams.get('port')}/`)
@@ -174,41 +184,56 @@ class Phone {
       socket.onclose = (event) => done({ code: event.code })
       socket.onmessage = (event) => {
         const step = client.receive(String(event.data))
-        if (step.kind === 'send') for (const frame of step.frames) socket.send(frame)
+        if (step.kind === 'send') {
+          if (step.approval) this.approvalCode = step.approval.code
+          for (const frame of step.frames) socket.send(frame)
+        }
         if (step.kind === 'ready') {
           this.deviceId ??= step.deviceId
-          socket.onmessage = null
+          // Every sealed message from here on, in order: dropping one breaks the channel for good.
+          const session: Session = { channel: step.channel, socket, received: [] }
+          socket.onmessage = (next) => {
+            const text = step.channel.open(String(next.data))
+            if (text !== undefined) session.received.push(text)
+          }
           socket.onclose = null
-          done({ channel: step.channel, socket })
+          done(session)
         }
       }
     })
   }
 }
 
+/** A signed-in session, and every message the host sent on it so far. */
+interface Session {
+  channel: SecureFrameChannel
+  socket: WebSocket
+  received: string[]
+}
+
 /** One JSON-RPC call over a signed-in session; skips the server's notifications. */
-function call(
-  session: { channel: SecureFrameChannel; socket: WebSocket },
+async function call(
+  session: Session,
   method: string,
   params: unknown[] = []
 ): Promise<{ result?: unknown; error?: { message: string } }> {
-  return new Promise((done) => {
-    session.socket.onmessage = (event) => {
-      const text = session.channel.open(String(event.data))
-      if (text === undefined) return
+  const id = Math.floor(Math.random() * 1e9)
+  for (const frame of session.channel.seal(
+    JSON.stringify({ jsonrpc: '2.0', id, method, params })
+  )) {
+    session.socket.send(frame)
+  }
+  for (;;) {
+    for (const text of session.received) {
       const message = JSON.parse(text) as {
         id?: number
         result?: unknown
         error?: { message: string }
       }
-      if (message.id === 1) done(message)
+      if (message.id === id) return message
     }
-    for (const frame of session.channel.seal(
-      JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
-    )) {
-      session.socket.send(frame)
-    }
-  })
+    await new Promise((wait) => setTimeout(wait, 10))
+  }
 }
 
 test('a device pairs with the desktop app from its QR, signs in again, and is cut off on removal', async () => {
@@ -244,6 +269,54 @@ test('a device pairs with the desktop app from its QR, signs in again, and is cu
   expect(await closed).toBe(4403)
   expect(await phone.connect()).toEqual({ code: 4401 })
 
+  await page.evaluate(() => window.api.access.configure({ enabled: false }))
+  styr.expectNoErrors()
+})
+
+test('a device on the network asks to pair, and the desktop allows it after comparing codes', async () => {
+  styr = await launchStyr('approval')
+  const { page } = styr
+  await page.getByRole('button', { name: /^Settings/ }).click()
+  const settings = page.locator('[aria-label="Settings"]')
+  await settings.getByRole('button', { name: /^Connections/ }).click()
+  await settings.getByRole('button', { name: 'Get started' }).click()
+  await page
+    .locator('[aria-label="Connect a device to this computer"]')
+    .getByRole('button', { name: 'Get started' })
+    .click()
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await expect(page.getByRole('img', { name: 'Pairing QR code' })).toBeVisible()
+
+  // The phone knows the computer's address and port (from the network), not its QR.
+  const state = await page.evaluate(() => window.api.access.state())
+  const phone = new Phone(new URL(`styr://pair?port=${state.port}`), true)
+  const asked = phone.connect()
+  const prompt = page.getByRole('alertdialog', { name: 'Test phone wants to connect' })
+  await expect(prompt).toBeVisible()
+  // Both screens show the same code.
+  await expect.poll(() => phone.approvalCode).toMatch(/^\d{6}$/)
+  await expect(prompt.getByLabel(`Code ${phone.approvalCode}`)).toBeVisible()
+  await prompt.getByRole('button', { name: 'Allow' }).click()
+
+  const session = await asked
+  expect('channel' in session).toBe(true)
+  if (!('channel' in session)) return
+  expect((await call(session, 'tasks:list')).result).toEqual(expect.any(Array))
+  await expect(page.getByText('Test phone is connected')).toBeVisible()
+  session.socket.close()
+  await page.getByRole('button', { name: 'Done' }).click()
+  await settings.getByRole('button', { name: 'Close' }).first().click()
+  await page.evaluate(() => window.api.access.configure({ enabled: false }))
+  styr.expectNoErrors()
+})
+
+test('a device asking to pair is refused while no Add device window is open', async () => {
+  styr = await launchStyr('approval-closed')
+  const { page } = styr
+  const state = await page.evaluate(() => window.api.access.configure({ enabled: true }))
+  const phone = new Phone(new URL(`styr://pair?port=${state.port}`), true)
+  expect(await phone.connect()).toEqual({ code: 4401 })
+  expect((await page.evaluate(() => window.api.access.state())).devices).toEqual([])
   await page.evaluate(() => window.api.access.configure({ enabled: false }))
   styr.expectNoErrors()
 })
