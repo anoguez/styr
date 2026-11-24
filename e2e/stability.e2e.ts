@@ -320,3 +320,70 @@ test('a device asking to pair is refused while no Add device window is open', as
   await page.evaluate(() => window.api.access.configure({ enabled: false }))
   styr.expectNoErrors()
 })
+
+test('another computer on the network: pair by approval, open its shared workspace, see its board', async () => {
+  // Computer A shares its Default workspace, with a task on it.
+  const a = await launchStyr('lan-a')
+  let b: StyrApp | undefined
+  try {
+    await a.page.evaluate(() => window.api.tasks.create({ title: 'Made on computer A' }))
+    await a.page.getByRole('button', { name: /^Settings/ }).click()
+    const settingsA = a.page.locator('[aria-label="Settings"]')
+    await settingsA.getByRole('button', { name: /^Connections/ }).click()
+    await settingsA.getByRole('button', { name: 'Get started' }).click()
+    await a.page
+      .locator('[aria-label="Connect a device to this computer"]')
+      .getByRole('button', { name: 'Get started' })
+      .click()
+    await a.page.getByRole('button', { name: 'Continue' }).click()
+    await expect(a.page.getByRole('img', { name: 'Pairing QR code' })).toBeVisible()
+    const port = (await a.page.evaluate(() => window.api.access.state())).port
+
+    // Computer B, with remote workspaces on, adds A by its address.
+    b = await launchStyr('lan-b')
+    const settings = await b.page.evaluate(() => window.api.settings.get())
+    await b.page.evaluate(
+      (next) =>
+        window.api.settings.save({
+          workspaceId: next.activeWorkspaceId,
+          global: next,
+          workspace: next
+        } as never),
+      { ...settings, experimental: { ...settings.experimental, remoteWorkspaces: true } }
+    )
+    await b.page.getByRole('button', { name: /^Settings/ }).click()
+    const settingsB = b.page.locator('[aria-label="Settings"]')
+    await settingsB.getByRole('button', { name: /^Connections/ }).click()
+    await settingsB.getByRole('radio', { name: 'Other computers' }).click()
+    await settingsB.getByRole('button', { name: 'Add computer' }).click()
+    await b.page.getByLabel('Address').fill(`127.0.0.1:${port}`)
+    await b.page.getByLabel('Name').fill('Computer A')
+    await b.page.getByRole('button', { name: 'Connect', exact: true }).click()
+
+    // Both screens show the same code; A allows it.
+    const shown = b.page.getByLabel(/^Code \d{6}$/)
+    await expect(shown).toBeVisible()
+    const code = (await shown.getAttribute('aria-label'))!.slice('Code '.length)
+    const prompt = a.page.getByRole('alertdialog', { name: /wants to connect$/ })
+    await expect(prompt.getByLabel(`Code ${code}`)).toBeVisible()
+    await prompt.getByRole('button', { name: 'Allow' }).click()
+
+    // B lists what A shares, and opens it: A's board, on B.
+    const open = b.page.getByRole('heading', { name: 'Open a workspace on Computer A' })
+    await expect(open).toBeVisible()
+    await b.page.getByRole('button', { name: 'Open', exact: true }).click()
+    await expect(b.page.getByText('Made on computer A')).toBeVisible({ timeout: 20_000 })
+    const tasks = await b.page.evaluate(() => window.api.tasks.list())
+    expect(tasks.map((task) => task.title)).toContain('Made on computer A')
+
+    // Each connection A saw: the pairing, the list of what it shares, and the one B keeps open.
+    expect((await b.page.evaluate(() => window.api.remote.state())).hosts).toMatchObject([
+      { status: 'connected', serverWorkspace: { id: 'default' } }
+    ])
+    a.expectNoErrors()
+    b.expectNoErrors()
+  } finally {
+    await b?.close()
+    await a.close()
+  }
+})

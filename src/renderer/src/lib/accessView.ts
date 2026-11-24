@@ -1,4 +1,12 @@
-import type { AccessDevice, AccessInterface, AccessState, AccessWorkspace } from '@core/types.js'
+import type {
+  AccessDevice,
+  AccessInterface,
+  AccessState,
+  AccessWorkspace,
+  LanHostInfo,
+  RemoteState,
+  WorkspaceOverview
+} from '@core/types.js'
 
 /**
  * How Settings → Connections reads (`docs/architecture/remote-access.md`). Pure, so the wording
@@ -123,4 +131,36 @@ export function connectionSummary(
 /** Six digits as two groups of three, easier to compare at a glance: `482 915`. */
 export function groupedCode(code: string): string {
   return code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code
+}
+
+/**
+ * A paired computer's line under Other computers: whether this desktop is connected to it now,
+ * from the remote router's state of the host its workspaces link to.
+ */
+export function lanHostStatus(
+  host: LanHostInfo,
+  overview: WorkspaceOverview,
+  remote: RemoteState
+): { connected: boolean; text: string } {
+  const stubs = overview.workspaces.filter(
+    (workspace) => workspace.remote?.lan?.fingerprint === host.fingerprint
+  )
+  if (stubs.length === 0) return { connected: false, text: 'Paired · no workspace open here' }
+  const state = remote.hosts.find((entry) => entry.host === stubs[0]!.remote!.host)
+  const count = `${stubs.length} workspace${stubs.length === 1 ? '' : 's'}`
+  switch (state?.status) {
+    case 'connected':
+      return { connected: true, text: `Connected · ${count}` }
+    case 'connecting':
+      return { connected: false, text: `Connecting… · ${count}` }
+    case 'reconnecting':
+      return {
+        connected: false,
+        text: `Unreachable${state.lastError ? `: ${state.lastError}` : ''} · ${count}`
+      }
+    case 'incompatible':
+      return { connected: false, text: `Runs another version of Styr · ${count}` }
+    default:
+      return { connected: false, text: `Offline · ${count}` }
+  }
 }

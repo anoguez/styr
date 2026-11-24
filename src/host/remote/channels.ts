@@ -152,7 +152,11 @@ export const OFFLINE_DEFAULTS: Readonly<Record<string, () => unknown>> = {
   'tasks:problems': () => [],
   'agents:list': () => [],
   'git:diffStats': () => ({}),
-  'sources:state': () => ({})
+  'sources:state': () => ({}),
+  // Read by the board as soon as a remote workspace opens, before its host has said hello: no plan
+  // yet, and Auto-run off, until the live answers replace them.
+  'orchestrate:plan': () => null,
+  'orchestrate:autoState': () => ({ on: false })
 }
 
 /** Calls whose result is one new terminal session, which the router tags with its host. */

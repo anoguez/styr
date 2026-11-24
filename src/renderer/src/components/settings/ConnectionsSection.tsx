@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { AccessConfigPatch, AccessState } from '@core/types.js'
+import type { AccessConfigPatch, AccessState, WorkspaceOverview } from '@core/types.js'
 import {
   SHIELDS_UP_WARNING,
   connectionSummary,
@@ -12,18 +12,60 @@ import {
 } from '../../lib/accessView.js'
 import { ipcMessage } from '../../lib/ipcMessage.js'
 import { PlusIcon } from '../icons.js'
-import { Button, Card, CardRow, Eyebrow, Hint, Switch, SwitchRow } from '../ui.js'
+import { Button, Card, CardRow, Eyebrow, Hint, Segmented, Switch, SwitchRow } from '../ui.js'
 import { AddDeviceDialog, ConnectIntroDialog, DevicesGlyph } from './ConnectDialogs.js'
+import { OtherComputersPane } from './OtherComputersPane.js'
 
 type Dialog = 'intro' | 'add'
 
+type Tab = 'this' | 'others'
+
 /**
- * Settings → Connections (all workspaces): devices you pair reach this computer from the same
- * network, or a VPN it is on (`docs/architecture/remote-access.md`). One switch, the devices, and
- * which workspaces they may open; nothing else to set up. Every control acts at once, like Remote
- * hosts: none of it waits for Save.
+ * Settings → Connections (all workspaces), two ways round: This computer, which devices you pair
+ * reach from the same network or a VPN it is on, and Other computers, whose shared workspaces this
+ * one opens (`docs/architecture/remote-access.md`). Every control acts at once, like Remote hosts:
+ * none of it waits for Save.
  */
 export function ConnectionsSection({
+  openWorkspaceId,
+  onSharedChange,
+  remoteEnabled,
+  overview,
+  onOpenExperimental
+}: {
+  openWorkspaceId: string
+  onSharedChange: (workspaceId: string, shared: boolean) => void
+  remoteEnabled: boolean
+  overview: WorkspaceOverview
+  onOpenExperimental: () => void
+}): ReactNode {
+  const [tab, setTab] = useState<Tab>('this')
+  return (
+    <div className="flex flex-col gap-5">
+      <Segmented
+        label="Connections"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'this', label: 'This computer' },
+          { value: 'others', label: 'Other computers' }
+        ]}
+      />
+      {tab === 'this' ? (
+        <ThisComputerPane openWorkspaceId={openWorkspaceId} onSharedChange={onSharedChange} />
+      ) : (
+        <OtherComputersPane
+          remoteEnabled={remoteEnabled}
+          overview={overview}
+          onOpenExperimental={onOpenExperimental}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Devices you pair reach this computer: one switch, the devices, and what they may open. */
+function ThisComputerPane({
   openWorkspaceId,
   onSharedChange
 }: {

@@ -5,7 +5,10 @@ import { unsupportedHost, type HostProbe } from '@core/remoteSetup.js'
 import { loadSettings } from '@core/settingsStore.js'
 import { createRemoteWorkspace, listWorkspaces, validateWorkspaceName } from '@core/workspaces.js'
 import type {
+  RemoteWorkspaceLink,
   GlobalSettings,
+  LanBoard,
+  LanHostInfo,
   RemoteHostInspection,
   RemoteSetupDraft,
   RemoteWorkspaceDraft,
@@ -22,7 +25,10 @@ import { createRemoteRouter } from '@host/remote/router.js'
 import { openServerSession } from '@host/remote/session.js'
 import { createHostSetupPorts } from '@host/remote/sshRunner.js'
 import { sshTransport } from '@host/remote/sshTransport.js'
+import { parseTarget, requestLanPairing } from '@host/remote/lanLink.js'
+import { computerName } from '../server/hub.js'
 import { electronHost } from './electronHost.js'
+import { lanHosts, lanTransportFor } from './lanHosts.js'
 import { listSessions, terminalRuntimeState } from './terminal/ptyManager.js'
 import { updateTray } from './tray.js'
 
@@ -45,7 +51,7 @@ export const remoteRouter = createRemoteRouter({
     new RemoteConnection(
       host,
       {
-        spawn: () => sshTransport(link),
+        spawn: () => (link.lan ? lanTransportFor(link) : sshTransport(link)),
         setTimer: (run, ms) => setTimeout(run, ms),
         clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout),
         now: () => Date.now()
@@ -177,6 +183,128 @@ export function routedIpcMain(target: IpcMain): Pick<IpcMain, 'handle' | 'on'> {
  * link that slept may be dead without ssh knowing yet; the renderer reports the network coming
  * back (`remote:retry`). None of it polls.
  */
+/** The stub that links to `host` over the network, when `host` is another Styr on the LAN. */
+function lanLinkOf(host: string): RemoteWorkspaceLink | undefined {
+  return listWorkspaces(loadSettings()).find(
+    (workspace) => workspace.remote?.host === host && workspace.remote.lan
+  )?.remote
+}
+
+/** ssh's actions (install, upgrade, start or stop a server) mean nothing for a computer on the LAN. */
+function refuseLan(host: string, action: string): void {
+  if (lanLinkOf(host)) {
+    throw new Error(`${host} is another computer on your network: ${action} it there, in Styr.`)
+  }
+}
+
+/**
+ * The router's name for another computer on the LAN: its name and the start of its fingerprint,
+ * readable in messages ("studio-a1b2c3 is offline") and the same for all of its workspaces.
+ */
+function lanHostKey(info: LanHostInfo): string {
+  const existing = listWorkspaces(loadSettings()).find(
+    (workspace) => workspace.remote?.lan?.fingerprint === info.fingerprint
+  )
+  if (existing?.remote) return existing.remote.host
+  const slug =
+    info.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'computer'
+  return `${slug}-${info.fingerprint.slice(0, 6)}`
+}
+
+/** One pairing at a time: the one waiting for the other computer's answer, to cancel. */
+let pairing: { cancel(): void } | undefined
+
+/**
+ * Settings → Connections → Other computers: pair with another Styr on the network by approval,
+ * list and open the workspaces it shares, forget it. Behind the same flag as remote workspaces.
+ */
+function registerLanHandlers(
+  requireFlag: () => void,
+  addStub: (draft: RemoteWorkspaceDraft) => string,
+  switchWorkspace: (id: string) => unknown
+): void {
+  ipcMain.handle('lan:hosts', (): LanHostInfo[] => lanHosts().list())
+  ipcMain.handle('lan:pair', async (_event, text: unknown, name: unknown): Promise<LanHostInfo> => {
+    requireFlag()
+    const target = typeof text === 'string' ? parseTarget(text) : undefined
+    if (!target) throw new Error('Give the other computer’s address, such as 192.168.1.20.')
+    pairing?.cancel()
+    const request = requestLanPairing(target, computerName() ?? 'Styr desktop', (code) =>
+      electronHost.broadcast('lan:pairCode', { code })
+    )
+    pairing = request
+    try {
+      const result = await request.result
+      const label = typeof name === 'string' && name.trim() ? name : target.address
+      return lanHosts().add(target, label, result)
+    } finally {
+      if (pairing === request) pairing = undefined
+    }
+  })
+  ipcMain.handle('lan:cancelPair', () => {
+    pairing?.cancel()
+    pairing = undefined
+  })
+  ipcMain.handle('lan:boards', async (_event, fingerprint: unknown): Promise<LanBoard[]> => {
+    requireFlag()
+    const info = lanHosts().get(String(fingerprint))
+    if (!info) throw new Error('That computer is not paired with this one.')
+    const host = lanHostKey(info)
+    const link: RemoteWorkspaceLink = {
+      host,
+      workspaceId: 'default',
+      lan: { fingerprint: info.fingerprint }
+    }
+    const shared = remoteRouter.requestOnHost(host, 'workspaces:list', [])
+    let overview: WorkspaceOverview
+    if (shared) overview = (await shared) as WorkspaceOverview
+    else {
+      const session = await openServerSession(info.name, {
+        spawn: () => lanTransportFor(link),
+        setTimer: (run, ms) => setTimeout(run, ms),
+        clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout)
+      })
+      try {
+        overview = (await session.request('workspaces:list', [])) as WorkspaceOverview
+      } finally {
+        session.close()
+      }
+    }
+    const linked = listWorkspaces(loadSettings()).flatMap((workspace) =>
+      workspace.remote?.lan?.fingerprint === info.fingerprint ? [workspace.remote.workspaceId] : []
+    )
+    return overview.workspaces.map((board) => ({
+      id: board.id,
+      name: board.name,
+      linked: linked.includes(board.id)
+    }))
+  })
+  ipcMain.handle('lan:addWorkspace', (_event, value: unknown) => {
+    requireFlag()
+    const draft = (value ?? {}) as Record<string, unknown>
+    const info = lanHosts().get(String(draft.fingerprint ?? ''))
+    if (!info) throw new Error('That computer is not paired with this one.')
+    const id = addStub({
+      name: String(draft.name ?? ''),
+      host: lanHostKey(info),
+      workspaceId: String(draft.workspaceId ?? ''),
+      lan: { fingerprint: info.fingerprint }
+    })
+    return switchWorkspace(id)
+  })
+  ipcMain.handle('lan:remove', (_event, fingerprint: unknown) => {
+    const info = lanHosts().get(String(fingerprint))
+    if (!info) return false
+    const removed = lanHosts().remove(info.fingerprint)
+    remoteRouter.refresh()
+    return removed
+  })
+}
+
 export function startRemote(switchWorkspace: (id: string) => unknown): void {
   ipcMain.handle('remote:state', () => remoteRouter.state())
   ipcMain.handle('remote:retry', (_event, host?: unknown) =>
@@ -196,6 +324,7 @@ export function startRemote(switchWorkspace: (id: string) => unknown): void {
   }
   ipcMain.handle('remote:inspect', (_event, host: unknown) => {
     requireFlag()
+    refuseLan(String(host ?? '').trim(), 'set')
     return inspectHost(String(host ?? '').trim())
   })
   // Open an existing workspace: a board the host's server already has gets a local stub only.
@@ -212,6 +341,7 @@ export function startRemote(switchWorkspace: (id: string) => unknown): void {
     requireFlag()
     const name = String(draft?.name ?? '')
     const host = String(draft?.host ?? '').trim()
+    refuseLan(host, 'set')
     // Checked before anything runs on the host, so a clash never leaves a workspace there.
     validateWorkspaceName(loadSettings(), name)
     const probe = inspected.get(host)
@@ -240,6 +370,7 @@ export function startRemote(switchWorkspace: (id: string) => unknown): void {
   ipcMain.handle('remote:upgrade', async (_event, value: unknown) => {
     requireFlag()
     const host = String(value)
+    refuseLan(host, 'upgrade Styr on')
     const probe = await hostSetup().probe(host)
     const refused = unsupportedHost(host, probe)
     if (refused) throw new Error(refused)
@@ -250,6 +381,7 @@ export function startRemote(switchWorkspace: (id: string) => unknown): void {
   // Stop server: asked first in the renderer, with the running agents listed.
   ipcMain.handle('remote:stopServer', async (_event, value: unknown) => {
     const host = String(value)
+    refuseLan(host, 'quit Styr on')
     await hostSetup().stop(host, remoteRouter.serverPid(host))
     remoteRouter.disconnect(host)
   })
@@ -262,11 +394,15 @@ export function startRemote(switchWorkspace: (id: string) => unknown): void {
   ipcMain.handle('remote:connect', async (_event, value: unknown) => {
     requireFlag()
     const host = String(value)
-    await hostSetup()
-      .start(host)
-      .catch(() => undefined)
+    // Another computer on the LAN runs its own Styr: there is nothing to start over ssh.
+    if (!lanLinkOf(host)) {
+      await hostSetup()
+        .start(host)
+        .catch(() => undefined)
+    }
     remoteRouter.connect(host)
   })
+  registerLanHandlers(requireFlag, addStub, switchWorkspace)
   powerMonitor.on('suspend', () => remoteRouter.suspend())
   powerMonitor.on('resume', () => remoteRouter.wake())
   remoteRouter.refresh()

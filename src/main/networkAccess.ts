@@ -1,14 +1,14 @@
-import { app, ipcMain, powerSaveBlocker, safeStorage } from 'electron'
+import { app, ipcMain, powerSaveBlocker } from 'electron'
 import { pinWorkspace, pinnedWorkspaceId } from '@core/config.js'
 import { loadSettings } from '@core/settingsStore.js'
 import { globalSettingsFor, workspaceSettingsFor, type SettingsChange } from '@core/types.js'
 import { listWorkspaces } from '@core/workspaces.js'
 import type { AccessConfigPatch, AccessState, AccessWorkspace } from '@core/types/access.js'
-import type { SecretBox } from '@host/remoteAccess/accessStore.js'
 import { tailscaleShieldsUp } from '@host/remoteAccess/tailscale.js'
 import { computerName, createHub, PROTOCOL_VERSION } from '../server/hub.js'
 import { createNetworkAccess, forwardToHub } from '../server/networkAccess.js'
 import { channelTable, onLocalTray } from './ipc.js'
+import { keychain } from './keychain.js'
 import { electronHost, onBroadcast } from './electronHost.js'
 import { listSessions, resizeSession, sessionBacklog } from './terminal/ptyManager.js'
 
@@ -46,22 +46,6 @@ function isOpen(workspaceId: string): boolean {
   const workspace = listWorkspaces(settings).find((entry) => entry.id === workspaceId)
   if (!workspace || workspace.remote) return false
   return loadSettings(workspaceId).remoteAccess === true
-}
-
-/**
- * The host's private key is sealed with `safeStorage` (the macOS Keychain, DPAPI, libsecret) once
- * it is there. Linux without a keyring falls back to a fixed key, which is no better than the file,
- * so the key then stays as it was: plaintext, 0600.
- */
-function keychain(): SecretBox | undefined {
-  if (!safeStorage.isEncryptionAvailable()) return undefined
-  if (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') {
-    return undefined
-  }
-  return {
-    seal: (plain) => safeStorage.encryptString(plain).toString('base64'),
-    open: (sealed) => safeStorage.decryptString(Buffer.from(sealed, 'base64'))
-  }
 }
 
 const access = createNetworkAccess({

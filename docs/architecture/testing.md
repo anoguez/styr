@@ -124,7 +124,7 @@ it:
 
 ## Stability tests (`e2e/stability.e2e.ts`)
 
-Five tests on throwaway profiles, run with the others and in the packaged app too:
+Six tests on throwaway profiles, run with the others and in the packaged app too:
 
 1. **Upgrade path.** `launchStyr(name, env, { seed, keepHome })` seeds a profile from
    `e2e/fixtures/upgrade/` (what an earlier release left: `config.json` with the legacy
@@ -148,6 +148,10 @@ Five tests on throwaway profiles, run with the others and in the packaged app to
    `tasks:list`.
 5. **No window, no request.** With access on but Add device closed, a request is refused (4401)
    and nothing is added.
+6. **Another computer.** Two apps on throwaway profiles: A shares Default, with a task, and opens
+   Add device; B (Remote workspaces on) adds A by `127.0.0.1:<port>` under Connections → Other
+   computers; A's prompt shows the code B shows and allows it; B opens A's Default and its board
+   shows A's task, over the LAN transport and A's gate.
 
 Every `expectNoErrors()` also fails on an `uncaughtException` or `unhandledRejection` in the main
 process output since launch, whatever a step's `allowed` pattern excuses.

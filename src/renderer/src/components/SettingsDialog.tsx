@@ -398,6 +398,9 @@ export function SettingsDialog({
                 {section === 'remote-access' ? (
                   <ConnectionsSection
                     openWorkspaceId={openId}
+                    remoteEnabled={settings.experimental.remoteWorkspaces}
+                    overview={workspaces.overview}
+                    onOpenExperimental={() => setSection('experimental')}
                     onSharedChange={(workspaceId, remoteAccess) => {
                       // Saved on disk already: the draft and its baseline follow, so it is not
                       // shown as an unsaved change and a later Save does not undo it.

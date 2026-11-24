@@ -8,6 +8,8 @@ import type { TerminalBenchRecord } from '../core/terminalBench.js'
 import type {
   AccessConfigPatch,
   AccessPairing,
+  LanBoard,
+  LanHostInfo,
   AccessState,
   AgentCliReport,
   McpSetupReport,
@@ -274,6 +276,30 @@ const api = {
     disconnect: (host: string): Promise<void> => ipcRenderer.invoke('remote:disconnect', host),
     /** Starts the server if needed, then connects. */
     connect: (host: string): Promise<void> => ipcRenderer.invoke('remote:connect', host)
+  },
+  lan: {
+    /** Settings → Connections → Other computers: the computers this one paired with. */
+    hosts: (): Promise<LanHostInfo[]> => ipcRenderer.invoke('lan:hosts'),
+    /**
+     * Asks the computer at `address` (`192.168.1.20`, `studio.local:7878`) to pair by approval;
+     * `onPairCode` gets the code to show while the person there decides.
+     */
+    pair: (address: string, name: string): Promise<LanHostInfo> =>
+      ipcRenderer.invoke('lan:pair', address, name),
+    cancelPair: (): Promise<void> => ipcRenderer.invoke('lan:cancelPair'),
+    onPairCode: (handler: (update: { code: string }) => void): (() => void) =>
+      subscribe('lan:pairCode', handler as (...args: never[]) => void),
+    /** The workspaces a paired computer shares with this one. */
+    boards: (fingerprint: string): Promise<LanBoard[]> =>
+      ipcRenderer.invoke('lan:boards', fingerprint),
+    /** Links one of them here as a remote workspace and opens it. */
+    addWorkspace: (draft: {
+      fingerprint: string
+      workspaceId: string
+      name: string
+    }): Promise<unknown> => ipcRenderer.invoke('lan:addWorkspace', draft),
+    /** Forgets a computer and its key. */
+    remove: (fingerprint: string): Promise<boolean> => ipcRenderer.invoke('lan:remove', fingerprint)
   },
   access: {
     /** Settings → Connections: the switch, where devices reach this computer, devices, sharing. */

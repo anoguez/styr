@@ -100,7 +100,13 @@ const DESKTOP_ONLY = new Set([
   'remote:upgrade',
   'remote:stopServer',
   'remote:disconnect',
-  'remote:connect'
+  'remote:connect',
+  'lan:hosts',
+  'lan:pair',
+  'lan:cancelPair',
+  'lan:boards',
+  'lan:addWorkspace',
+  'lan:remove'
 ])
 
 describe('the server channel table', () => {

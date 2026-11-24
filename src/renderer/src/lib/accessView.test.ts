@@ -3,6 +3,7 @@ import type { AccessState } from '@core/types.js'
 import {
   connectionSummary,
   groupedCode,
+  lanHostStatus,
   deviceLine,
   groupedFingerprint,
   interfaceLabel,
@@ -169,5 +170,49 @@ describe('groupedCode', () => {
   it('splits six digits in two', () => {
     expect(groupedCode('482915')).toBe('482 915')
     expect(groupedCode('12')).toBe('12')
+  })
+})
+
+describe('lanHostStatus', () => {
+  const host = {
+    fingerprint: 'a'.repeat(64),
+    name: 'Studio',
+    address: '192.168.1.30',
+    port: 7878,
+    pairedAt: ''
+  }
+  const overview = (count: number) => ({
+    activeId: 'default',
+    workspaces: Array.from({ length: count }, (_, index) => ({
+      id: `w${index}`,
+      name: `W${index}`,
+      taskCount: 0,
+      liveSessions: 0,
+      remote: {
+        host: 'studio-aaaaaa',
+        workspaceId: `r${index}`,
+        lan: { fingerprint: host.fingerprint }
+      }
+    }))
+  })
+  const remote = (status?: 'connected' | 'reconnecting', lastError?: string) => ({
+    enabled: true,
+    hosts: status ? [{ host: 'studio-aaaaaa', status, ...(lastError ? { lastError } : {}) }] : [],
+    workspaces: {}
+  })
+
+  it('says paired with nothing open, connected, unreachable and why, or offline', () => {
+    expect(lanHostStatus(host, overview(0), remote())).toEqual({
+      connected: false,
+      text: 'Paired · no workspace open here'
+    })
+    expect(lanHostStatus(host, overview(2), remote('connected'))).toEqual({
+      connected: true,
+      text: 'Connected · 2 workspaces'
+    })
+    expect(lanHostStatus(host, overview(1), remote('reconnecting', 'Studio is busy')).text).toBe(
+      'Unreachable: Studio is busy · 1 workspace'
+    )
+    expect(lanHostStatus(host, overview(1), remote()).text).toBe('Offline · 1 workspace')
   })
 })

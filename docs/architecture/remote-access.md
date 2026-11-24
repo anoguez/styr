@@ -108,6 +108,37 @@ choices are pure helpers in `renderer/lib/accessView.ts`.
   failed, and a handshake that went quiet says whether the device sent no `hello` or hung up after
   the challenge (the key check a phone fails without a word).
 
+## Other computers: the desktop as a device
+
+Settings → Connections → Other computers opens the workspaces another Styr on the same network
+shares with this one. This desktop pairs with it exactly as a phone does, and then reaches it as
+a remote host (`remote.md`), behind the same Experimental switch (Remote workspaces).
+
+- **Pairing** is by approval only (`requestLanPairing`, `src/host/remote/lanLink.ts`): Add
+  computer takes an address (`192.168.1.20`, `studio.local:7878`, `parseTarget`), and the other
+  computer's Add device window must be open there. Both screens show the code; this desktop sends
+  its own computer name. Allowed, it keeps the other computer's fingerprint (the key it was shown),
+  the device id it was given and its own Ed25519 key in `~/.styr/lan-hosts.json` (`lanHosts.ts`:
+  0600, atomic, the key sealed with the keychain where there is one, `src/main/keychain.ts`).
+  Settings never gets a key.
+- **The same network, from this side too** (`privateAddress`): a target must be a private
+  address, or a name that resolves to one, and the socket goes to that checked address, never to
+  the name again. A public address is refused before a packet is sent.
+- **A workspace on it** is a stub like an ssh remote's, with `remote.lan = { fingerprint }` and
+  `host` only a name for it (`studio-a1b2c3`: its name and the start of its fingerprint, the same
+  for all its workspaces), never handed to ssh. The router's connection runs `lanTransport` in
+  place of `ssh … serve attach` (`src/main/lanHosts.ts`, `lanTransportFor`): sign in with the
+  stored key against the pinned fingerprint, then one sealed message per JSON-RPC line. A host
+  that is not the pinned one is refused before anything is sent; a removal there ends it (4403)
+  and says so. ssh's actions (inspect, set up, upgrade, stop or start a server) refuse such a host
+  (`refuseLan`), and Remote hosts does not list it.
+- **What it sees is a device's view**: the other computer's gate applies (only what it shares;
+  `server:experimental` and the other desktop-only channels refused, which the router tolerates).
+- **Forget** deletes the entry and its key; the workspaces linked to it stay in the switcher,
+  offline, until removed.
+- Channels (desktop only, never on the channel table): `lan:hosts`, `lan:pair` (with `lan:pairCode`
+  broadcast while it waits), `lan:cancelPair`, `lan:boards`, `lan:addWorkspace`, `lan:remove`.
+
 ## Known limits
 
 - A peer on the same network can spend the single-use pairing secret with a bad `pair` message,
@@ -336,3 +367,7 @@ headers, origins, rate limiting, leakage on every broadcast kind), `server/netwo
 loopback, a routed or forwarded private address, carrier-grade NAT on a network card, an address
 the computer left), and `server/wsListener.test.ts` that a refused socket gets no byte back and
 never reaches the handshake.
+`server/lanLink.test.ts` holds the desktop-as-device side against a real host: pairing by approval
+(allowed, turned down, no window open), `RemoteConnection` over `lanTransport` seeing only what is
+shared, a host that is not the pinned one, removal; and `privateAddress`, `parseTarget` and the
+`lanHosts` store (sealed key, 0600, move, forget).

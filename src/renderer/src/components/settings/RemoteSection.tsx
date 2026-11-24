@@ -21,8 +21,14 @@ export function RemoteSection({
   /** Settings closes and New workspace opens on Remote host. */
   onSetUp: () => void
 }): ReactNode {
-  const state = useRemoteState()
+  const remote = useRemoteState()
   const linked = workspaces.overview.workspaces.filter((workspace) => workspace.remote)
+  // Another computer on the LAN is listed under Connections → Other computers: ssh's actions
+  // (upgrade, stop the server) mean nothing for it.
+  const lanHosts = new Set(
+    linked.flatMap((workspace) => (workspace.remote?.lan ? [workspace.remote.host] : []))
+  )
+  const state = { ...remote, hosts: remote.hosts.filter((host) => !lanHosts.has(host.host)) }
 
   return (
     <div className="flex flex-col gap-3">
