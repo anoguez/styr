@@ -163,7 +163,16 @@ function session(name: 'pair' | 'signIn' | 'request') {
     ),
     frames,
     handshakeHash: hostChannel!.handshakeHash.toString('hex'),
-    ...(approvalCode ? { approvalCode } : {}),
+    // A request's two random values, so a client replaying it writes the same commit and reveal.
+    ...(approvalCode
+      ? {
+          approvalCode,
+          approvalNonces: {
+            device: seed(`${name} device nonce`).toString('hex'),
+            host: seed(`${name} host nonce`).toString('hex')
+          }
+        }
+      : {}),
     transport
   }
 }

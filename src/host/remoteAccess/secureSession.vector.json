@@ -193,6 +193,10 @@
       ],
       "handshakeHash": "c4fb9a84ed7594074d9b679f7d4504cec3e27af2091838d92c9d60f438d7060a",
       "approvalCode": "893974",
+      "approvalNonces": {
+        "device": "6aa905ced1d794424f98f1e2c2ee5d951c68c6d786cca0f8ec663bc7777958d8",
+        "host": "a2b5c4318c25b0def6dfc700eafff73c465f5b606bbfe18eea00fa71fd455c70"
+      },
       "transport": [
         {
           "from": "phone",
