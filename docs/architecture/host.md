@@ -147,7 +147,10 @@ src/core/  (types, schemas, taskStore, pure rules)
   calls `ptyManager`. One PTY per session, its transcript (backlog, command marks, runtime state),
   `findSessionByTask` (workspace and task id), and the data, runtime-state and exit listeners. Its
   ports are `spawn` (`terminals/nodePty.ts` is the real one, kept apart so tests never load
-  node-pty) and `usageEnv` (the usage service, bound in main's `usage.ts`).
+  node-pty) and `usageEnv` (the usage service, bound in main's `usage.ts`). On Windows a
+  session's `kill()` first ends the shell's process tree with `taskkill /T /F`
+  (`terminals/windowsTreeKill.ts`): node-pty's own ConPTY kill can lose the list of what ran in
+  the console, and those processes would outlive the app.
   `terminalBroadcasts(broadcast)` sends `terminal:data`, `terminal:runtimeState` and
   `terminal:exit`; `index.ts` subscribes it, beside the agent work it runs on an exit.
 - `terminals/`: the rest of the terminal plumbing, all Electron-free: the shell integration, the
