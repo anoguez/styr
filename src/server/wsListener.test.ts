@@ -539,6 +539,39 @@ describe('network listener', () => {
       expect(host.state.log.some((line) => line.includes('began pairing and stopped'))).toBe(false)
     })
 
+    it('gives one look per window, even to requests made side by side', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const first = phone()
+      const second = phone()
+      await Promise.all([first.opened(), second.opened()])
+      void first.request('Pixel 9', { revealAfter: false })
+      await vi.waitFor(() => expect(first.sawHostValue).toBe(true))
+      // The first holds the window: the second is refused before it learns anything.
+      await expect(second.request('iPad')).resolves.toBeUndefined()
+      expect(second.sawHostValue).toBe(false)
+      expect((await second.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
+      first.close()
+      await vi.waitFor(() => expect(store.pairing()).toBeUndefined())
+    })
+
+    it('a stale request cannot close a window opened since', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const peeker = phone()
+      await peeker.opened()
+      void peeker.request('Pixel 9', { revealAfter: false })
+      await vi.waitFor(() => expect(peeker.sawHostValue).toBe(true))
+      // The person closes Add device and opens it again while the peek is still connected.
+      store.cancelPairing()
+      const fresh = store.startPairing()
+      peeker.close()
+      await tick(50)
+      expect(store.pairing()).toBe(fresh)
+    })
+
     it('a host that takes no requests (styr serve) refuses them', async () => {
       store.startPairing()
       const device = phone()

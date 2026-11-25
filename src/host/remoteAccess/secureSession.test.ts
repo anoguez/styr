@@ -65,7 +65,8 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
   let dir: string
   let store: AccessStore
   const fingerprint = () => store.identity().fingerprint
-  const server = () => createSecureServerHandshake({ store, maxMessageBytes: MAX })
+  const server = () =>
+    createSecureServerHandshake({ store, maxMessageBytes: MAX, acceptsRequests: true })
   const client = (options: Partial<SecureClientOptions> & Pick<SecureClientOptions, 'signIn'>) =>
     createSecureClientHandshake({
       pinnedFingerprint: fingerprint(),
@@ -537,6 +538,33 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
       })
     })
 
+    it('gives one request per window its value: the next is refused before it learns anything', () => {
+      store.startPairing()
+      const host = server()
+      const first = requester()
+      const third = first.receive(host.receive(first.start()).frames[0]!) as { frames: string[] }
+      expect(host.receive(third.frames[0]!).kind).toBe('reply')
+      // A second request in the same window, side by side with the first.
+      const { outcome } = ask()
+      expect(outcome).toMatchObject({
+        kind: 'denied',
+        reason: 'another device is already pairing in this window'
+      })
+    })
+
+    it('a host that takes no requests refuses one before sending its value', () => {
+      store.startPairing()
+      const offer = store.pairing()
+      const { outcome } = ask(createSecureServerHandshake({ store, maxMessageBytes: MAX }))
+      expect(outcome).toMatchObject({
+        kind: 'denied',
+        reason: 'this host takes no pairing requests'
+      })
+      // Its QR still works.
+      expect(store.pairing()).toBe(offer)
+      expect(store.pairing()?.claimed).toBeUndefined()
+    })
+
     it('refuses a request with anything beyond its fields', () => {
       store.startPairing()
       const host = server()
@@ -608,7 +636,11 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
       })
       impostorStore.startPairing()
       const toDevice = ask(
-        createSecureServerHandshake({ store: impostorStore, maxMessageBytes: MAX })
+        createSecureServerHandshake({
+          store: impostorStore,
+          maxMessageBytes: MAX,
+          acceptsRequests: true
+        })
       )
       const toHost = ask()
       if (toDevice.outcome.kind !== 'approval' || toHost.outcome.kind !== 'approval') {

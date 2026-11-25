@@ -49,6 +49,9 @@ const SECRET = seed('qr secret').subarray(0, 20).toString('hex')
 const DEVICE_ID = 'device-1'
 const NAME = 'iPhone'
 
+/** One window, the same object each time: a request's answer checks it is the one it claimed. */
+const OFFER = { secret: SECRET, expiresAt: Number.MAX_SAFE_INTEGER }
+
 const hostStore: SecureHandshakeStore = {
   identity: () => ({
     fingerprint: fingerprintOf(host.publicKey),
@@ -58,8 +61,9 @@ const hostStore: SecureHandshakeStore = {
   }),
   reload: () => undefined,
   publicKeyFor: (id) => (id === DEVICE_ID ? phone.publicKey : undefined),
-  pairing: () => ({ secret: SECRET, expiresAt: Number.MAX_SAFE_INTEGER }),
-  consumePairing: () => ({ secret: SECRET, expiresAt: Number.MAX_SAFE_INTEGER }),
+  pairing: () => OFFER,
+  claimPairing: () => OFFER,
+  consumePairing: () => OFFER,
   addDevice: (name) => ({ id: DEVICE_ID, name, createdAt: '' })
 }
 
@@ -97,7 +101,8 @@ function session(name: 'pair' | 'signIn' | 'request') {
     maxMessageBytes: MAX,
     staticKey: keys.hostStatic,
     ephemeralKey: keys.hostEphemeral,
-    hostNonce: seed(`${name} host nonce`)
+    hostNonce: seed(`${name} host nonce`),
+    acceptsRequests: true
   })
   const client = createSecureClientHandshake({
     deviceNonce: seed(`${name} device nonce`),

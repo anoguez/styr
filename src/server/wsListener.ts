@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http'
 import type { Socket } from 'node:net'
 import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 import type { ApprovalPort, ApprovalQuestion } from '@host/remoteAccess/accessService.js'
-import type { AccessStore } from '@host/remoteAccess/accessStore.js'
+import type { AccessStore, PairingOffer } from '@host/remoteAccess/accessStore.js'
 import {
   addressKind,
   admitConnection,
@@ -156,14 +156,31 @@ export async function startNetworkListener(
   // cannot lock out its neighbours, and rotating addresses inside a /64 buys only so much.
   const byAddress = createFailureLimiter({ max: 5, windowMs: 60_000, now })
   const byNet = createFailureLimiter({ max: MAX_FAILURES_PER_NET, windowMs: 60_000, now })
+  /**
+   * Addresses that signed in lately: a /64's shared limit never turns them away, so a neighbour
+   * failing on purpose cannot lock out the devices that already work.
+   */
+  const signedIn = new Map<string, number>()
+  const SIGNED_IN_MS = 24 * 60 * 60 * 1000
+  const recentlySignedIn = (source: string): boolean => {
+    const at = signedIn.get(source)
+    return at !== undefined && now() - at < SIGNED_IN_MS
+  }
   const limiter = {
     blocked: (source: string): boolean =>
-      byAddress.blocked(source) || (source.includes(':') && byNet.blocked(limitKey(source))),
+      byAddress.blocked(source) ||
+      (source.includes(':') && byNet.blocked(limitKey(source)) && !recentlySignedIn(source)),
     fail(source: string): void {
       byAddress.fail(source)
       if (source.includes(':')) byNet.fail(limitKey(source))
     },
-    reset: (source: string): void => byAddress.reset(source)
+    reset(source: string): void {
+      byAddress.reset(source)
+      signedIn.delete(source)
+      signedIn.set(source, now())
+      // Oldest first: past a thousand, the earliest are forgotten.
+      if (signedIn.size > 1000) signedIn.delete(signedIn.keys().next().value!)
+    }
   }
   const wss = new WebSocketServer({ noServer: true, maxPayload: HANDSHAKE_MAX_BYTES })
   const sockets = new Set<Socket>()
@@ -242,10 +259,10 @@ export async function startNetworkListener(
       bump(handshakingPerNet, net, -1)
     }
     /**
-     * This connection was sent a request's host value: unless it ends allowed, the Add device
-     * window closes with it (`spendsWindow`), so a peer gets one look at a code per window.
+     * The window this connection's request claimed when it was sent the host value: unless it
+     * ends allowed, that window closes with it, so a peer gets one look at a code per window.
      */
-    let holdsWindow = false
+    let claimed: PairingOffer | undefined
     let allowed = false
     let phase: 'handshake' | 'approval' | 'open' | 'closed' = 'handshake'
     /** The question on the host's screen while a request waits, withdrawn if the device goes. */
@@ -256,7 +273,8 @@ export async function startNetworkListener(
     // Protocol 2 only: anything else, protocol 1's hello included, is closed with 4401 unanswered.
     const handshake = createSecureServerHandshake({
       store: options.store,
-      maxMessageBytes: MAX_FRAME_BYTES
+      maxMessageBytes: MAX_FRAME_BYTES,
+      acceptsRequests: options.approvals !== undefined
     })
     /** Whether this side has answered yet: where a handshake that went quiet stopped, for the log. */
     let replied = false
@@ -336,7 +354,7 @@ export async function startNetworkListener(
       if (outcome.kind === 'approval') return awaitApproval(outcome)
       for (const reply of outcome.frames) ws.send(reply)
       if (outcome.kind === 'reply') replied = true
-      if (outcome.kind === 'reply' && outcome.spendsWindow) holdsWindow = true
+      if (outcome.kind === 'reply' && outcome.claimed) claimed = outcome.claimed
       if (outcome.kind === 'denied') {
         options.log(`Remote access: refused ${source} (${outcome.reason})`)
         if (countsFailures(source)) limiter.fail(key)
@@ -450,13 +468,13 @@ export async function startNetworkListener(
       handshakeDone()
       bump(perAddress, source, -1)
       bump(perNet, net, -1)
-      if (holdsWindow && !allowed && options.store.pairing()) {
+      if (claimed && !allowed && options.store.pairing() === claimed) {
         // It could have worked out this window's code and walked away to try again: the window
         // closes, and the person at this computer makes a new code if they still want one.
         options.log(
           `Remote access: ${source} began pairing and stopped; Add device was closed so no other code can be tried`
         )
-        options.store.cancelPairing()
+        options.store.cancelPairing(claimed)
       }
       connection?.close()
       if (!wasOpen) return

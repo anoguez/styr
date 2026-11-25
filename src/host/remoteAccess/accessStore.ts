@@ -111,6 +111,11 @@ export interface SecretBox {
 export interface PairingOffer {
   secret: string
   expiresAt: number
+  /**
+   * A device asking to pair by approval was sent this window's host value: no other request may
+   * have one in the same window (`claimPairing`).
+   */
+  claimed?: boolean
 }
 
 export interface AccessStorePorts {
@@ -385,10 +390,26 @@ export function createAccessStore(ports: AccessStorePorts) {
       return offer
     },
 
-    cancelPairing(): void {
-      if (!offer) return
+    /**
+     * Ends the open offer; with `only`, only if it is still that one, so a request from an earlier
+     * window cannot close a window opened since.
+     */
+    cancelPairing(only?: PairingOffer): void {
+      if (!offer || (only && offer !== only)) return
       offer = undefined
       changed()
+    },
+
+    /**
+     * Takes the open window for one request to pair by approval, before it is sent the host value:
+     * undefined when there is no open window or another request already holds it. One code per
+     * window, so nobody can look at several and keep the one that matches.
+     */
+    claimPairing(): PairingOffer | undefined {
+      const open = currentOffer()
+      if (!open || open.claimed) return undefined
+      open.claimed = true
+      return open
     },
 
     /** The open offer, if it has not expired. */

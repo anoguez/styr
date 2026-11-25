@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { notificationText } from '@core/remote.js'
 import { z } from 'zod'
-import type { AccessStore } from './accessStore.js'
+import type { AccessStore, PairingOffer } from './accessStore.js'
 import {
   DUMMY_KEY,
   HANDSHAKE_MAX_BYTES,
@@ -267,7 +267,13 @@ export class SecureFrameChannel {
 /** What the server side needs of the store. */
 export type SecureHandshakeStore = Pick<
   AccessStore,
-  'identity' | 'reload' | 'publicKeyFor' | 'pairing' | 'consumePairing' | 'addDevice'
+  | 'identity'
+  | 'reload'
+  | 'publicKeyFor'
+  | 'pairing'
+  | 'claimPairing'
+  | 'consumePairing'
+  | 'addDevice'
 >
 
 export type SecureHandshakeResult =
@@ -275,11 +281,11 @@ export type SecureHandshakeResult =
       kind: 'reply'
       frames: string[]
       /**
-       * Set on the reply that sends a request its host value (`Nh`): from here the peer could work
-       * out this window's code, so if the connection ends without Allow the caller must close the
-       * Add device window. One code per window, so nobody can look at codes until one matches.
+       * Set on the reply that sends a request its host value (`Nh`): the window this request has
+       * claimed. From here the peer could work out the code, so if the connection ends without
+       * Allow the caller closes that window (`store.cancelPairing(claimed)`).
        */
-      spendsWindow?: true
+      claimed?: PairingOffer
     }
   | {
       kind: 'ready'
@@ -319,6 +325,11 @@ export function createSecureServerHandshake(options: {
   /** Tests only: fixed keys, for the transcript vector. */
   staticKey?: NoiseKeyPair
   ephemeralKey?: NoiseKeyPair
+  /**
+   * Whether anyone can answer a request to pair by approval (the desktop's Add device window).
+   * Off (`styr serve`), a request is refused before it gets anything.
+   */
+  acceptsRequests?: boolean
   /** Tests only: a fixed random value for a request's code. */
   hostNonce?: Buffer
 }) {
@@ -338,6 +349,7 @@ export function createSecureServerHandshake(options: {
         commit: Buffer
         hostNonce: Buffer
         channel: SecureFrameChannel
+        claimed: PairingOffer
       }
     | undefined
 
@@ -377,6 +389,7 @@ export function createSecureServerHandshake(options: {
     let paired = false
     if (parsed.data.type === 'request') {
       const { identityKey } = parsed.data
+      if (!options.acceptsRequests) return deny('this host takes no pairing requests')
       // Only while the Add device window is open: otherwise nobody is there to answer, and a
       // stranger on the network must not be able to put a prompt on the screen.
       if (!options.store.pairing()) return deny('not accepting pairing requests now')
@@ -384,6 +397,10 @@ export function createSecureServerHandshake(options: {
       if (!signatureValid(identityKey, signed, parsed.data.signature)) {
         return deny('bad device signature')
       }
+      // One request per window, taken before it learns anything: requests made side by side must
+      // not each get a code to compare.
+      const claimed = options.store.claimPairing()
+      if (!claimed) return deny('another device is already pairing in this window')
       const channel = new SecureFrameChannel(noise.transport(), options.maxMessageBytes)
       const hostNonce = options.hostNonce ?? randomBytes(APPROVAL_NONCE_BYTES)
       request = {
@@ -391,7 +408,8 @@ export function createSecureServerHandshake(options: {
         identityKey,
         commit: Buffer.from(parsed.data.commit, 'hex'),
         hostNonce,
-        channel
+        channel,
+        claimed
       }
       state = 'reveal'
       return {
@@ -399,7 +417,7 @@ export function createSecureServerHandshake(options: {
         frames: channel.seal(
           JSON.stringify({ type: 'nonce', nonce: hostNonce.toString('base64') })
         ),
-        spendsWindow: true
+        claimed
       }
     }
     if (parsed.data.type === 'auth') {
@@ -462,10 +480,13 @@ export function createSecureServerHandshake(options: {
       code: approvalCode(channel.handshakeHash, deviceNonce, pending.hostNonce),
       decide(allow: boolean): SecureHandshakeResult {
         if (state !== 'approval') return deny('the request was already answered')
-        // The window is spent by the answer either way, as a QR's secret is by an attempt.
+        // The window is spent by the answer either way, as a QR's secret is by an attempt. It must
+        // still be the window this request claimed.
         const offer = options.store.consumePairing()
         if (!allow) return deny('the request was declined')
-        if (!offer) return deny('the Add device window closed before the answer')
+        if (!offer || offer !== pending.claimed) {
+          return deny('the Add device window closed before the answer')
+        }
         let id: string
         try {
           id = options.store.addDevice(name, identityKey).id
