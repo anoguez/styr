@@ -67,7 +67,6 @@ export function ContextBar({
   onAsk,
   onReview,
   onCreatePr,
-  onHandOff,
   reviewHint,
   children
 }: {
@@ -104,8 +103,6 @@ export function ContextBar({
   onAsk: () => void
   /** Offered only when the task is in review and its agent is not mid-turn. */
   onReview?: () => void
-  /** Offered only while an agent is running; a bare shell has no intent to hand over. */
-  onHandOff?: () => void
   /** Offered once a task in review has passed and its agent is idle. */
   onCreatePr?: () => void
   reviewHint: string
@@ -122,7 +119,8 @@ export function ContextBar({
   const canChange = runtime.promptReady && !running
 
   return (
-    <footer className="pointer-events-none relative flex h-[30px] shrink-0 items-center gap-1.5 border-t border-edge px-1.5">
+    // Nothing in the bar wraps: the actions keep their width and the folder and branch truncate instead.
+    <footer className="pointer-events-none relative flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap border-t border-edge px-1.5">
       <button
         type="button"
         title={canChange ? cwd : `${cwd} — available at a prompt`}
@@ -258,11 +256,12 @@ export function ContextBar({
         </span>
       ) : null}
 
-      {onReview ? (
+      {/* One next step at a time; the rest (and Hand off) live in the actions menu. */}
+      {onReview && !onCreatePr ? (
         <button
           type="button"
           title={`Close this session and start a fresh reviewer, as Dispatch would${reviewHint ? ` (${reviewHint})` : ''}`}
-          className={`${agentButton} h-[22px] px-2 text-[11.5px]`}
+          className={`${agentButton} h-[22px] shrink-0 px-2 text-[11.5px]`}
           onClick={onReview}
         >
           ✓ <span className="hidden @md:inline">Ask to review</span>
@@ -273,27 +272,17 @@ export function ContextBar({
         <button
           type="button"
           title="Ask the agent to push the branch and open a pull request"
-          className={`${agentButton} h-[22px] px-2 text-[11.5px]`}
+          className={`${agentButton} h-[22px] shrink-0 px-2 text-[11.5px]`}
           onClick={onCreatePr}
         >
           ⎇ <span className="hidden @md:inline">Create PR</span>
           <span className="@md:hidden">PR</span>
         </button>
       ) : null}
-      {onHandOff ? (
-        <button
-          type="button"
-          title="Write a handoff document and create a task another agent can pick up"
-          className={`${quietButton} hidden h-[22px] px-[7px] text-[11.5px] @lg:inline-flex`}
-          onClick={onHandOff}
-        >
-          Hand off
-        </button>
-      ) : null}
       <button
         type="button"
         title={`Ask agent about this terminal${askHint ? ` (${askHint})` : ''}`}
-        className={`${quietButton} h-[22px] px-[7px] text-[11.5px]`}
+        className={`${quietButton} h-[22px] shrink-0 px-[7px] text-[11.5px]`}
         onClick={onAsk}
       >
         <span className="text-accent-soft">✦</span>
@@ -310,7 +299,7 @@ export function ContextBar({
         aria-label="Terminal actions"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
-        className={`${quietButton} size-[22px] justify-center ${menuOpen ? 'bg-raised' : ''}`}
+        className={`${quietButton} size-[22px] shrink-0 justify-center ${menuOpen ? 'bg-raised' : ''}`}
         onClick={onToggleMenu}
       >
         <svg aria-hidden viewBox="0 0 16 16" width="14" height="14" fill="currentColor">

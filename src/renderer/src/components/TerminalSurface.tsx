@@ -718,7 +718,7 @@ export function TerminalSurface({
           diff={
             diffStat && onShowChanges ? (
               // The bar ignores the pointer so it never blocks the terminal; the button opts back in.
-              <span className="pointer-events-auto flex">
+              <span className="pointer-events-auto flex shrink-0">
                 <DiffStatButton stat={diffStat} onClick={onShowChanges} />
               </span>
             ) : undefined
@@ -769,7 +769,6 @@ export function TerminalSurface({
           onAsk={() => openAsk(false)}
           onReview={reviewable ? () => void askReview() : undefined}
           onCreatePr={canCreatePr ? () => void createPr() : undefined}
-          onHandOff={canHandOff ? () => void handOffWork() : undefined}
           reviewHint={shortcutHint(bindings, 'terminalAskReview')}
         >
           {children}
