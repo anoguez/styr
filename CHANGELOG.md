@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.44.0](https://github.com/anoguez/styr/compare/v0.43.0...v0.44.0) (2026-11-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* `styr serve --listen <address>[:port]` is now `styr serve --listen [--port <port>]`; an address is refused with a message. `styr serve --relay` and `styr relay` are gone.
+
+### Features
+
+* same-network remote access, the Connections page, pairing by approval and other computers ([#284](https://github.com/anoguez/styr/issues/284)) ([e298cd1](https://github.com/anoguez/styr/commit/e298cd1de74e1e4c141b4c2fddc109cb55d35c71))
+
+
+### Bug Fixes
+
+* **terminal:** keep the context bar's actions on one line ([#283](https://github.com/anoguez/styr/issues/283)) ([24885d8](https://github.com/anoguez/styr/commit/24885d8c3a2ae931dd41133034700d125c867e86))
+
 ## [0.43.0](https://github.com/anoguez/styr/compare/v0.42.1...v0.43.0) (2026-11-20)
 
 
