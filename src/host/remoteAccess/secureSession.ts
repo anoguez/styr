@@ -461,6 +461,11 @@ export function createSecureServerHandshake(options: {
   /** The device's random value, checked against its commitment; then the question for the person. */
   function reveal(text: string): SecureHandshakeResult {
     const pending = request!
+    // A request belongs to the window it claimed: once that one is gone (closed, or a new code
+    // made since), it may not put a question on the screen for another.
+    if (options.store.pairing() !== pending.claimed) {
+      return deny('the Add device window it claimed is closed')
+    }
     const opened = pending.channel.open(text)
     // The reveal is one small record; a split one is not a reveal.
     if (opened === undefined) return deny('expected the reveal in one record')
@@ -481,7 +486,10 @@ export function createSecureServerHandshake(options: {
       decide(allow: boolean): SecureHandshakeResult {
         if (state !== 'approval') return deny('the request was already answered')
         // The window is spent by the answer either way, as a QR's secret is by an attempt. It must
-        // still be the window this request claimed.
+        // still be the window this request claimed: an answer must never spend a newer one.
+        if (options.store.pairing() !== pending.claimed) {
+          return deny('the Add device window closed before the answer')
+        }
         const offer = options.store.consumePairing()
         if (!allow) return deny('the request was declined')
         if (!offer || offer !== pending.claimed) {

@@ -552,6 +552,33 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
       })
     })
 
+    it('a request from a closed window can neither ask nor spend the window opened since', () => {
+      // Before the reveal: the person closed Add device and made a new code meanwhile.
+      store.startPairing()
+      const host = server()
+      const device = requester()
+      const third = device.receive(host.receive(device.start()).frames[0]!) as { frames: string[] }
+      const nonce = host.receive(third.frames[0]!)
+      store.cancelPairing()
+      const fresh = store.startPairing()
+      const reveal = device.receive(nonce.frames[0]!) as { frames: string[] }
+      expect(host.receive(reveal.frames[0]!)).toMatchObject({
+        kind: 'denied',
+        reason: 'the Add device window it claimed is closed'
+      })
+      expect(store.pairing()).toBe(fresh)
+
+      // After the question: an answer to it must not spend the new window either.
+      const { outcome } = ask()
+      if (outcome.kind !== 'approval') throw new Error('expected approval')
+      store.cancelPairing()
+      const newer = store.startPairing()
+      expect(outcome.decide(false).kind).toBe('denied')
+      expect(outcome.decide(true).kind).toBe('denied')
+      expect(store.pairing()).toBe(newer)
+      expect(store.devices()).toEqual([])
+    })
+
     it('a host that takes no requests refuses one before sending its value', () => {
       store.startPairing()
       const offer = store.pairing()

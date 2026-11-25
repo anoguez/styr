@@ -204,7 +204,13 @@ export async function startNetworkListener(
     response.writeHead(426, { 'content-length': '0', connection: 'close' }).end()
   })
 
-  guardSockets(server, sockets, admit, (message) => options.log(`Remote access: ${message}`))
+  guardSockets(
+    server,
+    sockets,
+    admit,
+    (message) => options.log(`Remote access: ${message}`),
+    recentlySignedIn
+  )
 
   server.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
     const source = sourceOf(socket)
@@ -232,9 +238,11 @@ export async function startNetworkListener(
       handshaking >= MAX_HANDSHAKING ||
       (handshakingPer.get(source) ?? 0) >=
         (isLoopback(source) ? MAX_HANDSHAKING_PER_LOOPBACK : MAX_HANDSHAKING_PER_ADDRESS) ||
-      (source.includes(':') && (handshakingPerNet.get(net) ?? 0) >= MAX_HANDSHAKING_PER_NET) ||
+      (source.includes(':') &&
+        !recentlySignedIn(source) &&
+        (handshakingPerNet.get(net) ?? 0) >= MAX_HANDSHAKING_PER_NET) ||
       (perAddress.get(source) ?? 0) >= (isLoopback(source) ? MAX_PER_LOOPBACK : MAX_PER_ADDRESS) ||
-      (source.includes(':') && (perNet.get(net) ?? 0) >= MAX_PER_NET)
+      (source.includes(':') && !recentlySignedIn(source) && (perNet.get(net) ?? 0) >= MAX_PER_NET)
     ) {
       return refuse('429 Too Many Requests', 'too many open connections')
     }
@@ -561,7 +569,9 @@ export function guardSockets(
   server: Server,
   sockets: Set<Socket>,
   admit: Admit,
-  log: (message: string) => void
+  log: (message: string) => void,
+  /** An address that signed in lately: its /64's shared cap does not apply to it. */
+  trusted: (source: string) => boolean = () => false
 ) {
   server.headersTimeout = HANDSHAKE_TIMEOUT_MS
   server.requestTimeout = HANDSHAKE_TIMEOUT_MS
@@ -579,7 +589,11 @@ export function guardSockets(
     const key = source
     const net = limitKey(source)
     const open = perAddress.get(key) ?? 0
-    if (source.includes(':') && (perNetSockets.get(net) ?? 0) >= 2 * MAX_PER_NET) {
+    if (
+      source.includes(':') &&
+      !trusted(source) &&
+      (perNetSockets.get(net) ?? 0) >= 2 * MAX_PER_NET
+    ) {
       log(`dropped ${source} (too many open sockets from its network)`)
       socket.destroy()
       return

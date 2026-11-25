@@ -67,7 +67,8 @@ device ──ws://<this computer's LAN or VPN address>:7878──▶ wsListener 
   loopback). Failures, handshakes and connections count per address; an IPv6 /64 (`limitKey`)
   also has a shared, larger cap (30 failures a minute, 8 handshakes, 32 connections), so rotating
   addresses buys only so much; an address that signed in within the last day is never turned away
-  by its /64's failures, so a neighbour failing on purpose cannot lock out devices that work. Loopback is not counted as failing (every ssh-tunnelled device shares 127.0.0.1, and
+  by its /64's failures or held off by its /64's socket, handshake and connection caps, so a
+  neighbour failing or crowding on purpose cannot lock out devices that work. Loopback is not counted as failing (every ssh-tunnelled device shares 127.0.0.1, and
   sign-in is a signature, so there is nothing to guess) and gets a larger connection cap.
 - **End to end, and on the network as well.** Every session is protocol 2 (Noise, below), so
   anyone else on the Wi-Fi or the VPN can neither read nor change it, nor sign in without a paired
@@ -273,7 +274,8 @@ C → S  sealed {type:'reveal', nonce: b64(Nd)}           must hash to commit, e
   sent `Nh` (`store.claimPairing`): another request in the same window, side by side or after, is
   refused before it learns anything. When the claiming connection ends without Allow (a hang-up, a
   bad reveal, a timeout, Turn down) the listener closes that window, and only that one
-  (`store.cancelPairing(claimed)`, so a stale request cannot close a window opened since). The
+  (`store.cancelPairing(claimed)`, so a stale request cannot close a window opened since; nor can
+  it reveal, ask or have its answer spend a window other than the one it claimed). The
   dialog says a device began to pair and left, and offers a new code. Every look at a code costs a
   window the person sees close. `styr serve`, which nobody can answer, refuses a request before
   sending anything (`acceptsRequests` off), so its QR stays usable.
