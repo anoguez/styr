@@ -160,6 +160,12 @@ export function AddDeviceDialog({
   // The devices there when the dialog opened: one that appears after is the one that paired.
   const before = useRef(new Set(state.devices.map((device) => device.id)))
   const offerOpen = useRef(false)
+  /** This code was seen open in the state, so its disappearing means something ended it. */
+  const offerSeen = useRef<number | undefined>(undefined)
+  /** Turned down here: the code ends, and that is no surprise. */
+  const declined = useRef(false)
+  /** A device began pairing and left: the code was closed for safety (`spendsWindow`). */
+  const [stopped, setStopped] = useState(false)
 
   // Withdraw an offer nobody used when the dialog goes, however it goes.
   useEffect(
@@ -172,6 +178,8 @@ export function AddDeviceDialog({
   async function newCode(): Promise<void> {
     setError('')
     setExpired(false)
+    setStopped(false)
+    declined.current = false
     try {
       const next = await window.api.access.pair()
       offerOpen.current = true
@@ -199,6 +207,24 @@ export function AddDeviceDialog({
     return () => clearTimeout(timer)
   }, [pairing, step])
 
+  // The host closes the window when a device that saw this code's value leaves without being
+  // allowed: say so, rather than show a code that no longer works.
+  useEffect(() => {
+    if (!pairing || step !== 'code') return
+    if (state.pairingExpiresAt === pairing.expiresAt) offerSeen.current = pairing.expiresAt
+    else if (
+      state.pairingExpiresAt === undefined &&
+      offerSeen.current === pairing.expiresAt &&
+      !declined.current &&
+      Date.now() < pairing.expiresAt
+    ) {
+      offerSeen.current = undefined
+      offerOpen.current = false
+      setStopped(true)
+      setExpired(true)
+    }
+  }, [state.pairingExpiresAt, pairing, step])
+
   useEffect(() => {
     const device = newlyPaired(before.current, state.devices)
     if (device && step === 'code') {
@@ -212,6 +238,7 @@ export function AddDeviceDialog({
   async function answer(request: AccessRequest, allow: boolean): Promise<void> {
     setError('')
     try {
+      if (!allow) declined.current = true
       await window.api.access.answer(request.id, allow)
       if (!allow) {
         offerOpen.current = false
@@ -307,7 +334,13 @@ export function AddDeviceDialog({
             <PairingCode pairing={pairing} />
           ) : (
             <div className="grid size-48 place-items-center rounded-xl border border-dashed border-edge-strong text-[12px] text-faint">
-              {expired ? 'This code expired.' : error ? 'No code.' : 'Making a code…'}
+              {stopped
+                ? 'This code was closed.'
+                : expired
+                  ? 'This code expired.'
+                  : error
+                    ? 'No code.'
+                    : 'Making a code…'}
             </div>
           )}
           <div className="flex max-w-sm flex-col gap-1.5">
@@ -315,9 +348,15 @@ export function AddDeviceDialog({
               Scan this with the Styr app on your device
             </span>
             <Hint>
-              Or pick this computer in the app&apos;s list of computers nearby: you will be asked
-              here to allow it.
+              Or, on another computer, add this one by its address under Connections → Other
+              computers: you will be asked here to allow it.
             </Hint>
+            {stopped ? (
+              <span role="alert" className="text-[12px] text-danger">
+                A device began to pair and left before it was allowed, so this code was closed. Make
+                a new one if you are adding a device.
+              </span>
+            ) : null}
             <Hint>
               The device must be on the same network as this computer, or on its VPN. The code works
               once and for two minutes; it is a key to this computer, so show it to nobody else.

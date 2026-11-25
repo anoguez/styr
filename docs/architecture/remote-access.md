@@ -47,8 +47,8 @@ device ──ws://<this computer's LAN or VPN address>:7878──▶ wsListener 
   Tailscale's 100.64/10 and `fd7a:115c:a1e0::/48`, and loopback; a dual-stack socket's
   `::ffff:a.b.c.d` is read as IPv4 first (`normalizeAddress`). The rule runs on `connection` and
   again on `upgrade`. One address may hold at most twice its connection cap in sockets, upgraded or
-  not (`guardSockets`, which also gives HTTP the handshake's 10 s to send its headers). Limits count
-  by `limitKey`: an IPv4 address, or an IPv6 /64. Requests
+  not (`guardSockets`, which also gives HTTP the handshake's 10 s to send its headers), and an IPv6
+  /64 at most twice its connection cap. Requests
   with `X-Forwarded-For`, `Forwarded`, `X-Real-IP` … are refused (no reverse proxies), and so is
   any request with an `Origin` (a web page cannot be a device). No UPnP, hole punching or relay.
 
@@ -64,7 +64,9 @@ device ──ws://<this computer's LAN or VPN address>:7878──▶ wsListener 
   the minute; every refusal is logged. A failure is a refusal, a timeout, a peer that hangs up
   before signing in, or a pairing request left unanswered, so a peer cannot hold slots for free by
   opening and closing. 16 handshakes may be in flight, at most 4 from one address (8 from
-  loopback). Loopback is not counted as failing (every ssh-tunnelled device shares 127.0.0.1, and
+  loopback). Failures, handshakes and connections count per address; an IPv6 /64 (`limitKey`)
+  also has a shared, larger cap (30 failures a minute, 8 handshakes, 32 connections), so one IPv6
+  peer cannot lock out its network's other devices and rotating addresses buys only so much. Loopback is not counted as failing (every ssh-tunnelled device shares 127.0.0.1, and
   sign-in is a signature, so there is nothing to guess) and gets a larger connection cap.
 - **End to end, and on the network as well.** Every session is protocol 2 (Noise, below), so
   anyone else on the Wi-Fi or the VPN can neither read nor change it, nor sign in without a paired
@@ -155,8 +157,12 @@ a remote host (`remote.md`), behind the same Experimental switch (Remote workspa
 - Most systems accept a packet for any of their addresses on any interface. The rule refuses a peer
   from a network card's subnet aiming at the VPN address, but a tunnel's peers are otherwise taken
   on their private source address (Node cannot say which interface a packet came in on).
-- Someone on the network with many addresses (many IPv4 addresses, or many IPv6 /64s) can still hold
-  the 16 handshake slots, each address at most 4 (8 from loopback) and each failure counted.
+- Someone on the network with many addresses (a dozen IPv4 addresses, or several IPv6 /64s) can
+  still hold the 16 handshake slots, each address at most 4 (8 from loopback) and each failure
+  counted.
+- Anyone on the network can close an open Add device window by beginning a request and leaving
+  (one code per window, above). That only makes the person make a new code, and the dialog says
+  why.
 - A peer on the same network can spend the single-use pairing secret with a bad `pair` message,
   forcing a rescan; anyone who sees the QR during its 2 minutes can pair.
 - A router that forwards a port and rewrites the source to its own LAN address (some do, for
@@ -258,6 +264,13 @@ C → S  sealed {type:'reveal', nonce: b64(Nd)}           must hash to commit, e
   needs the person at the host to answer. `approvalCode` is HMAC-SHA256(key = `h`,
   `"styr-noise-approval-v2\n" ‖ Nd ‖ Nh`), first four bytes big-endian mod 10⁶. The request and
   reveal messages are strict: no other keys.
+- **One code per window.** A relay playing the device towards the host knows its own `Nd`, so
+  once it has `Nh` it can work out the host's code and, if it does not match, hang up before
+  revealing and try again, with nothing on the screen. So the reply that sends `Nh` is marked
+  (`spendsWindow`), and when that connection ends without Allow (a hang-up, a bad reveal, a
+  timeout, Turn down) the listener closes the Add device window (`store.cancelPairing`). The dialog
+  says a device began to pair and left, and offers a new code. Every look at a code costs a window
+  the person sees close.
 - **Only while Add device is open.** The host accepts a request only while a pairing offer is open
   (`store.pairing()`), that is while the Add device window shows; otherwise it closes with 4401
   before anyone is asked, so a stranger on the network cannot put a prompt on the screen. `styr

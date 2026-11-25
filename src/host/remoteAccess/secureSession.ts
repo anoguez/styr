@@ -271,7 +271,16 @@ export type SecureHandshakeStore = Pick<
 >
 
 export type SecureHandshakeResult =
-  | { kind: 'reply'; frames: string[] }
+  | {
+      kind: 'reply'
+      frames: string[]
+      /**
+       * Set on the reply that sends a request its host value (`Nh`): from here the peer could work
+       * out this window's code, so if the connection ends without Allow the caller must close the
+       * Add device window. One code per window, so nobody can look at codes until one matches.
+       */
+      spendsWindow?: true
+    }
   | {
       kind: 'ready'
       frames: string[]
@@ -387,7 +396,10 @@ export function createSecureServerHandshake(options: {
       state = 'reveal'
       return {
         kind: 'reply',
-        frames: channel.seal(JSON.stringify({ type: 'nonce', nonce: hostNonce.toString('base64') }))
+        frames: channel.seal(
+          JSON.stringify({ type: 'nonce', nonce: hostNonce.toString('base64') })
+        ),
+        spendsWindow: true
       }
     }
     if (parsed.data.type === 'auth') {

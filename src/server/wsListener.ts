@@ -33,6 +33,16 @@ const MAX_PER_ADDRESS = 8
  */
 const MAX_HANDSHAKING_PER_ADDRESS = 4
 const MAX_HANDSHAKING_PER_LOOPBACK = 8
+/**
+ * The same for a whole IPv6 /64 (`limitKey`), larger than one address's: every IPv6 device on a
+ * network shares its /64, so one peer must not lock the others out, but rotating addresses inside
+ * it must not buy more than this either.
+ */
+const MAX_HANDSHAKING_PER_NET = 8
+/** Failures one IPv6 /64 may have in a minute, across its addresses (one address: 5). */
+const MAX_FAILURES_PER_NET = 30
+/** Connections one IPv6 /64 may hold, across its addresses (one address: `MAX_PER_ADDRESS`). */
+const MAX_PER_NET = 32
 /** Every device behind an ssh tunnel is 127.0.0.1, so loopback gets a larger share. */
 const MAX_PER_LOOPBACK = 32
 
@@ -142,13 +152,33 @@ export async function startNetworkListener(
   const now = options.now ?? Date.now
   const countsFailures = (source: string): boolean =>
     options.limitLoopback === true || !isLoopback(source)
-  const limiter = createFailureLimiter({ max: 5, windowMs: 60_000, now })
+  // Failures count per address, and per IPv6 /64 with a higher ceiling (`limitKey`): one address
+  // cannot lock out its neighbours, and rotating addresses inside a /64 buys only so much.
+  const byAddress = createFailureLimiter({ max: 5, windowMs: 60_000, now })
+  const byNet = createFailureLimiter({ max: MAX_FAILURES_PER_NET, windowMs: 60_000, now })
+  const limiter = {
+    blocked: (source: string): boolean =>
+      byAddress.blocked(source) || (source.includes(':') && byNet.blocked(limitKey(source))),
+    fail(source: string): void {
+      byAddress.fail(source)
+      if (source.includes(':')) byNet.fail(limitKey(source))
+    },
+    reset: (source: string): void => byAddress.reset(source)
+  }
   const wss = new WebSocketServer({ noServer: true, maxPayload: HANDSHAKE_MAX_BYTES })
   const sockets = new Set<Socket>()
   const byDevice = new Map<string, Set<Session>>()
   const perAddress = new Map<string, number>()
-  /** Handshakes in flight per `limitKey`. */
+  /** Handshakes in flight per address, and per IPv6 /64 (`limitKey`). */
   const handshakingPer = new Map<string, number>()
+  const handshakingPerNet = new Map<string, number>()
+  /** Connections per IPv6 /64, beside `perAddress`. */
+  const perNet = new Map<string, number>()
+  const bump = (map: Map<string, number>, key: string, by: number): void => {
+    const next = (map.get(key) ?? 0) + by
+    if (next > 0) map.set(key, next)
+    else map.delete(key)
+  }
   let handshaking = 0
   let connected = 0
 
@@ -173,8 +203,8 @@ export async function startNetworkListener(
       socket.destroy()
       return
     }
-    const key = limitKey(source)
-    if (limiter.blocked(key)) return refuse('429 Too Many Requests', 'too many failed attempts')
+    const net = limitKey(source)
+    if (limiter.blocked(source)) return refuse('429 Too Many Requests', 'too many failed attempts')
     const proxy = proxyHeader(request.headers)
     if (proxy) return refuse('400 Bad Request', `proxy header ${proxy}`)
     // A browser page cannot be a paired device, and must not be able to try.
@@ -183,9 +213,11 @@ export async function startNetworkListener(
     if (path !== '/' && path !== '/ws') return refuse('404 Not Found', 'unknown path')
     if (
       handshaking >= MAX_HANDSHAKING ||
-      (handshakingPer.get(key) ?? 0) >=
+      (handshakingPer.get(source) ?? 0) >=
         (isLoopback(source) ? MAX_HANDSHAKING_PER_LOOPBACK : MAX_HANDSHAKING_PER_ADDRESS) ||
-      (perAddress.get(key) ?? 0) >= (isLoopback(source) ? MAX_PER_LOOPBACK : MAX_PER_ADDRESS)
+      (source.includes(':') && (handshakingPerNet.get(net) ?? 0) >= MAX_HANDSHAKING_PER_NET) ||
+      (perAddress.get(source) ?? 0) >= (isLoopback(source) ? MAX_PER_LOOPBACK : MAX_PER_ADDRESS) ||
+      (source.includes(':') && (perNet.get(net) ?? 0) >= MAX_PER_NET)
     ) {
       return refuse('429 Too Many Requests', 'too many open connections')
     }
@@ -193,20 +225,28 @@ export async function startNetworkListener(
   })
 
   function accept(ws: WebSocket, source: string): void {
-    const key = limitKey(source)
+    const key = source
+    const net = limitKey(source)
     handshaking++
-    handshakingPer.set(key, (handshakingPer.get(key) ?? 0) + 1)
-    perAddress.set(key, (perAddress.get(key) ?? 0) + 1)
+    bump(handshakingPer, source, 1)
+    bump(handshakingPerNet, net, 1)
+    bump(perAddress, source, 1)
+    bump(perNet, net, 1)
     /** Ends this connection's share of the handshake counts, once. */
     let handshakeCounted = true
     const handshakeDone = (): void => {
       if (!handshakeCounted) return
       handshakeCounted = false
       handshaking--
-      const left = (handshakingPer.get(key) ?? 1) - 1
-      if (left > 0) handshakingPer.set(key, left)
-      else handshakingPer.delete(key)
+      bump(handshakingPer, source, -1)
+      bump(handshakingPerNet, net, -1)
     }
+    /**
+     * This connection was sent a request's host value: unless it ends allowed, the Add device
+     * window closes with it (`spendsWindow`), so a peer gets one look at a code per window.
+     */
+    let holdsWindow = false
+    let allowed = false
     let phase: 'handshake' | 'approval' | 'open' | 'closed' = 'handshake'
     /** The question on the host's screen while a request waits, withdrawn if the device goes. */
     let question: { withdraw(): void } | undefined
@@ -296,6 +336,7 @@ export async function startNetworkListener(
       if (outcome.kind === 'approval') return awaitApproval(outcome)
       for (const reply of outcome.frames) ws.send(reply)
       if (outcome.kind === 'reply') replied = true
+      if (outcome.kind === 'reply' && outcome.spendsWindow) holdsWindow = true
       if (outcome.kind === 'denied') {
         options.log(`Remote access: refused ${source} (${outcome.reason})`)
         if (countsFailures(source)) limiter.fail(key)
@@ -329,6 +370,7 @@ export async function startNetworkListener(
           return end(CLOSE.UNAUTHORIZED, 'unauthorized')
         }
         phase = 'handshake'
+        allowed = true
         for (const reply of result.frames) ws.send(reply)
         limiter.reset(key)
         secure = result.channel
@@ -406,9 +448,16 @@ export async function startNetworkListener(
       counted = false
       phase = 'closed'
       handshakeDone()
-      const count = (perAddress.get(key) ?? 1) - 1
-      if (count > 0) perAddress.set(key, count)
-      else perAddress.delete(key)
+      bump(perAddress, source, -1)
+      bump(perNet, net, -1)
+      if (holdsWindow && !allowed && options.store.pairing()) {
+        // It could have worked out this window's code and walked away to try again: the window
+        // closes, and the person at this computer makes a new code if they still want one.
+        options.log(
+          `Remote access: ${source} began pairing and stopped; Add device was closed so no other code can be tried`
+        )
+        options.store.cancelPairing()
+      }
       connection?.close()
       if (!wasOpen) return
       const sessions = byDevice.get(deviceId)
@@ -499,6 +548,8 @@ export function guardSockets(
   server.headersTimeout = HANDSHAKE_TIMEOUT_MS
   server.requestTimeout = HANDSHAKE_TIMEOUT_MS
   const perAddress = new Map<string, number>()
+  /** Open sockets per IPv6 /64 (`limitKey`); an IPv4 address is its own. */
+  const perNetSockets = new Map<string, number>()
   server.on('connection', (socket: Socket) => {
     const source = sourceOf(socket)
     const outside = admit(targetOf(socket), source)
@@ -507,20 +558,30 @@ export function guardSockets(
       socket.destroy()
       return
     }
-    const key = limitKey(source)
+    const key = source
+    const net = limitKey(source)
     const open = perAddress.get(key) ?? 0
+    if (source.includes(':') && (perNetSockets.get(net) ?? 0) >= 2 * MAX_PER_NET) {
+      log(`dropped ${source} (too many open sockets from its network)`)
+      socket.destroy()
+      return
+    }
     if (open >= (isLoopback(source) ? MAX_SOCKETS_PER_LOOPBACK : MAX_SOCKETS_PER_ADDRESS)) {
       log(`dropped ${source} (too many open sockets)`)
       socket.destroy()
       return
     }
     perAddress.set(key, open + 1)
+    perNetSockets.set(net, (perNetSockets.get(net) ?? 0) + 1)
     sockets.add(socket)
     socket.once('close', () => {
       sockets.delete(socket)
       const left = (perAddress.get(key) ?? 1) - 1
       if (left > 0) perAddress.set(key, left)
       else perAddress.delete(key)
+      const netLeft = (perNetSockets.get(net) ?? 1) - 1
+      if (netLeft > 0) perNetSockets.set(net, netLeft)
+      else perNetSockets.delete(net)
     })
     socket.on('error', () => socket.destroy())
   })

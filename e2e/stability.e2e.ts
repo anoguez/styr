@@ -156,7 +156,9 @@ class Phone {
   constructor(
     private readonly uri: URL,
     /** Ask to pair by approval, as a phone that found the computer on the network does. */
-    private readonly asking = false
+    private readonly asking = false,
+    /** Hang up once the host's value is in, before revealing: a relay peeking at the code. */
+    private readonly peek = false
   ) {}
 
   /** Pairs with the QR's secret (once), or signs in with the device id; the session or the close code. */
@@ -185,6 +187,11 @@ class Phone {
       socket.onmessage = (event) => {
         const step = client.receive(String(event.data))
         if (step.kind === 'send') {
+          if (step.approval && this.peek) {
+            socket.onclose = null
+            socket.close()
+            return done({ code: 0 })
+          }
           if (step.approval) this.approvalCode = step.approval.code
           for (const frame of step.frames) socket.send(frame)
         }
@@ -392,4 +399,36 @@ test('another computer on the network: pair by approval, open its shared workspa
     await b?.close()
     await a.close()
   }
+})
+
+test('a device that looks at the code and leaves closes the Add device window', async () => {
+  styr = await launchStyr('approval-peek')
+  const { page } = styr
+  await page.getByRole('button', { name: /^Settings/ }).click()
+  const settings = page.locator('[aria-label="Settings"]')
+  await settings.getByRole('button', { name: /^Connections/ }).click()
+  await settings.getByRole('button', { name: 'Get started' }).click()
+  await page
+    .locator('[aria-label="Connect a device to this computer"]')
+    .getByRole('button', { name: 'Get started' })
+    .click()
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await expect(page.getByRole('img', { name: 'Pairing QR code' })).toBeVisible()
+  const state = await page.evaluate(() => window.api.access.state())
+
+  // It gets this computer's value (enough to work out the code) and hangs up without revealing.
+  const peeker = new Phone(new URL(`styr://pair?port=${state.port}`), true, true)
+  expect(await peeker.connect()).toEqual({ code: 0 })
+
+  await expect(page.getByText('This code was closed.', { exact: true })).toBeVisible()
+  await expect(page.getByText(/began to pair and left before it was allowed/)).toBeVisible()
+  expect((await page.evaluate(() => window.api.access.state())).pairingExpiresAt).toBeUndefined()
+  // Nobody can try another code in it: a request now is refused at once.
+  const next = new Phone(new URL(`styr://pair?port=${state.port}`), true)
+  expect(await next.connect()).toEqual({ code: 4401 })
+  await page.getByRole('button', { name: 'New code' }).click()
+  await expect(page.getByRole('img', { name: 'Pairing QR code' })).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await page.evaluate(() => window.api.access.configure({ enabled: false }))
+  styr.expectNoErrors()
 })

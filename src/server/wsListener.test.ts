@@ -488,7 +488,11 @@ describe('network listener', () => {
       await vi.waitFor(() => expect(ui.asked).toHaveLength(1))
       leaving.close()
       await vi.waitFor(() => expect(ui.withdrawn()).toBe(1))
+      // It saw this window's code: the window closes, so no other code can be tried in it.
+      expect(store.pairing()).toBeUndefined()
+      expect(host.state.log.some((line) => line.includes('began pairing and stopped'))).toBe(true)
 
+      store.startPairing()
       const slow = phone()
       await slow.opened()
       void slow.request('iPad')
@@ -498,6 +502,41 @@ describe('network listener', () => {
       // An answer after that changes nothing.
       ui.asked[1]!.answer(true)
       expect(store.devices()).toEqual([])
+    })
+
+    it('closes the window when a device that saw the host value leaves before the question', async () => {
+      // A relay works out the host's code from its value and hangs up when it does not match:
+      // without this, it could look at code after code with nothing shown.
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const peeker = phone()
+      await peeker.opened()
+      void peeker.request('Pixel 9', { revealAfter: false })
+      await vi.waitFor(() => expect(peeker.sawHostValue).toBe(true))
+      expect(ui.asked).toEqual([])
+      peeker.close()
+      await vi.waitFor(() => expect(store.pairing()).toBeUndefined())
+      // A second look needs a new code, made by the person at this computer.
+      const again = phone()
+      await again.opened()
+      await expect(again.request('Pixel 9')).resolves.toBeUndefined()
+      expect(ui.asked).toEqual([])
+    })
+
+    it('keeps the window open for a device that was allowed', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const device = phone()
+      await device.opened()
+      const pending = device.request('Pixel 9')
+      await vi.waitFor(() => expect(ui.asked).toHaveLength(1))
+      ui.asked[0]!.answer(true)
+      await expect(pending).resolves.toBeDefined()
+      device.close()
+      await tick(30)
+      expect(host.state.log.some((line) => line.includes('began pairing and stopped'))).toBe(false)
     })
 
     it('a host that takes no requests (styr serve) refuses them', async () => {

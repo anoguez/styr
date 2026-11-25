@@ -158,6 +158,8 @@ export class TestPhone {
   channel?: SecureFrameChannel
   /** After `request`: the code this phone shows while it waits for the host's answer. */
   approvalCode?: string
+  /** A request got the host's value (and could work out the host's code). */
+  sawHostValue = false
 
   constructor(
     port: number,
@@ -214,7 +216,9 @@ export class TestPhone {
     signIn:
       | { type: 'auth'; deviceId: string }
       | { type: 'pair'; name: string; secret: string }
-      | { type: 'request'; name: string }
+      | { type: 'request'; name: string },
+    /** Stop after the host's value, before revealing this side's (a peeking relay). */
+    stopBeforeReveal = false
   ): Promise<{ deviceId?: string } | undefined> {
     const client = createSecureClientHandshake({
       pinnedFingerprint: this.fingerprint,
@@ -234,7 +238,11 @@ export class TestPhone {
         if (frame === '') return undefined
         const step = client.receive(frame)
         if (step.kind === 'send') {
-          if (step.approval) this.approvalCode = step.approval.code
+          if (step.approval) {
+            this.sawHostValue = true
+            if (stopBeforeReveal) return undefined
+            this.approvalCode = step.approval.code
+          }
           for (const out of step.frames) this.send(out)
         }
         if (step.kind === 'ready') {
@@ -252,9 +260,16 @@ export class TestPhone {
    * Asks to pair by approval, as a phone that found the host on the network does; resolves once
    * the host answers (credentials) or refuses (undefined). `approvalCode` is set while it waits.
    */
-  async request(name: string): Promise<Credentials | undefined> {
+  async request(
+    name: string,
+    options: { revealAfter?: boolean } = {}
+  ): Promise<Credentials | undefined> {
     const pair = generateKeyPairSync('ed25519')
-    const result = await this.handshake(pair.privateKey, { type: 'request', name })
+    const result = await this.handshake(
+      pair.privateKey,
+      { type: 'request', name },
+      options.revealAfter === false
+    )
     if (!result?.deviceId) return undefined
     return {
       deviceId: result.deviceId,
