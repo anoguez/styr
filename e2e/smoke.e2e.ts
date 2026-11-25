@@ -41,8 +41,11 @@ function taskFile(workspaceId: string, taskId: string): string {
 const readTask = (workspaceId: string, taskId: string): string =>
   readFileSync(taskFile(workspaceId, taskId), 'utf8')
 
-/** Every process as `[pid, ppid]`: `ps` on macOS and Linux, CIM on Windows (which has no `ps`). */
-function processTable(): [number, number][] {
+/**
+ * Every process as `[pid, ppid, name]`: `ps` on macOS and Linux, CIM on Windows (which has no
+ * `ps`). The name is only there to say what a stray process was.
+ */
+function processTable(): [number, number, string][] {
   const output =
     process.platform === 'win32'
       ? execFileSync(
@@ -50,24 +53,27 @@ function processTable(): [number, number][] {
           [
             '-NoProfile',
             '-Command',
-            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }'
+            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.Name)" }'
           ],
           { encoding: 'utf8' }
         )
-      : execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+      : execFileSync('ps', ['-A', '-o', 'pid=,ppid=,comm='], { encoding: 'utf8' })
   return output
     .trim()
     .split(/\r?\n/)
-    .map((line) => line.trim().split(/\s+/).map(Number) as [number, number])
+    .map((line) => {
+      const [pid, ppid, ...name] = line.trim().split(/\s+/)
+      return [Number(pid), Number(ppid), name.join(' ')]
+    })
 }
 
 /** The pid and every descendant of it. */
-function processTree(root: number): number[] {
+function processTree(root: number): { pid: number; name: string }[] {
   const rows = processTable()
   const tree = [root]
   for (let i = 0; i < tree.length; i++)
     for (const [pid, ppid] of rows) if (ppid === tree[i] && !tree.includes(pid)) tree.push(pid)
-  return tree
+  return tree.map((pid) => ({ pid, name: rows.find(([row]) => row === pid)?.[2] ?? '?' }))
 }
 
 function alive(pid: number): boolean {
@@ -418,7 +424,12 @@ test('smoke', async () => {
     const exited = new Promise<number | null>((resolve) => app.process().once('exit', resolve))
     await app.close()
     expect(await exited).toBe(0)
-    await expect.poll(() => tree.filter(alive), { timeout: 10_000 }).toEqual([])
+    // Named, so a failure says what outlived the app (`8760 pwsh.exe`), not only its pid.
+    await expect
+      .poll(() => tree.filter(({ pid }) => alive(pid)).map(({ pid, name }) => `${pid} ${name}`), {
+        timeout: 10_000
+      })
+      .toEqual([])
     expectNoErrors()
   })
 })
