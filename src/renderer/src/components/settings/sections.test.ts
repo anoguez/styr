@@ -88,6 +88,16 @@ describe('settings sections', () => {
     ])
   })
 
+  it("shows a workspace's Remote access page only for a workspace on a remote host", () => {
+    const sharing = SECTIONS.find((item) => item.id === 'remote-sharing')!
+    expect(sectionShown(sharing, off)).toBe(false)
+    expect(sectionShown(sharing, off, true)).toBe(true)
+    const environment = (editingRemote: boolean): string[] =>
+      settingsNav('', off, editingRemote)[0]!.subs[2]!.items.map((item) => item.id)
+    expect(environment(false)).toEqual(['environment'])
+    expect(environment(true)).toEqual(['environment', 'remote-sharing'])
+  })
+
   it('filters the nav by label and search words, case-insensitively', () => {
     const ids = (search: string): string[] =>
       settingsNav(search, on).flatMap((group) =>

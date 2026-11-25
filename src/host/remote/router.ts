@@ -342,6 +342,9 @@ export function createRemoteRouter(ports: RouterPorts) {
       case 'terminal:openInCode': {
         const target = registry.activeRemote()
         if (!target) return local()
+        // VS Code would hand the host name to ssh; another computer on the LAN is not an ssh host
+        // (its name here is made up), so nothing opens.
+        if (target.link.lan) return undefined
         ports.openExternal(remoteEditorUri('vscode', target.link.host, String(args[0])))
         return 'code'
       }
@@ -402,6 +405,8 @@ export function createRemoteRouter(ports: RouterPorts) {
       return
     }
     if (target.kind !== 'remote') return
+    // As for Open in VS Code: a computer on the LAN has no ssh host for the editor to reach.
+    if (target.link.lan) return
     const task = (await forwarder.forward(target, 'tasks:get', [id])) as Task | null
     const editor = remoteEditorFor((await settings.get(undefined)).openFilesWith)
     if (task && editor) {

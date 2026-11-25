@@ -1,53 +1,47 @@
 import { describe, expect, it } from 'vitest'
 import type { AccessState } from '@core/types.js'
 import {
-  canPair,
+  connectionSummary,
+  groupedCode,
+  lanHostStatus,
   deviceLine,
   groupedFingerprint,
-  interfaceOptions,
+  interfaceLabel,
   listenerStatus,
+  initialShareChoice,
   needsSharedWorkspace,
+  newlyPaired,
   qrPath,
-  relayStatusLine,
   showShieldsUpWarning
 } from './accessView.js'
 
 const base: AccessState = {
   enabled: false,
-  bindAddress: '',
   port: 7878,
   keepAwake: false,
   listening: false,
   interfaces: [
-    { name: 'lo0', address: '127.0.0.1', kind: 'loopback' },
+    { name: 'en0', address: '192.168.1.20', kind: 'lan' },
     { name: 'utun4', address: '100.101.102.103', kind: 'tailscale' }
   ],
   devices: [],
   fingerprint: 'ab'.repeat(32),
-  workspaceShared: true,
-  relay: { enabled: false, address: '', port: 7879 },
-  relayStatus: 'off'
+  workspaces: [],
+  workspaceShared: true
 }
 
-describe('interfaceOptions', () => {
-  it('lists each private address with where it is', () => {
-    expect(interfaceOptions(base)).toEqual([
-      { value: '127.0.0.1', label: '127.0.0.1 · lo0 · this computer only' },
-      { value: '100.101.102.103', label: '100.101.102.103 · utun4 · Tailscale' }
+describe('interfaceLabel', () => {
+  it('says where each address is', () => {
+    expect(base.interfaces.map(interfaceLabel)).toEqual([
+      '192.168.1.20 · en0 · local network',
+      '100.101.102.103 · utun4 · VPN'
     ])
   })
 
-  it('keeps a saved address whose interface is gone, marked', () => {
-    const options = interfaceOptions({ ...base, bindAddress: '10.9.9.9' })
-    expect(options.at(-1)).toEqual({ value: '10.9.9.9', label: '10.9.9.9 · not available now' })
-  })
-
   it('marks an IPv6 address as such', () => {
-    const options = interfaceOptions({
-      ...base,
-      interfaces: [{ name: 'utun4', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' }]
-    })
-    expect(options[0]?.label).toBe('fd7a:115c:a1e0::1 · utun4 · Tailscale IPv6')
+    expect(interfaceLabel({ name: 'utun4', address: 'fd7a:115c:a1e0::1', kind: 'tailscale' })).toBe(
+      'fd7a:115c:a1e0::1 · utun4 · VPN IPv6'
+    )
   })
 })
 
@@ -102,42 +96,123 @@ describe('groupedFingerprint', () => {
 })
 
 describe('listenerStatus', () => {
-  it('says what it listens on, or why it does not', () => {
-    expect(listenerStatus({ ...base, bindAddress: '127.0.0.1', listening: true })).toMatch(
-      /^Listening on 127\.0\.0\.1:7878/
+  it('says who can connect, or that nothing is open', () => {
+    expect(listenerStatus({ ...base, enabled: true, listening: true })).toMatch(
+      /^Only devices you pair can sign in/
     )
-    expect(listenerStatus(base)).toMatch(/Pick a network interface/)
-    expect(listenerStatus({ ...base, bindAddress: '127.0.0.1' })).toMatch(/No port is open/)
+    expect(listenerStatus({ ...base, enabled: true, listening: true, interfaces: [] })).toMatch(
+      /no network a device could reach/
+    )
+    expect(listenerStatus(base)).toMatch(/No port is open/)
   })
 })
 
-describe('relay', () => {
-  const on = { ...base, relay: { enabled: true, address: '100.64.0.9', port: 7879 } }
+describe('showShieldsUpWarning', () => {
+  it('warns about Shields Up only while devices may connect', () => {
+    expect(showShieldsUpWarning({ ...base, enabled: true, shieldsUp: true })).toBe(true)
+    expect(showShieldsUpWarning({ ...base, enabled: false, shieldsUp: true })).toBe(false)
+    expect(showShieldsUpWarning({ ...base, enabled: true, shieldsUp: false })).toBe(false)
+  })
+})
 
-  it('says whether this computer is on the relay, or why not', () => {
-    expect(relayStatusLine(base)).toEqual({ text: expect.stringMatching(/^Off/), problem: false })
-    expect(relayStatusLine({ ...on, relayStatus: 'connected' })).toEqual({
-      text: 'Connected to the relay at 100.64.0.9:7879.',
-      problem: false
+describe('newlyPaired', () => {
+  const device = (id: string) => ({ id, name: id, createdAt: '', connected: false })
+
+  it('finds the device that was not there when the dialog opened', () => {
+    expect(newlyPaired(new Set(['a']), [device('a'), device('b')])?.id).toBe('b')
+    expect(newlyPaired(new Set(['a']), [device('a')])).toBeUndefined()
+  })
+})
+
+describe('initialShareChoice', () => {
+  const ws = (id: string, shared = false) => ({ id, name: id, shared })
+
+  it('keeps what is shared already', () => {
+    expect([...initialShareChoice([ws('a', true), ws('b'), ws('c', true)], 'b')]).toEqual([
+      'a',
+      'c'
+    ])
+  })
+
+  it('offers the open workspace when nothing is shared', () => {
+    expect([...initialShareChoice([ws('a'), ws('b')], 'b')]).toEqual(['b'])
+  })
+
+  it("offers nothing when the open workspace is not this computer's", () => {
+    expect([...initialShareChoice([ws('a')], 'remote-stub')]).toEqual([])
+  })
+})
+
+describe('connectionSummary', () => {
+  const device = (connected: boolean) => ({ id: 'd', name: 'd', createdAt: '', connected })
+
+  it('says off, on, or who is connected', () => {
+    expect(connectionSummary(base)).toBe('Off')
+    expect(connectionSummary({ ...base, enabled: true })).toBe('Not listening')
+    expect(connectionSummary({ ...base, enabled: true, listening: true })).toBe(
+      'On · no devices yet'
+    )
+    expect(
+      connectionSummary({ ...base, enabled: true, listening: true, devices: [device(false)] })
+    ).toBe('On · 1 paired')
+    expect(
+      connectionSummary({
+        ...base,
+        enabled: true,
+        listening: true,
+        devices: [device(true), device(true)]
+      })
+    ).toBe('2 devices connected')
+  })
+})
+
+describe('groupedCode', () => {
+  it('splits six digits in two', () => {
+    expect(groupedCode('482915')).toBe('482 915')
+    expect(groupedCode('12')).toBe('12')
+  })
+})
+
+describe('lanHostStatus', () => {
+  const host = {
+    fingerprint: 'a'.repeat(64),
+    name: 'Studio',
+    address: '192.168.1.30',
+    port: 7878,
+    pairedAt: ''
+  }
+  const overview = (count: number) => ({
+    activeId: 'default',
+    workspaces: Array.from({ length: count }, (_, index) => ({
+      id: `w${index}`,
+      name: `W${index}`,
+      taskCount: 0,
+      liveSessions: 0,
+      remote: {
+        host: 'studio-aaaaaa',
+        workspaceId: `r${index}`,
+        lan: { fingerprint: host.fingerprint }
+      }
+    }))
+  })
+  const remote = (status?: 'connected' | 'reconnecting', lastError?: string) => ({
+    enabled: true,
+    hosts: status ? [{ host: 'studio-aaaaaa', status, ...(lastError ? { lastError } : {}) }] : [],
+    workspaces: {}
+  })
+
+  it('says paired with nothing open, connected, unreachable and why, or offline', () => {
+    expect(lanHostStatus(host, overview(0), remote())).toEqual({
+      connected: false,
+      text: 'Paired · no workspace open here'
     })
-    expect(
-      relayStatusLine({ ...on, relayStatus: 'unreachable', relayError: 'Nothing is listening.' })
-    ).toEqual({ text: 'Relay unreachable. Nothing is listening. Trying again.', problem: true })
-    expect(
-      relayStatusLine({ ...on, relayStatus: 'notAllowed', relayError: 'Not allowed.' })
-    ).toEqual({ text: 'Not allowed.', problem: true })
-  })
-
-  it('pairs through the listener or a connected relay', () => {
-    expect(canPair(base)).toBe(false)
-    expect(canPair({ ...on, relayStatus: 'connecting' })).toBe(false)
-    expect(canPair({ ...on, relayStatus: 'connected' })).toBe(true)
-    expect(canPair({ ...base, listening: true })).toBe(true)
-  })
-
-  it('warns about Shields Up only while devices have to connect in', () => {
-    expect(showShieldsUpWarning({ ...base, shieldsUp: true })).toBe(true)
-    expect(showShieldsUpWarning({ ...on, shieldsUp: true, relayStatus: 'connected' })).toBe(false)
-    expect(showShieldsUpWarning({ ...on, shieldsUp: true, relayStatus: 'unreachable' })).toBe(true)
+    expect(lanHostStatus(host, overview(2), remote('connected'))).toEqual({
+      connected: true,
+      text: 'Connected · 2 workspaces'
+    })
+    expect(lanHostStatus(host, overview(1), remote('reconnecting', 'Studio is busy')).text).toBe(
+      'Unreachable: Studio is busy · 1 workspace'
+    )
+    expect(lanHostStatus(host, overview(1), remote()).text).toBe('Offline · 1 workspace')
   })
 })

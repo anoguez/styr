@@ -16,7 +16,12 @@ export function useAutoDispatch(workspaceId: string | undefined): {
   useEffect(() => {
     let current = true
     const refresh = (): void => {
-      void window.api.orchestrate.autoState().then((next) => current && setState(next))
+      // A remote board still connecting refuses the read; the state stays as it was, and the
+      // connection's own events refresh it.
+      window.api.orchestrate.autoState().then(
+        (next) => current && setState(next),
+        () => undefined
+      )
     }
     refresh()
     const offState = window.api.orchestrate.onAutoState(setState)

@@ -175,6 +175,9 @@ describe('remote router: disconnected', () => {
     t.router.refresh()
     expect(await t.call('tasks:list', {})).toEqual([])
     expect(await t.call('agents:list')).toEqual([])
+    // The board reads these the moment it opens: no plan yet, Auto-run off, never an error.
+    expect(await t.call('orchestrate:plan')).toBeNull()
+    expect(await t.call('orchestrate:autoState')).toEqual({ on: false })
   })
 
   it('on reconnect refetches the board without switching a server another client moved', async () => {
@@ -558,6 +561,24 @@ describe('remote router: merged workspace views', () => {
     expect(await t.call('terminal:openInCode', '/home/me/repo')).toBe('code')
     expect(t.opened).toEqual(['vscode://vscode-remote/ssh-remote+devbox/home/me/repo'])
   })
+
+  it('never hands a computer on the LAN to ssh through the editor', async () => {
+    const t = setup({ active: 'lan-board' })
+    t.setWorkspaces([
+      { id: 'default', name: 'Default' },
+      {
+        id: 'lan-board',
+        name: 'Studio board',
+        remote: { host: 'devbox', workspaceId: 'default', lan: { fingerprint: 'a'.repeat(64) } }
+      }
+    ])
+    t.router.refresh()
+    await t.connectAll()
+    t.devbox.state.tasks.default = [{ id: 'TASK-0001', title: 'x', filePath: '/Users/me/a.md' }]
+    expect(await t.call('terminal:openInCode', '/Users/me/repo')).toBeUndefined()
+    await t.call('tasks:openInEditor', 'TASK-0001')
+    expect(t.opened).toEqual([])
+  })
 })
 
 describe('remote router: edge cases', () => {
@@ -585,7 +606,9 @@ describe('remote router: edge cases', () => {
     await t.switchTo('missing')
     expect(t.router.state().workspaces.missing!.error).toMatch(/no longer exists/)
     await expect(t.call('tasks:create', { title: 'x' })).rejects.toThrow(/cannot be shown/)
-    await expect(t.call('orchestrate:plan')).rejects.toThrow(/cannot be shown/)
+    // A read with no offline default says so too (the board's plan just stays empty).
+    await expect(t.call('worklog:load', {})).rejects.toThrow(/cannot be shown/)
+    expect(await t.call('orchestrate:plan')).toBeNull()
   })
 
   it('refuses a terminal write call to a disconnected host, and answers its reads with nothing', async () => {

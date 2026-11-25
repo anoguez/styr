@@ -218,7 +218,10 @@ defaults to `~/.styr/server/current/bin/styr`, where setup and `install.sh` put 
   a link that looks alive; `wake(false)` (network back) retries one that is down; `suspend` drops
   the link and waits for wake. A request while disconnected rejects at once: **nothing is queued**.
   The child and the clock are ports (`ConnectionPorts`); `sshTransport.ts` is the real child,
-  `ssh` from PATH with no shell (OpenSSH ships with Windows 10+).
+  `ssh` from PATH with no shell (OpenSSH ships with Windows 10+). A stub with `remote.lan` (another
+  Styr on the same network, paired as a device) gets `lanTransport` (`lanLink.ts`) instead: the
+  network listener's protocol 2, offered as the same `TransportChild` (`remote-access.md`, Other
+  computers).
 - `host/remote/router.ts`: the router (below), the composition root. It owns the connections'
   lifecycle (`refresh`), the per-call dispatch (`invoke`, `send`), the servers' events and the
   local broadcasts (`fromLocal`). Electron-free; its ports are the flag, the local workspaces,

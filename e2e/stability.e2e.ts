@@ -9,9 +9,11 @@ import {
   writeFileSync,
   writeSync
 } from 'node:fs'
-import { createServer } from 'node:net'
+import { generateKeyPairSync, createPublicKey, type KeyObject } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
+import { createSecureClientHandshake } from '../src/host/remoteAccess/secureClient'
+import type { SecureFrameChannel } from '../src/host/remoteAccess/secureSession'
 import { card, column, launchStyr, type StyrApp } from './harness'
 
 // What an upgrade and the network listener must survive, on throwaway profiles. See
@@ -108,23 +110,20 @@ test('an earlier release’s profile loads, and the index rebuilds after a schem
 })
 
 test('a device that has not paired is refused by the remote access listener', async () => {
-  const port = await freePort()
   styr = await launchStyr('access')
   const { page } = styr
-  // The workspace is shared and the listener is up, on loopback only: the one address that needs
-  // no network. An unpaired peer must still get nothing.
+  // The workspace is shared and the listener is up; the test connects over loopback, the one
+  // address that needs no network. An unpaired peer must still get nothing.
   const settings = await page.evaluate(() => window.api.settings.get())
   await page.evaluate((change) => window.api.settings.save(change), {
     workspaceId: settings.activeWorkspaceId,
     workspace: { ...settings, remoteAccess: true },
     global: { ...settings }
   } as never)
-  const state = await page.evaluate((patch) => window.api.access.configure(patch), {
-    enabled: true,
-    bindAddress: '127.0.0.1',
-    port
-  })
+  const state = await page.evaluate(() => window.api.access.configure({ enabled: true }))
   expect(state.listening, state.error).toBe(true)
+  // The port it found free (7878, or the next free one).
+  const port = state.port
 
   const outcome = await new Promise<{ code: number; messages: string[] }>((resolveOutcome) => {
     const socket = new WebSocket(`ws://127.0.0.1:${port}`)
@@ -143,13 +142,293 @@ test('a device that has not paired is refused by the remote access listener', as
   styr.expectNoErrors()
 })
 
-function freePort(): Promise<number> {
-  return new Promise((resolvePort, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address() as { port: number }
-      server.close(() => resolvePort(port))
+/**
+ * A phone, as the Styr app is: protocol 2 from the URI a QR carries, its own Ed25519 key, then one
+ * JSON-RPC call over the sealed session. Runs in plain Node against the Electron app, so the two
+ * crypto stacks (Node's OpenSSL here, Electron's BoringSSL there) must agree.
+ */
+class Phone {
+  private readonly key: KeyObject = generateKeyPairSync('ed25519').privateKey
+  deviceId?: string
+  /** After `request`: the code this phone shows while the desktop decides. */
+  approvalCode?: string
+
+  constructor(
+    private readonly uri: URL,
+    /** Ask to pair by approval, as a phone that found the computer on the network does. */
+    private readonly asking = false,
+    /** Hang up once the host's value is in, before revealing: a relay peeking at the code. */
+    private readonly peek = false
+  ) {}
+
+  /** Pairs with the QR's secret (once), or signs in with the device id; the session or the close code. */
+  async connect(): Promise<Session | { code: number }> {
+    const client = createSecureClientHandshake({
+      ...(this.asking && !this.deviceId
+        ? {}
+        : { pinnedFingerprint: this.uri.searchParams.get('fp')! }),
+      identity: {
+        privateKey: this.key,
+        publicKey: createPublicKey(this.key)
+          .export({ type: 'spki', format: 'der' })
+          .toString('base64')
+      },
+      signIn: this.deviceId
+        ? { type: 'auth', deviceId: this.deviceId }
+        : this.asking
+          ? { type: 'request', name: 'Test phone' }
+          : { type: 'pair', name: 'Test phone', secret: this.uri.searchParams.get('secret')! },
+      maxMessageBytes: 8 * 1024 * 1024
     })
-  })
+    const socket = new WebSocket(`ws://127.0.0.1:${this.uri.searchParams.get('port')}/`)
+    return new Promise((done) => {
+      socket.onopen = () => socket.send(client.start())
+      socket.onclose = (event) => done({ code: event.code })
+      socket.onmessage = (event) => {
+        const step = client.receive(String(event.data))
+        if (step.kind === 'send') {
+          if (step.approval && this.peek) {
+            socket.onclose = null
+            socket.close()
+            return done({ code: 0 })
+          }
+          if (step.approval) this.approvalCode = step.approval.code
+          for (const frame of step.frames) socket.send(frame)
+        }
+        if (step.kind === 'ready') {
+          this.deviceId ??= step.deviceId
+          // Every sealed message from here on, in order: dropping one breaks the channel for good.
+          const session: Session = { channel: step.channel, socket, received: [] }
+          socket.onmessage = (next) => {
+            const text = step.channel.open(String(next.data))
+            if (text !== undefined) session.received.push(text)
+          }
+          socket.onclose = null
+          done(session)
+        }
+      }
+    })
+  }
 }
+
+/** A signed-in session, and every message the host sent on it so far. */
+interface Session {
+  channel: SecureFrameChannel
+  socket: WebSocket
+  received: string[]
+}
+
+/** One JSON-RPC call over a signed-in session; skips the server's notifications. */
+async function call(
+  session: Session,
+  method: string,
+  params: unknown[] = []
+): Promise<{ result?: unknown; error?: { message: string } }> {
+  const id = Math.floor(Math.random() * 1e9)
+  for (const frame of session.channel.seal(
+    JSON.stringify({ jsonrpc: '2.0', id, method, params })
+  )) {
+    session.socket.send(frame)
+  }
+  for (;;) {
+    for (const text of session.received) {
+      const message = JSON.parse(text) as {
+        id?: number
+        result?: unknown
+        error?: { message: string }
+      }
+      if (message.id === id) return message
+    }
+    await new Promise((wait) => setTimeout(wait, 10))
+  }
+}
+
+test('a device pairs with the desktop app from its QR, signs in again, and is cut off on removal', async () => {
+  styr = await launchStyr('pairing')
+  const { page } = styr
+  const settings = await page.evaluate(() => window.api.settings.get())
+  await page.evaluate((change) => window.api.settings.save(change), {
+    workspaceId: settings.activeWorkspaceId,
+    workspace: { ...settings, remoteAccess: true },
+    global: { ...settings }
+  } as never)
+  const state = await page.evaluate(() => window.api.access.configure({ enabled: true }))
+  expect(state.listening, state.error).toBe(true)
+  const pairing = await page.evaluate(() => window.api.access.pair())
+  const phone = new Phone(new URL(pairing.uri))
+
+  // Pairing runs the whole Noise handshake in the Electron main process.
+  const first = await phone.connect()
+  expect('channel' in first, `closed with ${'code' in first ? first.code : ''}`).toBe(true)
+  if (!('channel' in first)) return
+  expect((await call(first, 'tasks:list')).result).toEqual(expect.any(Array))
+  first.socket.close()
+  expect((await page.evaluate(() => window.api.access.state())).devices).toHaveLength(1)
+
+  // Again, without the QR: the device's own key signs it in.
+  const again = await phone.connect()
+  expect('channel' in again).toBe(true)
+  if (!('channel' in again)) return
+  const closed = new Promise<number>((done) => (again.socket.onclose = (event) => done(event.code)))
+
+  // Removing it on the desktop ends the live session at once (4403) and refuses the next.
+  await page.evaluate((id) => window.api.access.revoke(id), phone.deviceId!)
+  expect(await closed).toBe(4403)
+  expect(await phone.connect()).toEqual({ code: 4401 })
+
+  await page.evaluate(() => window.api.access.configure({ enabled: false }))
+  styr.expectNoErrors()
+})
+
+test('a device on the network asks to pair, and the desktop allows it after comparing codes', async () => {
+  styr = await launchStyr('approval')
+  const { page } = styr
+  await page.getByRole('button', { name: /^Settings/ }).click()
+  const settings = page.locator('[aria-label="Settings"]')
+  await settings.getByRole('button', { name: /^Connections/ }).click()
+  await settings.getByRole('button', { name: 'Get started' }).click()
+  await page
+    .locator('[aria-label="Connect a device to this computer"]')
+    .getByRole('button', { name: 'Get started' })
+    .click()
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await expect(page.getByRole('img', { name: 'Pairing QR code' })).toBeVisible()
+
+  // The phone knows the computer's address and port (from the network), not its QR.
+  const state = await page.evaluate(() => window.api.access.state())
+  const phone = new Phone(new URL(`styr://pair?port=${state.port}`), true)
+  const asked = phone.connect()
+  const prompt = page.getByRole('alertdialog', { name: 'Test phone wants to connect' })
+  await expect(prompt).toBeVisible()
+  // Both screens show the same code.
+  await expect.poll(() => phone.approvalCode).toMatch(/^\d{6}$/)
+  await expect(prompt.getByLabel(`Code ${phone.approvalCode}`)).toBeVisible()
+  await prompt.getByRole('button', { name: 'Allow' }).click()
+
+  const session = await asked
+  expect('channel' in session).toBe(true)
+  if (!('channel' in session)) return
+  expect((await call(session, 'tasks:list')).result).toEqual(expect.any(Array))
+  await expect(page.getByText('Test phone is connected')).toBeVisible()
+  session.socket.close()
+  await page.getByRole('button', { name: 'Done' }).click()
+  await settings.getByRole('button', { name: 'Close' }).first().click()
+  await page.evaluate(() => window.api.access.configure({ enabled: false }))
+  styr.expectNoErrors()
+})
+
+test('a device asking to pair is refused while no Add device window is open', async () => {
+  styr = await launchStyr('approval-closed')
+  const { page } = styr
+  const state = await page.evaluate(() => window.api.access.configure({ enabled: true }))
+  const phone = new Phone(new URL(`styr://pair?port=${state.port}`), true)
+  expect(await phone.connect()).toEqual({ code: 4401 })
+  expect((await page.evaluate(() => window.api.access.state())).devices).toEqual([])
+  await page.evaluate(() => window.api.access.configure({ enabled: false }))
+  styr.expectNoErrors()
+})
+
+test('another computer on the network: pair by approval, open its shared workspace, see its board', async () => {
+  // Computer A shares its Default workspace, with a task on it.
+  const a = await launchStyr('lan-a')
+  let b: StyrApp | undefined
+  try {
+    await a.page.evaluate(() => window.api.tasks.create({ title: 'Made on computer A' }))
+    await a.page.getByRole('button', { name: /^Settings/ }).click()
+    const settingsA = a.page.locator('[aria-label="Settings"]')
+    await settingsA.getByRole('button', { name: /^Connections/ }).click()
+    await settingsA.getByRole('button', { name: 'Get started' }).click()
+    await a.page
+      .locator('[aria-label="Connect a device to this computer"]')
+      .getByRole('button', { name: 'Get started' })
+      .click()
+    await a.page.getByRole('button', { name: 'Continue' }).click()
+    await expect(a.page.getByRole('img', { name: 'Pairing QR code' })).toBeVisible()
+    const port = (await a.page.evaluate(() => window.api.access.state())).port
+
+    // Computer B, with remote workspaces on, adds A by its address.
+    b = await launchStyr('lan-b')
+    const settings = await b.page.evaluate(() => window.api.settings.get())
+    await b.page.evaluate(
+      (next) =>
+        window.api.settings.save({
+          workspaceId: next.activeWorkspaceId,
+          global: next,
+          workspace: next
+        } as never),
+      { ...settings, experimental: { ...settings.experimental, remoteWorkspaces: true } }
+    )
+    await b.page.getByRole('button', { name: /^Settings/ }).click()
+    const settingsB = b.page.locator('[aria-label="Settings"]')
+    await settingsB.getByRole('button', { name: /^Connections/ }).click()
+    await settingsB.getByRole('radio', { name: 'Other computers' }).click()
+    await settingsB.getByRole('button', { name: 'Add computer' }).click()
+    await b.page.getByLabel('Address').fill(`127.0.0.1:${port}`)
+    await b.page.getByLabel('Name').fill('Computer A')
+    await b.page.getByRole('button', { name: 'Connect', exact: true }).click()
+
+    // Both screens show the same code; A allows it.
+    const shown = b.page.getByLabel(/^Code \d{6}$/)
+    await expect(shown).toBeVisible()
+    const code = (await shown.getAttribute('aria-label'))!.slice('Code '.length)
+    const prompt = a.page.getByRole('alertdialog', { name: /wants to connect$/ })
+    await expect(prompt.getByLabel(`Code ${code}`)).toBeVisible()
+    await prompt.getByRole('button', { name: 'Allow' }).click()
+
+    // B keeps nothing until the person there confirms A showed the same code.
+    await expect(b.page.getByText('Did it show this code?')).toBeVisible()
+    await expect(b.page.getByLabel(`Code ${code}`)).toBeVisible()
+    expect(await b.page.evaluate(() => window.api.lan.hosts())).toEqual([])
+    await b.page.getByRole('button', { name: 'Yes, it matched' }).click()
+
+    // B lists what A shares, and opens it: A's board, on B.
+    const open = b.page.getByRole('heading', { name: 'Open a workspace on Computer A' })
+    await expect(open).toBeVisible()
+    await b.page.getByRole('button', { name: 'Open', exact: true }).click()
+    await expect(b.page.getByText('Made on computer A')).toBeVisible({ timeout: 20_000 })
+    const tasks = await b.page.evaluate(() => window.api.tasks.list())
+    expect(tasks.map((task) => task.title)).toContain('Made on computer A')
+
+    // Each connection A saw: the pairing, the list of what it shares, and the one B keeps open.
+    expect((await b.page.evaluate(() => window.api.remote.state())).hosts).toMatchObject([
+      { status: 'connected', serverWorkspace: { id: 'default' } }
+    ])
+    a.expectNoErrors()
+    b.expectNoErrors()
+  } finally {
+    await b?.close()
+    await a.close()
+  }
+})
+
+test('a device that looks at the code and leaves closes the Add device window', async () => {
+  styr = await launchStyr('approval-peek')
+  const { page } = styr
+  await page.getByRole('button', { name: /^Settings/ }).click()
+  const settings = page.locator('[aria-label="Settings"]')
+  await settings.getByRole('button', { name: /^Connections/ }).click()
+  await settings.getByRole('button', { name: 'Get started' }).click()
+  await page
+    .locator('[aria-label="Connect a device to this computer"]')
+    .getByRole('button', { name: 'Get started' })
+    .click()
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await expect(page.getByRole('img', { name: 'Pairing QR code' })).toBeVisible()
+  const state = await page.evaluate(() => window.api.access.state())
+
+  // It gets this computer's value (enough to work out the code) and hangs up without revealing.
+  const peeker = new Phone(new URL(`styr://pair?port=${state.port}`), true, true)
+  expect(await peeker.connect()).toEqual({ code: 0 })
+
+  await expect(page.getByText('This code was closed.', { exact: true })).toBeVisible()
+  await expect(page.getByText(/began to pair and left before it was allowed/)).toBeVisible()
+  expect((await page.evaluate(() => window.api.access.state())).pairingExpiresAt).toBeUndefined()
+  // Nobody can try another code in it: a request now is refused at once.
+  const next = new Phone(new URL(`styr://pair?port=${state.port}`), true)
+  expect(await next.connect()).toEqual({ code: 4401 })
+  await page.getByRole('button', { name: 'New code' }).click()
+  await expect(page.getByRole('img', { name: 'Pairing QR code' })).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await page.evaluate(() => window.api.access.configure({ enabled: false }))
+  styr.expectNoErrors()
+})

@@ -1,4 +1,4 @@
-import { generateKeyPairSync, type KeyObject } from 'node:crypto'
+import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +13,9 @@ import {
 import {
   NOISE_PROLOGUE,
   RECORD_CHUNK_BYTES,
+  approvalCode,
+  approvalCommit,
+  identitySignedData,
   SecureChannelError,
   SecureFrameChannel,
   createSecureServerHandshake,
@@ -62,7 +65,8 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
   let dir: string
   let store: AccessStore
   const fingerprint = () => store.identity().fingerprint
-  const server = () => createSecureServerHandshake({ store, maxMessageBytes: MAX })
+  const server = () =>
+    createSecureServerHandshake({ store, maxMessageBytes: MAX, acceptsRequests: true })
   const client = (options: Partial<SecureClientOptions> & Pick<SecureClientOptions, 'signIn'>) =>
     createSecureClientHandshake({
       pinnedFingerprint: fingerprint(),
@@ -360,7 +364,10 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
         server(),
         client({ signIn: { type: 'pair', name: 'x'.repeat(101), secret: offer.secret } })
       )
-      expect(result.server).toMatchObject({ kind: 'denied', reason: 'expected auth or pair' })
+      expect(result.server).toMatchObject({
+        kind: 'denied',
+        reason: 'expected auth, pair or request'
+      })
     })
 
     it('refuses a pairing whose signature is not by the key it names', () => {
@@ -376,6 +383,333 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
       )
       expect(result.server).toMatchObject({ kind: 'denied', reason: 'bad device signature' })
       expect(store.devices()).toEqual([])
+    })
+  })
+
+  describe('pairing by approval (request)', () => {
+    /** A device that found the host on the network: it has no fingerprint to pin. */
+    const requester = (identity = deviceIdentity(), name = 'Pixel 9') =>
+      createSecureClientHandshake({
+        identity,
+        signIn: { type: 'request', name },
+        maxMessageBytes: MAX
+      })
+
+    /**
+     * Runs the handshake up to the host's question: message 3 (with the commitment), the host's
+     * random value, the device's reveal. What each side has then.
+     */
+    function ask(host = server(), device = requester()) {
+      const reply = host.receive(device.start())
+      const third = device.receive(reply.frames[0]!)
+      if (third.kind !== 'send') throw new Error('expected message 3')
+      const nonce = host.receive(third.frames[0]!)
+      if (nonce.kind !== 'reply') return { host, device, step: undefined, outcome: nonce }
+      const step = device.receive(nonce.frames[0]!)
+      if (step.kind !== 'send') throw new Error('expected the reveal')
+      const outcome = host.receive(step.frames[0]!)
+      return { host, device, step, outcome }
+    }
+
+    it('is refused while no Add device window is open, before anyone is asked', () => {
+      const { outcome } = ask()
+      expect(outcome).toMatchObject({
+        kind: 'denied',
+        reason: 'not accepting pairing requests now'
+      })
+    })
+
+    it('shows the same code on both screens, and pairs once allowed', () => {
+      store.startPairing()
+      const identity = deviceIdentity()
+      const { device, step, outcome } = ask(server(), requester(identity))
+      if (outcome.kind !== 'approval') throw new Error(`expected approval, got ${outcome.kind}`)
+      expect(outcome).toMatchObject({ name: 'Pixel 9', frames: [] })
+      expect(outcome.code).toMatch(/^\d{6}$/)
+      expect(step!.approval).toEqual({ code: outcome.code, hostFingerprint: fingerprint() })
+      // Nothing is added, and nothing sent, before the answer.
+      expect(store.devices()).toEqual([])
+
+      const answered = outcome.decide(true)
+      if (answered.kind !== 'ready') throw new Error(`expected ready, got ${answered.kind}`)
+      let ready: ReturnType<typeof device.receive> | undefined
+      for (const frame of answered.frames) ready = device.receive(frame)
+      expect(ready).toMatchObject({ kind: 'ready', deviceId: answered.deviceId })
+      expect(store.publicKeyFor(answered.deviceId)).toBe(identity.publicKey)
+      // One answer per window: the offer is spent.
+      expect(store.pairing()).toBeUndefined()
+
+      // The device then signs in with its own key, pinned to the host it was shown.
+      const again = run(
+        server(),
+        client({ identity, signIn: { type: 'auth', deviceId: answered.deviceId } })
+      )
+      expect(again.server.kind).toBe('ready')
+    })
+
+    it('shows no code before both random values are in', () => {
+      store.startPairing()
+      const host = server()
+      const device = requester()
+      const third = device.receive(host.receive(device.start()).frames[0]!)
+      // Message 3 carries only the commitment: no code yet on either side.
+      expect(third).toMatchObject({ kind: 'send' })
+      expect((third as { approval?: unknown }).approval).toBeUndefined()
+      expect(host.receive((third as { frames: string[] }).frames[0]!).kind).toBe('reply')
+    })
+
+    it('refuses a device that reveals another value than it committed to', () => {
+      // A device built by hand, as an attacker would: it commits to one value in message 3 and,
+      // having seen the host's, reveals another chosen to steer the code.
+      store.startPairing()
+      const host = server()
+      const identity = deviceIdentity()
+      const staticKey = generateNoiseKeyPair()
+      const noise = new NoiseXX({ initiator: true, staticKey, prologue: NOISE_PROLOGUE })
+      const hello = JSON.stringify({
+        type: 'hello',
+        protocol: 2,
+        noise: noise.write().toString('base64')
+      })
+      noise.read(decodeFrame(host.receive(hello).frames[0]!))
+      const third = noise.write((hash) =>
+        Buffer.from(
+          JSON.stringify({
+            type: 'request',
+            name: 'Pixel 9',
+            identityKey: identity.publicKey,
+            signature: sign(
+              null,
+              identitySignedData('device', staticKey.publicKey, hash),
+              identity.privateKey
+            ).toString('base64'),
+            commit: approvalCommit(Buffer.alloc(32, 1))
+          })
+        )
+      )
+      const nonce = host.receive(third.toString('base64'))
+      expect(nonce.kind).toBe('reply')
+      const channel = new SecureFrameChannel(noise.transport(), MAX)
+      expect(JSON.parse(channel.open(nonce.frames[0]!)!)).toMatchObject({ type: 'nonce' })
+      const lie = channel.seal(
+        JSON.stringify({ type: 'reveal', nonce: Buffer.alloc(32, 2).toString('base64') })
+      )
+      expect(host.receive(lie[0]!)).toMatchObject({
+        kind: 'denied',
+        reason: 'the reveal does not match the commitment'
+      })
+      expect(store.devices()).toEqual([])
+    })
+
+    it('adds nothing when declined, and the window is spent', () => {
+      store.startPairing()
+      const { outcome } = ask()
+      if (outcome.kind !== 'approval') throw new Error('expected approval')
+      expect(outcome.decide(false)).toMatchObject({
+        kind: 'denied',
+        reason: 'the request was declined'
+      })
+      expect(store.devices()).toEqual([])
+      expect(store.pairing()).toBeUndefined()
+      // A second answer changes nothing.
+      expect(outcome.decide(true).kind).toBe('denied')
+      expect(store.devices()).toEqual([])
+    })
+
+    it('adds nothing when the window closed before the answer', () => {
+      store.startPairing()
+      const { outcome } = ask()
+      if (outcome.kind !== 'approval') throw new Error('expected approval')
+      store.cancelPairing()
+      expect(outcome.decide(true)).toMatchObject({
+        kind: 'denied',
+        reason: 'the Add device window closed before the answer'
+      })
+      expect(store.devices()).toEqual([])
+    })
+
+    it('refuses anything the device sends before the answer', () => {
+      store.startPairing()
+      const { host, outcome } = ask()
+      expect(outcome.kind).toBe('approval')
+      expect(host.receive('x')).toMatchObject({
+        kind: 'denied',
+        reason: 'message before the request was answered'
+      })
+    })
+
+    it('gives one request per window its value: the next is refused before it learns anything', () => {
+      store.startPairing()
+      const host = server()
+      const first = requester()
+      const third = first.receive(host.receive(first.start()).frames[0]!) as { frames: string[] }
+      expect(host.receive(third.frames[0]!).kind).toBe('reply')
+      // A second request in the same window, side by side with the first.
+      const { outcome } = ask()
+      expect(outcome).toMatchObject({
+        kind: 'denied',
+        reason: 'another device is already pairing in this window'
+      })
+    })
+
+    it('a request from a closed window can neither ask nor spend the window opened since', () => {
+      // Before the reveal: the person closed Add device and made a new code meanwhile.
+      store.startPairing()
+      const host = server()
+      const device = requester()
+      const third = device.receive(host.receive(device.start()).frames[0]!) as { frames: string[] }
+      const nonce = host.receive(third.frames[0]!)
+      store.cancelPairing()
+      const fresh = store.startPairing()
+      const reveal = device.receive(nonce.frames[0]!) as { frames: string[] }
+      expect(host.receive(reveal.frames[0]!)).toMatchObject({
+        kind: 'denied',
+        reason: 'the Add device window it claimed is closed'
+      })
+      expect(store.pairing()).toBe(fresh)
+
+      // After the question: an answer to it must not spend the new window either.
+      const { outcome } = ask()
+      if (outcome.kind !== 'approval') throw new Error('expected approval')
+      store.cancelPairing()
+      const newer = store.startPairing()
+      expect(outcome.decide(false).kind).toBe('denied')
+      expect(outcome.decide(true).kind).toBe('denied')
+      expect(store.pairing()).toBe(newer)
+      expect(store.devices()).toEqual([])
+    })
+
+    it('a host that takes no requests refuses one before sending its value', () => {
+      store.startPairing()
+      const offer = store.pairing()
+      const { outcome } = ask(createSecureServerHandshake({ store, maxMessageBytes: MAX }))
+      expect(outcome).toMatchObject({
+        kind: 'denied',
+        reason: 'this host takes no pairing requests'
+      })
+      // Its QR still works.
+      expect(store.pairing()).toBe(offer)
+      expect(store.pairing()?.claimed).toBeUndefined()
+    })
+
+    it('refuses a request with anything beyond its fields', () => {
+      store.startPairing()
+      const host = server()
+      const identity = deviceIdentity()
+      const noise = new NoiseXX({
+        initiator: true,
+        staticKey: generateNoiseKeyPair(),
+        prologue: NOISE_PROLOGUE
+      })
+      const hello = JSON.stringify({
+        type: 'hello',
+        protocol: 2,
+        noise: noise.write().toString('base64')
+      })
+      noise.read(decodeFrame(host.receive(hello).frames[0]!))
+      const third = noise.write(() =>
+        Buffer.from(
+          JSON.stringify({
+            type: 'request',
+            name: 'Pixel 9',
+            identityKey: identity.publicKey,
+            signature: Buffer.alloc(64).toString('base64'),
+            commit: '0'.repeat(64),
+            pad: 'anything'
+          })
+        )
+      )
+      expect(host.receive(third.toString('base64'))).toMatchObject({
+        kind: 'denied',
+        reason: 'expected auth, pair or request'
+      })
+    })
+
+    it('refuses a request whose signature is not by the key it names', () => {
+      store.startPairing()
+      const { outcome } = ask(
+        server(),
+        requester({
+          privateKey: deviceIdentity().privateKey,
+          publicKey: deviceIdentity().publicKey
+        })
+      )
+      expect(outcome).toMatchObject({ kind: 'denied', reason: 'bad device signature' })
+    })
+
+    it('shows a name cleaned of controls, direction overrides and zero-width marks', () => {
+      store.startPairing()
+      const { outcome } = ask(
+        server(),
+        requester(deviceIdentity(), 'Pixel‮9​\n(code\t123456)\u0007')
+      )
+      if (outcome.kind !== 'approval') throw new Error('expected approval')
+      expect(outcome.name).toBe('Pixel 9 (code 123456)')
+      const blank = (() => {
+        store.startPairing()
+        const again = ask(server(), requester(deviceIdentity(), '​‮ '))
+        return again.outcome.kind === 'approval' ? again.outcome.name : ''
+      })()
+      expect(blank).toBe('Unnamed device')
+    })
+
+    it('someone in the middle shows different codes on the two screens', () => {
+      // They run one handshake with the device (posing as the host) and one with the host (posing
+      // as the device). Each hash covers that handshake's keys only, so the codes cannot match.
+      store.startPairing()
+      const impostorStore = createAccessStore({
+        path: join(dir, 'impostor.json'),
+        now: () => 1_000_000
+      })
+      impostorStore.startPairing()
+      const toDevice = ask(
+        createSecureServerHandshake({
+          store: impostorStore,
+          maxMessageBytes: MAX,
+          acceptsRequests: true
+        })
+      )
+      const toHost = ask()
+      if (toDevice.outcome.kind !== 'approval' || toHost.outcome.kind !== 'approval') {
+        throw new Error('expected two questions')
+      }
+      expect(toDevice.step!.approval!.code).not.toBe(toHost.outcome.code)
+      // And the device would pin the impostor's key, not the host's.
+      expect(toDevice.step!.approval!.hostFingerprint).not.toBe(fingerprint())
+    })
+
+    it('still checks a pinned host when the device has one', () => {
+      store.startPairing()
+      const device = createSecureClientHandshake({
+        pinnedFingerprint: '0'.repeat(64),
+        identity: deviceIdentity(),
+        signIn: { type: 'request', name: 'Pixel 9' },
+        maxMessageBytes: MAX
+      })
+      const host = server()
+      const reply = host.receive(device.start())
+      expect(() => device.receive(reply.frames[0]!)).toThrow(/not the one this device paired with/)
+    })
+
+    it('needs a fingerprint to sign in or pair with a QR', () => {
+      expect(() =>
+        createSecureClientHandshake({
+          identity: deviceIdentity(),
+          signIn: { type: 'auth', deviceId: 'x' },
+          maxMessageBytes: MAX
+        })
+      ).toThrow(SecureHandshakeError)
+    })
+
+    it('derives six digits from the handshake hash and both random values', () => {
+      const h = Buffer.alloc(32)
+      const nd = Buffer.alloc(32, 1)
+      const nh = Buffer.alloc(32, 2)
+      expect(approvalCode(h, nd, nh)).toMatch(/^\d{6}$/)
+      expect(approvalCode(h, nd, nh)).toBe(approvalCode(h, nd, nh))
+      expect(approvalCode(h, nd, nh)).not.toBe(approvalCode(Buffer.alloc(32, 1), nd, nh))
+      expect(approvalCode(h, nd, nh)).not.toBe(approvalCode(h, Buffer.alloc(32, 3), nh))
+      expect(approvalCode(h, nd, nh)).not.toBe(approvalCode(h, nd, Buffer.alloc(32, 3)))
     })
   })
 

@@ -15,6 +15,31 @@ export interface RemoteWorkspaceLink {
    * `serve attach` is appended. Unset means `styr`.
    */
   server?: string
+  /**
+   * Set for another Styr on the same network that this desktop paired with as a device
+   * (Settings → Connections → Other computers): reached over its network listener, not ssh, and
+   * named by its key's fingerprint, whose credentials are in `~/.styr/lan-hosts.json`. `host` is
+   * then only this computer's name for it, never handed to ssh.
+   */
+  lan?: { fingerprint: string }
+}
+
+/** Another computer this desktop paired with as a device, as Settings lists it: never its key. */
+export interface LanHostInfo {
+  /** SHA-256 of its identity key, pinned at pairing. */
+  fingerprint: string
+  name: string
+  address: string
+  port: number
+  pairedAt: string
+}
+
+/** A workspace another computer shares, as Add computer offers it. */
+export interface LanBoard {
+  id: string
+  name: string
+  /** This desktop already has a workspace linked to it. */
+  linked: boolean
 }
 
 /**
@@ -79,6 +104,8 @@ export interface RemoteWorkspaceDraft {
   workspaceId: string
   /** A server command other than the default; no UI asks for one (setup installs it there). */
   server?: string
+  /** Another Styr on the network, by its fingerprint (`RemoteWorkspaceLink.lan`). */
+  lan?: { fingerprint: string }
 }
 
 /** What New workspace → Remote sends: the guided setup (`docs/architecture/remote.md`). */

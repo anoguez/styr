@@ -1,10 +1,10 @@
 import { generateKeyPairSync } from 'node:crypto'
 import { createConnection, type Socket } from 'node:net'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import type { AccessStore } from '@host/remoteAccess/accessStore.js'
 import { createSecureClientHandshake } from '@host/remoteAccess/secureClient.js'
-import { CLOSE, type NetworkListener } from './wsListener.js'
+import { CLOSE, limitKey, type NetworkListener } from './wsListener.js'
 import { listenOnLoopback, networkHost, TestPhone, type Credentials } from './networkFixture.js'
 
 const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -325,14 +325,308 @@ describe('network listener', () => {
             sourcesOf: () => []
           }),
         log: () => {},
-        handshakeMs: 50
+        handshakeMs: 50,
+        host: '127.0.0.1'
       },
-      '127.0.0.1',
       0
     )
     const device = phone()
     await device.opened()
     expect((await device.waitClosed()).code).toBe(CLOSE.TIMEOUT)
+  })
+
+  /** A listener whose admission rule the test decides, on loopback. */
+  async function listenWith(admit: (local: string, remote: string) => string | undefined) {
+    await listener.close()
+    store = host.store()
+    const { startNetworkListener } = await import('./wsListener.js')
+    listener = await startNetworkListener(
+      {
+        hub: host.hub,
+        store,
+        policy: host.policy,
+        log: (message) => host.state.log.push(message),
+        host: '127.0.0.1',
+        admit
+      },
+      0
+    )
+  }
+
+  it("drops a socket from outside this computer's networks before reading a byte", async () => {
+    const seen: [string, string][] = []
+    await listenWith((local, remote) => {
+      seen.push([local, remote])
+      return 'not on this network'
+    })
+    // A pairing offer is open: from outside the network it cannot even be tried.
+    const offer = store.startPairing()
+    const device = phone()
+    await expect(device.opened()).rejects.toThrow()
+    // A raw socket gets no answer at all, not even an HTTP status.
+    const raw: Socket = createConnection({ host: '127.0.0.1', port: listener.address.port })
+    let answered = ''
+    raw.on('data', (chunk) => (answered += chunk.toString()))
+    raw.on('error', () => undefined)
+    raw.write('GET / HTTP/1.1\r\nHost: x\r\n\r\n')
+    await new Promise((resolve) => raw.once('close', resolve))
+    expect(answered).toBe('')
+    expect(seen[0]).toEqual(['127.0.0.1', '127.0.0.1'])
+    expect(host.state.log.some((line) => line.includes('not on this network'))).toBe(true)
+    expect(host.hub.clientCount()).toBe(0)
+    // The pairing offer was not spent: nothing reached the handshake.
+    expect(store.pairing()?.secret).toBe(offer.secret)
+  })
+
+  it('checks again at the upgrade, in case this computer left the network meanwhile', async () => {
+    let calls = 0
+    // Admitted when the socket opens, refused when it asks to upgrade.
+    await listenWith(() => (++calls > 1 ? 'left the network' : undefined))
+    const device = phone()
+    await expect(device.opened()).rejects.toThrow()
+    expect(calls).toBe(2)
+    expect(host.state.log.some((line) => line.includes('left the network'))).toBe(true)
+    expect(host.hub.clientCount()).toBe(0)
+  })
+
+  describe('pairing by approval', () => {
+    /** The host's screen: the questions it got, and an answer to give. */
+    function screen() {
+      const asked: { name: string; code: string; source: string; answer(allow: boolean): void }[] =
+        []
+      let withdrawn = 0
+      let busy = false
+      const port = {
+        ask(
+          question: { name: string; code: string; source: string },
+          answer: (allow: boolean) => void
+        ) {
+          if (busy) return undefined
+          asked.push({ ...question, answer })
+          return { withdraw: () => void withdrawn++ }
+        }
+      }
+      return {
+        port,
+        asked,
+        withdrawn: () => withdrawn,
+        setBusy: (value: boolean) => (busy = value)
+      }
+    }
+
+    async function listenAsking(ui: ReturnType<typeof screen>, approvalMs?: number) {
+      await listener.close()
+      store = host.store()
+      listener = await listenOnLoopback(host, store, { approvals: ui.port, approvalMs })
+    }
+
+    it('waits for the answer, with both screens on the same code, then pairs', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const device = phone()
+      await device.opened()
+      const pending = device.request('Pixel 9')
+      await vi.waitFor(() => expect(ui.asked).toHaveLength(1))
+      expect(ui.asked[0]).toMatchObject({ name: 'Pixel 9', source: '127.0.0.1' })
+      expect(ui.asked[0]!.code).toBe(device.approvalCode)
+      // Nothing reaches the hub while the question waits.
+      expect(host.hub.clientCount()).toBe(0)
+      ui.asked[0]!.answer(true)
+      const credentials = await pending
+      expect(credentials).toBeDefined()
+      expect(store.devices().map((entry) => entry.id)).toEqual([credentials!.deviceId])
+      await vi.waitFor(() => expect(host.hub.clientCount()).toBe(1))
+
+      // It signs in with its own key from then on.
+      const again = phone()
+      await again.opened()
+      await expect(again.authenticate(credentials!)).resolves.toBe(true)
+    })
+
+    it('is let go, with nothing added, when turned down', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const device = phone()
+      await device.opened()
+      const pending = device.request('Pixel 9')
+      await vi.waitFor(() => expect(ui.asked).toHaveLength(1))
+      ui.asked[0]!.answer(false)
+      await expect(pending).resolves.toBeUndefined()
+      expect((await device.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
+      expect(store.devices()).toEqual([])
+    })
+
+    it('is refused at once while no Add device window is open, asking nobody', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      const device = phone()
+      await device.opened()
+      await expect(device.request('Pixel 9')).resolves.toBeUndefined()
+      expect(ui.asked).toEqual([])
+    })
+
+    it('turns a second device away as busy while one question waits', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      ui.setBusy(true)
+      const device = phone()
+      await device.opened()
+      await expect(device.request('Pixel 9')).resolves.toBeUndefined()
+      expect((await device.waitClosed()).code).toBe(CLOSE.BUSY)
+    })
+
+    it('withdraws the question when the device leaves or is not answered in time', async () => {
+      const ui = screen()
+      await listenAsking(ui, 80)
+      store.startPairing()
+      const leaving = phone()
+      await leaving.opened()
+      void leaving.request('Pixel 9')
+      await vi.waitFor(() => expect(ui.asked).toHaveLength(1))
+      leaving.close()
+      await vi.waitFor(() => expect(ui.withdrawn()).toBe(1))
+      // It saw this window's code: the window closes, so no other code can be tried in it.
+      expect(store.pairing()).toBeUndefined()
+      expect(host.state.log.some((line) => line.includes('began pairing and stopped'))).toBe(true)
+
+      store.startPairing()
+      const slow = phone()
+      await slow.opened()
+      void slow.request('iPad')
+      await vi.waitFor(() => expect(ui.asked).toHaveLength(2))
+      expect((await slow.waitClosed()).code).toBe(CLOSE.TIMEOUT)
+      expect(ui.withdrawn()).toBe(2)
+      // An answer after that changes nothing.
+      ui.asked[1]!.answer(true)
+      expect(store.devices()).toEqual([])
+    })
+
+    it('closes the window when a device that saw the host value leaves before the question', async () => {
+      // A relay works out the host's code from its value and hangs up when it does not match:
+      // without this, it could look at code after code with nothing shown.
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const peeker = phone()
+      await peeker.opened()
+      void peeker.request('Pixel 9', { revealAfter: false })
+      await vi.waitFor(() => expect(peeker.sawHostValue).toBe(true))
+      expect(ui.asked).toEqual([])
+      peeker.close()
+      await vi.waitFor(() => expect(store.pairing()).toBeUndefined())
+      // A second look needs a new code, made by the person at this computer.
+      const again = phone()
+      await again.opened()
+      await expect(again.request('Pixel 9')).resolves.toBeUndefined()
+      expect(ui.asked).toEqual([])
+    })
+
+    it('keeps the window open for a device that was allowed', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const device = phone()
+      await device.opened()
+      const pending = device.request('Pixel 9')
+      await vi.waitFor(() => expect(ui.asked).toHaveLength(1))
+      ui.asked[0]!.answer(true)
+      await expect(pending).resolves.toBeDefined()
+      device.close()
+      await tick(30)
+      expect(host.state.log.some((line) => line.includes('began pairing and stopped'))).toBe(false)
+    })
+
+    it('gives one look per window, even to requests made side by side', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const first = phone()
+      const second = phone()
+      await Promise.all([first.opened(), second.opened()])
+      void first.request('Pixel 9', { revealAfter: false })
+      await vi.waitFor(() => expect(first.sawHostValue).toBe(true))
+      // The first holds the window: the second is refused before it learns anything.
+      await expect(second.request('iPad')).resolves.toBeUndefined()
+      expect(second.sawHostValue).toBe(false)
+      expect((await second.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
+      first.close()
+      await vi.waitFor(() => expect(store.pairing()).toBeUndefined())
+    })
+
+    it('a stale request cannot close a window opened since', async () => {
+      const ui = screen()
+      await listenAsking(ui)
+      store.startPairing()
+      const peeker = phone()
+      await peeker.opened()
+      void peeker.request('Pixel 9', { revealAfter: false })
+      await vi.waitFor(() => expect(peeker.sawHostValue).toBe(true))
+      // The person closes Add device and opens it again while the peek is still connected.
+      store.cancelPairing()
+      const fresh = store.startPairing()
+      peeker.close()
+      await tick(50)
+      expect(store.pairing()).toBe(fresh)
+    })
+
+    it('a host that takes no requests (styr serve) refuses them', async () => {
+      store.startPairing()
+      const device = phone()
+      await device.opened()
+      await expect(device.request('Pixel 9')).resolves.toBeUndefined()
+      expect((await device.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
+      expect(store.devices()).toEqual([])
+    })
+  })
+
+  describe('a peer that holds slots', () => {
+    /** A socket that upgrades and then says nothing. */
+    function idle(): Promise<{ ws: WebSocket; status: number | 'open' }> {
+      return new Promise((resolve) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${listener.address.port}/`)
+        ws.on('open', () => resolve({ ws, status: 'open' }))
+        ws.on('unexpected-response', (_request, response) =>
+          resolve({ ws, status: response.statusCode ?? 0 })
+        )
+        ws.on('error', () => undefined)
+      })
+    }
+
+    it('may not hold more than its share of the handshake slots', async () => {
+      // Loopback gets a larger share than a network address (every ssh-tunnelled device is
+      // 127.0.0.1), still half the global 16, so another address always has room.
+      const held = await Promise.all(Array.from({ length: 8 }, () => idle()))
+      const statuses = held.map((entry) => entry.status)
+      expect(statuses.filter((status) => status === 'open')).toHaveLength(8)
+      const more = await idle()
+      expect(more.status).toBe(429)
+      for (const entry of [...held, more]) entry.ws.terminate()
+    })
+
+    it('is turned away after hanging up before signing in, again and again', async () => {
+      // Opening, saying nothing and closing just before the timeout used to cost nothing.
+      for (let round = 0; round < 5; round++) {
+        const entry = await idle()
+        expect(entry.status).toBe('open')
+        entry.ws.close()
+        await tick(30)
+      }
+      const after = await idle()
+      expect(after.status).toBe(429)
+      expect(host.state.log.some((line) => line.includes('too many failed attempts'))).toBe(true)
+      after.ws.terminate()
+    })
+  })
+
+  it('counts IPv6 addresses by their /64, so one machine cannot slip the limits', () => {
+    expect(limitKey('192.168.1.20')).toBe('192.168.1.20')
+    expect(limitKey('fd12:3456:0:1:aaaa::1')).toBe(limitKey('fd12:3456:0:1:bbbb::2'))
+    expect(limitKey('fd12:3456:0:1::1')).toBe('fd12:3456:0:1::/64')
+    expect(limitKey('fd12:3456:0:2::1')).not.toBe(limitKey('fd12:3456:0:1::1'))
+    expect(limitKey('fe80::1')).toBe('fe80:0:0:0::/64')
   })
 
   it('refuses proxy headers, browser origins and unknown paths', async () => {
@@ -405,9 +699,9 @@ describe('network listener', () => {
         store,
         policy: host.policy,
         log: () => {},
-        onConnections: (count) => counts.push(count)
+        onConnections: (count) => counts.push(count),
+        host: '127.0.0.1'
       },
-      '127.0.0.1',
       0
     )
     const credentials = await pairDevice()

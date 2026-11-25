@@ -1,13 +1,22 @@
-import type { AccessDevice, AccessInterface, AccessState } from '@core/types.js'
+import type {
+  AccessDevice,
+  AccessInterface,
+  AccessState,
+  AccessWorkspace,
+  LanHostInfo,
+  RemoteState,
+  WorkspaceOverview
+} from '@core/types.js'
 
 /**
- * How Settings → Remote access reads (`docs/architecture/remote-access.md`). Pure, so the wording
+ * How Settings → Connections reads (`docs/architecture/remote-access.md`). Pure, so the wording
  * and the QR geometry are tested without a window.
  */
 
 const KIND_LABEL: Record<AccessInterface['kind'], string> = {
   loopback: 'this computer only',
-  tailscale: 'Tailscale'
+  lan: 'local network',
+  tailscale: 'VPN'
 }
 
 export function interfaceLabel(choice: AccessInterface): string {
@@ -19,14 +28,9 @@ export function interfaceLabel(choice: AccessInterface): string {
 export const SHIELDS_UP_WARNING =
   'Tailscale Shields Up is on, so this computer blocks incoming connections from your devices: pairing and sign-in time out. In Tailscale, turn on Allow incoming connections (or run tailscale set --shields-up=false), then pair again.'
 
-/**
- * Shields Up matters while devices have to connect in: not once this computer is on a relay,
- * which it reaches by connecting out.
- */
-export function showShieldsUpWarning(
-  state: Pick<AccessState, 'shieldsUp' | 'relayStatus'>
-): boolean {
-  return state.shieldsUp === true && state.relayStatus !== 'connected'
+/** Shields Up matters only while devices may connect: it blocks them over Tailscale. */
+export function showShieldsUpWarning(state: Pick<AccessState, 'shieldsUp' | 'enabled'>): boolean {
+  return state.shieldsUp === true && state.enabled
 }
 
 /** A device is paired but no workspace is shared, so it has nothing to open. */
@@ -34,23 +38,6 @@ export function needsSharedWorkspace(
   state: Pick<AccessState, 'devices' | 'workspaceShared'>
 ): boolean {
   return state.devices.length > 0 && !state.workspaceShared
-}
-
-/** The interfaces to offer: the saved address stays in the list, marked, when it has gone away. */
-export function interfaceOptions(
-  state: Pick<AccessState, 'interfaces' | 'bindAddress'>
-): { value: string; label: string }[] {
-  const options = state.interfaces.map((choice) => ({
-    value: choice.address,
-    label: interfaceLabel(choice)
-  }))
-  if (
-    state.bindAddress &&
-    !state.interfaces.some((choice) => choice.address === state.bindAddress)
-  ) {
-    options.push({ value: state.bindAddress, label: `${state.bindAddress} · not available now` })
-  }
-  return options
 }
 
 /** A fingerprint in groups of four, so two can be compared by eye. */
@@ -96,40 +83,84 @@ export function qrPath(modules: boolean[][], quiet = 4): { path: string; size: n
   return { path: runs.join(''), size }
 }
 
-/** Why the listener is not up, or what it is doing, for the line under the switch. */
+/** What the switch is doing, for the line under it. */
 export function listenerStatus(state: AccessState): string {
   if (state.listening) {
-    return `Listening on ${state.bindAddress}:${state.port}. Only devices you paired can sign in.`
+    if (state.interfaces.length === 0) {
+      return 'On, but this computer is on no network a device could reach. Connect it to Wi-Fi, Ethernet or a VPN.'
+    }
+    return 'Only devices you pair can sign in. Quitting Styr, or this computer sleeping, ends their connections.'
   }
-  if (!state.bindAddress) return 'Pick a network interface to listen on.'
-  return 'Not listening. No port is open.'
+  return 'Off. No port is open.'
 }
 
-/** The line under "Connect through a relay": whether this computer is registered on it, or why not. */
-export function relayStatusLine(state: AccessState): { text: string; problem: boolean } {
-  const { relay, relayStatus, relayError } = state
-  if (!relay.enabled)
-    return { text: 'Off. Devices connect in directly, if at all.', problem: false }
-  const where = `${relay.address}:${relay.port}`
-  switch (relayStatus) {
+/** The device that paired while the Add device dialog was open: one whose id was not there before. */
+export function newlyPaired(
+  before: ReadonlySet<string>,
+  devices: readonly AccessDevice[]
+): AccessDevice | undefined {
+  return devices.find((device) => !before.has(device.id))
+}
+
+/**
+ * What the Add device dialog offers to share before showing the QR: the workspaces already shared,
+ * or, when none is, the open one (if it is this computer's). The user confirms the choice; nothing
+ * is shared without it.
+ */
+export function initialShareChoice(
+  workspaces: readonly AccessWorkspace[],
+  openId: string
+): Set<string> {
+  const shared = workspaces.filter((entry) => entry.shared).map((entry) => entry.id)
+  if (shared.length > 0) return new Set(shared)
+  return new Set(workspaces.some((entry) => entry.id === openId) ? [openId] : [])
+}
+
+/** The line beside the page's title: off, waiting, or who is connected. */
+export function connectionSummary(
+  state: Pick<AccessState, 'enabled' | 'listening' | 'devices'>
+): string {
+  if (!state.enabled) return 'Off'
+  if (!state.listening) return 'Not listening'
+  const connected = state.devices.filter((device) => device.connected).length
+  if (connected > 0) return `${connected} ${connected === 1 ? 'device' : 'devices'} connected`
+  const paired = state.devices.length
+  return paired === 0 ? 'On · no devices yet' : `On · ${paired} paired`
+}
+
+/** Six digits as two groups of three, easier to compare at a glance: `482 915`. */
+export function groupedCode(code: string): string {
+  return code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code
+}
+
+/**
+ * A paired computer's line under Other computers: whether this desktop is connected to it now,
+ * from the remote router's state of the host its workspaces link to.
+ */
+export function lanHostStatus(
+  host: LanHostInfo,
+  overview: WorkspaceOverview,
+  remote: RemoteState
+): { connected: boolean; text: string } {
+  const stubs = overview.workspaces.filter(
+    (workspace) => workspace.remote?.lan?.fingerprint === host.fingerprint
+  )
+  if (stubs.length === 0) return { connected: false, text: 'Paired · no workspace open here' }
+  const state = remote.hosts.find((entry) => entry.host === stubs[0]!.remote!.host)
+  const count = `${stubs.length} workspace${stubs.length === 1 ? '' : 's'}`
+  switch (state?.status) {
     case 'connected':
-      return { text: `Connected to the relay at ${where}.`, problem: false }
+      return { connected: true, text: `Connected · ${count}` }
     case 'connecting':
-      return { text: `Connecting to the relay at ${where}…`, problem: false }
-    case 'notAllowed':
-      return { text: relayError ?? 'Not allowed on this relay.', problem: true }
-    case 'unreachable':
+      return { connected: false, text: `Connecting… · ${count}` }
+    case 'reconnecting':
       return {
-        text: ['Relay unreachable.', relayError, 'Trying again.'].filter(Boolean).join(' '),
-        problem: true
+        connected: false,
+        text: `Unreachable${state.lastError ? `: ${state.lastError}` : ''} · ${count}`
       }
-    case 'replaced':
-    case 'off':
-      return { text: relayError ?? 'Not connected.', problem: true }
+    case 'incompatible':
+      return { connected: false, text: `Runs another version of Styr · ${count}` }
+    default:
+      return { connected: false, text: `Offline · ${count}` }
   }
-}
-
-/** A device can pair while the listener is up, or this computer is registered on the relay. */
-export function canPair(state: Pick<AccessState, 'listening' | 'relayStatus'>): boolean {
-  return state.listening || state.relayStatus === 'connected'
 }

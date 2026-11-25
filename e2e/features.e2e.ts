@@ -385,3 +385,52 @@ test('REST sources are tested, previewed and imported only with the flag on', as
   // The refused test above fails its handler on purpose.
   styr.expectNoErrors(/sources:restTest/)
 })
+
+test('Connections: one switch, choose what to share, then a QR code', async () => {
+  const { page } = styr
+  await page.getByRole('button', { name: /^Settings/ }).click()
+  const settings = page.locator('[aria-label="Settings"]')
+  await settings.getByRole('button', { name: /^Connections/ }).click()
+
+  // Off and never used: one button, and nothing listens.
+  expect((await page.evaluate(() => window.api.access.state())).listening).toBe(false)
+  await settings.getByRole('button', { name: 'Get started' }).click()
+  const intro = page.locator('[aria-label="Connect a device to this computer"]')
+  await expect(intro.getByText('Pick up where you left off')).toBeVisible()
+  await intro.getByRole('button', { name: 'Get started' }).click()
+
+  // Switched on; nothing is shared yet, so it asks what a device may open, the open one ticked.
+  const share = page.getByRole('heading', { name: 'Choose what it can open' })
+  await expect(share).toBeVisible()
+  const state = await page.evaluate(() => window.api.access.state())
+  expect(state.listening).toBe(true)
+  expect(state.workspaceShared).toBe(false)
+  await page.getByRole('button', { name: 'Continue' }).click()
+
+  // The QR, with an offer behind it; closing the dialog withdraws the offer.
+  await expect(page.getByRole('img', { name: 'Pairing QR code' })).toBeVisible()
+  expect((await page.evaluate(() => window.api.access.state())).pairingExpiresAt).toBeDefined()
+  expect((await page.evaluate(() => window.api.access.state())).workspaceShared).toBe(true)
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expect(page.getByRole('img', { name: 'Pairing QR code' })).toBeHidden()
+  await expect
+    .poll(async () => (await page.evaluate(() => window.api.access.state())).pairingExpiresAt)
+    .toBeUndefined()
+
+  // Now the page shows the switch and the shared workspace, which can be switched off at once.
+  await expect(settings.getByText('Allow devices on your network to connect')).toBeVisible()
+  const shareSwitch = settings.getByRole('switch', { name: /^Share .* with paired devices$/ })
+  await expect(shareSwitch.first()).toHaveAttribute('aria-checked', 'true')
+  await shareSwitch.first().click()
+  await expect
+    .poll(async () => (await page.evaluate(() => window.api.access.state())).workspaceShared)
+    .toBe(false)
+
+  await settings.getByRole('switch', { name: 'Allow devices on your network to connect' }).click()
+  await expect
+    .poll(async () => (await page.evaluate(() => window.api.access.state())).listening)
+    .toBe(false)
+  await settings.getByRole('button', { name: 'Close' }).first().click()
+  await expect(settings).toBeHidden()
+  styr.expectNoErrors()
+})

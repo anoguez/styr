@@ -8,6 +8,8 @@ import type { TerminalBenchRecord } from '../core/terminalBench.js'
 import type {
   AccessConfigPatch,
   AccessPairing,
+  LanBoard,
+  LanHostInfo,
   AccessState,
   AgentCliReport,
   McpSetupReport,
@@ -275,26 +277,57 @@ const api = {
     /** Starts the server if needed, then connects. */
     connect: (host: string): Promise<void> => ipcRenderer.invoke('remote:connect', host)
   },
+  lan: {
+    /** Settings → Connections → Other computers: the computers this one paired with. */
+    hosts: (): Promise<LanHostInfo[]> => ipcRenderer.invoke('lan:hosts'),
+    /**
+     * Asks the computer at `address` (`192.168.1.20`, `studio.local:7878`) to pair by approval;
+     * `onPairCode` gets the code to show while the person there decides.
+     */
+    pair: (address: string, name: string): Promise<{ code: string; name: string }> =>
+      ipcRenderer.invoke('lan:pair', address, name),
+    /**
+     * After the other computer allowed this one: whether it showed the same code. Only a yes
+     * keeps the pairing; anything else discards it.
+     */
+    confirmPair: (matched: boolean): Promise<LanHostInfo | null> =>
+      ipcRenderer.invoke('lan:confirmPair', matched),
+    cancelPair: (): Promise<void> => ipcRenderer.invoke('lan:cancelPair'),
+    onPairCode: (handler: (update: { code: string }) => void): (() => void) =>
+      subscribe('lan:pairCode', handler as (...args: never[]) => void),
+    /** The workspaces a paired computer shares with this one. */
+    boards: (fingerprint: string): Promise<LanBoard[]> =>
+      ipcRenderer.invoke('lan:boards', fingerprint),
+    /** Links one of them here as a remote workspace and opens it. */
+    addWorkspace: (draft: {
+      fingerprint: string
+      workspaceId: string
+      name: string
+    }): Promise<unknown> => ipcRenderer.invoke('lan:addWorkspace', draft),
+    /** Forgets a computer and its key. */
+    remove: (fingerprint: string): Promise<boolean> => ipcRenderer.invoke('lan:remove', fingerprint)
+  },
   access: {
-    /** Settings → Remote access: the listener, the interfaces to pick from and the paired devices. */
+    /** Settings → Connections: the switch, where devices reach this computer, devices, sharing. */
     state: (): Promise<AccessState> => ipcRenderer.invoke('access:state'),
     onChanged: (handler: (state: AccessState) => void): (() => void) =>
       subscribe('access:changed', handler as (...args: never[]) => void),
-    /**
-     * Switches the listener or the relay on or off, or moves it; a listener that fails is left off
-     * with `error` set, a relay that cannot be reached says why in `relayError`.
-     */
+    /** Switches access on or off, or keep-awake; a listener that fails is left off with `error` set. */
     configure: (patch: AccessConfigPatch): Promise<AccessState> =>
       ipcRenderer.invoke('access:configure', patch),
     /** The QR for one new device, good for two minutes and one use. */
     pair: (): Promise<AccessPairing> => ipcRenderer.invoke('access:pair'),
     cancelPair: (): Promise<void> => ipcRenderer.invoke('access:cancelPair'),
+    /** Allows or turns down the device waiting to pair (`AccessState.request`). */
+    answer: (requestId: string, allow: boolean): Promise<AccessState> =>
+      ipcRenderer.invoke('access:answer', requestId, allow),
     revoke: (deviceId: string): Promise<AccessState> =>
       ipcRenderer.invoke('access:revoke', deviceId),
     /** Asks Tailscale whether Shields Up is on; the answer lands in `shieldsUp`. */
     checkNetwork: (): Promise<AccessState> => ipcRenderer.invoke('access:checkNetwork'),
-    /** Turns `remoteAccess` on for the open workspace and saves it. */
-    shareWorkspace: (): Promise<AccessState> => ipcRenderer.invoke('access:shareWorkspace')
+    /** Turns `remoteAccess` on or off for one of this computer's workspaces, and saves it. */
+    setShared: (workspaceId: string, shared: boolean): Promise<AccessState> =>
+      ipcRenderer.invoke('access:setShared', workspaceId, shared)
   },
   settings: {
     get: (workspaceId?: string): Promise<Settings> =>
