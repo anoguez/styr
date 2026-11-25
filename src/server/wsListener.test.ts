@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import type { AccessStore } from '@host/remoteAccess/accessStore.js'
 import { createSecureClientHandshake } from '@host/remoteAccess/secureClient.js'
-import { CLOSE, type NetworkListener } from './wsListener.js'
+import { CLOSE, limitKey, type NetworkListener } from './wsListener.js'
 import { listenOnLoopback, networkHost, TestPhone, type Credentials } from './networkFixture.js'
 
 const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -508,6 +508,53 @@ describe('network listener', () => {
       expect((await device.waitClosed()).code).toBe(CLOSE.UNAUTHORIZED)
       expect(store.devices()).toEqual([])
     })
+  })
+
+  describe('a peer that holds slots', () => {
+    /** A socket that upgrades and then says nothing. */
+    function idle(): Promise<{ ws: WebSocket; status: number | 'open' }> {
+      return new Promise((resolve) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${listener.address.port}/`)
+        ws.on('open', () => resolve({ ws, status: 'open' }))
+        ws.on('unexpected-response', (_request, response) =>
+          resolve({ ws, status: response.statusCode ?? 0 })
+        )
+        ws.on('error', () => undefined)
+      })
+    }
+
+    it('may not hold more than its share of the handshake slots', async () => {
+      // Loopback gets a larger share than a network address (every ssh-tunnelled device is
+      // 127.0.0.1), still half the global 16, so another address always has room.
+      const held = await Promise.all(Array.from({ length: 8 }, () => idle()))
+      const statuses = held.map((entry) => entry.status)
+      expect(statuses.filter((status) => status === 'open')).toHaveLength(8)
+      const more = await idle()
+      expect(more.status).toBe(429)
+      for (const entry of [...held, more]) entry.ws.terminate()
+    })
+
+    it('is turned away after hanging up before signing in, again and again', async () => {
+      // Opening, saying nothing and closing just before the timeout used to cost nothing.
+      for (let round = 0; round < 5; round++) {
+        const entry = await idle()
+        expect(entry.status).toBe('open')
+        entry.ws.close()
+        await tick(30)
+      }
+      const after = await idle()
+      expect(after.status).toBe(429)
+      expect(host.state.log.some((line) => line.includes('too many failed attempts'))).toBe(true)
+      after.ws.terminate()
+    })
+  })
+
+  it('counts IPv6 addresses by their /64, so one machine cannot slip the limits', () => {
+    expect(limitKey('192.168.1.20')).toBe('192.168.1.20')
+    expect(limitKey('fd12:3456:0:1:aaaa::1')).toBe(limitKey('fd12:3456:0:1:bbbb::2'))
+    expect(limitKey('fd12:3456:0:1::1')).toBe('fd12:3456:0:1::/64')
+    expect(limitKey('fd12:3456:0:2::1')).not.toBe(limitKey('fd12:3456:0:1::1'))
+    expect(limitKey('fe80::1')).toBe('fe80:0:0:0::/64')
   })
 
   it('refuses proxy headers, browser origins and unknown paths', async () => {

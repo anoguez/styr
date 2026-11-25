@@ -368,6 +368,12 @@ test('another computer on the network: pair by approval, open its shared workspa
     await expect(prompt.getByLabel(`Code ${code}`)).toBeVisible()
     await prompt.getByRole('button', { name: 'Allow' }).click()
 
+    // B keeps nothing until the person there confirms A showed the same code.
+    await expect(b.page.getByText('Did it show this code?')).toBeVisible()
+    await expect(b.page.getByLabel(`Code ${code}`)).toBeVisible()
+    expect(await b.page.evaluate(() => window.api.lan.hosts())).toEqual([])
+    await b.page.getByRole('button', { name: 'Yes, it matched' }).click()
+
     // B lists what A shares, and opens it: A's board, on B.
     const open = b.page.getByRole('heading', { name: 'Open a workspace on Computer A' })
     await expect(open).toBeVisible()

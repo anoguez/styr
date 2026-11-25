@@ -177,10 +177,12 @@ function AddComputerDialog({
   const [name, setName] = useState('')
   const [code, setCode] = useState<string>()
   const [busy, setBusy] = useState(false)
+  /** The other computer allowed this one; the person here has yet to say the codes matched. */
+  const [allowed, setAllowed] = useState<{ code: string; name: string }>()
   const [error, setError] = useState('')
 
   useEffect(() => window.api.lan.onPairCode((update) => setCode(update.code)), [])
-  // Closing while it waits hangs up: nothing is left asking on the other computer.
+  // Closing at any point hangs up, and drops a pairing not yet confirmed here: nothing is kept.
   useEffect(() => () => void window.api.lan.cancelPair(), [])
 
   async function connect(): Promise<void> {
@@ -188,7 +190,7 @@ function AddComputerDialog({
     setError('')
     setCode(undefined)
     try {
-      onPaired(await window.api.lan.pair(address, name || address))
+      setAllowed(await window.api.lan.pair(address, name || address))
     } catch (failure) {
       setError(ipcMessage(failure))
       setCode(undefined)
@@ -197,27 +199,64 @@ function AddComputerDialog({
     }
   }
 
+  async function confirm(matched: boolean): Promise<void> {
+    setError('')
+    try {
+      const host = await window.api.lan.confirmPair(matched)
+      if (host) return onPaired(host)
+      setAllowed(undefined)
+      setCode(undefined)
+      setError(
+        `Nothing was kept. On ${address}, remove this computer under Settings → Connections → ` +
+          'Devices, since it was allowed there.'
+      )
+    } catch (failure) {
+      setError(ipcMessage(failure))
+    }
+  }
+
+  const footer = allowed ? (
+    <>
+      <Button onClick={() => void confirm(false)}>No, they differ</Button>
+      <Button variant="primary" onClick={() => void confirm(true)}>
+        Yes, it matched
+      </Button>
+    </>
+  ) : (
+    <>
+      <Button onClick={onClose}>Cancel</Button>
+      <Button variant="primary" disabled={busy || !address.trim()} onClick={() => void connect()}>
+        {busy ? 'Waiting…' : 'Connect'}
+      </Button>
+    </>
+  )
+
   return (
     <Modal
       title="Add a computer"
       subtitle="Another computer on this network, or on a VPN you share, running Styr."
       onClose={onClose}
-      backdropCloses={!busy}
-      onSubmit={busy ? undefined : () => void connect()}
-      footer={
-        <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            disabled={busy || !address.trim()}
-            onClick={() => void connect()}
-          >
-            {busy ? 'Waiting…' : 'Connect'}
-          </Button>
-        </>
-      }
+      backdropCloses={!busy && !allowed}
+      onSubmit={busy || allowed ? undefined : () => void connect()}
+      footer={footer}
     >
-      {busy && code ? (
+      {allowed ? (
+        <div className="flex flex-col items-center gap-3 py-2 text-center" aria-live="polite">
+          <span className="text-[12.5px] text-dim">
+            {allowed.name} allowed this computer. Did it show this code?
+          </span>
+          <span
+            className="font-mono text-[28px] font-semibold tracking-[0.12em] text-ink"
+            aria-label={`Code ${allowed.code}`}
+          >
+            {groupedCode(allowed.code)}
+          </span>
+          <Hint>
+            Only a yes keeps it. If the codes differed, something else answered or is in between:
+            say no, and nothing is kept here.
+          </Hint>
+        </div>
+      ) : busy && code ? (
         <div className="flex flex-col items-center gap-3 py-2 text-center" aria-live="polite">
           <span className="text-[12.5px] text-dim">
             On {address}, allow this computer in Settings → Connections, after checking it shows

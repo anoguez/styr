@@ -284,8 +284,14 @@ const api = {
      * Asks the computer at `address` (`192.168.1.20`, `studio.local:7878`) to pair by approval;
      * `onPairCode` gets the code to show while the person there decides.
      */
-    pair: (address: string, name: string): Promise<LanHostInfo> =>
+    pair: (address: string, name: string): Promise<{ code: string; name: string }> =>
       ipcRenderer.invoke('lan:pair', address, name),
+    /**
+     * After the other computer allowed this one: whether it showed the same code. Only a yes
+     * keeps the pairing; anything else discards it.
+     */
+    confirmPair: (matched: boolean): Promise<LanHostInfo | null> =>
+      ipcRenderer.invoke('lan:confirmPair', matched),
     cancelPair: (): Promise<void> => ipcRenderer.invoke('lan:cancelPair'),
     onPairCode: (handler: (update: { code: string }) => void): (() => void) =>
       subscribe('lan:pairCode', handler as (...args: never[]) => void),

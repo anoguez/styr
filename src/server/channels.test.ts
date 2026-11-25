@@ -103,6 +103,7 @@ const DESKTOP_ONLY = new Set([
   'remote:connect',
   'lan:hosts',
   'lan:pair',
+  'lan:confirmPair',
   'lan:cancelPair',
   'lan:boards',
   'lan:addWorkspace',

@@ -27,6 +27,12 @@ const MAX_HANDSHAKING = 16
 /** How long a device that asked to pair waits for the person at the host to answer. */
 export const APPROVAL_TIMEOUT_MS = 60_000
 const MAX_PER_ADDRESS = 8
+/**
+ * Handshakes one address may have in flight: well under `MAX_HANDSHAKING`, so one peer cannot hold
+ * every slot and turn the real devices away.
+ */
+const MAX_HANDSHAKING_PER_ADDRESS = 4
+const MAX_HANDSHAKING_PER_LOOPBACK = 8
 /** Every device behind an ssh tunnel is 127.0.0.1, so loopback gets a larger share. */
 const MAX_PER_LOOPBACK = 32
 
@@ -97,6 +103,27 @@ const sourceOf = (socket: Socket): string => normalizeAddress(socket.remoteAddre
 /** The address of this computer the request arrived on. */
 const targetOf = (socket: Socket): string => normalizeAddress(socket.localAddress ?? '')
 
+/**
+ * What the limits count by: an IPv4 address, or an IPv6 address's /64. One machine on a network
+ * may hold a whole /64 (privacy addresses), so counting IPv6 addresses one by one would let it slip
+ * every per-address limit.
+ */
+export function limitKey(source: string): string {
+  if (!source.includes(':')) return source
+  const groups = source.split('::')
+  const head = (groups[0] ?? '').split(':').filter(Boolean)
+  const tail = groups.length > 1 ? (groups[1] ?? '').split(':').filter(Boolean) : []
+  const full = [
+    ...head,
+    ...Array<string>(Math.max(0, 8 - head.length - tail.length)).fill('0'),
+    ...tail
+  ]
+  return `${full
+    .slice(0, 4)
+    .map((group) => group.replace(/^0+(?=.)/, ''))
+    .join(':')}::/64`
+}
+
 /** The admission rule a socket is held to: see `admitConnection`. */
 export type Admit = (local: string, remote: string) => string | undefined
 
@@ -120,6 +147,8 @@ export async function startNetworkListener(
   const sockets = new Set<Socket>()
   const byDevice = new Map<string, Set<Session>>()
   const perAddress = new Map<string, number>()
+  /** Handshakes in flight per `limitKey`. */
+  const handshakingPer = new Map<string, number>()
   let handshaking = 0
   let connected = 0
 
@@ -144,7 +173,8 @@ export async function startNetworkListener(
       socket.destroy()
       return
     }
-    if (limiter.blocked(source)) return refuse('429 Too Many Requests', 'too many failed attempts')
+    const key = limitKey(source)
+    if (limiter.blocked(key)) return refuse('429 Too Many Requests', 'too many failed attempts')
     const proxy = proxyHeader(request.headers)
     if (proxy) return refuse('400 Bad Request', `proxy header ${proxy}`)
     // A browser page cannot be a paired device, and must not be able to try.
@@ -153,7 +183,9 @@ export async function startNetworkListener(
     if (path !== '/' && path !== '/ws') return refuse('404 Not Found', 'unknown path')
     if (
       handshaking >= MAX_HANDSHAKING ||
-      (perAddress.get(source) ?? 0) >= (isLoopback(source) ? MAX_PER_LOOPBACK : MAX_PER_ADDRESS)
+      (handshakingPer.get(key) ?? 0) >=
+        (isLoopback(source) ? MAX_HANDSHAKING_PER_LOOPBACK : MAX_HANDSHAKING_PER_ADDRESS) ||
+      (perAddress.get(key) ?? 0) >= (isLoopback(source) ? MAX_PER_LOOPBACK : MAX_PER_ADDRESS)
     ) {
       return refuse('429 Too Many Requests', 'too many open connections')
     }
@@ -161,8 +193,20 @@ export async function startNetworkListener(
   })
 
   function accept(ws: WebSocket, source: string): void {
+    const key = limitKey(source)
     handshaking++
-    perAddress.set(source, (perAddress.get(source) ?? 0) + 1)
+    handshakingPer.set(key, (handshakingPer.get(key) ?? 0) + 1)
+    perAddress.set(key, (perAddress.get(key) ?? 0) + 1)
+    /** Ends this connection's share of the handshake counts, once. */
+    let handshakeCounted = true
+    const handshakeDone = (): void => {
+      if (!handshakeCounted) return
+      handshakeCounted = false
+      handshaking--
+      const left = (handshakingPer.get(key) ?? 1) - 1
+      if (left > 0) handshakingPer.set(key, left)
+      else handshakingPer.delete(key)
+    }
     let phase: 'handshake' | 'approval' | 'open' | 'closed' = 'handshake'
     /** The question on the host's screen while a request waits, withdrawn if the device goes. */
     let question: { withdraw(): void } | undefined
@@ -197,7 +241,7 @@ export async function startNetworkListener(
     const session: Session = { end: (code, reason) => end(code, reason) }
     let timeout = setTimeout(() => {
       options.log(`Remote access: ${source} did not finish the handshake (${stalled()})`)
-      if (countsFailures(source)) limiter.fail(source)
+      if (countsFailures(source)) limiter.fail(key)
       end(CLOSE.TIMEOUT, 'timeout')
     }, options.handshakeMs ?? HANDSHAKE_TIMEOUT_MS)
     let alive = true
@@ -218,7 +262,7 @@ export async function startNetworkListener(
       alive = true
       if (phase === 'closed') return
       if (isBinary) {
-        if (phase === 'handshake' && countsFailures(source)) limiter.fail(source)
+        if (phase === 'handshake' && countsFailures(source)) limiter.fail(key)
         return end(CLOSE.BAD_REQUEST, 'text frames only')
       }
       const frame = rawToString(data)
@@ -238,7 +282,7 @@ export async function startNetworkListener(
       if (phase === 'approval') {
         // Nothing may come before the answer; the handshake refuses it and the device is let go.
         options.log(`Remote access: ${source} sent a message before its request was answered`)
-        if (countsFailures(source)) limiter.fail(source)
+        if (countsFailures(source)) limiter.fail(key)
         return end(CLOSE.UNAUTHORIZED, 'unauthorized')
       }
       if (phase !== 'handshake') return
@@ -254,12 +298,12 @@ export async function startNetworkListener(
       if (outcome.kind === 'reply') replied = true
       if (outcome.kind === 'denied') {
         options.log(`Remote access: refused ${source} (${outcome.reason})`)
-        if (countsFailures(source)) limiter.fail(source)
+        if (countsFailures(source)) limiter.fail(key)
         end(CLOSE.UNAUTHORIZED, 'unauthorized')
         return
       }
       if (outcome.kind === 'ready') {
-        limiter.reset(source)
+        limiter.reset(key)
         secure = outcome.channel
         open(outcome.deviceId, outcome.paired)
       }
@@ -281,12 +325,12 @@ export async function startNetworkListener(
           options.log(
             `Remote access: ${source}'s request was not allowed (${result.kind === 'denied' ? result.reason : '?'})`
           )
-          if (countsFailures(source)) limiter.fail(source)
+          if (countsFailures(source)) limiter.fail(key)
           return end(CLOSE.UNAUTHORIZED, 'unauthorized')
         }
         phase = 'handshake'
         for (const reply of result.frames) ws.send(reply)
-        limiter.reset(source)
+        limiter.reset(key)
         secure = result.channel
         open(result.deviceId, true)
       }
@@ -308,6 +352,8 @@ export async function startNetworkListener(
       clearTimeout(timeout)
       timeout = setTimeout(() => {
         options.log(`Remote access: ${source}'s request to pair was not answered in time`)
+        // Counted, so one peer cannot hold the only question slot by asking again and again.
+        if (countsFailures(source)) limiter.fail(key)
         end(CLOSE.TIMEOUT, 'timeout')
       }, options.approvalMs ?? APPROVAL_TIMEOUT_MS)
       timeout.unref()
@@ -317,8 +363,7 @@ export async function startNetworkListener(
       clearTimeout(timeout)
       phase = 'open'
       deviceId = id
-      handshaking--
-      handshakeCounted = false
+      handshakeDone()
       // Past the handshake the frame limit is one Noise record's, not the handshake's: a longer
       // message is split into records, each one frame.
       setMaxPayload(ws, SECURE_FRAME_MAX_CHARS)
@@ -340,7 +385,6 @@ export async function startNetworkListener(
       }, options.policy())
     }
 
-    let handshakeCounted = true
     /** Counted in `connected` since `open()`. */
     let counted = false
     ws.on('close', () => {
@@ -351,16 +395,20 @@ export async function startNetworkListener(
       if (phase === 'handshake' && replied) {
         options.log(`Remote access: ${source} hung up at the key check (${stalled()})`)
       }
+      // A peer that hangs up before signing in counts as a failed attempt, as one the host ends
+      // does: otherwise it could open, wait and close forever, holding handshake slots for free.
+      if ((phase === 'handshake' || phase === 'approval') && countsFailures(source)) {
+        limiter.fail(key)
+      }
       clearTimeout(timeout)
       clearInterval(ping)
       const wasOpen = counted
       counted = false
       phase = 'closed'
-      if (handshakeCounted) handshaking--
-      handshakeCounted = false
-      const count = (perAddress.get(source) ?? 1) - 1
-      if (count > 0) perAddress.set(source, count)
-      else perAddress.delete(source)
+      handshakeDone()
+      const count = (perAddress.get(key) ?? 1) - 1
+      if (count > 0) perAddress.set(key, count)
+      else perAddress.delete(key)
       connection?.close()
       if (!wasOpen) return
       const sessions = byDevice.get(deviceId)
@@ -459,19 +507,20 @@ export function guardSockets(
       socket.destroy()
       return
     }
-    const open = perAddress.get(source) ?? 0
+    const key = limitKey(source)
+    const open = perAddress.get(key) ?? 0
     if (open >= (isLoopback(source) ? MAX_SOCKETS_PER_LOOPBACK : MAX_SOCKETS_PER_ADDRESS)) {
       log(`dropped ${source} (too many open sockets)`)
       socket.destroy()
       return
     }
-    perAddress.set(source, open + 1)
+    perAddress.set(key, open + 1)
     sockets.add(socket)
     socket.once('close', () => {
       sockets.delete(socket)
-      const left = (perAddress.get(source) ?? 1) - 1
-      if (left > 0) perAddress.set(source, left)
-      else perAddress.delete(source)
+      const left = (perAddress.get(key) ?? 1) - 1
+      if (left > 0) perAddress.set(key, left)
+      else perAddress.delete(key)
     })
     socket.on('error', () => socket.destroy())
   })

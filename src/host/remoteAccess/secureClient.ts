@@ -1,11 +1,14 @@
-import { sign, type KeyObject } from 'node:crypto'
+import { randomBytes, sign, type KeyObject } from 'node:crypto'
 import { z } from 'zod'
 import { fingerprintOf, signatureValid } from './handshake.js'
 import { NoiseXX, generateNoiseKeyPair, type NoiseKeyPair } from './noise.js'
 import {
   NOISE_PROLOGUE,
   SECURE_PROTOCOL,
+  APPROVAL_NONCE_BYTES,
   approvalCode,
+  approvalCommit,
+  hostNonceSchema,
   SecureFrameChannel,
   decodeFrame,
   hostPayloadSchema,
@@ -36,6 +39,8 @@ export interface SecureClientOptions {
   /** Tests only: fixed keys, for the transcript vector. */
   staticKey?: NoiseKeyPair
   ephemeralKey?: NoiseKeyPair
+  /** Tests only: a fixed random value for a request's code. */
+  deviceNonce?: Buffer
 }
 
 export class SecureHandshakeError extends Error {}
@@ -47,8 +52,9 @@ export type SecureClientStep =
       kind: 'send'
       frames: string[]
       /**
-       * After a request: the code to show while waiting, which the host shows too, and the host's
-       * fingerprint, to pin once it says `paired`.
+       * After a request's reveal: the code to show, which the host shows too, and the host's
+       * fingerprint. A device keeps the pairing only once it says `paired` AND the person here
+       * confirms the codes matched: the host's Allow alone proves nothing to this side.
        */
       approval?: { code: string; hostFingerprint: string }
     }
@@ -71,7 +77,13 @@ export function createSecureClientHandshake(options: SecureClientOptions) {
   if (options.signIn.type !== 'request' && !options.pinnedFingerprint) {
     throw new SecureHandshakeError('signing in or pairing with a QR needs the host fingerprint')
   }
-  let state: 'start' | 'challenge' | 'status' | 'done' = 'start'
+  let state: 'start' | 'challenge' | 'nonce' | 'status' | 'done' = 'start'
+  /** A request's own random value, committed to in message 3 and revealed after the host's. */
+  const deviceNonce =
+    options.signIn.type === 'request'
+      ? (options.deviceNonce ?? randomBytes(APPROVAL_NONCE_BYTES))
+      : undefined
+  let hostFingerprint = ''
   let channel: SecureFrameChannel | undefined
   let deviceId: string | undefined
 
@@ -116,7 +128,8 @@ export function createSecureClientHandshake(options: SecureClientOptions) {
                 type: 'request',
                 name: options.signIn.name,
                 identityKey: options.identity.publicKey,
-                signature
+                signature,
+                commit: approvalCommit(deviceNonce!)
               }
             : {
                 type: 'pair',
@@ -133,15 +146,33 @@ export function createSecureClientHandshake(options: SecureClientOptions) {
       return Buffer.from(JSON.stringify(body))
     })
     channel = new SecureFrameChannel(noise.transport(), options.maxMessageBytes)
+    hostFingerprint = fingerprintOf(host.identityKey)
+    state = options.signIn.type === 'request' ? 'nonce' : 'status'
+    return { kind: 'send', frames: [reply.toString('base64')] }
+  }
+
+  /** The host's random value: reveal this side's, and only now is there a code to show. */
+  function nonce(frame: string): SecureClientStep {
+    let hostNonce: Buffer
+    try {
+      const text = channel!.open(frame)
+      if (text === undefined) return fail('expected the host’s value in one record')
+      const parsed = hostNonceSchema.safeParse(JSON.parse(text))
+      if (!parsed.success) return fail('expected the host’s value')
+      hostNonce = Buffer.from(parsed.data.nonce, 'base64')
+    } catch (error) {
+      if (error instanceof SecureHandshakeError) throw error
+      return fail(`bad message from the host: ${String(error)}`)
+    }
     state = 'status'
-    const frames = [reply.toString('base64')]
-    if (options.signIn.type !== 'request') return { kind: 'send', frames }
     return {
       kind: 'send',
-      frames,
+      frames: channel!.seal(
+        JSON.stringify({ type: 'reveal', nonce: deviceNonce!.toString('base64') })
+      ),
       approval: {
-        code: approvalCode(channel.handshakeHash),
-        hostFingerprint: fingerprintOf(host.identityKey)
+        code: approvalCode(channel!.handshakeHash, deviceNonce!, hostNonce),
+        hostFingerprint
       }
     }
   }
@@ -181,6 +212,7 @@ export function createSecureClientHandshake(options: SecureClientOptions) {
 
     receive(frame: string): SecureClientStep {
       if (state === 'challenge') return challenge(frame)
+      if (state === 'nonce') return nonce(frame)
       if (state === 'status') return status(frame)
       return fail('unexpected frame')
     }

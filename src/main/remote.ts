@@ -25,7 +25,12 @@ import { createRemoteRouter } from '@host/remote/router.js'
 import { openServerSession } from '@host/remote/session.js'
 import { createHostSetupPorts } from '@host/remote/sshRunner.js'
 import { sshTransport } from '@host/remote/sshTransport.js'
-import { parseTarget, requestLanPairing } from '@host/remote/lanLink.js'
+import {
+  parseTarget,
+  requestLanPairing,
+  type LanPairing,
+  type LanTarget
+} from '@host/remote/lanLink.js'
 import { computerName } from '../server/hub.js'
 import { electronHost } from './electronHost.js'
 import { lanHosts, lanTransportFor } from './lanHosts.js'
@@ -198,25 +203,41 @@ function refuseLan(host: string, action: string): void {
 }
 
 /**
- * The router's name for another computer on the LAN: its name and the start of its fingerprint,
- * readable in messages ("studio-a1b2c3 is offline") and the same for all of its workspaces.
+ * The router's name for another computer on the LAN: its name and the first 16 hex characters
+ * (64 bits) of its fingerprint, readable in messages ("studio-a1b2c3d4e5f60718 is offline") and the
+ * same for all of its workspaces. The router keys connections by this name, so two computers must
+ * never share one: a key made to match a short prefix would take over the other's workspaces. Any
+ * other stub already using the name (another fingerprint, or an ssh host) makes this refuse.
  */
 function lanHostKey(info: LanHostInfo): string {
-  const existing = listWorkspaces(loadSettings()).find(
-    (workspace) => workspace.remote?.lan?.fingerprint === info.fingerprint
+  const stubs = listWorkspaces(loadSettings()).flatMap((workspace) =>
+    workspace.remote ? [workspace.remote] : []
   )
-  if (existing?.remote) return existing.remote.host
+  const existing = stubs.find((link) => link.lan?.fingerprint === info.fingerprint)
+  if (existing) return existing.host
   const slug =
     info.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 40) || 'computer'
-  return `${slug}-${info.fingerprint.slice(0, 6)}`
+  const key = `${slug}-${info.fingerprint.slice(0, 16)}`
+  if (stubs.some((link) => link.host === key)) {
+    throw new Error(
+      `Another remote host is already called ${key}. Forget it first, or rename this computer.`
+    )
+  }
+  return key
 }
 
 /** One pairing at a time: the one waiting for the other computer's answer, to cancel. */
 let pairing: { cancel(): void } | undefined
+/**
+ * A pairing the other computer allowed, kept in memory until the person here confirms the code
+ * matched (`lan:confirmPair`). The other computer's Allow proves nothing to this side: whoever
+ * answered at that address could be anyone. Nothing is written before the confirmation.
+ */
+let unconfirmed: { target: LanTarget; label: string; result: LanPairing; code: string } | undefined
 
 /**
  * Settings → Connections → Other computers: pair with another Styr on the network by approval,
@@ -228,26 +249,41 @@ function registerLanHandlers(
   switchWorkspace: (id: string) => unknown
 ): void {
   ipcMain.handle('lan:hosts', (): LanHostInfo[] => lanHosts().list())
-  ipcMain.handle('lan:pair', async (_event, text: unknown, name: unknown): Promise<LanHostInfo> => {
-    requireFlag()
-    const target = typeof text === 'string' ? parseTarget(text) : undefined
-    if (!target) throw new Error('Give the other computer’s address, such as 192.168.1.20.')
-    pairing?.cancel()
-    const request = requestLanPairing(target, computerName() ?? 'Styr desktop', (code) =>
-      electronHost.broadcast('lan:pairCode', { code })
-    )
-    pairing = request
-    try {
-      const result = await request.result
-      const label = typeof name === 'string' && name.trim() ? name : target.address
-      return lanHosts().add(target, label, result)
-    } finally {
-      if (pairing === request) pairing = undefined
+  ipcMain.handle(
+    'lan:pair',
+    async (_event, text: unknown, name: unknown): Promise<{ code: string; name: string }> => {
+      requireFlag()
+      const target = typeof text === 'string' ? parseTarget(text) : undefined
+      if (!target) throw new Error('Give the other computer’s address, such as 192.168.1.20.')
+      pairing?.cancel()
+      unconfirmed = undefined
+      let code = ''
+      const request = requestLanPairing(target, computerName() ?? 'Styr desktop', (shown) => {
+        code = shown
+        electronHost.broadcast('lan:pairCode', { code: shown })
+      })
+      pairing = request
+      try {
+        const result = await request.result
+        const label = typeof name === 'string' && name.trim() ? name.trim() : target.address
+        unconfirmed = { target, label, result, code }
+        return { code, name: label }
+      } finally {
+        if (pairing === request) pairing = undefined
+      }
     }
+  )
+  // The person here says whether the other computer showed the same code. Only a yes keeps it.
+  ipcMain.handle('lan:confirmPair', (_event, matched: unknown): LanHostInfo | null => {
+    const pending = unconfirmed
+    unconfirmed = undefined
+    if (!pending || matched !== true) return null
+    return lanHosts().add(pending.target, pending.label, pending.result)
   })
   ipcMain.handle('lan:cancelPair', () => {
     pairing?.cancel()
     pairing = undefined
+    unconfirmed = undefined
   })
   ipcMain.handle('lan:boards', async (_event, fingerprint: unknown): Promise<LanBoard[]> => {
     requireFlag()

@@ -561,6 +561,24 @@ describe('remote router: merged workspace views', () => {
     expect(await t.call('terminal:openInCode', '/home/me/repo')).toBe('code')
     expect(t.opened).toEqual(['vscode://vscode-remote/ssh-remote+devbox/home/me/repo'])
   })
+
+  it('never hands a computer on the LAN to ssh through the editor', async () => {
+    const t = setup({ active: 'lan-board' })
+    t.setWorkspaces([
+      { id: 'default', name: 'Default' },
+      {
+        id: 'lan-board',
+        name: 'Studio board',
+        remote: { host: 'devbox', workspaceId: 'default', lan: { fingerprint: 'a'.repeat(64) } }
+      }
+    ])
+    t.router.refresh()
+    await t.connectAll()
+    t.devbox.state.tasks.default = [{ id: 'TASK-0001', title: 'x', filePath: '/Users/me/a.md' }]
+    expect(await t.call('terminal:openInCode', '/Users/me/repo')).toBeUndefined()
+    await t.call('tasks:openInEditor', 'TASK-0001')
+    expect(t.opened).toEqual([])
+  })
 })
 
 describe('remote router: edge cases', () => {

@@ -96,9 +96,11 @@ function session(name: 'pair' | 'signIn' | 'request') {
     store: hostStore,
     maxMessageBytes: MAX,
     staticKey: keys.hostStatic,
-    ephemeralKey: keys.hostEphemeral
+    ephemeralKey: keys.hostEphemeral,
+    hostNonce: seed(`${name} host nonce`)
   })
   const client = createSecureClientHandshake({
+    deviceNonce: seed(`${name} device nonce`),
     // A request comes from a device that found the host on the network: nothing to pin yet.
     ...(name === 'request' ? {} : { pinnedFingerprint: fingerprintOf(host.publicKey) }),
     identity: { privateKey: phone.privateKey, publicKey: phone.publicKey },

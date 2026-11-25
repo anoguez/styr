@@ -14,7 +14,9 @@ export type { AddressKind }
  *
  * - on a network card (Wi-Fi, Ethernet) the peer must be inside that interface's own subnet, so a
  *   router cannot route the internet, or another network, in;
- * - on a VPN's tunnel interface the peer must have a private address;
+ * - on a VPN's tunnel interface the peer must have a private address that is not on one of this
+ *   computer's network cards' subnets (a LAN peer aiming at the VPN address), and on Tailscale's
+ *   address it must be a Tailscale address;
  * - on loopback (an ssh tunnel) the peer must be loopback too;
  * - a public address on either end is refused, and so is the carrier-grade NAT range on a network
  *   card (that is an internet provider's network, shared with its other customers).
@@ -162,7 +164,8 @@ export function admitConnection(
   for (const [name, entries] of Object.entries(interfaces)) {
     for (const entry of entries ?? []) {
       if (normalizeAddress(entry.address) !== target) continue
-      if (TUNNEL_INTERFACE.test(name)) return undefined
+      if (TUNNEL_INTERFACE.test(name))
+        return tunnelPeerProblem(source, sourceKind, targetKind, interfaces)
       if (targetKind === 'tailscale') {
         return `${target} is on ${name}, not a VPN: it looks like an internet provider's shared network`
       }
@@ -171,6 +174,32 @@ export function admitConnection(
     }
   }
   return `it arrived on ${target}, which is not an address of this computer`
+}
+
+/**
+ * Why a peer may not use this computer's VPN address, or undefined. Most systems take a packet for
+ * any of their addresses on any interface, so someone on the Wi-Fi can aim at the VPN address
+ * directly: a source inside a network card's subnet is such a peer, never a VPN one. On Tailscale's
+ * address the peer must be on Tailscale too.
+ */
+function tunnelPeerProblem(
+  source: string,
+  sourceKind: AddressKind,
+  targetKind: AddressKind,
+  interfaces: Interfaces
+): string | undefined {
+  if (targetKind === 'tailscale' && sourceKind !== 'tailscale') {
+    return `${source} is not on Tailscale, but asked for this computer's Tailscale address`
+  }
+  for (const [name, entries] of Object.entries(interfaces)) {
+    if (TUNNEL_INTERFACE.test(name)) continue
+    for (const entry of entries ?? []) {
+      if (inSubnet(source, entry.cidr)) {
+        return `${source} is on ${name}'s network but asked for this computer's VPN address`
+      }
+    }
+  }
+  return undefined
 }
 
 /** Network cards before VPNs before virtual machines; IPv4 before IPv6 within each. */

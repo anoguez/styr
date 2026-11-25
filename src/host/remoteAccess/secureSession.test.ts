@@ -1,4 +1,4 @@
-import { generateKeyPairSync, type KeyObject } from 'node:crypto'
+import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +14,8 @@ import {
   NOISE_PROLOGUE,
   RECORD_CHUNK_BYTES,
   approvalCode,
+  approvalCommit,
+  identitySignedData,
   SecureChannelError,
   SecureFrameChannel,
   createSecureServerHandshake,
@@ -392,11 +394,18 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
         maxMessageBytes: MAX
       })
 
-    /** Runs the handshake up to the host's question; what each side has then. */
+    /**
+     * Runs the handshake up to the host's question: message 3 (with the commitment), the host's
+     * random value, the device's reveal. What each side has then.
+     */
     function ask(host = server(), device = requester()) {
       const reply = host.receive(device.start())
-      const step = device.receive(reply.frames[0]!)
-      if (step.kind !== 'send') throw new Error('expected message 3')
+      const third = device.receive(reply.frames[0]!)
+      if (third.kind !== 'send') throw new Error('expected message 3')
+      const nonce = host.receive(third.frames[0]!)
+      if (nonce.kind !== 'reply') return { host, device, step: undefined, outcome: nonce }
+      const step = device.receive(nonce.frames[0]!)
+      if (step.kind !== 'send') throw new Error('expected the reveal')
       const outcome = host.receive(step.frames[0]!)
       return { host, device, step, outcome }
     }
@@ -416,7 +425,7 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
       if (outcome.kind !== 'approval') throw new Error(`expected approval, got ${outcome.kind}`)
       expect(outcome).toMatchObject({ name: 'Pixel 9', frames: [] })
       expect(outcome.code).toMatch(/^\d{6}$/)
-      expect(step.approval).toEqual({ code: outcome.code, hostFingerprint: fingerprint() })
+      expect(step!.approval).toEqual({ code: outcome.code, hostFingerprint: fingerprint() })
       // Nothing is added, and nothing sent, before the answer.
       expect(store.devices()).toEqual([])
 
@@ -435,6 +444,60 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
         client({ identity, signIn: { type: 'auth', deviceId: answered.deviceId } })
       )
       expect(again.server.kind).toBe('ready')
+    })
+
+    it('shows no code before both random values are in', () => {
+      store.startPairing()
+      const host = server()
+      const device = requester()
+      const third = device.receive(host.receive(device.start()).frames[0]!)
+      // Message 3 carries only the commitment: no code yet on either side.
+      expect(third).toMatchObject({ kind: 'send' })
+      expect((third as { approval?: unknown }).approval).toBeUndefined()
+      expect(host.receive((third as { frames: string[] }).frames[0]!).kind).toBe('reply')
+    })
+
+    it('refuses a device that reveals another value than it committed to', () => {
+      // A device built by hand, as an attacker would: it commits to one value in message 3 and,
+      // having seen the host's, reveals another chosen to steer the code.
+      store.startPairing()
+      const host = server()
+      const identity = deviceIdentity()
+      const staticKey = generateNoiseKeyPair()
+      const noise = new NoiseXX({ initiator: true, staticKey, prologue: NOISE_PROLOGUE })
+      const hello = JSON.stringify({
+        type: 'hello',
+        protocol: 2,
+        noise: noise.write().toString('base64')
+      })
+      noise.read(decodeFrame(host.receive(hello).frames[0]!))
+      const third = noise.write((hash) =>
+        Buffer.from(
+          JSON.stringify({
+            type: 'request',
+            name: 'Pixel 9',
+            identityKey: identity.publicKey,
+            signature: sign(
+              null,
+              identitySignedData('device', staticKey.publicKey, hash),
+              identity.privateKey
+            ).toString('base64'),
+            commit: approvalCommit(Buffer.alloc(32, 1))
+          })
+        )
+      )
+      const nonce = host.receive(third.toString('base64'))
+      expect(nonce.kind).toBe('reply')
+      const channel = new SecureFrameChannel(noise.transport(), MAX)
+      expect(JSON.parse(channel.open(nonce.frames[0]!)!)).toMatchObject({ type: 'nonce' })
+      const lie = channel.seal(
+        JSON.stringify({ type: 'reveal', nonce: Buffer.alloc(32, 2).toString('base64') })
+      )
+      expect(host.receive(lie[0]!)).toMatchObject({
+        kind: 'denied',
+        reason: 'the reveal does not match the commitment'
+      })
+      expect(store.devices()).toEqual([])
     })
 
     it('adds nothing when declined, and the window is spent', () => {
@@ -474,6 +537,39 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
       })
     })
 
+    it('refuses a request with anything beyond its fields', () => {
+      store.startPairing()
+      const host = server()
+      const identity = deviceIdentity()
+      const noise = new NoiseXX({
+        initiator: true,
+        staticKey: generateNoiseKeyPair(),
+        prologue: NOISE_PROLOGUE
+      })
+      const hello = JSON.stringify({
+        type: 'hello',
+        protocol: 2,
+        noise: noise.write().toString('base64')
+      })
+      noise.read(decodeFrame(host.receive(hello).frames[0]!))
+      const third = noise.write(() =>
+        Buffer.from(
+          JSON.stringify({
+            type: 'request',
+            name: 'Pixel 9',
+            identityKey: identity.publicKey,
+            signature: Buffer.alloc(64).toString('base64'),
+            commit: '0'.repeat(64),
+            pad: 'anything'
+          })
+        )
+      )
+      expect(host.receive(third.toString('base64'))).toMatchObject({
+        kind: 'denied',
+        reason: 'expected auth, pair or request'
+      })
+    })
+
     it('refuses a request whose signature is not by the key it names', () => {
       store.startPairing()
       const { outcome } = ask(
@@ -484,6 +580,22 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
         })
       )
       expect(outcome).toMatchObject({ kind: 'denied', reason: 'bad device signature' })
+    })
+
+    it('shows a name cleaned of controls, direction overrides and zero-width marks', () => {
+      store.startPairing()
+      const { outcome } = ask(
+        server(),
+        requester(deviceIdentity(), 'Pixel‮9​\n(code\t123456)\u0007')
+      )
+      if (outcome.kind !== 'approval') throw new Error('expected approval')
+      expect(outcome.name).toBe('Pixel 9 (code 123456)')
+      const blank = (() => {
+        store.startPairing()
+        const again = ask(server(), requester(deviceIdentity(), '​‮ '))
+        return again.outcome.kind === 'approval' ? again.outcome.name : ''
+      })()
+      expect(blank).toBe('Unnamed device')
     })
 
     it('someone in the middle shows different codes on the two screens', () => {
@@ -502,9 +614,9 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
       if (toDevice.outcome.kind !== 'approval' || toHost.outcome.kind !== 'approval') {
         throw new Error('expected two questions')
       }
-      expect(toDevice.step.approval!.code).not.toBe(toHost.outcome.code)
+      expect(toDevice.step!.approval!.code).not.toBe(toHost.outcome.code)
       // And the device would pin the impostor's key, not the host's.
-      expect(toDevice.step.approval!.hostFingerprint).not.toBe(fingerprint())
+      expect(toDevice.step!.approval!.hostFingerprint).not.toBe(fingerprint())
     })
 
     it('still checks a pinned host when the device has one', () => {
@@ -530,10 +642,15 @@ describe('protocol 2 (Noise XX with identity binding)', () => {
       ).toThrow(SecureHandshakeError)
     })
 
-    it('derives six digits from the handshake hash', () => {
-      expect(approvalCode(Buffer.alloc(32))).toMatch(/^\d{6}$/)
-      expect(approvalCode(Buffer.alloc(32))).toBe(approvalCode(Buffer.alloc(32)))
-      expect(approvalCode(Buffer.alloc(32))).not.toBe(approvalCode(Buffer.alloc(32, 1)))
+    it('derives six digits from the handshake hash and both random values', () => {
+      const h = Buffer.alloc(32)
+      const nd = Buffer.alloc(32, 1)
+      const nh = Buffer.alloc(32, 2)
+      expect(approvalCode(h, nd, nh)).toMatch(/^\d{6}$/)
+      expect(approvalCode(h, nd, nh)).toBe(approvalCode(h, nd, nh))
+      expect(approvalCode(h, nd, nh)).not.toBe(approvalCode(Buffer.alloc(32, 1), nd, nh))
+      expect(approvalCode(h, nd, nh)).not.toBe(approvalCode(h, Buffer.alloc(32, 3), nh))
+      expect(approvalCode(h, nd, nh)).not.toBe(approvalCode(h, nd, Buffer.alloc(32, 3)))
     })
   })
 

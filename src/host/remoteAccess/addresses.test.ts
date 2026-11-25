@@ -159,6 +159,18 @@ describe('admitConnection', () => {
     expect(admit('192.168.50.2', '192.168.50.3')).toMatch(/not an address of this computer/)
   })
 
+  it('refuses a peer on the Wi-Fi that aims at the VPN address', () => {
+    // Most systems take a packet for any of their addresses on any interface.
+    expect(admit('100.90.1.1', '192.168.1.77')).toMatch(/not on Tailscale/)
+    expect(admit('fd7a:115c:a1e0::1', 'fd12:3456::abc')).toMatch(/not on Tailscale/)
+    const wireguard = {
+      en0: [v4('192.168.1.20', '192.168.1.20/24')],
+      wg0: [v4('10.8.0.2', '10.8.0.2/32')]
+    }
+    expect(admitConnection('10.8.0.2', '192.168.1.77', wireguard)).toMatch(/en0's network/)
+    expect(admitConnection('10.8.0.2', '10.8.0.9', wireguard)).toBeUndefined()
+  })
+
   it('names Windows, WireGuard and ZeroTier tunnels as VPNs', () => {
     const vpn = {
       Tailscale: [v4('100.90.1.2', '100.90.1.2/32')],

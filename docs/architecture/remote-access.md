@@ -34,8 +34,10 @@ device ──ws://<this computer's LAN or VPN address>:7878──▶ wsListener 
     subnet (`cidr`). A router that forwards a port, or routes another subnet in, is refused even
     with a private source address.
   - arrived on a **VPN tunnel** (`utun*`, `tun*`, `wg*`, `zt*`, `tailscale0`, or a Windows adapter
-    named Tailscale, WireGuard, ZeroTier): the peer must have a private address. A tunnel's peers
-    are not in its subnet (Tailscale gives each machine a /32).
+    named Tailscale, WireGuard, ZeroTier): the peer must have a private address, outside every
+    network card's subnet (a peer on the Wi-Fi aiming at the VPN address is refused), and a
+    Tailscale address when this one is (`tunnelPeerProblem`). A tunnel's peers are not in its
+    subnet (Tailscale gives each machine a /32).
   - **loopback** (an ssh tunnel) only from loopback.
   - refused: a public address on either end; 100.64.0.0/10 on a network card (carrier-grade NAT, an
     internet provider's network shared with its other customers; it used to be only a warning); an
@@ -45,7 +47,8 @@ device ──ws://<this computer's LAN or VPN address>:7878──▶ wsListener 
   Tailscale's 100.64/10 and `fd7a:115c:a1e0::/48`, and loopback; a dual-stack socket's
   `::ffff:a.b.c.d` is read as IPv4 first (`normalizeAddress`). The rule runs on `connection` and
   again on `upgrade`. One address may hold at most twice its connection cap in sockets, upgraded or
-  not (`guardSockets`, which also gives HTTP the handshake's 10 s to send its headers). Requests
+  not (`guardSockets`, which also gives HTTP the handshake's 10 s to send its headers). Limits count
+  by `limitKey`: an IPv4 address, or an IPv6 /64. Requests
   with `X-Forwarded-For`, `Forwarded`, `X-Real-IP` … are refused (no reverse proxies), and so is
   any request with an `Origin` (a web page cannot be a device). No UPnP, hole punching or relay.
 
@@ -58,9 +61,11 @@ device ──ws://<this computer's LAN or VPN address>:7878──▶ wsListener 
   agreed to. Paired devices stay paired; switching on again writes the new shape.
 - **No hub traffic before the handshake.** An unauthenticated peer never reaches `hub.connect`.
   Five failed handshakes from one address in a minute turn that address away (429) for the rest of
-  the minute; every refusal is logged. Loopback is not counted (every ssh-tunnelled device shares
-  127.0.0.1, and sign-in is a signature, so there is nothing to guess) and gets a larger
-  connection cap.
+  the minute; every refusal is logged. A failure is a refusal, a timeout, a peer that hangs up
+  before signing in, or a pairing request left unanswered, so a peer cannot hold slots for free by
+  opening and closing. 16 handshakes may be in flight, at most 4 from one address (8 from
+  loopback). Loopback is not counted as failing (every ssh-tunnelled device shares 127.0.0.1, and
+  sign-in is a signature, so there is nothing to guess) and gets a larger connection cap.
 - **End to end, and on the network as well.** Every session is protocol 2 (Noise, below), so
   anyone else on the Wi-Fi or the VPN can neither read nor change it, nor sign in without a paired
   key; the same-network rule is the second layer, keeping the port off the internet.
@@ -117,7 +122,7 @@ a remote host (`remote.md`), behind the same Experimental switch (Remote workspa
 - **Pairing** is by approval only (`requestLanPairing`, `src/host/remote/lanLink.ts`): Add
   computer takes an address (`192.168.1.20`, `studio.local:7878`, `parseTarget`), and the other
   computer's Add device window must be open there. Both screens show the code; this desktop sends
-  its own computer name. Allowed, it keeps the other computer's fingerprint (the key it was shown),
+  its own computer name. Allowed there and confirmed here ("Did it show this code?"), it keeps the other computer's fingerprint (the key it was shown),
   the device id it was given and its own Ed25519 key in `~/.styr/lan-hosts.json` (`lanHosts.ts`:
   0600, atomic, the key sealed with the keychain where there is one, `src/main/keychain.ts`).
   Settings never gets a key.
@@ -125,8 +130,10 @@ a remote host (`remote.md`), behind the same Experimental switch (Remote workspa
   address, or a name that resolves to one, and the socket goes to that checked address, never to
   the name again. A public address is refused before a packet is sent.
 - **A workspace on it** is a stub like an ssh remote's, with `remote.lan = { fingerprint }` and
-  `host` only a name for it (`studio-a1b2c3`: its name and the start of its fingerprint, the same
-  for all its workspaces), never handed to ssh. The router's connection runs `lanTransport` in
+  `host` only a name for it (`studio-a1b2c3d4e5f60718`: its name and the first 64 bits of its
+  fingerprint, the same for all its workspaces; a name another stub already uses is refused, since
+  the router keys connections by it), never handed to ssh: Open in VS Code and the editor do
+  nothing for such a workspace. The router's connection runs `lanTransport` in
   place of `ssh … serve attach` (`src/main/lanHosts.ts`, `lanTransportFor`): sign in with the
   stored key against the pinned fingerprint, then one sealed message per JSON-RPC line. A host
   that is not the pinned one is refused before anything is sent; a removal there ends it (4403)
@@ -141,6 +148,15 @@ a remote host (`remote.md`), behind the same Experimental switch (Remote workspa
 
 ## Known limits
 
+- Any VPN this computer is on counts as its network. On macOS every VPN is a `utun` interface, a
+  company's included, so everyone on that VPN can reach the listener and, while Add device is open,
+  ask to pair (the person still has to compare the code and allow it). Settings does not list which
+  VPNs are in use.
+- Most systems accept a packet for any of their addresses on any interface. The rule refuses a peer
+  from a network card's subnet aiming at the VPN address, but a tunnel's peers are otherwise taken
+  on their private source address (Node cannot say which interface a packet came in on).
+- Someone on the network with many addresses (many IPv4 addresses, or many IPv6 /64s) can still hold
+  the 16 handshake slots, each address at most 4 (8 from loopback) and each failure counted.
 - A peer on the same network can spend the single-use pairing secret with a bad `pair` message,
   forcing a rescan; anyone who sees the QR during its 2 minutes can pair.
 - A router that forwards a port and rewrites the source to its own LAN address (some do, for
@@ -223,28 +239,46 @@ connections; adding the device again needs a new QR.
 ### Pairing by approval (no QR)
 
 A device that found the computer on the network (or was given its address) and has no QR asks to
-pair: message 3 is `{type:'request', name, identityKey, signature}`, with no proof, and the device
-pins nothing yet (`pinnedFingerprint` is optional for a request alone; it still checks the host's
-signature binds its key to this session).
+pair. It pins nothing yet (`pinnedFingerprint` is optional for a request alone; it still checks the
+host's signature binds its key to this session), and the code both screens show is built in a
+fixed order, commit then reveal:
 
+```
+C → S  message 3: {type:'request', name, identityKey, signature, commit}   commit = hex SHA-256(Nd)
+S → C  sealed {type:'nonce', nonce: b64(Nh)}
+C → S  sealed {type:'reveal', nonce: b64(Nd)}           must hash to commit, else 4401
+       both: code = approvalCode(h, Nd, Nh)             then the host asks; Allow → paired, ready
+```
+
+- **Why commit then reveal.** A code taken from the handshake hash alone can be steered: whoever
+  relays between the device and the host writes the host's message 3 last and can vary it (a name,
+  an extra key) until the hash gives the device's code, a few seconds' work for six digits. Here
+  `Nd` (32 random bytes) is fixed by its commitment before `Nh` is sent, and `Nh` before `Nd` is
+  revealed, so a relay cannot try values: one chance in a million per attempt, and each attempt
+  needs the person at the host to answer. `approvalCode` is HMAC-SHA256(key = `h`,
+  `"styr-noise-approval-v2\n" ‖ Nd ‖ Nh`), first four bytes big-endian mod 10⁶. The request and
+  reveal messages are strict: no other keys.
 - **Only while Add device is open.** The host accepts a request only while a pairing offer is open
   (`store.pairing()`), that is while the Add device window shows; otherwise it closes with 4401
   before anyone is asked, so a stranger on the network cannot put a prompt on the screen. `styr
 serve` takes none (`takesRequests` off: nobody is there to answer).
-- **The code.** Both sides derive six digits from the final handshake hash (`approvalCode`:
-  HMAC-SHA256(key = `h`, `"styr-noise-approval-v1\n"`), first four bytes big-endian mod 10⁶).
-  `h` covers both ephemeral and both static keys, so anyone relaying between the two runs two
-  handshakes and the two screens show different codes. The host shows the device's own name (escaped,
-  at most 100 characters), its address and the code, with Turn down / Allow
-  (`AccessState.request`, `access:answer`).
+- **The prompt** shows the device's name cleaned of controls, bidi overrides and zero-width marks,
+  whitespace collapsed, at most 100 characters (`deviceDisplayName`; also what is stored and
+  logged), its address and the code, with Turn down / Allow (`AccessState.request`,
+  `access:answer`).
 - **Waiting.** The listener holds the connection (`phase: 'approval'`): nothing reaches the hub and
   nothing is sent until the answer; anything the device sends meanwhile ends it (4401). One request
   waits at a time (another gets 4429); it is withdrawn when the device leaves, after 60 s
   (`APPROVAL_TIMEOUT_MS`, 4408), or turned down when the window closes or access goes off. An answer
-  for a request no longer waiting throws, so a stale click allows nothing.
+  for a request no longer waiting throws, so a stale click allows nothing. A request left
+  unanswered, or a device that hangs up, counts as a failed attempt for its address.
 - **The answer spends the window**, as a QR attempt spends its secret: allowed, the device is added
-  and gets `paired` then `ready`, as with a QR, and pins the key it was shown; turned down, it gets
-  4401 and counts as a failed attempt for the address's limit.
+  and gets `paired` then `ready`; turned down, it gets 4401 and counts as a failed attempt.
+- **Both sides confirm.** The host's Allow proves nothing to the device: whoever answered at that
+  address could be anyone running a listener that allows everything. So a device keeps the pairing
+  (the key it was shown, its device id) only once it got `paired` **and** the person at the device
+  says the code matched. The desktop (Other computers) asks "Did it show this code?" and writes
+  nothing before a yes (`lan:confirmPair`); a phone must do the same.
 
 ## The session: protocol 2, end to end
 
