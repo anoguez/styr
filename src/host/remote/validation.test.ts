@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { REMOTE_LIMITS, remoteBoundsProblem, remoteServerHelloSchema } from '@core/taskSchema.js'
+import { REMOTE_LIMITS, remoteBoundsProblem, remoteServerHelloSchema } from '@core/remoteSchemas.js'
 import { BOARD_BROADCASTS, SESSION_BROADCASTS, channelRoute } from './channels.js'
 import { remoteSettings, remoteTask } from './remoteFixture.js'
 import {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
-import { REMOTE_LIMITS } from '@core/taskSchema.js'
+import { REMOTE_LIMITS } from '@core/remoteSchemas.js'
 import { HELLO, remoteTask, settle } from './remoteFixture.js'
 import { AT, setup } from './routerFixture.js'
 

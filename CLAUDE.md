@@ -121,7 +121,8 @@ Domain types live in one file per domain under `src/core/types/` (`task`, `agent
 `workspaces`, `terminal`); the external-source types live in `src/core/sources/types.ts`.
 `src/core/types.ts` re-exports all of them and holds the theme (`DEFAULT_THEME`), so import from
 `@core/types` or `./types.js` as before. `src/core/taskSchema.ts` holds the zod schemas that validate
-anything crossing a process boundary. Extend these rather than declaring new shapes — the renderer,
+anything crossing a process boundary; a remote server's answers are checked with the bounded ones
+in `src/core/remoteSchemas.ts`, each tied to its type by `SchemaChecks`. Extend these rather than declaring new shapes — the renderer,
 preload, IPC layer and MCP server all share them. A new domain file goes in `types/` (which
 `tsconfig.web.json` already includes) and needs an `export *` in the barrel.
 
