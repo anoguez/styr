@@ -1946,10 +1946,10 @@ electron-vite@^6.0.0:
     picocolors "^1.1.1"
     rolldown "~1.2.10"
 
-electron@^45.3.4:
-  version "45.3.4"
-  resolved "https://registry.yarnpkg.com/electron/-/electron-45.3.4.tgz#5017ed70eb76ec8039e9d0fe193ab88332c0fd6b"
-  integrity sha512-cqU5u6arfGd9KJvCODjj32ckxkDQbweTL3v8J51tAsKGmDWYKcAqszvie0NDKBIGl6Ze19QTL74yIAUHrqNDig==
+electron@^45.4.1:
+  version "45.4.1"
+  resolved "https://registry.yarnpkg.com/electron/-/electron-45.4.1.tgz#88f4dd2a9856cccb344e2100da1f92a308fee2a0"
+  integrity sha512-DjsJ/eQhovkjf1vYFFyh5GB8NMx+L5bdYaonvGOlWselg3DQ0fwIF0N/+2hrPsoS4whmmNswh21ym/8dgt1y5Q==
   dependencies:
     "@electron-internal/extract-zip" "^1.0.1"
     "@electron/get" "^5.0.0"
