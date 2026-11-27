@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AccessState } from '@core/types.js'
 import {
+  pairLinkSummary,
   connectionSummary,
   groupedCode,
   lanHostStatus,
@@ -214,5 +215,18 @@ describe('lanHostStatus', () => {
       'Unreachable: Studio is busy · 1 workspace'
     )
     expect(lanHostStatus(host, overview(1), remote()).text).toBe('Offline · 1 workspace')
+  })
+})
+
+describe('pairLinkSummary', () => {
+  const fp = '3f9a1c72' + 'ab'.repeat(28)
+  it('names where a pair link leads', () => {
+    expect(
+      pairLinkSummary(` styr://pair?v=2&host=192.168.1.20&port=7878&fp=${fp}&secret=aa&exp=1 `)
+    ).toBe('192.168.1.20:7878 · fingerprint 3f9a 1c72')
+  })
+  it('says nothing for an address or an incomplete link', () => {
+    expect(pairLinkSummary('192.168.1.20')).toBeUndefined()
+    expect(pairLinkSummary('styr://pair?v=2&host=192.168.1.20&port=7878')).toBeUndefined()
   })
 })

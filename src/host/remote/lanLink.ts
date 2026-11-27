@@ -352,3 +352,227 @@ export function requestLanPairing(
     }
   }
 }
+
+/** What a pair link (the QR's `styr://pair?v=2…`, `accessService.ts`) gives a device. */
+export interface PairLink {
+  /** Every address to try, best first; one port for all. */
+  targets: LanTarget[]
+  /** SHA-256 of the other computer's identity key: pinned before anything is sent. */
+  fingerprint: string
+  /** The one-time secret the pairing proof is keyed by; it never travels. */
+  secret: string
+  /** When the link stops working, ms since the epoch. */
+  expiresAt: number
+}
+
+/** Whether `text` looks like a pair link rather than an address, for a field that takes both. */
+export const isPairLink = (text: string): boolean => /^styr:\/\/pair\b/i.test(text.trim())
+
+/** The longest pair link taken from the system: a real one is a few hundred characters. */
+export const PAIR_LINK_MAX = 2048
+
+/**
+ * The pair link among a launch's arguments, as Windows and Linux pass a clicked `styr://` link to
+ * the app (macOS sends it as an `open-url` event, given here as a one-item list). Anything else,
+ * another scheme or an oversized argument, is not one.
+ */
+export function pairLinkIn(argv: readonly string[]): string | undefined {
+  return argv.find((arg) => arg.length <= PAIR_LINK_MAX && isPairLink(arg))?.trim()
+}
+
+/**
+ * Reads a pair link, the one Add device's QR carries (and its Copy link button gives). Strict:
+ * protocol 2 only, a 64-hex fingerprint, a hex secret, a port and at least one address, or
+ * undefined. The addresses are not checked here: `pairWithLink` dials only private ones.
+ */
+export function parsePairLink(text: string): PairLink | undefined {
+  const value = text.trim()
+  if (!isPairLink(value)) return undefined
+  let params: URLSearchParams
+  try {
+    params = new URL(value).searchParams
+  } catch {
+    return undefined
+  }
+  const fingerprint = params.get('fp') ?? ''
+  const secret = params.get('secret') ?? ''
+  const port = Number(params.get('port'))
+  const expiresAt = Number(params.get('exp'))
+  if (params.get('v') !== '2') return undefined
+  if (!/^[0-9a-f]{64}$/.test(fingerprint) || !/^[0-9a-f]{16,128}$/.test(secret)) return undefined
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return undefined
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return undefined
+  const listed = (params.get('hosts') ?? '').split(',')
+  const addresses = [params.get('host') ?? '', ...listed]
+    .map((address) => address.trim().replace(/^\[(.*)\]$/, '$1'))
+    .filter((address, index, all) => address && all.indexOf(address) === index)
+    .slice(0, 16)
+  if (addresses.length === 0) return undefined
+  return {
+    targets: addresses.map((address) => ({ address, port })),
+    fingerprint,
+    secret,
+    expiresAt
+  }
+}
+
+/** A dial that never reached the other computer: the secret is unspent, so the next address may be tried. */
+class Unreached extends Error {}
+
+/**
+ * Pairs with a pair link, as a phone does with the QR: the other computer is pinned to the link's
+ * fingerprint before a byte about this desktop is sent, and the proof is keyed by the link's
+ * secret. Nobody has to answer there and there is no code to compare: whoever holds the link was
+ * shown it by the other computer. Each address is tried in turn while none answers; once one
+ * does, its answer is final (the attempt spends the secret). Resolves with the address that
+ * answered, to sign in at from now on.
+ */
+export function pairWithLink(
+  link: PairLink,
+  name: string,
+  options: { resolve?: Resolve; now?: () => number } = {}
+): { result: Promise<{ target: LanTarget; pairing: LanPairing }>; cancel(): void } {
+  const resolve = options.resolve ?? resolveAll
+  const now = options.now ?? Date.now
+  const key = generateKeyPairSync('ed25519')
+  let socket: WebSocket | undefined
+  let cancelled = false
+
+  const attempt = (target: LanTarget): Promise<LanPairing> =>
+    privateAddress(target.address, resolve).then(
+      (address) =>
+        new Promise<LanPairing>((done, fail) => {
+          if (cancelled) return fail(new Error('Cancelled.'))
+          const client = createSecureClientHandshake({
+            pinnedFingerprint: link.fingerprint,
+            identity: {
+              privateKey: key.privateKey,
+              publicKey: key.publicKey.export({ type: 'spki', format: 'der' }).toString('base64')
+            },
+            signIn: { type: 'pair', name: name.slice(0, DEVICE_NAME_MAX), secret: link.secret },
+            maxMessageBytes: LAN_MAX_MESSAGE_BYTES
+          })
+          const ws = dial(address, target.port)
+          socket = ws
+          let opened = false
+          let settled = false
+          const finish = (outcome: LanPairing | Error): void => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            try {
+              ws.close(1000)
+            } catch {
+              // Not open.
+            }
+            if (outcome instanceof Error) fail(outcome)
+            else done(outcome)
+          }
+          const timer = setTimeout(
+            () =>
+              finish(
+                opened
+                  ? new Error(`${target.address} did not finish pairing in time.`)
+                  : new Unreached(`${target.address} did not answer.`)
+              ),
+            LAN_CONNECT_TIMEOUT_MS
+          )
+          timer.unref?.()
+          ws.on('open', () => {
+            opened = true
+            ws.send(client.start())
+          })
+          ws.on('message', (data, isBinary) => {
+            if (isBinary) return finish(new Error(`${target.address} is not Styr.`))
+            try {
+              const step = client.receive(data.toString())
+              if (step.kind === 'send') for (const frame of step.frames) ws.send(frame)
+              if (step.kind === 'ready') {
+                if (!step.deviceId) return finish(new Error('The other computer did not pair.'))
+                finish({
+                  fingerprint: link.fingerprint,
+                  deviceId: step.deviceId,
+                  privateKey: key.privateKey.export({ type: 'pkcs8', format: 'der' })
+                })
+              }
+            } catch (error) {
+              finish(
+                error instanceof SecureHandshakeError
+                  ? new Error(
+                      `${target.address} is not the computer that made this link (${error.message}). Nothing was sent to it.`
+                    )
+                  : error instanceof Error
+                    ? error
+                    : new Error(String(error))
+              )
+            }
+          })
+          ws.on('close', (code) =>
+            finish(
+              cancelled
+                ? new Error('Cancelled.')
+                : !opened
+                  ? new Unreached(`${target.address} closed the connection.`)
+                  : code === 4401
+                    ? new Error(
+                        'The other computer refused this link: it was already used, it expired, or ' +
+                          'its Add device window closed. Make a new code there and copy the link again.'
+                      )
+                    : new Error(closeReason(code, target.address))
+            )
+          )
+          ws.on('error', (error) =>
+            finish(
+              opened
+                ? new Error(`The connection to ${target.address} failed (${error.message}).`)
+                : new Unreached(`${target.address}:${target.port}: ${error.message}`)
+            )
+          )
+          ws.on('unexpected-response', (_request, response) =>
+            finish(
+              new Unreached(
+                `${target.address}:${target.port} answered HTTP ${response.statusCode ?? '?'}`
+              )
+            )
+          )
+        }),
+      (error: unknown) => {
+        // Off this network, or a name that does not resolve: nothing was dialled.
+        throw new Unreached(error instanceof Error ? error.message : String(error))
+      }
+    )
+
+  const result = (async () => {
+    if (now() >= link.expiresAt) {
+      throw new Error(
+        'This link has expired. Make a new code on the other computer and copy it again.'
+      )
+    }
+    const misses: string[] = []
+    for (const target of link.targets) {
+      if (cancelled) throw new Error('Cancelled.')
+      try {
+        return { target, pairing: await attempt(target) }
+      } catch (error) {
+        // An address off this network (`privateAddress`) or one nobody answered at: the next.
+        if (!(error instanceof Unreached)) throw error
+        misses.push(error.message)
+      }
+    }
+    throw new Error(
+      `None of the link's addresses answered (${misses.join('; ')}). This computer must be on the ` +
+        'same network as the other one, or on its VPN.'
+    )
+  })()
+  return {
+    result,
+    cancel() {
+      cancelled = true
+      try {
+        socket?.close(1000)
+      } catch {
+        // Not open.
+      }
+    }
+  }
+}

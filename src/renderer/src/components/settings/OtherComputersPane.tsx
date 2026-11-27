@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { LanBoard, LanHostInfo, RemoteState, WorkspaceOverview } from '@core/types.js'
-import { groupedCode, lanHostStatus } from '../../lib/accessView.js'
+import { groupedCode, lanHostStatus, pairLinkSummary } from '../../lib/accessView.js'
 import { ipcMessage } from '../../lib/ipcMessage.js'
 import { useRemoteState } from '../../lib/remoteStatus.js'
 import { PlusIcon } from '../icons.js'
@@ -162,18 +162,25 @@ function HostRow({
   )
 }
 
+/** A pair link rather than an address: the QR's `styr://pair?…`, as Add device copies it. */
+const looksLikePairLink = (text: string): boolean => /^styr:\/\/pair\b/i.test(text.trim())
+
 /**
- * Pairs with another computer by approval: its address, then the code to compare while the person
- * there allows this one in its Add device window.
+ * Pairs with another computer, either with the pair link its Add device window copies (pinned and
+ * keyed as a phone's QR scan, so it is kept at once), or by approval: its address, then the code
+ * to compare while the person there allows this one in its Add device window.
  */
 function AddComputerDialog({
+  initialAddress = '',
   onClose,
   onPaired
 }: {
+  /** A clicked `styr://pair` link: filled in, and still waits for Connect. */
+  initialAddress?: string
   onClose: () => void
   onPaired: (host: LanHostInfo) => void
 }): ReactNode {
-  const [address, setAddress] = useState('')
+  const [address, setAddress] = useState(initialAddress)
   const [name, setName] = useState('')
   const [code, setCode] = useState<string>()
   const [busy, setBusy] = useState(false)
@@ -185,11 +192,16 @@ function AddComputerDialog({
   // Closing at any point hangs up, and drops a pairing not yet confirmed here: nothing is kept.
   useEffect(() => () => void window.api.lan.cancelPair(), [])
 
+  const byLink = looksLikePairLink(address)
+  /** Where the link leads, shown before Connect: a clicked link fills this in unseen. */
+  const linkTarget = byLink ? pairLinkSummary(address) : undefined
+
   async function connect(): Promise<void> {
     setBusy(true)
     setError('')
     setCode(undefined)
     try {
+      if (byLink) return onPaired(await window.api.lan.pairLink(address, name))
       setAllowed(await window.api.lan.pair(address, name || address))
     } catch (failure) {
       setError(ipcMessage(failure))
@@ -272,17 +284,20 @@ function AddComputerDialog({
       ) : (
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-dim">Address</span>
+            <span className="text-[12px] font-medium text-dim">Pair link or address</span>
             <input
-              aria-label="Address"
+              aria-label="Pair link or address"
               className={`${inputClass} font-mono`}
-              placeholder="192.168.1.20"
+              placeholder="styr://pair?… or 192.168.1.20"
               spellCheck={false}
               autoFocus
               value={address}
               disabled={busy}
               onChange={(event) => setAddress(event.target.value)}
             />
+            {linkTarget ? (
+              <span className="font-mono text-[11.5px] text-faint">Pairs with {linkTarget}</span>
+            ) : null}
           </label>
           <label className="flex flex-col gap-1.5">
             <span className="text-[12px] font-medium text-dim">Name</span>
@@ -297,7 +312,10 @@ function AddComputerDialog({
           </label>
           <Hint>
             On that computer, open Settings → Connections → Add device first: it accepts a new
-            computer only while that window is open. Its address is under Network details there.
+            computer only while that window is open. Paste the link its Copy pair link button gives
+            (or the one <code className="font-mono">styr serve pair</code> prints), and this
+            computer is added at once. Or type its address, under Network details there, and allow
+            this computer there after comparing a code.
           </Hint>
         </div>
       )}
@@ -372,6 +390,75 @@ function OpenWorkspaceDialog({
           ))}
         </Card>
       )}
+      {error ? (
+        <p role="alert" className="mt-3 text-[12px] text-danger">
+          {error}
+        </p>
+      ) : null}
+    </Modal>
+  )
+}
+
+/**
+ * A `styr://pair` link the system opened Styr with (`src/main/deepLinks.ts`): Add computer with the
+ * link filled in, then the computer's workspaces. Pairing waits for Connect, so a link alone pairs
+ * nothing. Other computers needs Remote workspaces, which this offers to switch on first.
+ */
+export function PairLinkDialog({
+  link,
+  remoteEnabled,
+  onEnableRemote,
+  onClose
+}: {
+  link: string
+  remoteEnabled: boolean
+  /** Saves Settings → Experimental → Remote workspaces on; rejects with the reason. */
+  onEnableRemote: () => Promise<void>
+  onClose: () => void
+}): ReactNode {
+  const [paired, setPaired] = useState<LanHostInfo>()
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  if (paired) return <OpenWorkspaceDialog host={paired} onClose={onClose} />
+  if (remoteEnabled) {
+    return <AddComputerDialog initialAddress={link} onClose={onClose} onPaired={setPaired} />
+  }
+
+  async function enable(): Promise<void> {
+    setBusy(true)
+    setError('')
+    try {
+      await onEnableRemote()
+    } catch (failure) {
+      setError(ipcMessage(failure))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="Add a computer"
+      subtitle="You opened a pair link from another computer running Styr."
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={busy} onClick={() => void enable()}>
+            Switch on and continue
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col items-center gap-3 py-2 text-center">
+        <DevicesGlyph />
+        <span className="max-w-sm text-[12.5px] leading-relaxed text-dim">
+          Opening another computer&apos;s workspaces uses Remote workspaces, which is still
+          experimental. Switch it on to add this computer; you can turn it off again under Settings
+          → Experimental.
+        </span>
+      </div>
       {error ? (
         <p role="alert" className="mt-3 text-[12px] text-danger">
           {error}

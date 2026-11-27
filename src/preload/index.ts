@@ -287,6 +287,17 @@ const api = {
     pair: (address: string, name: string): Promise<{ code: string; name: string }> =>
       ipcRenderer.invoke('lan:pair', address, name),
     /**
+     * Pairs with a pair link (`styr://pair?…`, the QR's link, copied from the other computer's
+     * Add device window). Nobody has to allow it there; the computer is kept at once.
+     */
+    pairLink: (link: string, name: string): Promise<LanHostInfo> =>
+      ipcRenderer.invoke('lan:pairLink', link, name),
+    /** A `styr://pair` link the system opened Styr with, once; undefined when none waits. */
+    takePairLink: (): Promise<string | undefined> => ipcRenderer.invoke('lan:takePairLink'),
+    /** A link was clicked while Styr runs: take it with `takePairLink`. */
+    onPairLinkWaiting: (handler: () => void): (() => void) =>
+      subscribe('lan:pairLinkWaiting', handler as (...args: never[]) => void),
+    /**
      * After the other computer allowed this one: whether it showed the same code. Only a yes
      * keeps the pairing; anything else discards it.
      */

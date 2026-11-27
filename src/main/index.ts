@@ -46,6 +46,7 @@ import { initUpdater } from './updater.js'
 import { registerAccessHandlers, startNetworkAccess, stopNetworkAccess } from './networkAccess.js'
 import { forgetContext, initUsage } from './usage.js'
 import { watchFullscreen } from './windowFullscreen.js'
+import { initDeepLinks, registerDeepLinkHandlers } from './deepLinks.js'
 
 /**
  * Electron's default menu binds ⌘W to Close Window, and a menu accelerator is handled before the
@@ -207,7 +208,12 @@ function migrateSettings(): void {
   }
 }
 
+// Before `ready`, as macOS sends a link that launched the app before then. False: another Styr
+// runs and has the link; this one is quitting.
+const primary = initDeepLinks(showWindow)
+
 app.whenReady().then(() => {
+  if (!primary) return
   app.setName('Styr')
   // Windows shows toast notifications only for an app with an AppUserModelID; this one matches
   // the `appId` the installer registers its shortcut under.
@@ -222,6 +228,7 @@ app.whenReady().then(() => {
   syncIndex()
   registerIpcHandlers()
   registerAccessHandlers()
+  registerDeepLinkHandlers()
   startRemoteWorkspaces()
   startAutoDispatch()
   installAppMenu()
@@ -289,6 +296,9 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  // A second launch that handed its link over started nothing, and must not save the running
+  // one's terminal layout over with its empty one.
+  if (!primary) return
   destroyTray()
   stopRemoteWorkspaces()
   stopNetworkAccess()

@@ -27,6 +27,9 @@ import { createHostSetupPorts } from '@host/remote/sshRunner.js'
 import { sshTransport } from '@host/remote/sshTransport.js'
 import {
   parseTarget,
+  isPairLink,
+  pairWithLink,
+  parsePairLink,
   requestLanPairing,
   type LanPairing,
   type LanTarget
@@ -268,6 +271,33 @@ function registerLanHandlers(
         const label = typeof name === 'string' && name.trim() ? name.trim() : target.address
         unconfirmed = { target, label, result, code }
         return { code, name: label }
+      } finally {
+        if (pairing === request) pairing = undefined
+      }
+    }
+  )
+  // A pair link (Add device's Copy link there): pinned to its fingerprint and keyed by its secret,
+  // as a phone pairs with the QR, so there is no code to compare and it is kept at once.
+  ipcMain.handle(
+    'lan:pairLink',
+    async (_event, text: unknown, name: unknown): Promise<LanHostInfo> => {
+      requireFlag()
+      const link = typeof text === 'string' ? parsePairLink(text) : undefined
+      if (!link) {
+        throw new Error(
+          typeof text === 'string' && isPairLink(text)
+            ? 'That pair link is incomplete. Copy it again from the other computer’s Add device window.'
+            : 'Paste the pair link from the other computer’s Add device window (styr://pair?…).'
+        )
+      }
+      pairing?.cancel()
+      unconfirmed = undefined
+      const request = pairWithLink(link, computerName() ?? 'Styr desktop')
+      pairing = request
+      try {
+        const { target, pairing: result } = await request.result
+        const label = typeof name === 'string' && name.trim() ? name.trim() : target.address
+        return lanHosts().add(target, label, result)
       } finally {
         if (pairing === request) pairing = undefined
       }
