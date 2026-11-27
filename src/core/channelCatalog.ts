@@ -118,6 +118,7 @@ export const CHANNEL_CATALOG = {
   'agent:conversation': { route: 'session' },
   'agent:prompt': { route: 'session', write: true },
   'agent:approval': { route: 'session', write: true },
+  'agent:answerQuestion': { route: 'session', write: true },
 
   'workspaces:list': { route: 'special' },
   'workspaces:activity': { route: 'special' },

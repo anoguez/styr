@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import type { AgentStatus } from '../core/agentState.js'
 import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
 import type { ContextUsage, ProviderUsage } from '../core/usage.js'
-import type { AgentConversation } from '../core/agentConversation.js'
+import type { AgentConversation, QuestionAnswer } from '../core/agentConversation.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type { TerminalBenchRecord } from '../core/terminalBench.js'
 import type {
@@ -166,6 +166,16 @@ const api = {
     /** Answers an approval with one of its options (`approvalOptions`). */
     approval: (terminalId: string, approvalId: string, optionId: string): Promise<void> =>
       ipcRenderer.invoke('agent:approval', terminalId, approvalId, optionId),
+    /**
+     * Answers the conversation's `question` (AskUserQuestion): per question, in order, the labels
+     * picked and "Other"'s text. Rejects with "Answer this one in the terminal." when the answers
+     * do not fit it, or when the agent takes none through Styr.
+     */
+    answerQuestion: (
+      terminalId: string,
+      questionId: string,
+      answers: QuestionAnswer[]
+    ): Promise<void> => ipcRenderer.invoke('agent:answerQuestion', terminalId, questionId, answers),
     onConversation: (
       handler: (update: { terminalId: string; conversation: AgentConversation }) => void
     ): (() => void) => subscribe('agent:conversation', handler as (...args: never[]) => void)
