@@ -67,6 +67,13 @@ vi.mock('./ipc.js', () => ({
   stopRemoteWorkspaces: record('stopRemoteWorkspaces'),
   switchWorkspace: record('switchWorkspace')
 }))
+vi.mock('./deepLinks.js', () => ({
+  initDeepLinks: () => {
+    calls.push('initDeepLinks')
+    return true
+  },
+  registerDeepLinkHandlers: record('registerDeepLinkHandlers')
+}))
 vi.mock('./taskIndex.js', () => ({
   closeIndex: record('closeIndex'),
   syncIndex: record('syncIndex')
@@ -117,7 +124,8 @@ describe('start-up order', () => {
       .slice(beforeReady.length)
       .filter((call) => !call.startsWith('app:on') && !call.startsWith('app:set'))
 
-    expect(beforeReady).toEqual(['app:on window-all-closed', 'app:on before-quit'])
+    // The link that launched the app arrives before `ready` on macOS, so deep links start first.
+    expect(beforeReady).toEqual(['initDeepLinks', 'app:on window-all-closed', 'app:on before-quit'])
     expect(startup).toEqual([
       'migrateSettings',
       'syncAppImageMcp',
@@ -125,6 +133,7 @@ describe('start-up order', () => {
       'syncIndex',
       'registerIpcHandlers',
       'registerAccessHandlers',
+      'registerDeepLinkHandlers',
       'startRemoteWorkspaces',
       'startAutoDispatch',
       'installAppMenu',

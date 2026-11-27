@@ -108,7 +108,8 @@ const DESKTOP_ONLY = new Set([
   'lan:cancelPair',
   'lan:boards',
   'lan:addWorkspace',
-  'lan:remove'
+  'lan:remove',
+  'lan:takePairLink'
 ])
 
 describe('the server channel table', () => {

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { LanBoard, LanHostInfo, RemoteState, WorkspaceOverview } from '@core/types.js'
-import { groupedCode, lanHostStatus } from '../../lib/accessView.js'
+import { groupedCode, lanHostStatus, pairLinkSummary } from '../../lib/accessView.js'
 import { ipcMessage } from '../../lib/ipcMessage.js'
 import { useRemoteState } from '../../lib/remoteStatus.js'
 import { PlusIcon } from '../icons.js'
@@ -171,13 +171,16 @@ const looksLikePairLink = (text: string): boolean => /^styr:\/\/pair\b/i.test(te
  * to compare while the person there allows this one in its Add device window.
  */
 function AddComputerDialog({
+  initialAddress = '',
   onClose,
   onPaired
 }: {
+  /** A clicked `styr://pair` link: filled in, and still waits for Connect. */
+  initialAddress?: string
   onClose: () => void
   onPaired: (host: LanHostInfo) => void
 }): ReactNode {
-  const [address, setAddress] = useState('')
+  const [address, setAddress] = useState(initialAddress)
   const [name, setName] = useState('')
   const [code, setCode] = useState<string>()
   const [busy, setBusy] = useState(false)
@@ -190,6 +193,8 @@ function AddComputerDialog({
   useEffect(() => () => void window.api.lan.cancelPair(), [])
 
   const byLink = looksLikePairLink(address)
+  /** Where the link leads, shown before Connect: a clicked link fills this in unseen. */
+  const linkTarget = byLink ? pairLinkSummary(address) : undefined
 
   async function connect(): Promise<void> {
     setBusy(true)
@@ -290,6 +295,9 @@ function AddComputerDialog({
               disabled={busy}
               onChange={(event) => setAddress(event.target.value)}
             />
+            {linkTarget ? (
+              <span className="font-mono text-[11.5px] text-faint">Pairs with {linkTarget}</span>
+            ) : null}
           </label>
           <label className="flex flex-col gap-1.5">
             <span className="text-[12px] font-medium text-dim">Name</span>
@@ -382,6 +390,75 @@ function OpenWorkspaceDialog({
           ))}
         </Card>
       )}
+      {error ? (
+        <p role="alert" className="mt-3 text-[12px] text-danger">
+          {error}
+        </p>
+      ) : null}
+    </Modal>
+  )
+}
+
+/**
+ * A `styr://pair` link the system opened Styr with (`src/main/deepLinks.ts`): Add computer with the
+ * link filled in, then the computer's workspaces. Pairing waits for Connect, so a link alone pairs
+ * nothing. Other computers needs Remote workspaces, which this offers to switch on first.
+ */
+export function PairLinkDialog({
+  link,
+  remoteEnabled,
+  onEnableRemote,
+  onClose
+}: {
+  link: string
+  remoteEnabled: boolean
+  /** Saves Settings → Experimental → Remote workspaces on; rejects with the reason. */
+  onEnableRemote: () => Promise<void>
+  onClose: () => void
+}): ReactNode {
+  const [paired, setPaired] = useState<LanHostInfo>()
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  if (paired) return <OpenWorkspaceDialog host={paired} onClose={onClose} />
+  if (remoteEnabled) {
+    return <AddComputerDialog initialAddress={link} onClose={onClose} onPaired={setPaired} />
+  }
+
+  async function enable(): Promise<void> {
+    setBusy(true)
+    setError('')
+    try {
+      await onEnableRemote()
+    } catch (failure) {
+      setError(ipcMessage(failure))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="Add a computer"
+      subtitle="You opened a pair link from another computer running Styr."
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={busy} onClick={() => void enable()}>
+            Switch on and continue
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col items-center gap-3 py-2 text-center">
+        <DevicesGlyph />
+        <span className="max-w-sm text-[12.5px] leading-relaxed text-dim">
+          Opening another computer&apos;s workspaces uses Remote workspaces, which is still
+          experimental. Switch it on to add this computer; you can turn it off again under Settings
+          → Experimental.
+        </span>
+      </div>
       {error ? (
         <p role="alert" className="mt-3 text-[12px] text-danger">
           {error}

@@ -140,6 +140,19 @@ pair` prints). This desktop then pairs exactly as a phone that scanned it: pinne
   answers, its outcome is final, since the attempt spends the secret. The address that answered
   is the one stored. Expired links are refused before a dial. Anyone who copies the link in its
   2 minutes can pair, as with the QR.
+- **Clicking a pair link opens Styr** (`src/main/deepLinks.ts`). The packaged app claims the
+  `styr` scheme (`protocols` in `electron-builder.yml`: Info.plist on macOS, the `.desktop` file on
+  Linux; `setAsDefaultProtocolClient` at runtime, which is what registers it on Windows) and takes
+  the single-instance lock, so a link clicked while it runs reaches that instance
+  (`second-instance` on Windows and Linux, `open-url` on macOS, registered before `ready` since a
+  link that launched the app arrives then; `pairLinkIn` picks it from the arguments). The link
+  waits in the main process until the window takes it (`lan:takePairLink`, asked on load and on
+  `lan:pairLinkWaiting`), and opens `PairLinkDialog` at the app level, not inside Settings, so
+  Settings' unsaved edits are untouched: Add computer with the link filled in, after offering to
+  switch Remote workspaces on. **It only fills the dialog**: nothing is dialled until the person
+  presses Connect, so a link on a web page cannot pair this computer with someone else's. A dev
+  build claims neither the scheme nor the lock, so it runs beside the installed app; a second
+  launch that hands its link over starts nothing, and its `before-quit` does nothing either.
 - **The same network, from this side too** (`privateAddress`): a target must be a private
   address, or a name that resolves to one, and the socket goes to that checked address, never to
   the name again. A public address is refused before a packet is sent.
@@ -158,7 +171,8 @@ pair` prints). This desktop then pairs exactly as a phone that scanned it: pinne
 - **Forget** deletes the entry and its key; the workspaces linked to it stay in the switcher,
   offline, until removed.
 - Channels (desktop only, never on the channel table): `lan:hosts`, `lan:pair` (with `lan:pairCode`
-  broadcast while it waits), `lan:pairLink`, `lan:cancelPair`, `lan:boards`, `lan:addWorkspace`, `lan:remove`.
+  broadcast while it waits), `lan:pairLink`, `lan:takePairLink` (with `lan:pairLinkWaiting`
+  broadcast when one is clicked), `lan:cancelPair`, `lan:boards`, `lan:addWorkspace`, `lan:remove`.
 
 ## Known limits
 

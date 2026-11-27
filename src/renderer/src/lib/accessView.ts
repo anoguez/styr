@@ -45,6 +45,28 @@ export function groupedFingerprint(fingerprint: string): string {
   return (fingerprint.match(/.{1,4}/g) ?? []).slice(0, 8).join(' ')
 }
 
+/**
+ * Where a pasted or clicked pair link leads, to show before Connect: the address a device tries
+ * first, the port and the start of the fingerprint it pins. Undefined for anything that is not a
+ * complete link (the main process reads it strictly when pairing, `parsePairLink`).
+ */
+export function pairLinkSummary(text: string): string | undefined {
+  const value = text.trim()
+  if (!/^styr:\/\/pair\b/i.test(value)) return undefined
+  let params: URLSearchParams
+  try {
+    params = new URL(value).searchParams
+  } catch {
+    return undefined
+  }
+  const host = params.get('host') ?? ''
+  const port = params.get('port') ?? ''
+  const fingerprint = params.get('fp') ?? ''
+  if (!host || !/^\d{1,5}$/.test(port) || !/^[0-9a-f]{64}$/.test(fingerprint)) return undefined
+  const short = groupedFingerprint(fingerprint).split(' ').slice(0, 2).join(' ')
+  return `${host}:${port} · fingerprint ${short}`
+}
+
 function when(iso: string | undefined, now: number): string {
   if (!iso) return ''
   const minutes = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000))

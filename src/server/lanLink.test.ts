@@ -6,6 +6,7 @@ import { createLanHosts } from '@host/remote/lanHosts.js'
 import {
   closeReason,
   lanTransport,
+  pairLinkIn,
   pairWithLink,
   parsePairLink,
   parseTarget,
@@ -267,6 +268,16 @@ describe('lan targets', () => {
     expect(
       parsePairLink(`styr://pair?v=2&port=7878&fp=${fp}&secret=${secret}&exp=1`)
     ).toBeUndefined()
+  })
+
+  it('finds a clicked pair link among launch arguments, and nothing else', () => {
+    const link = `styr://pair?v=2&host=192.168.1.20&port=7878&fp=${'ab'.repeat(32)}`
+    expect(pairLinkIn(['/opt/Styr/styr', '--no-sandbox', link])).toBe(link)
+    expect(pairLinkIn([` ${link}`])).toBe(link)
+    expect(
+      pairLinkIn(['/opt/Styr/styr', 'styr://other?x=1', 'https://example.com'])
+    ).toBeUndefined()
+    expect(pairLinkIn([`${link}&pad=${'x'.repeat(3000)}`])).toBeUndefined()
   })
 
   it('names each close code', () => {

@@ -368,6 +368,18 @@ export interface PairLink {
 /** Whether `text` looks like a pair link rather than an address, for a field that takes both. */
 export const isPairLink = (text: string): boolean => /^styr:\/\/pair\b/i.test(text.trim())
 
+/** The longest pair link taken from the system: a real one is a few hundred characters. */
+export const PAIR_LINK_MAX = 2048
+
+/**
+ * The pair link among a launch's arguments, as Windows and Linux pass a clicked `styr://` link to
+ * the app (macOS sends it as an `open-url` event, given here as a one-item list). Anything else,
+ * another scheme or an oversized argument, is not one.
+ */
+export function pairLinkIn(argv: readonly string[]): string | undefined {
+  return argv.find((arg) => arg.length <= PAIR_LINK_MAX && isPairLink(arg))?.trim()
+}
+
 /**
  * Reads a pair link, the one Add device's QR carries (and its Copy link button gives). Strict:
  * protocol 2 only, a 64-hex fingerprint, a hex secret, a port and at least one address, or

@@ -292,6 +292,11 @@ const api = {
      */
     pairLink: (link: string, name: string): Promise<LanHostInfo> =>
       ipcRenderer.invoke('lan:pairLink', link, name),
+    /** A `styr://pair` link the system opened Styr with, once; undefined when none waits. */
+    takePairLink: (): Promise<string | undefined> => ipcRenderer.invoke('lan:takePairLink'),
+    /** A link was clicked while Styr runs: take it with `takePairLink`. */
+    onPairLinkWaiting: (handler: () => void): (() => void) =>
+      subscribe('lan:pairLinkWaiting', handler as (...args: never[]) => void),
     /**
      * After the other computer allowed this one: whether it showed the same code. Only a yes
      * keeps the pairing; anything else discards it.
