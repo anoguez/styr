@@ -9,7 +9,7 @@
     "maxRecordFrameChars": 87380,
     "handshakeMaxBytes": 2048,
     "handshakeTimeoutMs": 10000,
-    "maxFrameBytes": 8388608,
+    "maxFrameBytes": 16777216,
     "closeCodes": {
       "4400": "bad request (binary frame, a frame that fails to decrypt)",
       "4401": "unauthorized (every handshake failure)",
@@ -498,6 +498,35 @@
         "prefixItems": [],
         "items": false,
         "maxItems": 0
+      }
+    },
+    "files:uploadImage": {
+      "kind": "invoke",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          {
+            "type": "string",
+            "maxLength": 512
+          },
+          {
+            "type": "string",
+            "maxLength": 100
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "items": false,
+        "minItems": 4,
+        "maxItems": 4
       }
     },
     "git:branches": {

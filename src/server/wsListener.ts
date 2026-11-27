@@ -19,8 +19,11 @@ import {
 } from '@host/remoteAccess/secureSession.js'
 import type { Hub } from './hub.js'
 
-/** The largest message a signed-in client may send. Terminal input and task drafts are far below. */
-export const MAX_FRAME_BYTES = 8 * 1024 * 1024
+/**
+ * The largest message a signed-in client may send. Terminal input and task drafts are far below;
+ * the largest is `files:uploadImage`, whose 10 MB image is about 13.4 MB as base64.
+ */
+export const MAX_FRAME_BYTES = 16 * 1024 * 1024
 /** As on the Unix socket: a client this far behind is dropped rather than buffered. */
 export const MAX_BUFFERED_BYTES = 32 * 1024 * 1024
 const MAX_HANDSHAKING = 16

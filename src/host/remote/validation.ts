@@ -85,6 +85,7 @@ export const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   'tasks:forgetSession': task,
   'tasks:removeWorktree': task.nullable(),
   'tasks:checkMerged': ignored,
+  'files:uploadImage': remotePathSchema,
   'git:branches': z.object({
     branches: z.array(line).max(REMOTE_LIMITS.entries),
     current: line.optional()

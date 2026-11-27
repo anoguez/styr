@@ -87,6 +87,13 @@ const api = {
       ipcRenderer.invoke('tasks:update', id, patch),
     addNote: (id: string, author: string, message: string): Promise<Task> =>
       ipcRenderer.invoke('tasks:note', id, author, message),
+    /** Saves an image under `.styr/attachments/` and answers its path (devices use it). */
+    uploadImage: (
+      taskId: string | null,
+      name: string,
+      mime: string,
+      base64: string
+    ): Promise<string> => ipcRenderer.invoke('files:uploadImage', taskId, name, mime, base64),
     reorder: (status: TaskStatus, orderedIds: string[]): Promise<Task[]> =>
       ipcRenderer.invoke('tasks:reorder', status, orderedIds),
     archive: (id: string, archived: boolean): Promise<Task> =>
