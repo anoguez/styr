@@ -166,6 +166,7 @@ const BOARD = new Set([
   'tasks:delete',
   'tasks:forgetSession',
   'tasks:checkMerged',
+  'files:uploadImage',
   'git:branches',
   'git:taskDiff',
   'git:filePatch',

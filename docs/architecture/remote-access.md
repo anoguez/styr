@@ -77,6 +77,17 @@ device ──ws://<this computer's LAN or VPN address>:7878──▶ wsListener 
   `updates:*`, `access:*` or `server:experimental`, no `workspaces:create`, no `server:notify`, and
   `settings:save` only for a shared workspace with the app-level part unchanged. The local window
   and the Unix socket have no policy and are never filtered.
+- **Images from a device** (`files:uploadImage(taskId | null, name, mime, base64)`,
+  `host/attachments.ts`): a board write like any other, open only while the active workspace is
+  shared. The image is saved as `<workspace>/.styr/attachments/<taskId | inbox>/<ms>-<safe
+name>.<ext>` and the call answers with that absolute path, for the device to put in a prompt or
+  a task's context files. PNG, JPEG and WebP only, checked by the mime type _and_ the file's
+  signature; HEIC is refused (agents cannot read it, and converting would need a native
+  dependency). At most 10 MB decoded, refused from the base64 length before decoding; this is
+  why `MAX_FRAME_BYTES` is 16 MiB. The name keeps only letters, digits, `-` and `_`, the task id
+  must be a task id, and the resolved path must lie inside the attachments folder; a file is
+  never replaced. A `.gitignore` of `*` in the folder keeps it out of a board kept in git.
+  Nothing removes old attachments yet.
 - **One active workspace, shared by all clients.** A device that switches workspace moves the
   desktop window too, as another window would. It sees the active workspace in `workspaces:list`
   (`activeId`, empty when the active one is not shared) and `settings:changed`.

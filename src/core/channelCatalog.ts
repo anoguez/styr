@@ -58,6 +58,8 @@ export const CHANNEL_CATALOG = {
   'tasks:delete': { route: 'active', write: true },
   'tasks:forgetSession': { route: 'active', write: true },
   'tasks:checkMerged': { route: 'active', write: true },
+
+  'files:uploadImage': { route: 'active', write: true },
   'tasks:reveal': { route: 'special' },
   'tasks:openInEditor': { route: 'special' },
 

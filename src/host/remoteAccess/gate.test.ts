@@ -46,6 +46,17 @@ function refused(run: () => void): boolean {
 }
 
 describe('network policy: calls', () => {
+  it('lets a device upload an image only while the active workspace is shared', () => {
+    const args = ['TASK-0001', 'shot.png', 'image/png', 'iVBORw0KGgo=']
+    expect(refused(() => setup().policy.check('files:uploadImage', args))).toBe(false)
+    expect(refused(() => setup({ shared: [] }).policy.check('files:uploadImage', args))).toBe(true)
+    expect(
+      refused(() =>
+        setup({ shared: ['other'], active: 'open' }).policy.check('files:uploadImage', args)
+      )
+    ).toBe(true)
+  })
+
   it('lets a shared active workspace use the board', () => {
     const { policy } = setup()
     for (const method of [
