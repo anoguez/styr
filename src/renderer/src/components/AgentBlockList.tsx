@@ -14,9 +14,9 @@ import type {
   DiffBlock,
   StyrBlock
 } from '@core/types/blocks.js'
-import { CommandInput, type Look } from './TerminalBlockList.js'
+import { CommandInput, type Look } from './CommandInput.js'
 import type { AgentCommand, ApprovalOption } from '@core/agentConversation.js'
-import { quiet } from './TerminalBlocks.js'
+import { quiet } from './quiet.js'
 import { editRows } from '@core/diffView.js'
 import { ChatMarkdown } from './ChatMarkdown.js'
 

@@ -19,8 +19,9 @@ export interface BlockActions {
   interrupt: () => void
 }
 
-export const quiet =
-  'inline-flex items-center gap-1 rounded-[5px] px-1.5 text-[11px] font-medium text-dim hover:bg-raised/70 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40'
+import { quiet } from './quiet.js'
+
+export { quiet }
 
 export function formatDuration(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`

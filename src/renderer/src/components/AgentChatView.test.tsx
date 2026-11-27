@@ -1,11 +1,17 @@
 import { createElement, createRef } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_THEME } from '@core/types.js'
 import type { AgentConversation } from '@core/agentConversation.js'
 import { conversationAdapter } from '@core/providers/conversation.js'
 import type { AgentChat } from '../lib/agentChat/useAgentChat.js'
-import { AgentChatPane, chatGap, type AgentRun } from './AgentChatView.js'
+import {
+  AgentChatPane,
+  BackToChat,
+  XtermAgentChat,
+  chatGap,
+  type AgentRun
+} from './AgentChatView.js'
 import { AgentBlockList, type ApprovalRequest } from './AgentBlockList.js'
 import { ChatSwitch } from './ChatSwitch.js'
 
@@ -143,5 +149,55 @@ describe('agent block list', () => {
     expect(html).toContain('Answer in Terminal')
     expect(html).not.toContain('>Yes<')
     expect(html).not.toContain('>No<')
+  })
+})
+
+describe('xterm.js chat overlay', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', {
+      api: {
+        usage: {
+          conversation: () => Promise.resolve(null),
+          onConversation: () => () => undefined,
+          sendPrompt: () => Promise.resolve(true),
+          approval: () => Promise.resolve()
+        },
+        terminal: { write: () => undefined }
+      }
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const overlay = (chatOn: boolean, active = true): string =>
+    renderToStaticMarkup(
+      createElement(XtermAgentChat, {
+        sessionId: 't1',
+        run,
+        chat: chatOn,
+        active,
+        theme: DEFAULT_THEME,
+        onChatChange: noop,
+        onShownChange: noop
+      })
+    )
+
+  it('lies over the terminal while Chat is on, saying what it waits for', () => {
+    const html = overlay(true)
+    expect(html).toContain('data-agent-chat')
+    expect(html).not.toContain('invisible')
+    // No conversation has arrived yet in a static render: the way back is offered.
+    expect(html).toContain('Waiting for Claude Code')
+    expect(html).toContain('Switch to Terminal')
+  })
+
+  it('is not drawn until Chat is first switched on, and hides in a background tab', () => {
+    expect(overlay(false)).toBe('')
+    expect(overlay(true, false)).toContain('invisible')
+  })
+
+  it('offers a way back to the chat over the TUI', () => {
+    expect(renderToStaticMarkup(createElement(BackToChat, { onClick: noop }))).toContain(
+      'Back to chat'
+    )
   })
 })

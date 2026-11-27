@@ -17,7 +17,7 @@ import {
   type AgentChat
 } from '../lib/agentChat/useAgentChat.js'
 import { AgentBlockList } from './AgentBlockList.js'
-import type { Look } from './TerminalBlockList.js'
+import type { Look } from './CommandInput.js'
 import type { TerminalHandle } from './TerminalView.js'
 
 /** The agent a tab runs, as the surface knows it, for its chat. */
