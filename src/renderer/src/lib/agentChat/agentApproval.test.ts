@@ -58,6 +58,32 @@ describe('approvalRequest', () => {
     expect(request).toMatchObject({ prompt: 'Run?', keys: false })
   })
 
+  it('offers only the terminal for a question the CLI asks in its own interface', () => {
+    const adapter = {
+      describeTool: () => ({ summary: 'Which one?' }),
+      asksInTui: (tool: string) => tool === 'AskUserQuestion'
+    } as unknown as ConversationAdapter
+    const asked = approvalRequest(
+      conversation({ id: 'a1', prompt: 'Claude has a question', tool: 'AskUserQuestion' }),
+      adapter,
+      null
+    )
+    expect(asked).toEqual({
+      prompt: 'Claude has a question',
+      tool: 'AskUserQuestion',
+      options: [],
+      keys: false,
+      inTui: true
+    })
+    const bash = approvalRequest(
+      conversation({ id: 'a2', prompt: 'Run?', tool: 'Bash' }),
+      adapter,
+      null
+    )
+    expect(bash?.inTui).toBeUndefined()
+    expect(bash?.options.length).toBeGreaterThan(0)
+  })
+
   it('is null with neither', () => {
     expect(approvalRequest(null, undefined, null)).toBeNull()
     expect(approvalRequest(conversation(), undefined, '')).toBeNull()

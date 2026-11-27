@@ -18,7 +18,7 @@ function isWebUrl(url: string): boolean {
   }
 }
 
-function inline(text: string): ReactNode[] {
+export function inline(text: string): ReactNode[] {
   const out: ReactNode[] = []
   let last = 0
   for (const match of text.matchAll(INLINE)) {

@@ -2,7 +2,6 @@ import { useMemo, useRef, type CSSProperties, type MutableRefObject, type ReactN
 import type { NativeUnavailableReason, ShortcutBindings, ThemeSettings } from '@core/types.js'
 import { AGENT_PROVIDER_LABELS } from '@core/types.js'
 import { syntaxFor, type ShellDialect } from '@core/shell.js'
-import { promptHistory } from '@core/agentConversation.js'
 import type { AgentProviderId } from '@core/providers/types.js'
 import { linkRows } from '../lib/nativeTerminal/links.js'
 import { useNativeEngine } from '../lib/nativeTerminal/useNativeEngine.js'
@@ -12,6 +11,7 @@ import { useGridInput } from '../lib/nativeTerminal/useGridInput.js'
 import { useGridPointer } from '../lib/nativeTerminal/useGridPointer.js'
 import { TerminalBlockList, type InputHint } from './TerminalBlockList.js'
 import { AgentBlockList } from './AgentBlockList.js'
+import { BackToChat } from './AgentChatView.js'
 import { NativeGridLayer } from './NativeGridLayer.js'
 import type { BlockActions } from './TerminalBlocks.js'
 import type { BlockLayout, TerminalHandle, TerminalSelection } from './TerminalView.js'
@@ -39,6 +39,8 @@ export function NativeTerminalView({
   onBlockListChange,
   agentProvider,
   agentWaiting,
+  chat = false,
+  onChatChange,
   onFallback
 }: {
   sessionId: string
@@ -64,6 +66,10 @@ export function NativeTerminalView({
   agentProvider?: AgentProviderId
   /** What the agent said while it waits on the person (a permission, a question); null otherwise. */
   agentWaiting?: string | null
+  /** The tab's Chat switch: draw a running agent as a chat (`AgentBlockList`) rather than its TUI. */
+  chat?: boolean
+  /** The chat asked for the CLI's own interface (off) — "<agent> view", "Answer in <agent>". */
+  onChatChange?: (on: boolean) => void
   onFallback: (reason: NativeUnavailableReason, detail: string) => void
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
@@ -101,8 +107,8 @@ export function NativeTerminalView({
   /** The screen the program is drawing, whose modes decide how keys are sent. */
   const state = list ? list.screen.current : (model.current?.current ?? null)
 
-  const agent = useAgentSession({ sessionId, list, agentProvider, agentWaiting, write })
-  const { agentMode, provider, adapter, conversation } = agent
+  const agent = useAgentSession({ sessionId, list, agentProvider, agentWaiting, chat, write })
+  const { agentMode, provider } = agent
   /** Keys go to Styr's input rather than straight to the PTY. */
   const typing = prompting || agentMode
   const grid = list ? (takeover && !agentMode ? state : null) : state
@@ -217,32 +223,24 @@ export function NativeTerminalView({
       </span>
       {agentMode && provider ? (
         <AgentBlockList
-          blocks={agent.agentBlockList}
-          working={conversation?.working ?? false}
+          blocks={agent.blocks}
+          working={agent.working}
           label={AGENT_PROVIDER_LABELS[provider]}
           approval={agent.approval}
           look={look}
           font={font}
           inputRef={inputRef}
-          history={conversation && adapter ? promptHistory(conversation, adapter) : []}
-          commands={conversation?.commands}
+          history={agent.history}
+          commands={agent.conversation?.commands}
           attachedImages={agent.attachedImages}
           onSubmit={agent.onSubmit}
-          onInterrupt={() => window.api.terminal.write(sessionId, '\x1b')}
+          onInterrupt={agent.onInterrupt}
           onAnswer={agent.onAnswer}
           onPasteImage={agent.onPasteImage}
-          onShowTui={agent.showTui}
+          onShowTui={() => (onChatChange ? onChatChange(false) : agent.showTui())}
         />
       ) : null}
-      {agent.agentReady && !agentMode && provider ? (
-        <button
-          type="button"
-          className="bg-raised text-dim border-edge-strong hover:text-ink absolute top-2 right-3 z-10 rounded-md border px-2 py-0.5 font-sans text-[11.5px]"
-          onClick={agent.showStyrView}
-        >
-          Styr view
-        </button>
-      ) : null}
+      {agent.ready && chat && agent.tuiRequested ? <BackToChat onClick={agent.showChat} /> : null}
       {list && !takeover && !agentMode ? (
         <TerminalBlockList
           state={list}

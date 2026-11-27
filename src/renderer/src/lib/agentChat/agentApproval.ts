@@ -16,6 +16,10 @@ export function approvalRequest(
   waiting: string | null
 ): ApprovalRequest | null {
   const approval = conversation?.approval
+  if (approval?.tool && adapter?.asksInTui?.(approval.tool)) {
+    // A question, not a permission: Allow/Deny would hang it, so only the terminal answers it.
+    return { prompt: approval.prompt, tool: approval.tool, options: [], keys: false, inTui: true }
+  }
   if (approval) {
     const described =
       approval.tool && adapter

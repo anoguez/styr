@@ -145,6 +145,7 @@ export function shippedSettings(): Settings {
     autoDispatch: false,
     updates: { checkAutomatically: true },
     restoreTabs: 'ask',
+    agentTabView: 'terminal',
     experimental: {
       externalSources: false,
       nativeTerminal: false,

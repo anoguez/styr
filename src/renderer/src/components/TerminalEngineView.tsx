@@ -7,6 +7,7 @@ import { TerminalView } from './TerminalView.js'
 import type { BlockActions } from './TerminalBlocks.js'
 import type { InputHint } from './TerminalBlockList.js'
 import type { AgentProviderId } from '@core/providers/types.js'
+import { XtermAgentChat, type AgentRun } from './AgentChatView.js'
 
 const FALLBACK_LABEL: Record<NativeUnavailableReason, string> = {
   disabled: 'turned off',
@@ -34,6 +35,9 @@ export function TerminalEngineView({
   onBlockListChange,
   agentProvider,
   agentWaiting,
+  agentRun,
+  chat = false,
+  onChatChange,
   ...props
 }: ComponentProps<typeof TerminalView> & {
   /** `experimental.nativeTerminal` from Settings. */
@@ -49,6 +53,11 @@ export function TerminalEngineView({
   agentProvider?: AgentProviderId
   /** What the agent said while it waits on the person; null otherwise. */
   agentWaiting?: string | null
+  /** The agent this tab runs, for its chat; absent for a shell, which has no Chat switch. */
+  agentRun?: AgentRun
+  /** The tab's Chat switch: on draws the agent as a chat, off shows the terminal. */
+  chat?: boolean
+  onChatChange?: (on: boolean) => void
 }): ReactNode {
   const { sessionId } = props
   const [engine, setEngine] = useState<Choice>(() =>
@@ -56,6 +65,9 @@ export function TerminalEngineView({
   )
   const [notice, setNotice] = useState<string | null>(null)
   const [listed, setListed] = useState(false)
+  // The xterm.js engine's chat is over the terminal, which stays mounted beneath it.
+  const [chatShown, setChatShown] = useState(false)
+  const xtermChat = chatShown && agentRun !== undefined
   const initial = useRef({ engine, nativeTerminal })
 
   useEffect(() => {
@@ -114,10 +126,29 @@ export function TerminalEngineView({
           }}
           agentProvider={agentProvider}
           agentWaiting={agentWaiting}
+          chat={chat}
+          onChatChange={onChatChange}
           onFallback={fallBack}
         />
       ) : engine === 'xterm' ? (
-        <TerminalView {...props} />
+        <>
+          {/* Always this wrapper, so a chat appearing or going never remounts the terminal. */}
+          <div className={`h-full w-full ${xtermChat ? 'invisible' : ''}`}>
+            <TerminalView {...props} />
+          </div>
+          {agentRun && onChatChange ? (
+            <XtermAgentChat
+              sessionId={props.sessionId}
+              run={agentRun}
+              chat={chat}
+              active={props.active}
+              theme={props.theme}
+              handle={props.handle}
+              onChatChange={onChatChange}
+              onShownChange={setChatShown}
+            />
+          ) : null}
+        </>
       ) : (
         <div className="h-full w-full" hidden={!props.active} />
       )}

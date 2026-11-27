@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { runningSubagents, type AgentStatus } from '@core/agentState.js'
-import { isAgentProgram } from '@core/handoff.js'
+import { agentProgramProvider, isAgentProgram } from '@core/handoff.js'
 import { syntaxFor } from '@core/shell.js'
 import { formatAccelerator, shortcutHint } from '@core/shortcuts.js'
 import {
+  type AgentTabView,
   type ShortcutBindings,
   type TaskStatus,
   type TerminalRuntimeState,
@@ -21,6 +22,9 @@ import {
 import { AskPrompt } from './AskPrompt.js'
 import { ACTIVITY_RESERVE } from './TerminalActivity.js'
 import { ContextBar, agentButton, iconProps, quietButton } from './TerminalContextBar.js'
+import { ChatSwitch } from './ChatSwitch.js'
+import type { AgentRun } from './AgentChatView.js'
+import { agentViewFor, rememberAgentView } from '../lib/agentChat/agentView.js'
 import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
 import { TerminalBlocks, type ActionBlock, type BlockActions } from './TerminalBlocks.js'
 import type { BlockLayout } from '../lib/blockTracker.js'
@@ -164,6 +168,7 @@ export function TerminalSurface({
   theme,
   bindings,
   nativeTerminal = false,
+  agentTabView = 'terminal',
   runtime,
   agentStatus,
   shownState,
@@ -187,6 +192,8 @@ export function TerminalSurface({
   bindings: ShortcutBindings
   /** `experimental.nativeTerminal`: try Styr Terminal for this view (xterm.js otherwise). */
   nativeTerminal?: boolean
+  /** What an agent tab shows until its Chat switch is used (Settings → Open agent tabs in). */
+  agentTabView?: AgentTabView
   /** The main process's semantic state for this session, once it has reported any. */
   runtime?: TerminalRuntimeState
   /** The hook-reported state of this task's agent, when it is a task session. */
@@ -242,6 +249,16 @@ export function TerminalSurface({
   const [hoverLine, setHoverLine] = useState<number | null>(null)
   const [stickyBlock, setStickyBlock] = useState<string | null>(null)
   const [blockMenu, setBlockMenu] = useState<string | null>(null)
+  // The tab's Chat switch, remembered per tab; a tab never switched opens as Settings says.
+  const [view, setView] = useState<AgentTabView>(() => agentViewFor(session.id, agentTabView))
+  const setChat = useCallback(
+    (on: boolean) => {
+      const next: AgentTabView = on ? 'chat' : 'terminal'
+      rememberAgentView(session.id, next)
+      setView(next)
+    },
+    [session.id]
+  )
 
   const cwd = runtime?.cwd || session.cwd
   const running = runtime?.runningCommand
@@ -450,6 +467,21 @@ export function TerminalSurface({
   const isCodex = session.provider === 'codex'
   const codexUsage = useCodexUsage(session.id, isCodex)
   const agent = Boolean(session.taskId) || isAgentProgram(runtime?.runningCommand?.command)
+  // The agent CLI the tab runs: the program now running, else the task session's own provider.
+  const chatProvider =
+    agentProgramProvider(running?.command) ?? (session.taskId ? session.provider : undefined)
+  const agentWaiting =
+    agentStatus?.state === 'waiting' ? agentStatus.lastMessage || 'Waiting on you' : null
+  const agentRun: AgentRun | undefined =
+    agent && chatProvider && !session.replay
+      ? {
+          id: running && isAgentProgram(running.command) ? running.id : null,
+          provider: chatProvider,
+          waiting: agentWaiting
+        }
+      : undefined
+  const hasChat = agentRun !== undefined
+  const chatOn = hasChat && view === 'chat'
   const fullscreen = altScreen && !agent
   // A shell's commands become blocks; an agent session is one long command, which is not a block.
   const blocksOn = !agent && !blockList && layout !== null && !layout.alternate
@@ -517,6 +549,8 @@ export function TerminalSurface({
           return canHandOff ? void handOffWork() : undefined
         case 'terminalCreatePr':
           return void createPr()
+        case 'terminalChat':
+          return hasChat ? setChat(view !== 'chat') : undefined
       }
     })
   }, [
@@ -532,7 +566,10 @@ export function TerminalSurface({
     copyAll,
     retry,
     onSplit,
-    cwd
+    cwd,
+    hasChat,
+    setChat,
+    view
   ])
   useEffect(() => {
     onFullscreenChange?.(session.id, fullscreen)
@@ -614,9 +651,10 @@ export function TerminalSurface({
             ]}
             onBlockListChange={setBlockList}
             agentProvider={session.provider}
-            agentWaiting={
-              agentStatus?.state === 'waiting' ? agentStatus.lastMessage || 'Waiting on you' : null
-            }
+            agentWaiting={agentWaiting}
+            agentRun={agentRun}
+            chat={chatOn}
+            onChatChange={setChat}
           />
           {blocksOn && layout ? (
             <TerminalBlocks
@@ -770,6 +808,15 @@ export function TerminalSurface({
           onReview={reviewable ? () => void askReview() : undefined}
           onCreatePr={canCreatePr ? () => void createPr() : undefined}
           reviewHint={shortcutHint(bindings, 'terminalAskReview')}
+          chat={
+            hasChat ? (
+              <ChatSwitch
+                on={chatOn}
+                hint={shortcutHint(bindings, 'terminalChat')}
+                onToggle={() => setChat(!chatOn)}
+              />
+            ) : undefined
+          }
         >
           {children}
         </ContextBar>

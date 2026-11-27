@@ -108,6 +108,24 @@ export function EnvironmentSection({ draft, patch }: SectionProps): ReactNode {
         />
       </Field>
       <Field
+        label="Open agent tabs in"
+        hint={
+          draft.agentTabView === 'chat'
+            ? 'New Claude and Codex tabs show their conversation as a chat. The Chat switch in the tab’s bar goes back to the terminal, and each tab remembers its choice.'
+            : 'New Claude and Codex tabs show the agent’s own terminal interface. The Chat switch in the tab’s bar shows its conversation instead, and each tab remembers its choice.'
+        }
+      >
+        <Segmented
+          label="Open agent tabs in"
+          value={draft.agentTabView}
+          onChange={(agentTabView) => patch({ agentTabView })}
+          options={[
+            { value: 'chat', label: 'Chat' },
+            { value: 'terminal', label: 'Terminal' }
+          ]}
+        />
+      </Field>
+      <Field
         label="Open files with"
         hint="App that opens task files and folders. System default uses whatever the operating system has set for the file type."
       >
