@@ -123,13 +123,23 @@ Settings → Connections → Other computers opens the workspaces another Styr o
 shares with this one. This desktop pairs with it exactly as a phone does, and then reaches it as
 a remote host (`remote.md`), behind the same Experimental switch (Remote workspaces).
 
-- **Pairing** is by approval only (`requestLanPairing`, `src/host/remote/lanLink.ts`): Add
+- **Pairing** is by approval (`requestLanPairing`, `src/host/remote/lanLink.ts`): Add
   computer takes an address (`192.168.1.20`, `studio.local:7878`, `parseTarget`), and the other
   computer's Add device window must be open there. Both screens show the code; this desktop sends
   its own computer name. Allowed there and confirmed here ("Did it show this code?"), it keeps the other computer's fingerprint (the key it was shown),
   the device id it was given and its own Ed25519 key in `~/.styr/lan-hosts.json` (`lanHosts.ts`:
   0600, atomic, the key sealed with the keychain where there is one, `src/main/keychain.ts`).
   Settings never gets a key.
+- **Or with a pair link** (`pairWithLink`, `lan:pairLink`): the field also takes the QR's
+  `styr://pair?…` link, which Add device's Copy pair link puts on the clipboard (and `styr serve
+pair` prints). This desktop then pairs exactly as a phone that scanned it: pinned to the link's
+  `fp` before anything about it is sent, the proof keyed by its `secret` (`parsePairLink` is
+  strict: `v=2`, 64-hex fingerprint, hex secret, port, expiry). Nobody is asked there and there is
+  no code to compare, so the computer is kept at once. The link's addresses are tried in order
+  while none answers (off this network, refused, timed out: the secret is unspent); once one
+  answers, its outcome is final, since the attempt spends the secret. The address that answered
+  is the one stored. Expired links are refused before a dial. Anyone who copies the link in its
+  2 minutes can pair, as with the QR.
 - **The same network, from this side too** (`privateAddress`): a target must be a private
   address, or a name that resolves to one, and the socket goes to that checked address, never to
   the name again. A public address is refused before a packet is sent.
@@ -148,7 +158,7 @@ a remote host (`remote.md`), behind the same Experimental switch (Remote workspa
 - **Forget** deletes the entry and its key; the workspaces linked to it stay in the switcher,
   offline, until removed.
 - Channels (desktop only, never on the channel table): `lan:hosts`, `lan:pair` (with `lan:pairCode`
-  broadcast while it waits), `lan:cancelPair`, `lan:boards`, `lan:addWorkspace`, `lan:remove`.
+  broadcast while it waits), `lan:pairLink`, `lan:cancelPair`, `lan:boards`, `lan:addWorkspace`, `lan:remove`.
 
 ## Known limits
 

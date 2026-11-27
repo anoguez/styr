@@ -6,6 +6,8 @@ import { createLanHosts } from '@host/remote/lanHosts.js'
 import {
   closeReason,
   lanTransport,
+  pairWithLink,
+  parsePairLink,
   parseTarget,
   privateAddress,
   requestLanPairing,
@@ -151,6 +153,59 @@ describe('another computer on the network', () => {
     expect(events.hello).toBeUndefined()
   })
 
+  /** The host's clock, which the link's expiry is on. */
+  const clock = () => ({ now: () => host.state.clock })
+
+  /** Add device's link, with the addresses swapped for `targets` (the test host is on loopback). */
+  function linkFor(targets: string[]) {
+    const link = parsePairLink(access.service.pair().uri)!
+    return { ...link, targets: targets.map((address) => ({ address, port: target().port })) }
+  }
+
+  it('pairs with a pair link, as a phone does with the QR: nobody asked, kept at once', async () => {
+    // An address off the network is skipped without a packet; the next one answers.
+    const pairing = pairWithLink(linkFor(['203.0.113.5', '127.0.0.1']), 'Studio desktop', clock())
+    const { target: reached, pairing: result } = await pairing.result
+    expect(reached.address).toBe('127.0.0.1')
+    expect(asked).toEqual([])
+    expect(result.fingerprint).toBe(access.store.identity().fingerprint)
+    expect(access.service.state().devices.map((device) => device.name)).toEqual(['Studio desktop'])
+
+    const store = createLanHosts({ path: join(host.dir, 'lan-hosts.json'), now: () => 0 })
+    store.add(reached, 'Studio', result)
+    const { events } = connect(store.credentials(result.fingerprint)!)
+    await vi.waitFor(() => expect(events.hello).toBeDefined())
+  })
+
+  it('works once: a used link is refused, and says how to get a new one', async () => {
+    const link = linkFor(['127.0.0.1'])
+    await pairWithLink(link, 'Studio desktop', clock()).result
+    await expect(pairWithLink(link, 'Laptop', clock()).result).rejects.toThrow(
+      /already used, it expired/
+    )
+    expect(access.service.state().devices).toHaveLength(1)
+  })
+
+  it('sends nothing to a computer that is not the one in the link', async () => {
+    const link = { ...linkFor(['127.0.0.1']), fingerprint: '0'.repeat(64) }
+    await expect(pairWithLink(link, 'Studio desktop', clock()).result).rejects.toThrow(
+      /not the computer that made this link/
+    )
+    expect(access.service.state().devices).toEqual([])
+  })
+
+  it('refuses an expired link before dialling', async () => {
+    const link = linkFor(['127.0.0.1'])
+    const late = pairWithLink(link, 'Studio desktop', { now: () => link.expiresAt })
+    await expect(late.result).rejects.toThrow(/expired/)
+  })
+
+  it('says so when none of the link’s addresses is on this network', async () => {
+    await expect(pairWithLink(linkFor(['203.0.113.5']), 'Studio', clock()).result).rejects.toThrow(
+      /None of the link's addresses answered/
+    )
+  })
+
   it('is cut off when removed there, and says so', async () => {
     const { credentials } = await pairNow()
     const { events } = connect(credentials)
@@ -186,6 +241,32 @@ describe('lan targets', () => {
     )
     await expect(privateAddress('example.com', resolve)).rejects.toThrow(/203\.0\.113\.9/)
     await expect(privateAddress('gone.local', async () => [])).rejects.toThrow(/could not be found/)
+  })
+
+  it('reads a pair link strictly', () => {
+    const fp = 'ab'.repeat(32)
+    const secret = 'cd'.repeat(20)
+    const uri =
+      `styr://pair?v=2&host=192.168.1.20&port=7878&hosts=${encodeURIComponent('192.168.1.20,[fd00::1],100.90.1.2')}` +
+      `&fp=${fp}&secret=${secret}&exp=1700000000000`
+    expect(parsePairLink(` ${uri} `)).toEqual({
+      targets: ['192.168.1.20', 'fd00::1', '100.90.1.2'].map((address) => ({
+        address,
+        port: 7878
+      })),
+      fingerprint: fp,
+      secret,
+      expiresAt: 1700000000000
+    })
+    expect(parsePairLink('192.168.1.20')).toBeUndefined()
+    expect(parsePairLink(uri.replace('v=2', 'v=1'))).toBeUndefined()
+    expect(parsePairLink(uri.replace(fp, 'nothex'))).toBeUndefined()
+    expect(parsePairLink(uri.replace(`secret=${secret}`, 'secret='))).toBeUndefined()
+    expect(parsePairLink(uri.replace('port=7878', 'port=0'))).toBeUndefined()
+    expect(parsePairLink(uri.replace('&exp=1700000000000', ''))).toBeUndefined()
+    expect(
+      parsePairLink(`styr://pair?v=2&port=7878&fp=${fp}&secret=${secret}&exp=1`)
+    ).toBeUndefined()
   })
 
   it('names each close code', () => {

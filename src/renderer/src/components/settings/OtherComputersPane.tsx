@@ -162,9 +162,13 @@ function HostRow({
   )
 }
 
+/** A pair link rather than an address: the QR's `styr://pair?…`, as Add device copies it. */
+const looksLikePairLink = (text: string): boolean => /^styr:\/\/pair\b/i.test(text.trim())
+
 /**
- * Pairs with another computer by approval: its address, then the code to compare while the person
- * there allows this one in its Add device window.
+ * Pairs with another computer, either with the pair link its Add device window copies (pinned and
+ * keyed as a phone's QR scan, so it is kept at once), or by approval: its address, then the code
+ * to compare while the person there allows this one in its Add device window.
  */
 function AddComputerDialog({
   onClose,
@@ -185,11 +189,14 @@ function AddComputerDialog({
   // Closing at any point hangs up, and drops a pairing not yet confirmed here: nothing is kept.
   useEffect(() => () => void window.api.lan.cancelPair(), [])
 
+  const byLink = looksLikePairLink(address)
+
   async function connect(): Promise<void> {
     setBusy(true)
     setError('')
     setCode(undefined)
     try {
+      if (byLink) return onPaired(await window.api.lan.pairLink(address, name))
       setAllowed(await window.api.lan.pair(address, name || address))
     } catch (failure) {
       setError(ipcMessage(failure))
@@ -272,11 +279,11 @@ function AddComputerDialog({
       ) : (
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-dim">Address</span>
+            <span className="text-[12px] font-medium text-dim">Pair link or address</span>
             <input
-              aria-label="Address"
+              aria-label="Pair link or address"
               className={`${inputClass} font-mono`}
-              placeholder="192.168.1.20"
+              placeholder="styr://pair?… or 192.168.1.20"
               spellCheck={false}
               autoFocus
               value={address}
@@ -297,7 +304,10 @@ function AddComputerDialog({
           </label>
           <Hint>
             On that computer, open Settings → Connections → Add device first: it accepts a new
-            computer only while that window is open. Its address is under Network details there.
+            computer only while that window is open. Paste the link its Copy pair link button gives
+            (or the one <code className="font-mono">styr serve pair</code> prints), and this
+            computer is added at once. Or type its address, under Network details there, and allow
+            this computer there after comparing a code.
           </Hint>
         </div>
       )}

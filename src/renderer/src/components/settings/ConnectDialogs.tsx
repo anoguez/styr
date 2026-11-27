@@ -166,6 +166,8 @@ export function AddDeviceDialog({
   const declined = useRef(false)
   /** A device began pairing and left: the code was closed for safety (`spendsWindow`). */
   const [stopped, setStopped] = useState(false)
+  /** The pair link went to the clipboard, for a computer that cannot scan the QR. */
+  const [copied, setCopied] = useState(false)
 
   // Withdraw an offer nobody used when the dialog goes, however it goes.
   useEffect(
@@ -179,6 +181,7 @@ export function AddDeviceDialog({
     setError('')
     setExpired(false)
     setStopped(false)
+    setCopied(false)
     declined.current = false
     try {
       const next = await window.api.access.pair()
@@ -348,8 +351,9 @@ export function AddDeviceDialog({
               Scan this with the Styr app on your device
             </span>
             <Hint>
-              Or, on another computer, add this one by its address under Connections → Other
-              computers: you will be asked here to allow it.
+              Or, on another computer, paste this code&apos;s pair link under Connections → Other
+              computers → Add computer. Without the link, add this one by its address there: you
+              will be asked here to allow it.
             </Hint>
             {stopped ? (
               <span role="alert" className="text-[12px] text-danger">
@@ -371,6 +375,18 @@ export function AddDeviceDialog({
               </Hint>
             ) : null}
           </div>
+          {pairing && !expired && !stopped && !error ? (
+            <Button
+              onClick={() =>
+                void navigator.clipboard.writeText(pairing.uri).then(
+                  () => setCopied(true),
+                  (failure: unknown) => setError(ipcMessage(failure))
+                )
+              }
+            >
+              {copied ? 'Copied' : 'Copy pair link'}
+            </Button>
+          ) : null}
           {expired || error ? (
             <Button onClick={() => void newCode()}>New code</Button>
           ) : (
