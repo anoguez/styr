@@ -158,7 +158,8 @@ async function conversation($: Engine, running: boolean): Promise<void> {
 
 /** The file from what is known now; `conversation` reads the messages first. */
 async function write($: Engine, file: string): Promise<void> {
-  const approval = approvals.values().next().value
+  const approval = [...approvals.values()].find((pending) => pending.shown)?.shown
+  const question = [...approvals.values()].find((pending) => pending.question)?.question
   await $.fs.write(
     file,
     JSON.stringify({
@@ -168,7 +169,8 @@ async function write($: Engine, file: string): Promise<void> {
       commands,
       promptInbox: inboxReady,
       ...(working && streaming ? { streaming } : {}),
-      ...(approval ? { approval: approval.shown } : {})
+      ...(approval ? { approval } : {}),
+      ...(question ? { question } : {})
     })
   )
 }
@@ -192,15 +194,30 @@ function streamed($: Engine, file: string): void {
     })
 }
 
-/** An approval Styr shows while Claude Code's own dialog asks too; whichever answers first wins. */
+/** One of AskUserQuestion's questions, as its `questions` input gives it. */
+interface Question {
+  question: string
+  header: string
+  multiSelect: boolean
+  options: { label: string; description: string }[]
+}
+
+/**
+ * A wait Styr shows while Claude Code's own dialog asks too; whichever answers first wins. Either
+ * a permission (`shown`, answered by an option) or AskUserQuestion's picker (`question`, answered
+ * with the tool's `answers`): the picker is no permission, and Yes would answer none of it.
+ */
 interface Pending {
-  shown: {
+  /** The tool whose call waits. */
+  tool: string
+  shown?: {
     id: string
     prompt: string
     tool: string
     input: Record<string, unknown>
     options: { id: string; label: string; kind: 'allow' | 'allow-always' | 'deny' }[]
   }
+  question?: { id: string; questions: Question[] }
   /** Ends the wait: the dialog was answered in the TUI, or the turn is over. */
   cancel: AbortController
 }
@@ -231,7 +248,7 @@ function alwaysLabel(suggestions: Suggestions): string {
 }
 
 /** Claude Code's dialog: Yes; Yes and remember, when it suggests a rule; No. */
-function approvalOptions(suggestions: Suggestions): Pending['shown']['options'] {
+function approvalOptions(suggestions: Suggestions): NonNullable<Pending['shown']>['options'] {
   return [
     { id: 'allow', label: 'Yes', kind: 'allow' },
     ...(suggestions.length > 0
@@ -269,18 +286,72 @@ function answerOf(line: string, id: string): string | undefined {
   }
 }
 
+/** AskUserQuestion's questions, or undefined when its input is not the shape the picker draws. */
+function questionsOf(input: unknown): Question[] | undefined {
+  if (typeof input !== 'object' || input === null) return undefined
+  const { questions } = input as { questions?: unknown }
+  if (!Array.isArray(questions) || questions.length === 0 || questions.length > 4) return undefined
+  const out: Question[] = []
+  for (const item of questions) {
+    if (typeof item !== 'object' || item === null) return undefined
+    const { question, header, multiSelect, options } = item as Record<string, unknown>
+    if (typeof question !== 'string' || !Array.isArray(options) || options.length === 0) {
+      return undefined
+    }
+    const shown: Question['options'] = []
+    for (const option of options.slice(0, 8)) {
+      const { label, description } = (option ?? {}) as Record<string, unknown>
+      if (typeof label !== 'string') return undefined
+      shown.push({ label, description: typeof description === 'string' ? clip(description, 400) : '' })
+    }
+    out.push({
+      question,
+      header: typeof header === 'string' ? clip(header, 40) : '',
+      multiSelect: multiSelect === true,
+      options: shown
+    })
+  }
+  return out
+}
+
 /**
- * Waits for Styr's answer to approval `id` on its own `tail` of the inbox, started before the
- * approval is shown so no answer is missed; undefined once `signal` ends the wait. Leaving the
- * loop ends the `tail`.
+ * An answer line from Styr's inbox for question `id`: `{"question": id, "answers": {…}}`, the
+ * tool's own `answers` (each question's text to the label picked, labels joined by ", " for a
+ * multi-select, or the text typed under Other). Taken only when it answers every question, each
+ * with some text, and nothing else.
  */
-async function awaitAnswer(
+function answersOf(line: string, id: string, questions: Question[]): Record<string, string> | undefined {
+  try {
+    const value: unknown = JSON.parse(line)
+    if (typeof value !== 'object' || value === null) return undefined
+    const { question, answers } = value as { question?: unknown; answers?: unknown }
+    if (question !== id || typeof answers !== 'object' || answers === null) return undefined
+    const given = answers as Record<string, unknown>
+    if (Object.keys(given).length !== questions.length) return undefined
+    const out: Record<string, string> = {}
+    for (const { question: text } of questions) {
+      const answer = given[text]
+      if (typeof answer !== 'string' || !answer.trim()) return undefined
+      out[text] = answer
+    }
+    return out
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Waits for Styr's answer to wait `id` on its own `tail` of the inbox, started before the wait is
+ * shown so no answer is missed; undefined once `signal` ends the wait. `answer` reads a line as
+ * the answer, or not. Leaving the loop ends the `tail`.
+ */
+async function awaitAnswer<T>(
   $: Engine,
   file: string,
-  id: string,
+  answer: (line: string) => T | undefined,
   shown: () => Promise<void>,
   signal: AbortSignal
-): Promise<string | undefined> {
+): Promise<T | undefined> {
   const { size } = await $.fs.stat(file)
   const tail = $.process.spawn({ argv: ['tail', '-c', `+${size + 1}`, '-F', file] })
   const stopped = new Promise<undefined>((resolve) => {
@@ -296,9 +367,9 @@ async function awaitAnswer(
       if (piece.value.stream !== 'stdout') continue
       pending += piece.value.text
       for (let end = pending.indexOf('\n'); end >= 0; end = pending.indexOf('\n')) {
-        const option = answerOf(pending.slice(0, end), id)
+        const value = answer(pending.slice(0, end))
         pending = pending.slice(end + 1)
-        if (option) return option
+        if (value !== undefined) return value
       }
     }
   } finally {
@@ -309,6 +380,55 @@ async function awaitAnswer(
 /** Ends the waits for the approvals `match` picks: their dialog was answered in the TUI. */
 function settleApprovals(match: (pending: Pending) => boolean): void {
   for (const pending of approvals.values()) if (match(pending)) pending.cancel.abort()
+}
+
+type AskNext = Parameters<Hook<'classic.PermissionRequest'>>[2]
+
+/**
+ * AskUserQuestion's picker, shown in Styr as its questions (never as an approval: Yes would let
+ * the call run with no answers) while the TUI draws the picker too. Styr's answers come back
+ * through the inbox and allow the call with them as the tool's `answers` input, as the picker
+ * would; answered in the TUI first, the call settles and the wait ends. A shape the picker would
+ * not draw is left to the TUI alone.
+ */
+async function askQuestion(
+  $: Engine,
+  e: PermissionRequest,
+  next: AskNext,
+  inbox: string,
+  file: string
+) {
+  const questions = questionsOf(e.tool_input)
+  if (!questions) return next(e)
+  const id = `q${Date.now().toString(36)}${++approvalCount}`
+  const pending: Pending = {
+    tool: e.tool_name,
+    question: { id, questions },
+    cancel: new AbortController()
+  }
+  const cancel = (): void => pending.cancel.abort()
+  next.signal.addEventListener('abort', cancel, { once: true })
+  let answers: Record<string, string> | undefined
+  try {
+    answers = await awaitAnswer(
+      $,
+      inbox,
+      (line) => answersOf(line, id, questions),
+      async () => {
+        approvals.set(id, pending)
+        await write($, file)
+      },
+      pending.cancel.signal
+    )
+  } catch {
+    // No `tail`, or the inbox is gone: the picker alone answers.
+  } finally {
+    next.signal.removeEventListener('abort', cancel)
+    if (approvals.delete(id)) await write($, file).catch(() => {})
+  }
+  if (!answers) return next(e)
+  const input = e.tool_input as Record<string, unknown>
+  return { decision: { behavior: 'allow' as const, updatedInput: { ...input, answers } } }
 }
 
 export const register: Register = on => {
@@ -360,6 +480,7 @@ export const register: Register = on => {
     const inbox = inboxReady ? await $.env.get('STYR_PROMPT_INBOX') : undefined
     const file = await $.env.get('STYR_CONVERSATION_FILE')
     if (!inbox || !file) return next(e)
+    if (e.tool_name === 'AskUserQuestion') return askQuestion($, e, next, inbox, file)
     const suggestions = e.permission_suggestions ?? []
     const id = `p${Date.now().toString(36)}${++approvalCount}`
     const input =
@@ -367,6 +488,7 @@ export const register: Register = on => {
         ? clipInput(e.tool_input as Record<string, unknown>)
         : {}
     const pending: Pending = {
+      tool: e.tool_name,
       shown: {
         id,
         prompt: `Claude wants to use ${e.tool_name}`,
@@ -383,7 +505,7 @@ export const register: Register = on => {
       option = await awaitAnswer(
         $,
         inbox,
-        id,
+        (line) => answerOf(line, id),
         async () => {
           approvals.set(id, pending)
           await write($, file)
@@ -411,7 +533,7 @@ export const register: Register = on => {
     await conversation($, true)
     const result = await next(e)
     // Its permission, if it asked one, was answered (here or in the TUI) or dropped.
-    settleApprovals((pending) => pending.shown.tool === e.tool)
+    settleApprovals((pending) => pending.tool === e.tool)
     await conversation($, true)
     return result
   })

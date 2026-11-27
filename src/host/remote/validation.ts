@@ -159,6 +159,7 @@ export const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   'agent:conversation': remoteConversationSchema.nullable(),
   'agent:prompt': z.boolean(),
   'agent:approval': ignored,
+  'agent:answerQuestion': ignored,
   'sources:providers': z.array(z.object({ provider: short, label: line })).max(1000),
   'sources:ghStatus': remoteCliStatusSchema,
   'sources:state': syncStates,

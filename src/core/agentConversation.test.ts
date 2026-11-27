@@ -8,6 +8,8 @@ import {
   outputText,
   parseAgentConversation,
   promptHistory,
+  questionAnswers,
+  ANSWER_IN_TERMINAL,
   type AgentConversation,
   type ConversationAdapter
 } from './agentConversation.js'
@@ -297,5 +299,111 @@ describe('approvals', () => {
 
   it('ignores an approval without an id', () => {
     expect(parseAgentConversation(withApproval({ prompt: 'May I?' }))?.approval).toBeUndefined()
+  })
+})
+
+/**
+ * The conversation file Styr's Claude Code mod wrote while AskUserQuestion's picker was up, from a
+ * real session on Claude Code 2.1.332: one single-select and one multi-select question. The
+ * answers below are the ones that session's tool took (and its TUI writes: labels joined by ", ").
+ */
+const ASK_USER_QUESTION_FILE = JSON.stringify({
+  at: '2026-11-27T21:45:02.000Z',
+  working: true,
+  messages: [
+    {
+      role: 'assistant',
+      text: '',
+      toolUses: [{ id: 'toolu_1', tool: 'AskUserQuestion', input: { questions: [] } }]
+    }
+  ],
+  promptInbox: true,
+  question: {
+    id: 'qmwziexab1',
+    questions: [
+      {
+        question: 'Which colour?',
+        header: 'Colour',
+        multiSelect: false,
+        options: [
+          { label: 'Red', description: 'Select red' },
+          { label: 'Green', description: 'Select green' },
+          { label: 'Blue', description: 'Select blue' }
+        ]
+      },
+      {
+        question: 'Which fruits?',
+        header: 'Fruit',
+        multiSelect: true,
+        options: [
+          { label: 'Apple', description: 'Select apple' },
+          { label: 'Banana', description: 'Select banana' },
+          { label: 'Cherry', description: 'Select cherry' }
+        ]
+      }
+    ]
+  }
+})
+
+describe('questions', () => {
+  const question = parseAgentConversation(ASK_USER_QUESTION_FILE)!.question!
+
+  it('reads a pending AskUserQuestion as a question, never as an approval', () => {
+    const parsed = parseAgentConversation(ASK_USER_QUESTION_FILE)
+    expect(parsed?.approval).toBeUndefined()
+    expect(parsed?.question?.id).toBe('qmwziexab1')
+    expect(parsed?.question?.questions.map((item) => [item.header, item.multiSelect])).toEqual([
+      ['Colour', false],
+      ['Fruit', true]
+    ])
+    expect(parsed?.question?.questions[1]?.options[2]).toEqual({
+      label: 'Cherry',
+      description: 'Select cherry'
+    })
+  })
+
+  it('drops a question Styr could not answer: no id, or nothing to pick', () => {
+    const file = (value: unknown) =>
+      JSON.stringify({ at: '', working: true, messages: [], question: value })
+    expect(parseAgentConversation(file({ questions: [] }))?.question).toBeUndefined()
+    expect(
+      parseAgentConversation(file({ id: 'q', questions: [{ question: 'Q?', options: [] }] }))
+        ?.question
+    ).toBeUndefined()
+    expect(parseAgentConversation(file({ id: 'q', questions: [] }))?.question).toBeUndefined()
+  })
+
+  it('answers a single-select with its label, a multi-select with its labels in order', () => {
+    expect(
+      questionAnswers(question, [{ labels: ['Green'] }, { labels: ['Cherry', 'Apple'] }])
+    ).toEqual({ 'Which colour?': 'Green', 'Which fruits?': 'Apple, Cherry' })
+  })
+
+  it('puts what was typed under Other last, alone or after the labels', () => {
+    expect(
+      questionAnswers(question, [
+        { other: ' Teal ' },
+        { labels: ['Apple', 'Cherry'], other: 'kiwi' }
+      ])
+    ).toEqual({ 'Which colour?': 'Teal', 'Which fruits?': 'Apple, Cherry, kiwi' })
+  })
+
+  it('refuses answers the picker would not take, saying to answer in the terminal', () => {
+    const refused = (answers: Parameters<typeof questionAnswers>[1]) => () =>
+      questionAnswers(question, answers)
+    // One answer per question.
+    expect(refused([{ labels: ['Red'] }])).toThrow(ANSWER_IN_TERMINAL)
+    // An unknown label, a label twice, nothing at all, two for a single-select.
+    expect(refused([{ labels: ['Pink'] }, { labels: ['Apple'] }])).toThrow(ANSWER_IN_TERMINAL)
+    expect(refused([{ labels: ['Red'] }, { labels: ['Apple', 'Apple'] }])).toThrow(
+      ANSWER_IN_TERMINAL
+    )
+    expect(refused([{ labels: ['Red'] }, { other: '  ' }])).toThrow(ANSWER_IN_TERMINAL)
+    expect(refused([{ labels: ['Red', 'Blue'] }, { labels: ['Apple'] }])).toThrow(
+      ANSWER_IN_TERMINAL
+    )
+    expect(refused([{ labels: ['Red'], other: 'Teal' }, { labels: ['Apple'] }])).toThrow(
+      ANSWER_IN_TERMINAL
+    )
   })
 })

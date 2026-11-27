@@ -445,7 +445,10 @@ export const channelTable = createChannelTable({
     context: (terminalId) => usage.context(terminalId),
     conversation: (terminalId) => usage.conversation(terminalId),
     prompt: (terminalId, text) => usage.prompt(terminalId, text),
-    approval: (terminalId, approvalId, optionId) => usage.approval(terminalId, approvalId, optionId)
+    approval: (terminalId, approvalId, optionId) =>
+      usage.approval(terminalId, approvalId, optionId),
+    answerQuestion: (terminalId, questionId, answers) =>
+      usage.answerQuestion(terminalId, questionId, answers)
   },
   terminals: {
     createSession: (options) => createSession(options),

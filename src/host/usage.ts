@@ -14,9 +14,12 @@ import chokidar from 'chokidar'
 import { MAX_PROMPT_CHARS } from '@core/agentPrompt.js'
 import { configDir } from '@core/config.js'
 import {
+  ANSWER_IN_TERMINAL,
   approvalOptions,
   parseAgentConversation,
-  type AgentConversation
+  questionAnswers,
+  type AgentConversation,
+  type QuestionAnswer
 } from '@core/agentConversation.js'
 import {
   parseCodexRollout,
@@ -142,6 +145,30 @@ export function sendApprovalAnswer(terminalId: string, approvalId: string, optio
   appendFileSync(
     promptInbox(terminalId),
     `${JSON.stringify({ approval: approvalId, option: optionId })}\n`,
+    { mode: 0o600 }
+  )
+}
+
+/**
+ * Answers the questions the conversation file shows (AskUserQuestion) through the inbox, as a
+ * `{"question", "answers"}` line with the tool's own `answers` (`questionAnswers`); Claude Code's
+ * mod allows the call with them, as its picker would. Refused when the file no longer shows that
+ * question (it was answered in the CLI's view), and with `ANSWER_IN_TERMINAL` when the answers do
+ * not fit it: nothing is sent that the CLI would not take.
+ */
+export function sendQuestionAnswer(
+  terminalId: string,
+  questionId: string,
+  answers: readonly QuestionAnswer[]
+): void {
+  if (!/^[\w-]{1,64}$/.test(terminalId)) throw new Error('Not an agent terminal.')
+  const question = readConversation(terminalId)?.question
+  if (!question || question.id !== questionId) {
+    throw new Error('This question is no longer waiting for an answer.')
+  }
+  appendFileSync(
+    promptInbox(terminalId),
+    `${JSON.stringify({ question: questionId, answers: questionAnswers(question, answers) })}\n`,
     { mode: 0o600 }
   )
 }
@@ -274,6 +301,21 @@ export function createUsage(ports: UsagePorts) {
   }
 
   /**
+   * Answers the questions the agent is waiting on. Only Claude Code's mod takes answers; an agent
+   * with a live channel of its own (Codex) asks none Styr can answer, so the terminal does.
+   */
+  async function answerQuestion(
+    terminalId: string,
+    questionId: string,
+    answers: readonly QuestionAnswer[]
+  ): Promise<void> {
+    if (liveConversations.has(terminalId) && conversationApprovals.has(terminalId)) {
+      throw new Error(ANSWER_IN_TERMINAL)
+    }
+    sendQuestionAnswer(terminalId, questionId.slice(0, 200), answers)
+  }
+
+  /**
    * Clears the files a previous run left and pushes each new reading. Read-only: the mod is the only
    * writer. Called once, after the handlers are registered.
    */
@@ -317,6 +359,7 @@ export function createUsage(ports: UsagePorts) {
     conversation,
     prompt,
     approval,
+    answerQuestion,
     start
   }
 }

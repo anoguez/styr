@@ -690,6 +690,30 @@ const approvalOptionSchema = z.object({
   kind: z.enum(['allow', 'allow-always', 'deny'])
 })
 
+/** `agent:answerQuestion`'s answers: per question, in order, the labels picked and "Other"'s text. */
+export const questionAnswersSchema = z
+  .array(
+    z.object({
+      labels: z.array(z.string().min(1).max(200)).max(8).optional(),
+      other: z.string().max(2_000).optional()
+    })
+  )
+  .min(1)
+  .max(4)
+
+const questionSchema = z.object({
+  id: short,
+  questions: list(
+    z.object({
+      question: message,
+      header: line,
+      multiSelect: z.boolean(),
+      options: list(z.object({ label: line, description: line }), 8)
+    }),
+    4
+  )
+})
+
 export const remoteConversationSchema = z.object({
   at: short,
   working: z.boolean(),
@@ -719,7 +743,8 @@ export const remoteConversationSchema = z.object({
       input: z.record(z.string(), z.unknown()).optional(),
       options: list(approvalOptionSchema, 20).optional()
     })
-    .optional()
+    .optional(),
+  question: questionSchema.optional()
 })
 
 export const remoteWorklogSchema = z.object({

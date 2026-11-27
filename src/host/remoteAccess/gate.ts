@@ -225,7 +225,8 @@ const SESSION_FIRST = new Set([
   'usage:context',
   'agent:conversation',
   'agent:prompt',
-  'agent:approval'
+  'agent:approval',
+  'agent:answerQuestion'
 ])
 
 /** Every channel the gate has a rule for, for the test that forces new ones to be classified. */

@@ -234,6 +234,19 @@ while the agent waits, and Styr's `❯` input. It is provider-agnostic end to en
   hook while the TUI's dialog is up too, waits on its own `tail` of the inbox, and returns the
   dialog's decision (Yes; Yes with the request's `permission_suggestions`; No with `interrupt`).
   Whichever answers first wins: the wait ends when the tool call settles or the turn ends.
+- **Questions.** Claude's AskUserQuestion is no permission: its TUI draws a picker (up to four
+  questions, each with options, maybe multi-select, plus "Other"), and Yes would let the call run
+  with no answers, so the turn never ends. The mod shows it as the file's `question` instead —
+  `{ id, questions: [{ question, header, multiSelect, options: [{ label, description }] }] }`,
+  never also an `approval` (an older client sees no approval and shows the agent working). Styr
+  answers it over `agent:answerQuestion(terminalId, questionId, answers)`, `answers` being per
+  question, in order, `{ labels?, other? }`. `questionAnswers` turns them into the tool's own
+  `answers` input (question text to the label, labels joined by ", " in the options' order as the
+  TUI joins them, "Other"'s text last), refusing with "Answer this one in the terminal." whatever
+  the picker would not take; `sendQuestionAnswer` appends `{"question", "answers"}` to the inbox.
+  The mod allows the call with `updatedInput: { ...input, answers }`, as the picker does — no keys
+  are typed, so the TUI is never left half-answered. Answered in the TUI first, the call settles
+  and the wait ends. Codex asks no such questions; a live-channel agent is refused the same way.
 - **Images.** A plugin's prompt carries no image bytes, so an image pasted into Styr's input goes
   the keystroke way: the adapter's `pasteImageKey` (Claude's Ctrl+V) makes the TUI attach it from
   the clipboard, and the next prompt is typed into the TUI rather than sent through the inbox.
