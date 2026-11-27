@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.45.0](https://github.com/anoguez/styr/compare/v0.44.0...v0.45.0) (2026-11-27)
+
+
+### Features
+
+* pair the desktop with another computer using its pair link ([#291](https://github.com/anoguez/styr/issues/291)) ([444b46b](https://github.com/anoguez/styr/commit/444b46b6831a788b64511768f93686c57b44b689))
+
+
+### Bug Fixes
+
+* **terminal:** end a Windows terminal's whole process tree when it is killed ([#287](https://github.com/anoguez/styr/issues/287)) ([6c2b8fc](https://github.com/anoguez/styr/commit/6c2b8fcbfe60f8f8d45593cc2ef405af4e7a4379))
+
 ## [0.44.0](https://github.com/anoguez/styr/compare/v0.43.0...v0.44.0) (2026-11-25)
 
 
