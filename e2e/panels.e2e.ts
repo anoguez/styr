@@ -24,6 +24,22 @@ async function terminalBox(page: Page): Promise<{ x: number; y: number; w: numbe
   return { x: box.x, y: box.y, w: box.width, h: box.height }
 }
 
+/**
+ * A point on the terminal header where nothing else is: the far end of the tab strip, past the
+ * tabs (they are left-aligned and have menus of their own), whatever the window's width.
+ */
+async function headerSpot(page: Page): Promise<{ x: number; y: number }> {
+  const strip = page.locator('[data-terminal-panel] header > div').first()
+  const box = await strip.boundingBox()
+  if (!box) throw new Error('no tab strip')
+  return { x: box.x + box.width - 6, y: box.y + box.height / 2 }
+}
+
+async function rightClickHeader(page: Page): Promise<void> {
+  const { x, y } = await headerSpot(page)
+  await page.mouse.click(x, y, { button: 'right' })
+}
+
 test('a panel moves to an edge by its header, resizes, and stays there after a relaunch', async () => {
   styr = await launchStyr('panels', {}, { keepHome: true })
   const { home } = styr
@@ -36,11 +52,9 @@ test('a panel moves to an edge by its header, resizes, and stays there after a r
   let box = await terminalBox(page)
   expect(box.w).toBeGreaterThan(viewport.w * 0.6)
 
-  // Drag the header, from its empty middle, to the right edge of the window.
-  const terminalHeader = page.locator('[data-terminal-panel] header')
-  const from = await terminalHeader.boundingBox()
-  if (!from) throw new Error('no terminal header')
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  // Drag the header, from an empty spot, to the right edge of the window.
+  const from = await headerSpot(page)
+  await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move(viewport.w - 60, viewport.h / 2, { steps: 8 })
   await expect(page.getByText('Move terminal to the right')).toBeVisible()
@@ -67,16 +81,15 @@ test('a panel moves to an edge by its header, resizes, and stays there after a r
   const width = box.w
 
   // Right-clicking the header opens the menu of edges.
-  await terminalHeader.click({ button: 'right', position: { x: 300, y: 20 } })
+  await rightClickHeader(page)
   await expect(page.getByRole('menuitem', { name: 'Move terminal to the right' })).toBeDisabled()
   await page.keyboard.press('Escape')
 
   // Dragged by its header to the left; then the agents, moved to the bottom after
   // it, take only the width beside it while the terminal keeps the full height.
   const header = page.getByRole('heading', { name: 'Agents' })
-  const strip = await page.locator('[data-terminal-panel] header').boundingBox()
-  if (!strip) throw new Error('no terminal header')
-  await page.mouse.move(strip.x + strip.width / 2, strip.y + strip.height / 2)
+  const spot = await headerSpot(page)
+  await page.mouse.move(spot.x, spot.y)
   await page.mouse.down()
   await page.mouse.move(20, viewport.h / 2, { steps: 8 })
   await page.mouse.up()
@@ -94,9 +107,7 @@ test('a panel moves to an edge by its header, resizes, and stays there after a r
   expect(box.h).toBeGreaterThan(viewport.h * 0.6)
 
   // Right-clicking a header opens the same menu; put both back for the relaunch below.
-  await page
-    .locator('[data-terminal-panel] header')
-    .click({ button: 'right', position: { x: 300, y: 20 } })
+  await rightClickHeader(page)
   await page.getByRole('menuitem', { name: 'Move terminal to the right' }).click()
   await runCommand(page, 'Move agents sidebar to the right')
 
