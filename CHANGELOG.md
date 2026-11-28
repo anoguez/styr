@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.46.0](https://github.com/anoguez/styr/compare/v0.45.0...v0.46.0) (2026-11-28)
+
+
+### Features
+
+* accept an image from a remote device ([#292](https://github.com/anoguez/styr/issues/292)) ([5d0e6e7](https://github.com/anoguez/styr/commit/5d0e6e7957ac6ad0a4371f9092fe89bddd8f728b))
+* answer an agent's AskUserQuestion from Styr's chat ([#294](https://github.com/anoguez/styr/issues/294)) ([25cc931](https://github.com/anoguez/styr/commit/25cc9310be0ec7a93386c7c1b23fded18f867618))
+* chat view for agent tabs, with a Chat / Terminal switch ([#295](https://github.com/anoguez/styr/issues/295)) ([27700f0](https://github.com/anoguez/styr/commit/27700f0e0b380f74834fbbcd26fe6bb9edc8de5e))
+* say when an agent is waiting on a question in agents:list ([#296](https://github.com/anoguez/styr/issues/296)) ([927458f](https://github.com/anoguez/styr/commit/927458f15197b5d38991225bd64594f62cbd0956))
+
 ## [0.45.0](https://github.com/anoguez/styr/compare/v0.44.0...v0.45.0) (2026-11-27)
 
 
