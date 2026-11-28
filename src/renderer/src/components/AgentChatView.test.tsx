@@ -1,7 +1,6 @@
 import { createElement, createRef } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_THEME } from '@core/types.js'
 import type { AgentConversation } from '@core/agentConversation.js'
 import { conversationAdapter } from '@core/providers/conversation.js'
 import type { AgentChat } from '../lib/agentChat/useAgentChat.js'
@@ -14,6 +13,28 @@ import {
 } from './AgentChatView.js'
 import { AgentBlockList, type ApprovalRequest } from './AgentBlockList.js'
 import { ChatSwitch } from './ChatSwitch.js'
+import type { BlockState, StyrBlock } from '@core/types/blocks.js'
+
+const envelope = { sessionId: 't1', createdAt: 0, updatedAt: 0 }
+const message = (id: string, role: 'user' | 'assistant', text: string): StyrBlock => ({
+  ...envelope,
+  id,
+  state: 'completed',
+  kind: 'agent-message',
+  payload: { role, text }
+})
+const toolCall = (
+  id: string,
+  tool: string,
+  summary: string,
+  state: BlockState = 'completed'
+): StyrBlock => ({
+  ...envelope,
+  id,
+  state,
+  kind: 'agent-tool-call',
+  payload: { tool, summary }
+})
 
 const noop = (): void => undefined
 const claude = conversationAdapter('claude')
@@ -52,22 +73,22 @@ const pane = (agent: AgentChat, agentRun: AgentRun = run): string =>
     createElement(AgentChatPane, {
       agent,
       run: agentRun,
-      theme: DEFAULT_THEME,
       inputRef: createRef<HTMLTextAreaElement>(),
       onShowTerminal: noop
     })
   )
 
-const look = { palette: {} as never, lineHeight: 18 }
-const list = (props: { working?: boolean; approval?: ApprovalRequest | null }): string =>
+const list = (props: {
+  working?: boolean
+  approval?: ApprovalRequest | null
+  blocks?: StyrBlock[]
+}): string =>
   renderToStaticMarkup(
     createElement(AgentBlockList, {
-      blocks: [],
+      blocks: props.blocks ?? [],
       working: props.working ?? false,
       label: 'Claude Code',
       approval: props.approval ?? null,
-      look,
-      font: {},
       inputRef: createRef<HTMLTextAreaElement>(),
       history: [],
       onSubmit: noop,
@@ -120,8 +141,37 @@ describe('chat pane', () => {
 
 describe('agent block list', () => {
   it('says a message will be queued while the agent works', () => {
-    expect(list({ working: true })).toContain('Your message will be queued')
+    expect(list({ working: true })).toContain('your message will be queued')
     expect(list({ working: false })).not.toContain('queued')
+  })
+
+  it('draws a chat: the person’s bubble, the agent’s reply across the column, folded tool calls', () => {
+    const html = list({
+      blocks: [
+        message('m1', 'user', 'Debounce the watcher'),
+        message('m2', 'assistant', 'I found **the watcher**.'),
+        toolCall('t1', 'Read', 'src/main/watcher.ts'),
+        toolCall('t2', 'Bash', 'npm test', 'failed')
+      ]
+    })
+    expect(html).toMatch(/aria-label="Your message"[^>]*justify-end/)
+    expect(html).toContain('rounded-br-[4px]')
+    expect(html).toContain('<strong')
+    expect(html).toContain('aria-label="Copy message"')
+    expect(html).toContain('aria-label="Read src/main/watcher.ts, completed"')
+    // A failed call is outlined in the danger colour and marked with a cross, not colour alone.
+    expect(html).toMatch(/Bash npm test, failed.*border-danger/)
+    expect(html).toContain('✕')
+    // The conversation keeps to a readable column on a wide screen.
+    expect(html).toContain('max-w-[800px]')
+    expect(html).not.toContain('Nothing here yet')
+  })
+
+  it('says “Working…” in a line while a turn runs, and invites a first message when empty', () => {
+    expect(list({ working: true })).toContain('Working…')
+    expect(list({ working: true })).toContain('Interrupt')
+    expect(list({})).not.toContain('Working…')
+    expect(list({})).toContain('Nothing here yet')
   })
 
   it('offers the CLI’s own options for an approval', () => {
@@ -138,6 +188,10 @@ describe('agent block list', () => {
     })
     expect(html).toContain('role="alertdialog"')
     expect(html).toContain('Yes, and don’t ask again')
+    expect(html).toContain('Waiting on you')
+    // Deny beside the wider Allow, as on the phone's card.
+    expect(html).toMatch(/text-danger[^>]*><span class="truncate">No</)
+    expect(html).toMatch(/flex-\[2\]"><span class="truncate">Yes</)
     expect(html).toContain('Answer in Claude Code')
     expect(html).not.toContain('queued')
   })
@@ -147,6 +201,8 @@ describe('agent block list', () => {
       approval: { prompt: 'Claude has a question', options: [], keys: false, inTui: true }
     })
     expect(html).toContain('Answer in Terminal')
+    expect(html).toContain('Asked you a question')
+    expect(html).toContain('A message sent now waits')
     expect(html).not.toContain('>Yes<')
     expect(html).not.toContain('>No<')
   })
@@ -175,7 +231,6 @@ describe('xterm.js chat overlay', () => {
         run,
         chat: chatOn,
         active,
-        theme: DEFAULT_THEME,
         onChatChange: noop,
         onShownChange: noop
       })

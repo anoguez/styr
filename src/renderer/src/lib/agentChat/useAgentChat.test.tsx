@@ -149,8 +149,6 @@ describe('useAgentChat', () => {
         working: chat.working,
         label: 'Claude Code',
         approval: chat.approval,
-        look: { palette: {} as never, lineHeight: 18 },
-        font: {},
         inputRef: createRef<HTMLTextAreaElement>(),
         history: chat.history,
         commands: chat.conversation?.commands,
@@ -164,7 +162,10 @@ describe('useAgentChat', () => {
     )
     expect(html).toContain('Run the tests')
     expect(html).toContain('yarn test')
-    expect(html).toContain('12 passed')
+    // Tool calls fold to a line, as on the phone; the edit's row counts its change.
+    expect(html).toContain('aria-label="Bash yarn test, completed"')
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).toContain('+1')
     expect(html).toContain('<pre')
     expect(html).toContain('<li>all <strong')
     expect(html).toContain('role="alertdialog"')

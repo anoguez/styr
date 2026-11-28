@@ -200,12 +200,13 @@ at a session's first prompt mark; a shell that sends none stays a grid.
 An agent CLI running in the block list (a task session, or `claude`/`codex` typed into a shell) is
 drawn by Styr from its conversation instead of its TUI, as the task's block model has it: the
 person's prompts, the agent's messages, each tool call with how it went, an edit's diff, an approval
-while the agent waits, and Styr's `❯` input. It is provider-agnostic end to end:
+while the agent waits, and a composer. It is drawn as the phone app's chat (see Chat view below)
+and is provider-agnostic end to end:
 
-- **Tool calls and diffs** read as the CLI's own view does: `⏺ Tool what it works on`, wrapped
-  rather than cut (a long command folds after three lines), then `⎿` with the first lines of what it
-  returned (`ToolDescription.output`, escapes stripped; an adapter leaves out what the block already
-  shows, like a file read or an edit's result) and "+N lines". `editPatch` diffs each edit by line,
+- **Tool calls and diffs**: each call is a bordered row — a state mark (✓, ✕, a spinner, − when
+  interrupted), the tool's name, the first line of what it works on — that opens to its input, what
+  it returned (`ToolDescription.output`, escapes stripped; an adapter leaves out what the block
+  already shows, like a file read or an edit's result) and an edit's diff. `editPatch` diffs each edit by line,
   so the context an agent quotes to place an edit shows unchanged, with three lines around each
   change; `editRows` (`core/diffView.ts`) draws it, and Codex's `apply_patch`, with the Changes
   pane's word emphasis. An MCP tool shows as `server · tool` with its arguments.
@@ -270,7 +271,16 @@ while the agent waits, and Styr's `❯` input. It is provider-agnostic end to en
 
 Every agent tab (a task session, or `claude`/`codex` typed into a shell) has a **Chat** switch in
 its context bar (`ChatSwitch`): on draws the conversation as a chat, off shows the terminal. Shell
-tabs have none. The chat is `AgentBlockList` on either engine, fed by one hook:
+tabs have none. The chat is `AgentBlockList` on either engine, fed by one hook. It follows the
+phone app's chat (`styr-app`, `lib/ui/session/chat/widgets/`), mapped to the desktop's theme tokens:
+the person's prompts in bubbles on the right with a copy button on hover, the agent's replies as
+full-width markdown (`ChatMarkdown`), tool calls as folded bordered rows (a failed one outlined in
+`danger`), "• Working…" while a turn runs, the approval pinned under the conversation as the app's
+card (Deny beside the wider Allow, the CLI's other answers under them), "Jump to latest" once
+scrolled up, and the app's composer: a note on what happens to a message now, a rounded field and a
+round Send button. The conversation keeps to an 800px column, centred, on a wide tab. The composer
+keeps the `❯` input's keys (`useCommandInput` in `CommandInput.tsx`: history, the slash-command
+menu, Escape to interrupt, image paste), which the native engine's shell input shares.
 
 - `lib/agentChat/useAgentChat.ts` — the conversation (`agent:conversation` and its pushes), prompt
   sending (`agent:prompt`, else typed), approvals (`agent:approval`, else keys), pasted images and
