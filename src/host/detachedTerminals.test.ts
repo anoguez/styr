@@ -1,7 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, describe, expect, it, vi } from 'vitest'
+
+const home = vi.hoisted(() => ({ dir: '' }))
+vi.mock('@core/config.js', () => ({ configDir: () => home.dir }))
+
 import {
   DEFAULT_DETACHED_SIZE,
   createDetachedTerminals,
+  diskBoundsStore,
   parseBounds,
   placeDetachedWindow,
   type Bounds,
@@ -30,6 +38,21 @@ describe('parseBounds', () => {
   })
 })
 
+describe('diskBoundsStore', () => {
+  home.dir = join(mkdtempSync(join(tmpdir(), 'styr-detached-')), 'nested')
+  afterAll(() => rmSync(join(home.dir, '..'), { recursive: true, force: true }))
+
+  it('reads nothing before a window was ever closed', () => {
+    expect(diskBoundsStore.read()).toBeUndefined()
+  })
+
+  it('writes the file, creating its folder, and reads it back', () => {
+    diskBoundsStore.write('{"x":1}')
+    expect(readFileSync(join(home.dir, 'detached-terminal.json'), 'utf8')).toBe('{"x":1}')
+    expect(diskBoundsStore.read()).toBe('{"x":1}')
+  })
+})
+
 describe('placeDetachedWindow', () => {
   it('opens the default size near the main window when nothing is remembered', () => {
     const main = { x: 100, y: 100, width: 1200, height: 800 }
@@ -52,6 +75,17 @@ describe('placeDetachedWindow', () => {
       y: 200,
       width: 1000,
       height: 700
+    })
+  })
+
+  it('picks the display the main window is on when the remembered one is gone', () => {
+    const saved = { x: 9000, y: 9000, width: 800, height: 500 }
+    const main = { x: 1600, y: 100, width: 1200, height: 800 }
+    expect(placeDetachedWindow(saved, [LAPTOP, MONITOR], main)).toEqual({
+      x: 3200,
+      y: 940,
+      width: 800,
+      height: 500
     })
   })
 
@@ -111,6 +145,8 @@ describe('createDetachedTerminals', () => {
     expect(opened[0]!.bounds).toEqual({ ...DEFAULT_DETACHED_SIZE, x: 48, y: 73 })
     expect(service.list()).toEqual(['abc'])
     expect(service.isDetached('abc')).toBe(true)
+    expect(service.windowFor('abc')).toBe(opened[0])
+    expect(service.windowFor('other')).toBeUndefined()
     expect(broadcasts).toEqual([['terminal:detachedChanged', ['abc']]])
   })
 
