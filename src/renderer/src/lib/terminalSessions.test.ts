@@ -3,6 +3,7 @@ import type { TerminalSessionInfo } from '@core/types.js'
 import {
   findTaskSession,
   initialTerminalSessions,
+  stripSessions,
   terminalSessionsReducer as reduce,
   type TerminalSessionsState
 } from './terminalSessions.js'
@@ -107,5 +108,66 @@ describe('merge', () => {
     expect(next.sessions.map((tab) => tab.id)).toEqual(['a', 'b', 'c'])
     expect(next.activeSession).toBe('b')
     expect(reduce(next, { type: 'merge', sessions: [session('a')] })).toBe(next)
+  })
+})
+
+describe('detached tabs', () => {
+  const strip = (state: TerminalSessionsState): string[] => stripSessions(state).map((s) => s.id)
+
+  it('leaves the strip, keeps its place in the list and moves focus to its neighbour', () => {
+    const state = { ...withTabs('a', 'b', 'c'), activeSession: 'b', terminalOpen: true }
+    const next = reduce(state, { type: 'detached', ids: ['b'] })
+    expect(next.sessions.map((s) => s.id)).toEqual(['a', 'b', 'c'])
+    expect(strip(next)).toEqual(['a', 'c'])
+    expect(next.activeSession).toBe('c')
+  })
+
+  it('focuses the previous tab when the last one leaves, and none when no tab is left', () => {
+    const state = { ...withTabs('a', 'b'), activeSession: 'b' }
+    expect(reduce(state, { type: 'detached', ids: ['b'] }).activeSession).toBe('a')
+    expect(reduce(state, { type: 'detached', ids: ['a', 'b'] }).activeSession).toBeNull()
+  })
+
+  it('comes back at its old position, focused, with the panel open', () => {
+    const state = {
+      ...withTabs('a', 'b', 'c'),
+      activeSession: 'a',
+      terminalOpen: false,
+      detached: ['b']
+    }
+    const next = reduce(state, { type: 'detached', ids: [] })
+    expect(strip(next)).toEqual(['a', 'b', 'c'])
+    expect(next).toMatchObject({ activeSession: 'b', terminalOpen: true })
+  })
+
+  it('hides tabs named before they load', () => {
+    const early = reduce(initialTerminalSessions, { type: 'detached', ids: ['a'] })
+    const loaded = reduce(early, { type: 'load', sessions: [session('a'), session('b')] })
+    expect(strip(loaded)).toEqual(['b'])
+    expect(loaded.activeSession).toBe('b')
+  })
+
+  it('is never selected or adopted into the strip', () => {
+    const state = { ...withTabs('a', 'b'), activeSession: 'a', detached: ['b'] }
+    expect(reduce(state, { type: 'select', id: 'b' })).toBe(state)
+    expect(reduce(state, { type: 'adopt', session: session('b') }).activeSession).toBe('a')
+  })
+
+  it('keeps its slot when the strip is reordered around it', () => {
+    const state = { ...withTabs('a', 'b', 'c', 'd'), detached: ['b'] }
+    const next = reduce(state, { type: 'reorder', ids: ['d', 'a', 'c'] })
+    expect(next.sessions.map((s) => s.id)).toEqual(['d', 'b', 'a', 'c'])
+  })
+
+  it('forgets a detached session that exits', () => {
+    const state = { ...withTabs('a', 'b'), activeSession: 'a', detached: ['b'] }
+    const next = reduce(state, { type: 'remove', id: 'b' })
+    expect(next.detached).toEqual([])
+    expect(next.activeSession).toBe('a')
+  })
+
+  it('closing the active tab skips a detached neighbour', () => {
+    const state = { ...withTabs('a', 'b', 'c'), activeSession: 'a', detached: ['b'] }
+    expect(reduce(state, { type: 'remove', id: 'a' }).activeSession).toBe('c')
   })
 })

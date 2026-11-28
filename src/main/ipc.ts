@@ -53,6 +53,7 @@ import { createReviewService, diskReviewStore } from '@host/reviewService.js'
 import { providerById } from '@core/providers/index.js'
 import { agentSkip } from '@core/terminalLayout.js'
 import { createTerminalTabsService, diskTabsStore } from '@host/terminalTabs.js'
+import { detachedTerminals } from './detachedTerminals.js'
 import { listWorkspaces } from '@core/workspaces.js'
 import {
   createWorkspacesService,
@@ -577,6 +578,14 @@ export function registerIpcHandlers(): void {
     )
   )
   ipcMain.handle('terminal:pendingLayout', () => terminalTabs.offer())
+  // Detached terminals: windows of this machine, so desktop-only (`detachedTerminals.ts`).
+  ipcMain.handle('terminal:detach', (_event, id: unknown) => {
+    if (typeof id === 'string' && id) detachedTerminals.detach(id)
+  })
+  ipcMain.handle('terminal:dock', (_event, id: unknown) => {
+    if (typeof id === 'string') detachedTerminals.dock(id)
+  })
+  ipcMain.handle('terminal:detachedList', () => detachedTerminals.list())
   ipcMain.handle('terminal:restoreLayout', () => terminalTabs.restore())
   ipcMain.handle('terminal:dismissLayout', () => terminalTabs.dismiss())
   ipcMain.handle('terminal:openInCode', async (_event, path: string) => {

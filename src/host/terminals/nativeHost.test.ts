@@ -172,6 +172,19 @@ describe('NativeTerminalHost', () => {
     expect(host.size).toBe(0)
   })
 
+  it('ignores a late detach of an attachment another window already replaced', () => {
+    const { host } = setup()
+    const first = host.attach('s1', 80, 24)
+    // A detached window attached before the main window's view let go.
+    const second = host.attach('s1', 80, 24)
+    if (!first.ok || !second.ok) throw new Error('attach failed')
+    host.detach('s1', first.attachId)
+    expect(host.size).toBe(1)
+    expect(FakeEngine.instances[1]!.disposed).toBe(false)
+    host.detach('s1', second.attachId)
+    expect(host.size).toBe(0)
+  })
+
   it('does not leak engines across repeated mount and unmount', () => {
     const { host } = setup()
     for (let index = 0; index < 200; index++) {

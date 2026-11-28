@@ -190,7 +190,9 @@ export function useNativeEngine({
     size = measure()
     void window.api.terminal.native.attach(sessionId, size.cols, size.rows).then(
       (result) => {
-        if (disposed) return
+        // Unmounted while attaching (the tab was detached or docked): end only this attachment.
+        if (disposed)
+          return void (result.ok && window.api.terminal.native.detach(sessionId, result.attachId))
         if (!result.ok) return fail(result.reason, result.detail)
         attachId = result.attachId
         blocks.attached(result.attachId, result.blocks)
@@ -232,7 +234,8 @@ export function useNativeEngine({
       observer.disconnect()
       pushSizeRef.current = null
       renderRef.current = null
-      window.api.terminal.native.detach(sessionId)
+      // Before the attach reply there is nothing of ours to end; the reply above ends it.
+      if (attachId !== null) window.api.terminal.native.detach(sessionId, attachId)
       if (handle) handle.current = null
       if (fullscreen) onFullscreenRef.current?.(false)
       if (listShown) onBlockListRef.current?.(false)

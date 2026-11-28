@@ -231,7 +231,9 @@ export function registerTerminalEngines(
   ipcMain.handle('terminal:nativeStyledLines', (_event, id: string, from: number, to: number) =>
     host.styledLines(String(id), Number(from), Number(to))
   )
-  ipcMain.on('terminal:nativeDetach', (_event, id: string) => host.detach(String(id)))
+  ipcMain.on('terminal:nativeDetach', (_event, id: string, attachId?: unknown) =>
+    host.detach(String(id), typeof attachId === 'number' ? attachId : undefined)
+  )
   ipcMain.on('terminal:nativeReceived', (_event, id: string, attachId: number) =>
     host.received(String(id), Number(attachId))
   )

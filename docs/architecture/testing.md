@@ -39,6 +39,9 @@ or dotfiles. The app needs no test hook for this. One launch runs these steps in
    file on disk follows each change.
 3. A task file written from outside the app appears on the board.
 4. A plain terminal runs `echo styr-smoke`, shows the output, and its tab closes.
+   4b. A terminal detaches into its own window from the tab's menu: the window shows the
+   scrollback, types into the same PTY, and Dock to main window puts the tab back with what was
+   typed there.
 5. A second workspace gets its own `TASK-0001`, and switching back shows the first board.
 6. A status record written to `.styr/agents/` shows in the Agents sidebar as Working.
 7. Settings opens, saves a change and its undo, and closes. The settings end up as they started.

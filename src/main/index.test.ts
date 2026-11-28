@@ -110,6 +110,7 @@ vi.mock('./networkAccess.js', () => ({
   startNetworkAccess: record('startNetworkAccess'),
   stopNetworkAccess: record('stopNetworkAccess')
 }))
+vi.mock('./detachedTerminals.js', () => ({ detachedTerminals: { dockAll: () => {} } }))
 vi.mock('./windowFullscreen.js', () => ({ watchFullscreen: record('watchFullscreen') }))
 vi.mock('./updater.js', () => ({ initUpdater: record('initUpdater') }))
 vi.mock('./usage.js', () => ({ forgetContext: () => {}, initUsage: record('initUsage') }))
@@ -150,6 +151,8 @@ describe('start-up order', () => {
       'window:create',
       'window:on',
       'watchWindow',
+      'window:on',
+      'window:on',
       'watchFullscreen',
       'window:openHandler',
       'window:load',

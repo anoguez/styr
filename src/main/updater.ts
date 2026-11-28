@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, net } from 'electron'
+import { mainWindow } from './windows.js'
 // electron-updater defines `autoUpdater` with a getter, which Node's ESM loader cannot see as a
 // named export of a CommonJS module, so it has to come off the default export.
 import electronUpdater from 'electron-updater'
@@ -60,7 +61,8 @@ async function install(): Promise<boolean> {
   if (state.kind !== 'ready') return false
   const open = listSessions().length
   if (open > 0) {
-    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    // Over the board, never a detached terminal: the question is about every terminal.
+    const window = mainWindow()
     const options = {
       type: 'question' as const,
       buttons: ['Restart now', 'Later'],

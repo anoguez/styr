@@ -25,6 +25,7 @@ function port(overrides: Partial<CommandPort> = {}): CommandPort & { actions: Ap
     activeSession: null,
     selectSession: vi.fn(),
     closeSession: vi.fn(),
+    detachSession: vi.fn(),
     terminal: vi.fn(),
     ...overrides
   }
@@ -130,6 +131,7 @@ describe('runShortcutCommand', () => {
           fake.newShell,
           fake.selectSession,
           fake.closeSession,
+          fake.detachSession,
           fake.terminal
         ].some((fn) => vi.mocked(fn).mock.calls.length > 0)
       expect(touched, command).toBe(true)
@@ -171,6 +173,15 @@ describe('runShortcutCommand', () => {
     const one = port({ activeSession: 's2' })
     runShortcutCommand('closeShell', one)
     expect(one.closeSession).toHaveBeenCalledWith('s2')
+  })
+
+  it('detaches the active tab into its own window only when there is one', () => {
+    const none = port()
+    runShortcutCommand('terminalDetach', none)
+    expect(none.detachSession).not.toHaveBeenCalled()
+    const one = port({ activeSession: 's1' })
+    runShortcutCommand('terminalDetach', one)
+    expect(one.detachSession).toHaveBeenCalledWith('s1')
   })
 
   it('hands terminal commands to the active terminal', () => {

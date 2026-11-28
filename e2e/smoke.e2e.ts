@@ -341,6 +341,64 @@ test('smoke', async () => {
     expectNoErrors()
   })
 
+  await test.step('a terminal detaches into its own window, keeps working and docks back', async () => {
+    const sessions = (): Promise<string[]> =>
+      page.evaluate(async () => (await window.api.terminal.list()).map((session) => session.id))
+    const detachedList = (): Promise<string[]> =>
+      page.evaluate(() => window.api.terminal.detachedList())
+    const output = (terminal: ReturnType<Page['locator']>, text: string) =>
+      terminal.locator('.xterm-rows > div').filter({ hasText: new RegExp(`^${text}\\s*$`) })
+    const before = await sessions()
+    await page.getByRole('button', { name: '+ Shell' }).click()
+    await expect.poll(async () => (await sessions()).length).toBe(before.length + 1)
+    const id = (await sessions()).find((session) => !before.includes(session))!
+    await expect
+      .poll(() =>
+        page.evaluate(async (id) => (await window.api.terminal.runtimeState(id))?.promptReady, id)
+      )
+      .toBe(true)
+    const terminal = page.locator('.xterm').last()
+    await terminal.click()
+    await page.keyboard.type('echo styr-before\n')
+    await expect(output(terminal, 'styr-before')).toHaveCount(1)
+
+    // Right-click the tab (the close button's parent) for its menu.
+    const closeTab = page.getByRole('button', { name: /^Close / }).last()
+    await closeTab.locator('..').click({ button: 'right' })
+    const opened = app.waitForEvent('window')
+    await page.getByRole('menuitem', { name: /^Detach to window/ }).click()
+    const detached = await opened
+    detached.on('console', (message) => {
+      if (message.type() === 'error') errors.push(`detached console.error: ${message.text()}`)
+    })
+    detached.on('pageerror', (error) => errors.push(`detached pageerror: ${error.message}`))
+    await expect.poll(detachedList).toEqual([id])
+    // The tab left the main strip; the session runs on.
+    await expect(page.getByRole('button', { name: /^Close / })).toHaveCount(0)
+    expect(await sessions()).toContain(id)
+
+    // Scrollback rebuilt from the backlog, and the window types into the same PTY.
+    const away = detached.locator('.xterm')
+    await expect(output(away, 'styr-before')).toHaveCount(1)
+    await away.click()
+    await detached.keyboard.type('echo styr-detached\n')
+    await expect(output(away, 'styr-detached')).toHaveCount(1)
+
+    const closed = detached.waitForEvent('close')
+    await detached.getByRole('button', { name: 'Dock to main window' }).click()
+    await closed
+    await expect.poll(detachedList).toEqual([])
+    // Back in the strip, with what was typed in the other window.
+    await expect(output(page.locator('.xterm').last(), 'styr-detached')).toHaveCount(1)
+
+    await page
+      .getByRole('button', { name: /^Close / })
+      .last()
+      .click()
+    await expect.poll(sessions).toEqual(before)
+    expectNoErrors()
+  })
+
   await test.step('a second workspace has its own board', async () => {
     const first = await activeWorkspace()
     await page
