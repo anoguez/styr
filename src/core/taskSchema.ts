@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AGENT_STATES } from './agentState.js'
+import { AGENT_STATES, AGENT_WAITS } from './agentState.js'
 import {
   ANSI_COLOURS,
   DEFAULT_AUTO_LIMITS,
@@ -491,6 +491,8 @@ export const remoteAgentStatusSchema = z.object({
   at: short,
   sessionId: short.optional(),
   lastMessage: message.optional(),
+  // A kind a later host adds reads as absent, not as a broken list.
+  waitingOn: z.enum(AGENT_WAITS).optional().catch(undefined),
   branch: line.optional(),
   subagents: list(subagentStatusSchema, 1000).optional(),
   workspaceId: short.optional(),

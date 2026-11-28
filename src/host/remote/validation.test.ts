@@ -157,3 +157,16 @@ describe('NotificationGuard', () => {
     expect(guard.check('no:such', [])).toBeUndefined()
   })
 })
+
+describe('agents:list', () => {
+  const agent = { taskId: 'TASK-1', state: 'waiting', at: 'now' }
+
+  it('keeps what a waiting agent waits on, and reads a kind it does not know as absent', () => {
+    const schema = RESPONSE_SCHEMAS['agents:list']!
+    expect(schema.parse([{ ...agent, waitingOn: 'question' }])).toEqual([
+      { ...agent, waitingOn: 'question' }
+    ])
+    expect(schema.parse([agent])).toEqual([agent])
+    expect(schema.parse([{ ...agent, waitingOn: 'coffee' }])).toEqual([agent])
+  })
+})

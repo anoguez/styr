@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createChannelTable, type ChannelServices } from '@host/channelTable.js'
+import { RESPONSE_SCHEMAS } from '@host/remote/validation.js'
 import { HANDSHAKE_MAX_BYTES, HANDSHAKE_TIMEOUT_MS } from '@host/remoteAccess/handshake.js'
 import {
   NOISE_PROLOGUE,
@@ -46,6 +47,12 @@ function standInServices(): ChannelServices {
 
 const size = z.number().int().min(1).max(10_000)
 
+/**
+ * Table channels whose answer the schema spells out, as the desktop's client checks it
+ * (`RESPONSE_SCHEMAS`). New fields are optional, so a client that does not know one ignores it.
+ */
+const DESCRIBED_RESULTS = ['agents:list'] as const
+
 /** What the hub answers itself, beside the table (`hub.ts`). */
 const HUB_CHANNELS: Record<string, { kind: 'invoke' | 'send'; params: z.ZodType; result: string }> =
   {
@@ -73,7 +80,8 @@ const HUB_CHANNELS: Record<string, { kind: 'invoke' | 'send'; params: z.ZodType;
 const BROADCASTS: Record<string, string> = {
   'server:hello': 'ServerInfo, once after the handshake',
   'tasks:changed': 'none: re-read tasks:list',
-  'agents:changed': 'none: re-read agents:list',
+  'agents:changed':
+    'none: re-read agents:list (an agent starting or stopping a wait on a question or a permission changes it: `waitingOn`)',
   'review:changed': 'the task id whose review changed',
   'sources:state': 'SourceSyncState[]',
   'orchestrate:autoState': 'AutoDispatchState',
@@ -99,6 +107,10 @@ export function buildProtocolSchema(): unknown {
   const channels: Record<string, unknown> = {}
   for (const [name, channel] of Object.entries(invoke)) {
     channels[name] = { kind: 'invoke', params: toSchema(channel.args) }
+  }
+  for (const name of DESCRIBED_RESULTS) {
+    const result = RESPONSE_SCHEMAS[name]
+    if (result) channels[name] = { ...(channels[name] as object), result: toSchema(result) }
   }
   for (const [name, channel] of Object.entries(send)) {
     channels[name] = { kind: 'send', params: toSchema(channel.args) }

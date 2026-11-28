@@ -8,7 +8,7 @@ import {
   recordSubagentEvent
 } from '@core/agentStore.js'
 import type { AgentConversation } from '@core/agentConversation.js'
-import type { AgentStatus } from '@core/agentState.js'
+import { withConversationWait, type AgentStatus } from '@core/agentState.js'
 import { renderPrompt, workingDirFor } from '@core/launch.js'
 import { shouldArchiveOnExit } from '@core/archiveOnExit.js'
 import { finishedReviewRuns } from '@core/reviewRun.js'
@@ -110,6 +110,8 @@ export interface AgentsServicePorts extends Pick<HostPorts, 'broadcast'> {
     submitPrompt: (text: string) => Promise<void>,
     answerApproval: (approvalId: string, option: string) => Promise<void>
   ): void
+  /** The conversation a terminal's agent shows now (`usage.ts`), for what it waits on. */
+  conversation(terminalId: string): Pick<AgentConversation, 'question' | 'approval'> | null
   /** The agent's own prompt channel in a terminal (`usage.ts`), for Request changes. */
   prompts: Pick<SessionPorts, 'promptInbox' | 'promptAgent'>
   ensureAgentCli: SessionPorts['ensureAgentCli']
@@ -131,12 +133,15 @@ export function createAgentsService(ports: AgentsServicePorts) {
 
   /**
    * Agent records from disk, each tagged with the branch its working directory is on so the UI can
-   * show where the work is actually landing.
+   * show where the work is actually landing, and with what it waits on as its live terminal's
+   * conversation shows it (`withConversationWait`): a question reads as one, not as working.
    */
   function agentStatuses(): AgentStatus[] {
     const settings = store.loadSettings()
     const byId = new Map(tasks.query().map((task) => [task.id, task]))
-    return store.readAgentStatuses(settings).map((status) => {
+    return store.readAgentStatuses(settings).map((record) => {
+      const session = terminals.findSessionByTask(record.taskId, settings.activeWorkspaceId)
+      const status = session ? withConversationWait(record, ports.conversation(session.id)) : record
       const task = byId.get(status.taskId)
       const dir = task ? (task.worktreePath ?? workingDirFor(settings, task)) : undefined
       const branch = dir ? ports.git.branch(dir) : undefined

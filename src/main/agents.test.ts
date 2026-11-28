@@ -130,6 +130,8 @@ vi.mock('./codexMonitor.js', () => ({
   prepareCodex: async () => '/codex.sock'
 }))
 vi.mock('./usage.js', () => ({
+  onWaitChange: () => {},
+  usage: { conversation: () => null },
   publishAgentConversation: (sessionId: string, conversation: AgentConversation) =>
     published.push({ sessionId, conversation })
 }))

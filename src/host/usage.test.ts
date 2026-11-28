@@ -241,6 +241,27 @@ describe('usage', () => {
     )
   })
 
+  it('tells its listeners when an agent starts, changes or stops waiting, not on every write', () => {
+    const { usage } = harness()
+    const changes: string[] = []
+    usage.onWaitChange((terminalId) => changes.push(terminalId))
+    const question = (id: string) => ({
+      id,
+      questions: [{ question: 'Which?', header: 'Pick', multiSelect: false, options: [] }]
+    })
+    usage.publishAgentConversation('t12', conversation({ working: true }))
+    usage.publishAgentConversation('t12', conversation({ question: question('q1') }))
+    usage.publishAgentConversation('t12', conversation({ question: question('q1'), at: 'later' }))
+    usage.publishAgentConversation('t12', conversation({ question: question('q2') }))
+    usage.publishAgentConversation('t12', conversation({ approval: { id: 'q2', prompt: 'Bash?' } }))
+    usage.publishAgentConversation('t12', conversation())
+    expect(changes).toEqual(['t12', 't12', 't12', 't12'])
+    usage.publishAgentConversation('t13', conversation({ question: question('q1') }))
+    usage.forgetContext('t13')
+    usage.publishAgentConversation('t13', conversation({ question: question('q1') }))
+    expect(changes).toEqual(['t12', 't12', 't12', 't12', 't13', 't13'])
+  })
+
   it("pushes each new reading of the mod's files to the renderers", () => {
     const { h, usage } = harness()
     usage.start()
