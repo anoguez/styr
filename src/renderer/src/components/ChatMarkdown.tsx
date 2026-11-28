@@ -1,6 +1,20 @@
 import type { ReactNode } from 'react'
 import { inline } from './Markdown.js'
 
+/** `#`, `##` and `###` in the app's title sizes; deeper headings keep the body's. */
+const HEADING_SIZE: Record<number, string> = {
+  1: 'text-[20px] leading-tight',
+  2: 'text-[15px]',
+  3: 'text-[14px]'
+}
+
+/**
+ * The app's chat type: inline code in the mono face a little smaller than the text around it. The
+ * caller sets the body size.
+ */
+export const chatProse =
+  '[&_code]:bg-card [&_code]:border-edge [&_code]:border [&_code]:text-[0.84em]'
+
 /**
  * An agent's reply as the phone's chat draws it: fenced code blocks, `#` headings, `-`/`*`/`1.`
  * lists and paragraphs that keep the agent's line breaks, with `Markdown`'s inline rules (bold,
@@ -17,7 +31,7 @@ export function ChatMarkdown({ text }: { text: string }): ReactNode {
     if (lines.length === 0) return
     const shown = lines
     blocks.push(
-      <p key={blocks.length} className="my-0.5">
+      <p key={blocks.length} className="my-2 first:mt-0 last:mb-0">
         {shown.map((line, at) => (
           <span key={at}>
             {at > 0 ? <br /> : null}
@@ -35,7 +49,7 @@ export function ChatMarkdown({ text }: { text: string }): ReactNode {
     blocks.push(
       <Tag
         key={blocks.length}
-        className={`marker:text-faint my-0.5 pl-5 ${ordered ? 'list-decimal' : 'list-disc'}`}
+        className={`marker:text-dim my-2 space-y-1.5 pl-6 first:mt-0 last:mb-0 ${ordered ? 'list-decimal' : 'list-disc'}`}
       >
         {items.map((item, at) => (
           <li key={at}>{inline(item)}</li>
@@ -49,7 +63,7 @@ export function ChatMarkdown({ text }: { text: string }): ReactNode {
     blocks.push(
       <pre
         key={blocks.length}
-        className="border-edge bg-raised/60 text-ink my-1 overflow-x-auto rounded-md border px-2 py-1 whitespace-pre"
+        className="border-edge bg-card text-ink my-2 overflow-x-auto rounded-[10px] border p-3 font-mono text-[12.5px] leading-normal whitespace-pre first:mt-0 last:mb-0"
       >
         {code.join('\n')}
       </pre>
@@ -77,7 +91,10 @@ export function ChatMarkdown({ text }: { text: string }): ReactNode {
       flushParagraph()
       flushList()
       blocks.push(
-        <p key={blocks.length} className="text-ink mt-1.5 mb-0.5 font-semibold first:mt-0">
+        <p
+          key={blocks.length}
+          className={`text-ink mt-3 mb-1.5 font-semibold first:mt-0 ${HEADING_SIZE[heading[1]!.length] ?? ''}`}
+        >
           {inline(heading[2]!)}
         </p>
       )

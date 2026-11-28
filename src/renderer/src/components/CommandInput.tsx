@@ -1,5 +1,7 @@
 import {
   useLayoutEffect,
+  type ChangeEvent,
+  type ClipboardEvent,
   useRef,
   useState,
   type KeyboardEvent,
@@ -28,30 +30,10 @@ export interface Look {
   lineHeight: number
 }
 
-/**
- * Styr's `❯` input, for a shell's commands and an agent's prompts alike: the program sees a line
- * only once it is submitted.
- */
-export function CommandInput({
-  look,
-  inputRef,
-  history,
-  hints,
-  label = 'Command',
-  trailing,
-  commands,
-  onSubmit,
-  onClearBlocks,
-  onEscape,
-  onPasteImage
-}: {
-  look: Look
+/** What `useCommandInput` takes: the input's program, its history and what its keys do. */
+export interface CommandInputOptions {
   inputRef: RefObject<HTMLTextAreaElement | null>
   history: string[]
-  hints: InputHint[]
-  label?: string
-  /** Shown at the end of the row whatever is typed. */
-  trailing?: ReactNode
   /** The line as typed; the caller sends it in whatever form its program expects. */
   onSubmit: (text: string) => void
   onClearBlocks?: () => void
@@ -61,7 +43,38 @@ export function CommandInput({
   onPasteImage?: () => void
   /** The program's slash commands, offered in a menu while `/name` is typed. */
   commands?: AgentCommand[]
-}): ReactNode {
+}
+
+/** The input's state and handlers, whatever draws it: the terminal's `❯` line or the chat's field. */
+export interface CommandInputState {
+  text: string
+  /** Something was typed since the input appeared. */
+  typed: boolean
+  /** The slash commands that fit what is typed, and the one picked; empty when the menu is shut. */
+  matches: AgentCommand[]
+  choice: AgentCommand | undefined
+  /** Sends what is typed, as Enter does (a button's click). */
+  submit: () => void
+  /** Sends a command picked from the menu. */
+  pick: (command: AgentCommand) => void
+  onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void
+  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void
+  onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void
+}
+
+/**
+ * The keys of Styr's input, shared by every look of it: history, the slash-command menu, Escape,
+ * image paste. The program sees a line only once it is submitted.
+ */
+export function useCommandInput({
+  inputRef,
+  history,
+  commands,
+  onSubmit,
+  onClearBlocks,
+  onEscape,
+  onPasteImage
+}: CommandInputOptions): CommandInputState {
   const [text, setText] = useState('')
   const [typed, setTyped] = useState(false)
   const cursor = useRef<HistoryCursor>({ index: null, draft: '' })
@@ -75,6 +88,13 @@ export function CommandInput({
   const reset = (): void => {
     setText('')
     setPicked(0)
+    cursor.current = { index: null, draft: '' }
+  }
+
+  const submit = (): void => {
+    if (!text.trim()) return
+    onSubmit(text)
+    setText('')
     cursor.current = { index: null, draft: '' }
   }
 
@@ -117,10 +137,7 @@ export function CommandInput({
     // The surface's own keys (Ask agent, change directory…) must not reach the shell either.
     event.stopPropagation()
     if (action.kind === 'submit') {
-      if (!text.trim()) return
-      onSubmit(text)
-      setText('')
-      cursor.current = { index: null, draft: '' }
+      submit()
     } else if (action.kind === 'discard') {
       setText('')
       cursor.current = { index: null, draft: '' }
@@ -138,6 +155,71 @@ export function CommandInput({
     }
   }
 
+  return {
+    text,
+    typed,
+    matches,
+    choice,
+    submit,
+    pick: (command) => {
+      onSubmit(`/${command.name}`)
+      reset()
+      inputRef.current?.focus()
+    },
+    onChange: (event) => {
+      setText(event.target.value)
+      setTyped(true)
+      setPicked(0)
+      if (cursor.current.index !== null) cursor.current = { ...cursor.current, index: null }
+    },
+    onKeyDown,
+    onPaste: (event) => {
+      const { clipboardData } = event
+      if (!onPasteImage || clipboardData.getData('text/plain')) return
+      const image = [...clipboardData.items].some(
+        (item) => item.kind === 'file' && item.type.startsWith('image/')
+      )
+      if (!image) return
+      event.preventDefault()
+      event.stopPropagation()
+      onPasteImage()
+    }
+  }
+}
+
+/**
+ * Styr's `❯` input, for a shell's commands and an agent's prompts alike: the program sees a line
+ * only once it is submitted.
+ */
+export function CommandInput({
+  look,
+  inputRef,
+  history,
+  hints,
+  label = 'Command',
+  trailing,
+  commands,
+  onSubmit,
+  onClearBlocks,
+  onEscape,
+  onPasteImage
+}: CommandInputOptions & {
+  look: Look
+  hints: InputHint[]
+  label?: string
+  /** Shown at the end of the row whatever is typed. */
+  trailing?: ReactNode
+}): ReactNode {
+  const input = useCommandInput({
+    inputRef,
+    history,
+    commands,
+    onSubmit,
+    onClearBlocks,
+    onEscape,
+    onPasteImage
+  })
+  const { text, typed, matches, choice } = input
   return (
     <section aria-label="Prompt" className="-mx-0.5 shrink-0 px-2 py-[3px]">
       <div className="flex min-h-[22px] items-start gap-2">
@@ -145,17 +227,7 @@ export function CommandInput({
           ❯
         </span>
         <div className="relative min-w-0 flex-1">
-          {choice ? (
-            <CommandMenu
-              commands={matches}
-              picked={choice}
-              onPick={(command) => {
-                onSubmit(`/${command.name}`)
-                reset()
-                inputRef.current?.focus()
-              }}
-            />
-          ) : null}
+          {choice ? <CommandMenu commands={matches} picked={choice} onPick={input.pick} /> : null}
           <textarea
             ref={inputRef}
             value={text}
@@ -169,24 +241,9 @@ export function CommandInput({
             className="text-ink caret-accent block w-full resize-none border-0 bg-transparent p-0 outline-none focus-visible:outline-none"
             // Inline, because the app's focus ring is an unlayered rule that utilities cannot beat.
             style={{ font: 'inherit', lineHeight: `${look.lineHeight}px`, outline: 'none' }}
-            onChange={(event) => {
-              setText(event.target.value)
-              setTyped(true)
-              setPicked(0)
-              if (cursor.current.index !== null) cursor.current = { ...cursor.current, index: null }
-            }}
-            onKeyDown={onKeyDown}
-            onPaste={(event) => {
-              const { clipboardData } = event
-              if (!onPasteImage || clipboardData.getData('text/plain')) return
-              const image = [...clipboardData.items].some(
-                (item) => item.kind === 'file' && item.type.startsWith('image/')
-              )
-              if (!image) return
-              event.preventDefault()
-              event.stopPropagation()
-              onPasteImage()
-            }}
+            onChange={input.onChange}
+            onKeyDown={input.onKeyDown}
+            onPaste={input.onPaste}
           />
           {!typed && text === '' && hints.length > 0 ? (
             <span
@@ -209,7 +266,7 @@ export function CommandInput({
 }
 
 /** The program's slash commands that fit what is typed, above the input, as its own menu has them. */
-function CommandMenu({
+export function CommandMenu({
   commands,
   picked,
   onPick

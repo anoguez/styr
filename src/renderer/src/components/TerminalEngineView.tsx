@@ -142,7 +142,6 @@ export function TerminalEngineView({
               run={agentRun}
               chat={chat}
               active={props.active}
-              theme={props.theme}
               handle={props.handle}
               onChatChange={onChatChange}
               onShownChange={setChatShown}

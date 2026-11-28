@@ -1,23 +1,12 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type MutableRefObject,
-  type ReactNode
-} from 'react'
-import { AGENT_PROVIDER_LABELS, type ThemeSettings } from '@core/types.js'
+import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
+import { AGENT_PROVIDER_LABELS } from '@core/types.js'
 import type { AgentProviderId } from '@core/providers/types.js'
-import { terminalTheme } from '../lib/palette.js'
-import { paletteFromTheme } from '../lib/nativeTerminal/style.js'
 import {
   useAgentChat,
   useAgentConversation,
   type AgentChat
 } from '../lib/agentChat/useAgentChat.js'
 import { AgentBlockList } from './AgentBlockList.js'
-import type { Look } from './CommandInput.js'
 import type { TerminalHandle } from './TerminalView.js'
 
 /** The agent a tab runs, as the surface knows it, for its chat. */
@@ -44,7 +33,7 @@ export function chatGap(
 /**
  * The xterm.js engine's chat for an agent tab: it lies over the terminal, which stays mounted
  * underneath — only hidden (`onShownChange`), so its scrollback, scroll position and PTY are
- * untouched. It draws with `AgentBlockList`, fed by `useAgentChat`, the hook the native engine uses
+ * untouched. It draws the phone app's chat with `AgentBlockList`, fed by `useAgentChat`, the hook the native engine uses
  * too, and stays mounted once shown, so it keeps its scroll position as well. A slash command that
  * opens the CLI's own interface shows the terminal until the conversation moves on.
  */
@@ -53,7 +42,6 @@ export function XtermAgentChat({
   run,
   chat,
   active,
-  theme,
   handle,
   onChatChange,
   onShownChange
@@ -63,7 +51,6 @@ export function XtermAgentChat({
   /** The tab's Chat switch. */
   chat: boolean
   active: boolean
-  theme: ThemeSettings
   /** The terminal's handle, to give it focus back when the chat steps aside. */
   handle?: MutableRefObject<TerminalHandle | null>
   onChatChange: (on: boolean) => void
@@ -111,7 +98,6 @@ export function XtermAgentChat({
           <AgentChatPane
             agent={agent}
             run={run}
-            theme={theme}
             inputRef={inputRef}
             onShowTerminal={() => onChatChange(false)}
           />
@@ -126,32 +112,21 @@ export function XtermAgentChat({
 export function AgentChatPane({
   agent,
   run,
-  theme,
   inputRef,
   onShowTerminal
 }: {
   agent: AgentChat
   run: AgentRun
-  theme: ThemeSettings
   inputRef: MutableRefObject<HTMLTextAreaElement | null>
   onShowTerminal: () => void
 }): ReactNode {
-  const palette = useMemo(() => paletteFromTheme(terminalTheme(theme)), [theme])
-  const lineHeight = Math.round(theme.terminalFontSize * 1.35)
-  const look: Look = useMemo(() => ({ palette, lineHeight }), [palette, lineHeight])
-  const font: CSSProperties = {
-    fontFamily: theme.terminalFont,
-    fontSize: theme.terminalFontSize,
-    lineHeight: `${lineHeight}px`
-  }
   const label = AGENT_PROVIDER_LABELS[run.provider]
   const gap = chatGap(agent, run)
   return (
     <div
       role="region"
       aria-label={`${label} chat`}
-      className="h-full w-full overflow-hidden"
-      style={{ color: palette.foreground, backgroundColor: palette.background }}
+      className="bg-surface text-ink h-full w-full overflow-hidden"
     >
       {gap ? (
         <ChatGap text={gap} label={label} onShowTerminal={onShowTerminal} />
@@ -161,8 +136,6 @@ export function AgentChatPane({
           working={agent.working}
           label={label}
           approval={agent.approval}
-          look={look}
-          font={font}
           inputRef={inputRef}
           history={agent.history}
           commands={agent.conversation?.commands}

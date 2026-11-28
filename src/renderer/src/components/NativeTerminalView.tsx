@@ -227,8 +227,6 @@ export function NativeTerminalView({
           working={agent.working}
           label={AGENT_PROVIDER_LABELS[provider]}
           approval={agent.approval}
-          look={look}
-          font={font}
           inputRef={inputRef}
           history={agent.history}
           commands={agent.conversation?.commands}

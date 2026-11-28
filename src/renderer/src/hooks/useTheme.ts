@@ -146,6 +146,10 @@ export function useTheme(theme: ThemeSettings): void {
       `color-mix(in oklab, var(--color-accent) ${toward === 'white' ? 70 : 85}%, ${toward})`
     )
     root.style.setProperty('--color-accent-text', legibleOn(theme.accent, ramp.surface))
+    // Red-300 is chosen for dark surfaces and washes out on a light one, where errors (a failed
+    // tool call, Deny) take Tailwind's red-700 instead.
+    if (toward === 'black') root.style.setProperty('--color-danger', 'oklch(50.5% 0.213 27.518)')
+    else root.style.removeProperty('--color-danger')
     for (const status of TASK_STATUSES) {
       const key = status === 'in_progress' ? 'progress' : status === 'in_review' ? 'review' : status
       const colour = theme.columns[status]
