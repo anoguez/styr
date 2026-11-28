@@ -154,6 +154,16 @@ _Idle_. It is display only — Dispatch slots, the Create PR / review buttons an
 stops" guards keep the hook's state, and the tray and workspace switcher count review separately
 (`awaitsReview`).
 
+`waitingOn` (`'permission' | 'question'`, absent otherwise) says what a waiting agent waits on.
+The hooks cannot tell: AskUserQuestion fires `PreToolUse` (working) and then a permission
+`Notification`. So `agentStatuses` overlays the agent's live terminal conversation
+(`withConversationWait`, the same `question`/`approval` the usage mod writes for the chat): a
+`question` reads `waiting` on `question`, with lastMessage "Asked you a question: <first header>",
+and an `approval` reads `waiting` on `permission`. Without a conversation, a `permission_prompt`
+Notification still gives `permission`. `usage.onWaitChange` re-runs `notifyAgentsChanged` only when
+a terminal's wait starts, changes or ends, not on every streamed write. It is derived and never
+written to the status file. The remote schema reads a kind it does not know as absent.
+
 `SessionStart` maps to `ready`, never `working` — a resume fires it with no turn in flight, and
 calling that "Working" is a lie the user will notice immediately. `PreToolUse` is registered purely
 so state recovers from `waiting` once a permission prompt is answered; without it a session stays

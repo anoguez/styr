@@ -47,6 +47,15 @@ describe('readAgentStatus', () => {
     write('Notification', null)
     expect(readAgentStatus(settings, 'TASK-0001')?.state).toBe('waiting')
   })
+
+  it('says a permission prompt waits on a permission, and nothing else does', () => {
+    write('Notification', { notification_type: 'permission_prompt', message: 'Allow Bash?' })
+    expect(readAgentStatus(settings, 'TASK-0001')?.waitingOn).toBe('permission')
+    write('Notification', { notification_type: 'elicitation_dialog' })
+    expect(readAgentStatus(settings, 'TASK-0001')?.waitingOn).toBeUndefined()
+    write('PreToolUse', { notification_type: 'permission_prompt' })
+    expect(readAgentStatus(settings, 'TASK-0001')?.waitingOn).toBeUndefined()
+  })
 })
 
 describe('buildHookSettings', () => {

@@ -56,7 +56,7 @@ vi.mock('./codexMonitor.js', () => ({
   },
   prepareCodex: async () => undefined
 }))
-vi.mock('./usage.js', () => ({ publishAgentConversation: () => {} }))
+vi.mock('./usage.js', () => ({ publishAgentConversation: () => {}, onWaitChange: () => {} }))
 vi.mock('./agentCli.js', () => ({ agentCliStatus: () => ({}), ensureAgentCli: async () => {} }))
 vi.mock('./mcpEntry.js', () => ({ mcpEntry: () => '/mcp.mjs' }))
 

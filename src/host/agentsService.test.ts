@@ -46,6 +46,8 @@ interface Harness {
   sessions: TerminalSessionInfo[]
   trays: { statuses: AgentStatus[]; titles: Map<string, string> }[]
   published: string[]
+  /** Each terminal's conversation, by terminal id. */
+  conversations: Record<string, Partial<AgentConversation>>
   monitor?: {
     onUpdate: (update: ThreadUpdate) => void
     onConversation: (key: string, conversation: AgentConversation) => void
@@ -63,7 +65,8 @@ function harness(): Harness {
     background: [],
     sessions: [],
     trays: [],
-    published: []
+    published: [],
+    conversations: {}
   } as unknown as Harness
   const { calls } = h
   h.ports = {
@@ -145,6 +148,7 @@ function harness(): Harness {
       void submit('hi')
       void answer('a1', 'allow')
     },
+    conversation: (terminalId) => (h.conversations[terminalId] as AgentConversation) ?? null,
     prompts: { promptInbox: () => false, promptAgent: async () => false },
     ensureAgentCli: async (provider) => void calls.push(`ensureCli ${provider}`),
     prepareCodex: async () => {
@@ -202,6 +206,31 @@ describe('agentStatuses', () => {
     h.rows = [task(), task({ id: 'TASK-2', worktreePath: '/elsewhere' })]
     h.statuses = [status(), status({ taskId: 'TASK-2' }), status({ taskId: 'TASK-9' })]
     expect(service.agentStatuses().map((row) => row.branch)).toEqual(['main', undefined, undefined])
+  })
+
+  it("says what an agent waits on as its live terminal's conversation shows it", () => {
+    h.rows = [task(), task({ id: 'TASK-2' })]
+    h.statuses = [status(), status({ taskId: 'TASK-2' })]
+    h.sessions = [
+      { id: 't1', taskId: 'TASK-1', workspaceId: 'default' },
+      { id: 't2', taskId: 'TASK-2', workspaceId: 'beta' }
+    ] as TerminalSessionInfo[]
+    const question = {
+      id: 'q1',
+      questions: [{ question: 'Which?', header: 'Library', multiSelect: false, options: [] }]
+    }
+    // TASK-2's terminal is another workspace's TASK-2: its question is not this agent's.
+    h.conversations = { t1: { question }, t2: { question } }
+    expect(service.agentStatuses()).toEqual([
+      {
+        ...status(),
+        state: 'waiting',
+        waitingOn: 'question',
+        lastMessage: 'Asked you a question: Library',
+        branch: 'main'
+      },
+      { ...status({ taskId: 'TASK-2' }), branch: 'main' }
+    ])
   })
 })
 

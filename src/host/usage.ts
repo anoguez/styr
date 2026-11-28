@@ -212,6 +212,17 @@ export function createUsage(ports: UsagePorts) {
   const liveConversations = new Map<string, AgentConversation>()
   const conversationPrompts = new Map<string, (text: string) => Promise<void>>()
   const conversationApprovals = new Map<string, ApprovalAnswer>()
+  /** Each terminal's wait (question or approval id) as last published, to see it change. */
+  const waits = new Map<string, string>()
+  const waitListeners = new Set<(terminalId: string) => void>()
+
+  /**
+   * Calls `listener` when a terminal's agent starts, changes or stops waiting on a question or an
+   * approval, so the agent list (`agents:list`) can say so; not on every streamed word.
+   */
+  function onWaitChange(listener: (terminalId: string) => void): void {
+    waitListeners.add(listener)
+  }
 
   /** A terminal's file means nothing once it is gone, and its id is never reused. */
   function forgetContext(terminalId: string): void {
@@ -221,6 +232,7 @@ export function createUsage(ports: UsagePorts) {
     liveConversations.delete(terminalId)
     conversationPrompts.delete(terminalId)
     conversationApprovals.delete(terminalId)
+    waits.delete(terminalId)
   }
 
   /** All live conversation sources publish through the same renderer channel and prompt route. */
@@ -236,6 +248,15 @@ export function createUsage(ports: UsagePorts) {
     if (answerApproval) conversationApprovals.set(terminalId, answerApproval)
     else conversationApprovals.delete(terminalId)
     ports.broadcast('agent:conversation', { terminalId, conversation })
+    const wait = conversation.question
+      ? `question:${conversation.question.id}`
+      : conversation.approval
+        ? `approval:${conversation.approval.id}`
+        : ''
+    if (wait === (waits.get(terminalId) ?? '')) return
+    if (wait) waits.set(terminalId, wait)
+    else waits.delete(terminalId)
+    for (const listener of waitListeners) listener(terminalId)
   }
 
   /**
@@ -353,6 +374,7 @@ export function createUsage(ports: UsagePorts) {
     usageEnv,
     forgetContext,
     publishAgentConversation,
+    onWaitChange,
     claudeUsage: readClaudeUsage,
     codexUsage,
     context: readContext,

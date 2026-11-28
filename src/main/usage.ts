@@ -22,7 +22,7 @@ export const usage = createUsage({
   watch: watchFiles
 })
 
-export const { usageEnv, forgetContext, publishAgentConversation } = usage
+export const { usageEnv, forgetContext, publishAgentConversation, onWaitChange } = usage
 
 /** The agent's own prompt channel in a terminal, for Request changes (`agentsService`'s `prompts`). */
 export const agentPrompts = {

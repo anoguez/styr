@@ -592,6 +592,108 @@
         "prefixItems": [],
         "items": false,
         "maxItems": 0
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 20000,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "ready",
+                "working",
+                "waiting",
+                "idle",
+                "exited"
+              ]
+            },
+            "at": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "sessionId": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "lastMessage": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "waitingOn": {
+              "type": "string",
+              "enum": [
+                "permission",
+                "question"
+              ]
+            },
+            "branch": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "subagents": {
+              "maxItems": 1000,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 8192
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "done"
+                    ]
+                  },
+                  "startedAt": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "endedAt": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "lastMessage": {
+                    "type": "string",
+                    "maxLength": 65536
+                  }
+                },
+                "required": [
+                  "id",
+                  "label",
+                  "state",
+                  "startedAt"
+                ]
+              }
+            },
+            "workspaceId": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "workspaceName": {
+              "type": "string",
+              "maxLength": 8192
+            }
+          },
+          "required": [
+            "taskId",
+            "state",
+            "at"
+          ]
+        }
       }
     },
     "agents:remove": {
@@ -1481,7 +1583,7 @@
   "broadcasts": {
     "server:hello": "ServerInfo, once after the handshake",
     "tasks:changed": "none: re-read tasks:list",
-    "agents:changed": "none: re-read agents:list",
+    "agents:changed": "none: re-read agents:list (an agent starting or stopping a wait on a question or a permission changes it: `waitingOn`)",
     "review:changed": "the task id whose review changed",
     "sources:state": "SourceSyncState[]",
     "orchestrate:autoState": "AutoDispatchState",
