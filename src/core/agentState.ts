@@ -1,3 +1,4 @@
+import type { AgentConversation } from './agentConversation.js'
 import type { Task, TaskStatus } from './types.js'
 
 export const AGENT_STATES = ['ready', 'working', 'waiting', 'idle', 'exited'] as const
@@ -17,12 +18,52 @@ export interface AgentStatus {
   at: string
   sessionId?: string
   lastMessage?: string
+  /**
+   * What a `waiting` agent waits on, when Styr knows: a permission prompt, or a question it asked
+   * (AskUserQuestion). Absent when it is not waiting or nothing says which (`withConversationWait`).
+   */
+  waitingOn?: AgentWait
   branch?: string
   /** Helpers the agent spawned in its current session, oldest first. Absent when there are none. */
   subagents?: SubagentStatus[]
   /** Set for agents of other workspaces (tray, notifications); task ids repeat across them. */
   workspaceId?: string
   workspaceName?: string
+}
+
+export const AGENT_WAITS = ['permission', 'question'] as const
+export type AgentWait = (typeof AGENT_WAITS)[number]
+
+/** The lastMessage of an agent waiting on a question: "Asked you a question: <header>". */
+export const ASKED_A_QUESTION = 'Asked you a question'
+
+/**
+ * `status` as the agent's conversation shows it (the usage mod's file, a Codex thread): an agent
+ * whose conversation waits on a question or an approval is `waiting`, on that, whatever its last
+ * hook said. AskUserQuestion fires `PreToolUse` (working) and a permission `Notification`, so the
+ * hooks alone read a question as working or as a permission. Its lastMessage names the question
+ * by its first header (its text when it has none). A stopped agent stays stopped.
+ */
+export function withConversationWait(
+  status: AgentStatus,
+  conversation: Pick<AgentConversation, 'question' | 'approval'> | null | undefined
+): AgentStatus {
+  if (status.state === 'exited' || !conversation) return status
+  const { question, approval } = conversation
+  if (question) {
+    const first = question.questions[0]
+    const name = (first?.header || first?.question || '').trim()
+    return {
+      ...status,
+      state: 'waiting',
+      waitingOn: 'question',
+      lastMessage: name ? `${ASKED_A_QUESTION}: ${name}` : ASKED_A_QUESTION
+    }
+  }
+  if (approval) {
+    return { ...status, state: 'waiting', waitingOn: 'permission', lastMessage: approval.prompt }
+  }
+  return status
 }
 
 /**

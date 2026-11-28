@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  withConversationWait,
   runningSubagents,
   shownAgentState,
   shownAgents,
@@ -71,5 +72,58 @@ describe('subagent display', () => {
     expect(runningSubagents({ subagents: [sub('a'), sub('b', 'done'), sub('c')] })).toBe(2)
     expect(subagentCountLabel(1)).toBe('1 subagent')
     expect(subagentCountLabel(3)).toBe('3 subagents')
+  })
+})
+
+describe('withConversationWait', () => {
+  const working = {
+    taskId: 'TASK-1',
+    state: 'working',
+    at: 'now',
+    lastMessage: 'Let me look'
+  } as const
+  const question = (header: string, text = 'Which library?') => ({
+    id: 'q1',
+    questions: [
+      { question: text, header, multiSelect: false, options: [{ label: 'A', description: '' }] },
+      { question: 'And?', header: 'Second', multiSelect: false, options: [] }
+    ]
+  })
+
+  it('reads a question as waiting on one, named by its first header', () => {
+    expect(withConversationWait(working, { question: question('Library') })).toEqual({
+      ...working,
+      state: 'waiting',
+      waitingOn: 'question',
+      lastMessage: 'Asked you a question: Library'
+    })
+  })
+
+  it('names a question without a header by its text, and one with neither by nothing', () => {
+    expect(withConversationWait(working, { question: question('') }).lastMessage).toBe(
+      'Asked you a question: Which library?'
+    )
+    expect(withConversationWait(working, { question: question('', ' ') }).lastMessage).toBe(
+      'Asked you a question'
+    )
+  })
+
+  it('reads an approval as waiting on a permission, in its own words', () => {
+    const waiting = { ...working, state: 'waiting' as const, lastMessage: 'old' }
+    expect(
+      withConversationWait(waiting, { approval: { id: 'p1', prompt: 'Claude wants to use Bash' } })
+    ).toEqual({
+      ...working,
+      state: 'waiting',
+      waitingOn: 'permission',
+      lastMessage: 'Claude wants to use Bash'
+    })
+  })
+
+  it('leaves a status alone with nothing to wait on, and a stopped agent stopped', () => {
+    expect(withConversationWait(working, null)).toBe(working)
+    expect(withConversationWait(working, {})).toBe(working)
+    const exited = { ...working, state: 'exited' as const }
+    expect(withConversationWait(exited, { question: question('Library') })).toBe(exited)
   })
 })

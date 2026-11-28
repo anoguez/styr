@@ -185,6 +185,7 @@ export function createServerHost(ports: ServerHostPorts) {
     },
     createMonitor: (onUpdate, onConversation) => new CodexMonitor(onUpdate, onConversation),
     publishConversation: usage.publishAgentConversation,
+    conversation: (terminalId) => usage.conversation(terminalId),
     prompts: {
       promptInbox: (terminalId) => usage.conversation(terminalId)?.promptInbox === true,
       promptAgent: (terminalId, text) => usage.prompt(terminalId, text)
@@ -196,6 +197,8 @@ export function createServerHost(ports: ServerHostPorts) {
       broadcast('server:tray', { statuses, titles: Object.fromEntries(titles) }),
     requestAutoRun: () => dispatchService.requestAutoRun()
   })
+  // A question or approval an agent starts or stops waiting on changes what agents:list says.
+  usage.onWaitChange(() => notifyAgentsChanged())
 
   const gitService = createGitService({
     loadSettings: () => loadSettings(),

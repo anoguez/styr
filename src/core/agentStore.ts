@@ -276,7 +276,12 @@ export function readAgentStatus(
       state,
       at: record.at ?? new Date().toISOString(),
       sessionId: record.payload?.session_id,
-      lastMessage: record.payload?.last_assistant_message
+      lastMessage: record.payload?.last_assistant_message,
+      // A permission prompt, per the hook; a question shows as one too until its conversation
+      // says otherwise (`withConversationWait`).
+      ...(state === 'waiting' && record.payload?.notification_type === 'permission_prompt'
+        ? { waitingOn: 'permission' as const }
+        : {})
     }
     const helpers = subagents ? readSubagents(settings, taskId) : []
     return helpers.length > 0 ? { ...status, subagents: helpers } : status
