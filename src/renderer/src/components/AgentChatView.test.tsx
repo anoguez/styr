@@ -167,6 +167,22 @@ describe('agent block list', () => {
     expect(html).not.toContain('Nothing here yet')
   })
 
+  it('puts Styr’s avatar on the first row of each of the agent’s turns', () => {
+    const html = list({
+      working: true,
+      blocks: [
+        message('m1', 'user', 'One'),
+        message('m2', 'assistant', 'Reply'),
+        toolCall('t1', 'Read', 'a.ts'),
+        message('m3', 'user', 'Two')
+      ]
+    })
+    // The first turn's reply, and "Working…" starting the second.
+    expect(html.match(/bg-accent\/15 grid size-7/g)).toHaveLength(2)
+    // Your messages have none.
+    expect(list({ blocks: [message('m1', 'user', 'One')] })).not.toContain('size-[18px]')
+  })
+
   it('says “Working…” in a line while a turn runs, and invites a first message when empty', () => {
     expect(list({ working: true })).toContain('Working…')
     expect(list({ working: true })).toContain('Interrupt')

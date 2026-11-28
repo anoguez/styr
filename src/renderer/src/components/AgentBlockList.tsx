@@ -11,6 +11,7 @@ import { quiet } from './quiet.js'
 import { editRows } from '@core/diffView.js'
 import { ChatMarkdown, chatProse } from './ChatMarkdown.js'
 import { ChevronIcon, CopyIcon } from './icons.js'
+import { StyrAvatar } from './StyrMark.js'
 
 /** Rows of a diff shown before "Show all". */
 const DIFF_PREVIEW = 16
@@ -100,7 +101,7 @@ export function AgentBlockList({
     blocks.filter((block): block is DiffBlock => block.kind === 'diff').map((d) => [d.parentId, d])
   )
   const rows = blocks.filter(
-    (block) => block.kind === 'agent-message' || block.kind === 'agent-tool-call'
+    (block): block is ChatRow => block.kind === 'agent-message' || block.kind === 'agent-tool-call'
   )
 
   return (
@@ -125,14 +126,28 @@ export function AgentBlockList({
                 Nothing here yet. Send {label} a message to start.
               </p>
             ) : null}
-            {rows.map((block) =>
-              block.kind === 'agent-message' ? (
+            {rows.map((block, at) =>
+              block.kind === 'agent-message' && block.payload.role === 'user' ? (
                 <Message key={block.id} block={block} label={label} />
-              ) : block.kind === 'agent-tool-call' ? (
-                <ToolCall key={block.id} block={block} diff={diffs.get(block.id)} />
-              ) : null
+              ) : (
+                <AgentRow
+                  key={block.id}
+                  avatar={startsTurn(rows, at)}
+                  pad={block.kind === 'agent-tool-call' ? 'pt-2' : 'pt-1'}
+                >
+                  {block.kind === 'agent-message' ? (
+                    <Message block={block} label={label} />
+                  ) : (
+                    <ToolCall block={block} diff={diffs.get(block.id)} />
+                  )}
+                </AgentRow>
+              )
             )}
-            {working ? <Working /> : null}
+            {working ? (
+              <AgentRow avatar={startsTurn(rows, rows.length)} pad="pt-1">
+                <Working />
+              </AgentRow>
+            ) : null}
           </div>
         </div>
         {away ? (
@@ -170,6 +185,39 @@ export function AgentBlockList({
         onPasteImage={onPasteImage}
         onShowTui={onShowTui}
       />
+    </div>
+  )
+}
+
+type ChatRow = AgentMessageBlock | AgentToolCallBlock
+
+const isUserMessage = (block: ChatRow): boolean =>
+  block.kind === 'agent-message' && block.payload.role === 'user'
+
+/** The agent's side starts a turn at `at`: the first row after the person's message, or the first. */
+const startsTurn = (rows: ChatRow[], at: number): boolean => {
+  const before = rows[at - 1]
+  return before === undefined || isUserMessage(before)
+}
+
+/**
+ * One row of the agent's side: Styr's avatar in a gutter on the first row of each turn, the gutter
+ * left empty on the rest so a turn's replies, tool calls and "Working…" line up under it.
+ */
+function AgentRow({
+  avatar,
+  pad,
+  children
+}: {
+  avatar: boolean
+  /** Lines the avatar up with the row's first line. */
+  pad: string
+  children: ReactNode
+}): ReactNode {
+  return (
+    <div className="flex shrink-0 gap-3">
+      <div className={`w-7 shrink-0 ${pad}`}>{avatar ? <StyrAvatar /> : null}</div>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   )
 }

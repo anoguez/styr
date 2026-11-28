@@ -3,6 +3,7 @@ import type { AppInfo, UpdateState } from '@core/types.js'
 import { IS_MAC } from '../../lib/platform.js'
 import { useFullscreen } from '../../lib/useFullscreen.js'
 import { Chip } from '../ui.js'
+import { StyrMark } from '../StyrMark.js'
 
 /**
  * The title bar's layout: `start` beside the window controls, `center` in the middle, `end` at the
@@ -70,25 +71,7 @@ export function BrandMark({
           aria-hidden
           className="grid size-[22px] shrink-0 place-items-center rounded-[6px] bg-accent/15"
         >
-          {/* The app icon's rune. Its gradient runs between theme colours rather than the icon's
-              fixed ones, which match them at the default theme, so it follows a re-theme. */}
-          <svg viewBox="0 0 16 16" className="size-[15px]">
-            <defs>
-              <linearGradient id="styr-mark" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" style={{ stopColor: 'var(--color-accent-text)' }} />
-                <stop offset="1" style={{ stopColor: 'var(--color-col-progress)' }} />
-              </linearGradient>
-            </defs>
-            <polyline
-              points="5.6,2.6 5.6,8.4 10.4,7 10.4,13.4"
-              transform="rotate(30 8 8)"
-              fill="none"
-              stroke="url(#styr-mark)"
-              strokeWidth="2.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <StyrMark className="size-[15px]" />
         </span>
         <span className="font-wordmark -ml-1 text-[13.5px] font-semibold tracking-[0.02em] text-ink">
           Styr
