@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { agentViewFor, forgetAgentViews, rememberAgentView, type ViewStorage } from './agentView.js'
+import {
+  agentViewFor,
+  agentViewKey,
+  forgetAgentViews,
+  rememberAgentView,
+  type ViewStorage
+} from './agentView.js'
 
 const memoryStorage = (): ViewStorage & { data: Map<string, string> } => {
   const data = new Map<string, string>()
@@ -56,5 +62,19 @@ describe('agent tab views', () => {
     expect(() => rememberAgentView('s1', 'chat', throwing)).not.toThrow()
     expect(agentViewFor('s1', 'terminal', throwing)).toBe('chat')
     expect(agentViewFor('s2', 'terminal', throwing)).toBe('terminal')
+  })
+
+  it('keys a task’s agent tab by workspace and task, so a relaunch or a new run keeps it', () => {
+    const store = memoryStorage()
+    const before = agentViewKey({ id: 'session-1', taskId: 'TASK-0007', workspaceId: 'w1' })
+    rememberAgentView(before, 'chat', store)
+    forgetAgentViews()
+    // Restored after a relaunch: a new session id, the same task.
+    const after = agentViewKey({ id: 'session-9', taskId: 'TASK-0007', workspaceId: 'w1' })
+    expect(agentViewFor(after, 'terminal', store)).toBe('chat')
+    // The same task id in another workspace is another task.
+    const other = agentViewKey({ id: 'session-9', taskId: 'TASK-0007', workspaceId: 'w2' })
+    expect(agentViewFor(other, 'terminal', store)).toBe('terminal')
+    expect(agentViewKey({ id: 'session-3' })).toBe('session-3')
   })
 })

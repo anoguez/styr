@@ -7,6 +7,24 @@ import type { AgentTabView } from '@core/types.js'
  * costs the reload. A tab never switched follows Settings' default (`agentTabView`).
  */
 
+/**
+ * Each agent tab's Chat switch, remembered by the task the agent works on (`agentViewKey`): a
+ * relaunch of Styr restores the tab under a new session id, and a task's agent can be started
+ * again, and the tab should open as it was left either way. A tab without a task is remembered by
+ * its session id. Kept in memory, and in `localStorage` so a reload or a relaunch keeps it; a
+ * storage that throws (blocked, full) only costs that. A tab never switched follows Settings'
+ * default (`agentTabView`).
+ */
+
+/** What a tab's choice is kept under: its workspace and task, or its session when it has none. */
+export function agentViewKey(session: {
+  id: string
+  taskId?: string
+  workspaceId?: string
+}): string {
+  return session.taskId ? `task:${session.workspaceId ?? ''}:${session.taskId}` : session.id
+}
+
 /** The part of `Storage` this reads, so a test can pass a map. */
 export interface ViewStorage {
   getItem: (key: string) => string | null
@@ -30,31 +48,31 @@ function parse(value: string | null): AgentTabView | null {
 
 /** The view this tab was last switched to, or `fallback` (the Settings default) if never. */
 export function agentViewFor(
-  sessionId: string,
+  key: string,
   fallback: AgentTabView,
   store: ViewStorage | null = storage()
 ): AgentTabView {
-  const known = chosen.get(sessionId)
+  const known = chosen.get(key)
   if (known) return known
   let stored: AgentTabView | null
   try {
-    stored = parse(store?.getItem(PREFIX + sessionId) ?? null)
+    stored = parse(store?.getItem(PREFIX + key) ?? null)
   } catch {
     stored = null
   }
-  if (stored) chosen.set(sessionId, stored)
+  if (stored) chosen.set(key, stored)
   return stored ?? fallback
 }
 
 /** Remembers the view a tab was switched to. */
 export function rememberAgentView(
-  sessionId: string,
+  key: string,
   view: AgentTabView,
   store: ViewStorage | null = storage()
 ): void {
-  chosen.set(sessionId, view)
+  chosen.set(key, view)
   try {
-    store?.setItem(PREFIX + sessionId, view)
+    store?.setItem(PREFIX + key, view)
   } catch {
     // Remembered for this window only.
   }

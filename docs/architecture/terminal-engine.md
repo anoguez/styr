@@ -302,13 +302,15 @@ at the cursor as its path.
   on, and the terminal is only made `invisible`, so its scrollback, scroll position and PTY stay.
   The chat stays mounted once shown and keeps its own scroll. Whichever view shows takes focus.
 - **Styr Terminal**: `NativeTerminalView` takes the switch as `chat`; agent mode is
-  `ready && chat && !tuiRequested`. "<agent> view" and "Answer in <agent>" turn the switch off.
+  `ready && chat && !tuiRequested`. "Answer in <agent>" turns the switch off.
 - What the chat cannot draw says so with **Switch to Terminal** (`chatGap`: no adapter, the agent
   not running, no conversation yet). A question the agent asks (the file's `question`, see
   Questions above; or, from an older mod, an approval whose tool `ConversationAdapter.asksInTui`
   names) offers only "Answer in Terminal": Allow/Deny or the status's keys would answer nothing, or
   pick an option. Drawing the question card in the chat is a follow-up to TASK-0030.
-- The switch is remembered per tab (`lib/agentChat/agentView.ts`, by session id, in memory and
+- The switch is remembered per task (`lib/agentChat/agentView.ts`, `agentViewKey`: workspace and
+  task id, so a tab restored after a relaunch or a task's new run opens as it was left; session id
+  for a tab without a task), in memory and
   `localStorage`); a tab never switched opens as Settings → Folders & terminal → "Open agent tabs
   in" says (`agentTabView`, global, default Terminal). `terminalChat` (⌘⇧M / Ctrl+Shift+M; Ctrl+Shift+T is New tab inside a terminal where `mod` is Ctrl)
   toggles it.
