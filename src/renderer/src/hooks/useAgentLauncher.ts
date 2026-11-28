@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { openBlockers } from '@core/blocking.js'
 import { planDraft, terminalDraft } from '@core/derivedTask.js'
 import { planningPrompt, planTitle } from '@core/planning.js'
@@ -96,6 +96,9 @@ export function useAgentLauncher({
     },
     [adopt, lookup]
   )
+
+  // An agent's `start_task` (the MCP server) launches as the card's Start does; its tab opens the same way.
+  useEffect(() => window.api.terminal.onLaunched(adopt), [adopt])
 
   /** Focus the task's live tab, or resume its chat when there is none. */
   const activateTask = useCallback(

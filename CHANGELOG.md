@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.46.0](https://github.com/anoguez/styr/compare/v0.45.0...v0.46.0) (2026-11-28)
+
+
+### Features
+
+* accept an image from a remote device ([#292](https://github.com/anoguez/styr/issues/292)) ([5d0e6e7](https://github.com/anoguez/styr/commit/5d0e6e7957ac6ad0a4371f9092fe89bddd8f728b))
+* answer an agent's AskUserQuestion from Styr's chat ([#294](https://github.com/anoguez/styr/issues/294)) ([25cc931](https://github.com/anoguez/styr/commit/25cc9310be0ec7a93386c7c1b23fded18f867618))
+* chat view for agent tabs, with a Chat / Terminal switch ([#295](https://github.com/anoguez/styr/issues/295)) ([27700f0](https://github.com/anoguez/styr/commit/27700f0e0b380f74834fbbcd26fe6bb9edc8de5e))
+* say when an agent is waiting on a question in agents:list ([#296](https://github.com/anoguez/styr/issues/296)) ([927458f](https://github.com/anoguez/styr/commit/927458f15197b5d38991225bd64594f62cbd0956))
+
+## [0.45.0](https://github.com/anoguez/styr/compare/v0.44.0...v0.45.0) (2026-11-27)
+
+
+### Features
+
+* pair the desktop with another computer using its pair link ([#291](https://github.com/anoguez/styr/issues/291)) ([444b46b](https://github.com/anoguez/styr/commit/444b46b6831a788b64511768f93686c57b44b689))
+
+
+### Bug Fixes
+
+* **terminal:** end a Windows terminal's whole process tree when it is killed ([#287](https://github.com/anoguez/styr/issues/287)) ([6c2b8fc](https://github.com/anoguez/styr/commit/6c2b8fcbfe60f8f8d45593cc2ef405af4e7a4379))
+
+## [0.44.0](https://github.com/anoguez/styr/compare/v0.43.0...v0.44.0) (2026-11-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* `styr serve --listen <address>[:port]` is now `styr serve --listen [--port <port>]`; an address is refused with a message. `styr serve --relay` and `styr relay` are gone.
+
+### Features
+
+* same-network remote access, the Connections page, pairing by approval and other computers ([#284](https://github.com/anoguez/styr/issues/284)) ([e298cd1](https://github.com/anoguez/styr/commit/e298cd1de74e1e4c141b4c2fddc109cb55d35c71))
+
+
+### Bug Fixes
+
+* **terminal:** keep the context bar's actions on one line ([#283](https://github.com/anoguez/styr/issues/283)) ([24885d8](https://github.com/anoguez/styr/commit/24885d8c3a2ae931dd41133034700d125c867e86))
+
+## [0.43.0](https://github.com/anoguez/styr/compare/v0.42.1...v0.43.0) (2026-11-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **remote-access:** relay client, styr serve --relay, and protocol 2 only ([#264](https://github.com/anoguez/styr/issues/264))
+
+### Features
+
+* **mcp:** start_task starts a task exactly as the card's Start does ([#282](https://github.com/anoguez/styr/issues/282)) ([c58cf78](https://github.com/anoguez/styr/commit/c58cf78c2961fc682aebcd7239b79edadecd89f7))
+* **remote-access:** relay client, styr serve --relay, and protocol 2 only ([#264](https://github.com/anoguez/styr/issues/264)) ([125acc6](https://github.com/anoguez/styr/commit/125acc6943cc993027c8224098788b52def37604))
+* **remote-access:** report the computer's name in server:info ([#273](https://github.com/anoguez/styr/issues/273)) ([5c93f9f](https://github.com/anoguez/styr/commit/5c93f9fd7cfaa51ef062aa7f52a949d4b9be7b74))
+
+
+### Bug Fixes
+
+* **prompts:** a review passes only with no findings, never with follow-ups ([#271](https://github.com/anoguez/styr/issues/271)) ([cd4dce9](https://github.com/anoguez/styr/commit/cd4dce9c32958d2f7c5016d78df062c0820a97fc))
+* **remote-access:** never offer a carrier-grade NAT address, and cap idle sockets per address ([#272](https://github.com/anoguez/styr/issues/272)) ([594304b](https://github.com/anoguez/styr/commit/594304b347cc48107e36902e33f511e09f894510))
+
 ## [0.42.1](https://github.com/anoguez/styr/compare/v0.42.0...v0.42.1) (2026-11-11)
 
 

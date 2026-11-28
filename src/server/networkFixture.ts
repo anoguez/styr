@@ -10,7 +10,12 @@ import { createSecureClientHandshake } from '@host/remoteAccess/secureClient.js'
 import type { SecureFrameChannel } from '@host/remoteAccess/secureSession.js'
 import { RpcPeer } from '@host/rpc/jsonRpc.js'
 import { createHub, PROTOCOL_VERSION, type Hub, type HubPorts } from './hub.js'
-import { MAX_FRAME_BYTES, startNetworkListener, type NetworkListener } from './wsListener.js'
+import {
+  MAX_FRAME_BYTES,
+  startNetworkListener,
+  type ApprovalPort,
+  type NetworkListener
+} from './wsListener.js'
 
 /** A fake host for the network tests: workspaces `open` and `closed`, with `open` flagged. */
 export function networkHost() {
@@ -111,7 +116,13 @@ export function networkHost() {
 export async function listenOnLoopback(
   host: ReturnType<typeof networkHost>,
   store: AccessStore,
-  extra: { hub?: Hub; pingMs?: number; handshakeMs?: number } = {}
+  extra: {
+    hub?: Hub
+    pingMs?: number
+    handshakeMs?: number
+    approvals?: ApprovalPort
+    approvalMs?: number
+  } = {}
 ): Promise<NetworkListener> {
   return startNetworkListener(
     {
@@ -122,9 +133,11 @@ export async function listenOnLoopback(
       now: () => host.state.clock,
       pingMs: extra.pingMs,
       handshakeMs: extra.handshakeMs,
-      limitLoopback: true
+      limitLoopback: true,
+      host: '127.0.0.1',
+      ...(extra.approvals ? { approvals: extra.approvals } : {}),
+      ...(extra.approvalMs ? { approvalMs: extra.approvalMs } : {})
     },
-    '127.0.0.1',
     0
   )
 }
@@ -143,6 +156,10 @@ export class TestPhone {
   closed?: { code: number; reason: string }
   /** The session once signed in: every later frame goes through it. */
   channel?: SecureFrameChannel
+  /** After `request`: the code this phone shows while it waits for the host's answer. */
+  approvalCode?: string
+  /** A request got the host's value (and could work out the host's code). */
+  sawHostValue = false
 
   constructor(
     port: number,
@@ -196,7 +213,12 @@ export class TestPhone {
    */
   private async handshake(
     privateKey: ReturnType<typeof createPrivateKey>,
-    signIn: { type: 'auth'; deviceId: string } | { type: 'pair'; name: string; secret: string }
+    signIn:
+      | { type: 'auth'; deviceId: string }
+      | { type: 'pair'; name: string; secret: string }
+      | { type: 'request'; name: string },
+    /** Stop after the host's value, before revealing this side's (a peeking relay). */
+    stopBeforeReveal = false
   ): Promise<{ deviceId?: string } | undefined> {
     const client = createSecureClientHandshake({
       pinnedFingerprint: this.fingerprint,
@@ -215,7 +237,14 @@ export class TestPhone {
         const frame = await this.next()
         if (frame === '') return undefined
         const step = client.receive(frame)
-        if (step.kind === 'send') for (const out of step.frames) this.send(out)
+        if (step.kind === 'send') {
+          if (step.approval) {
+            this.sawHostValue = true
+            if (stopBeforeReveal) return undefined
+            this.approvalCode = step.approval.code
+          }
+          for (const out of step.frames) this.send(out)
+        }
         if (step.kind === 'ready') {
           this.channel = step.channel
           return { deviceId: step.deviceId }
@@ -224,6 +253,27 @@ export class TestPhone {
     } catch {
       this.socket.close()
       return undefined
+    }
+  }
+
+  /**
+   * Asks to pair by approval, as a phone that found the host on the network does; resolves once
+   * the host answers (credentials) or refuses (undefined). `approvalCode` is set while it waits.
+   */
+  async request(
+    name: string,
+    options: { revealAfter?: boolean } = {}
+  ): Promise<Credentials | undefined> {
+    const pair = generateKeyPairSync('ed25519')
+    const result = await this.handshake(
+      pair.privateKey,
+      { type: 'request', name },
+      options.revealAfter === false
+    )
+    if (!result?.deviceId) return undefined
+    return {
+      deviceId: result.deviceId,
+      privateKey: pair.privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64')
     }
   }
 

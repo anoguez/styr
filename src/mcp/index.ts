@@ -3,6 +3,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { indexTasks, openBlockers } from '@core/blocking.js'
 import { pinWorkspace } from '@core/config.js'
+import { awaitLaunchResult, writeLaunchRequest } from '@core/launchRequests.js'
+import { loadSettings } from '@core/settingsStore.js'
 import { adapterFor, currentSources, runCommand, writableSource } from '@core/sources/index.js'
 import { openQuestions } from '@core/questions.js'
 import { requestReview, taskHandoff } from '@core/reviewRequest.js'
@@ -199,6 +201,50 @@ server.registerTool(
   async ({ id, status, note }) => {
     const task = updateTask(id, { status })
     return json(summarise(note ? addNote(task.id, AUTHOR, note) : task))
+  }
+)
+
+server.registerTool(
+  'start_task',
+  {
+    title: 'Start task',
+    description:
+      "Start a task's agent exactly as clicking Start on its card in Styr does: the same worktree, " +
+      'prompt template, provider and session (an existing chat is resumed, a task already running ' +
+      'keeps its session), and its terminal tab opens in Styr without switching workspace. Needs the ' +
+      'Styr app (or `styr serve`) running. A blocked task is refused with the reason unless ' +
+      'startAnyway is true, as the card asks before starting one. Leave templateId and provider unset ' +
+      "to use the task's own routing, as the card does.",
+    inputSchema: {
+      id: z.string().regex(TASK_ID_RE, 'Use a task id like TASK-0012'),
+      startAnyway: z
+        .boolean()
+        .optional()
+        .describe('Start even though an unfinished task blocks this one'),
+      templateId: z
+        .string()
+        .optional()
+        .describe("A prompt template id, overriding the task's lane"),
+      provider: z.enum(['claude', 'codex']).optional()
+    }
+  },
+  async ({ id, startAnyway, templateId, provider }) => {
+    const task = getTask(id)
+    if (!task) return json({ error: `Task ${id} not found` })
+    const settings = loadSettings()
+    const request = writeLaunchRequest(settings, {
+      taskId: task.id,
+      startAnyway,
+      templateId,
+      provider,
+      author: AUTHOR
+    })
+    const result = await awaitLaunchResult(settings, request.id)
+    return json(
+      result.ok
+        ? { started: task.id, sessionId: result.sessionId, provider: result.provider }
+        : { error: result.error }
+    )
   }
 )
 

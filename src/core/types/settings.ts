@@ -37,6 +37,7 @@ export const SHORTCUT_COMMANDS = [
   'terminalCreatePr',
   'terminalActivity',
   'terminalDetach',
+  'terminalChat',
   'terminalTab1',
   'terminalTab2',
   'terminalTab3',
@@ -92,6 +93,7 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   terminalCreatePr: [],
   terminalActivity: ['mod+shift+a'],
   terminalDetach: ['mod+shift+d'],
+  terminalChat: ['mod+shift+m'],
   terminalTab1: ['mod+1'],
   terminalTab2: ['mod+2'],
   terminalTab3: ['mod+3'],
@@ -114,6 +116,9 @@ export type WorktreeLocation = 'beside' | 'inside'
 export type RestoreTabsMode = 'ask' | 'always' | 'never'
 
 export const RESTORE_TABS_MODES: readonly RestoreTabsMode[] = ['ask', 'always', 'never']
+
+/** How an agent tab opens: its conversation as a chat, or the CLI's own terminal interface. */
+export type AgentTabView = 'chat' | 'terminal'
 
 export interface Settings {
   /** Where the app keeps its own data. Workspaces live inside it; the default one is its root. */
@@ -156,6 +161,8 @@ export interface Settings {
   updates: UpdateSettings
   /** Whether the terminal tabs of the last session are offered after a relaunch. */
   restoreTabs: RestoreTabsMode
+  /** What a new agent tab shows; each tab's Chat switch then remembers its own. */
+  agentTabView: AgentTabView
   experimental: ExperimentalSettings
   taskDefaults: TaskDefaults
   taskPresets: TaskPreset[]
@@ -178,6 +185,7 @@ export const GLOBAL_SETTING_KEYS = [
   'activeWorkspaceId',
   'updates',
   'restoreTabs',
+  'agentTabView',
   'shortcuts',
   'experimental'
 ] as const satisfies readonly (keyof Settings)[]

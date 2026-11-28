@@ -166,6 +166,7 @@ const BOARD = new Set([
   'tasks:delete',
   'tasks:forgetSession',
   'tasks:checkMerged',
+  'files:uploadImage',
   'git:branches',
   'git:taskDiff',
   'git:filePatch',
@@ -224,7 +225,8 @@ const SESSION_FIRST = new Set([
   'usage:context',
   'agent:conversation',
   'agent:prompt',
-  'agent:approval'
+  'agent:approval',
+  'agent:answerQuestion'
 ])
 
 /** Every channel the gate has a rule for, for the test that forces new ones to be classified. */
@@ -250,6 +252,7 @@ const BOARD_BROADCASTS = new Set([
   'sources:state',
   'orchestrate:autoState',
   'orchestrate:autoStarted',
+  'terminal:launched',
   'usage:claude',
   'tasks:activate'
 ])

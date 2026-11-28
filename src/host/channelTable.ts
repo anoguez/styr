@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { loadSettings } from '@core/settingsStore.js'
 import { sourceProviders } from '@core/sources/index.js'
-import { taskStatusSchema } from '@core/taskSchema.js'
+import { questionAnswersSchema, taskStatusSchema } from '@core/taskSchema.js'
+import { uploadImage } from '@host/attachments.js'
 import { listDirectories } from '@host/directories.js'
 import type { createAgentCliChecks } from '@host/agentCli.js'
 import type { AgentsService } from '@host/agentsService.js'
@@ -55,7 +56,13 @@ export interface ChannelServices {
   mcpSetup: Pick<ReturnType<typeof createMcpSetupChecks>, 'mcpSetupStatus'>
   usage: Pick<
     Usage,
-    'claudeUsage' | 'codexUsage' | 'context' | 'conversation' | 'prompt' | 'approval'
+    | 'claudeUsage'
+    | 'codexUsage'
+    | 'context'
+    | 'conversation'
+    | 'prompt'
+    | 'approval'
+    | 'answerQuestion'
   >
   terminals: Pick<
     TerminalsService,
@@ -157,6 +164,11 @@ export function createChannelTable(services: ChannelServices): {
     'tasks:delete': channel(z.tuple([str]), (id) => tasksService.delete(id)),
     'tasks:forgetSession': channel(z.tuple([str]), (id) => tasksService.forgetSession(id)),
     'tasks:checkMerged': channel(none, () => checkForMergedWork()),
+
+    'files:uploadImage': channel(
+      z.tuple([str.nullable(), str.max(512), str.max(100), str]),
+      (taskId, name, mime, base64) => uploadImage(taskId, name, mime, base64)
+    ),
 
     'git:branches': channel(z.tuple([str]), (repoPath) => gitService.branches(repoPath)),
     'git:taskDiff': channel(z.tuple([z.unknown(), z.unknown().optional()]), (taskId, repo) =>
@@ -263,6 +275,10 @@ export function createChannelTable(services: ChannelServices): {
     ),
     'agent:approval': channel(z.tuple([str, str, str]), (terminalId, approvalId, optionId) =>
       usage.approval(terminalId, approvalId, optionId)
+    ),
+    'agent:answerQuestion': channel(
+      z.tuple([str, str, questionAnswersSchema]),
+      (terminalId, questionId, answers) => usage.answerQuestion(terminalId, questionId, answers)
     )
   }
 

@@ -85,6 +85,7 @@ export const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   'tasks:forgetSession': task,
   'tasks:removeWorktree': task.nullable(),
   'tasks:checkMerged': ignored,
+  'files:uploadImage': remotePathSchema,
   'git:branches': z.object({
     branches: z.array(line).max(REMOTE_LIMITS.entries),
     current: line.optional()
@@ -158,6 +159,7 @@ export const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   'agent:conversation': remoteConversationSchema.nullable(),
   'agent:prompt': z.boolean(),
   'agent:approval': ignored,
+  'agent:answerQuestion': ignored,
   'sources:providers': z.array(z.object({ provider: short, label: line })).max(1000),
   'sources:ghStatus': remoteCliStatusSchema,
   'sources:state': syncStates,
@@ -201,6 +203,7 @@ export const NOTIFICATION_SCHEMAS: Readonly<Record<string, z.ZodType | typeof NO
   'agents:changed': z.array(remoteAgentStatusSchema).max(REMOTE_LIMITS.entries),
   'orchestrate:autoState': remoteAutoStateSchema,
   'orchestrate:autoStarted': remoteTerminalSessionSchema,
+  'terminal:launched': remoteTerminalSessionSchema,
   'sources:state': syncStates,
   'usage:claude': remoteProviderUsageSchema.nullable(),
   'review:changed': z.object({ taskId: short }),

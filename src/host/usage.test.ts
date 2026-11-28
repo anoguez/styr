@@ -8,8 +8,14 @@ import type { Task } from '@core/types.js'
 // `configDir()` is fixed when `core/config.ts` loads, so the home is set before importing.
 const home = mkdtempSync(join(tmpdir(), 'styr-usage-'))
 process.env.STYR_HOME = home
-const { createUsage, MAX_PROMPT_CHARS, sendApprovalAnswer, sendPrompt, watchFiles } =
-  await import('./usage.js')
+const {
+  createUsage,
+  MAX_PROMPT_CHARS,
+  sendApprovalAnswer,
+  sendPrompt,
+  sendQuestionAnswer,
+  watchFiles
+} = await import('./usage.js')
 
 const usageDir = join(home, 'usage')
 const app = join(home, 'app')
@@ -188,6 +194,72 @@ describe('usage', () => {
     )
     await expect(usage.approval('t9', 'gone', 'deny')).rejects.toThrow('no longer waiting')
     expect(() => sendApprovalAnswer('../x', 'a2', 'deny')).toThrow('Not an agent terminal.')
+  })
+
+  it("answers a question through the inbox with the tool's answers, or sends nothing", async () => {
+    const { usage } = harness()
+    usage.start()
+    const question = {
+      id: 'q1',
+      questions: [
+        {
+          question: 'Which colour?',
+          header: 'Colour',
+          multiSelect: false,
+          options: [
+            { label: 'Red', description: '' },
+            { label: 'Green', description: '' }
+          ]
+        }
+      ]
+    }
+    writeFileSync(
+      join(usageDir, 'conversation', 't10.json'),
+      JSON.stringify(conversation({ working: true, question }))
+    )
+    const inbox = join(usageDir, 'inbox', 't10.jsonl')
+    // Answers the picker would not take, or a question no longer shown: nothing is sent.
+    await expect(usage.answerQuestion('t10', 'q1', [{ labels: ['Blue'] }])).rejects.toThrow(
+      'Answer this one in the terminal.'
+    )
+    await expect(usage.answerQuestion('t10', 'q0', [{ labels: ['Red'] }])).rejects.toThrow(
+      'no longer waiting'
+    )
+    expect(existsSync(inbox)).toBe(false)
+    await usage.answerQuestion('t10', 'q1', [{ labels: ['Green'] }])
+    expect(readFileSync(inbox, 'utf8')).toBe(
+      '{"question":"q1","answers":{"Which colour?":"Green"}}\n'
+    )
+    expect(() => sendQuestionAnswer('../x', 'q1', [])).toThrow('Not an agent terminal.')
+  })
+
+  it('leaves a question to the terminal for an agent with a live channel of its own', async () => {
+    const { usage } = harness()
+    usage.publishAgentConversation('t11', conversation(), undefined, async () => {})
+    await expect(usage.answerQuestion('t11', 'q1', [{ labels: ['Red'] }])).rejects.toThrow(
+      'Answer this one in the terminal.'
+    )
+  })
+
+  it('tells its listeners when an agent starts, changes or stops waiting, not on every write', () => {
+    const { usage } = harness()
+    const changes: string[] = []
+    usage.onWaitChange((terminalId) => changes.push(terminalId))
+    const question = (id: string) => ({
+      id,
+      questions: [{ question: 'Which?', header: 'Pick', multiSelect: false, options: [] }]
+    })
+    usage.publishAgentConversation('t12', conversation({ working: true }))
+    usage.publishAgentConversation('t12', conversation({ question: question('q1') }))
+    usage.publishAgentConversation('t12', conversation({ question: question('q1'), at: 'later' }))
+    usage.publishAgentConversation('t12', conversation({ question: question('q2') }))
+    usage.publishAgentConversation('t12', conversation({ approval: { id: 'q2', prompt: 'Bash?' } }))
+    usage.publishAgentConversation('t12', conversation())
+    expect(changes).toEqual(['t12', 't12', 't12', 't12'])
+    usage.publishAgentConversation('t13', conversation({ question: question('q1') }))
+    usage.forgetContext('t13')
+    usage.publishAgentConversation('t13', conversation({ question: question('q1') }))
+    expect(changes).toEqual(['t12', 't12', 't12', 't12', 't13', 't13'])
   })
 
   it("pushes each new reading of the mod's files to the renderers", () => {

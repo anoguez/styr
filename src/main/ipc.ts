@@ -64,6 +64,11 @@ import { electronHost, electronWindows } from './electronHost.js'
 import { closeIndex, findTask, queryTasks, syncIndex } from './taskIndex.js'
 import { startWatching, startWatchingAgents } from './watcher.js'
 import {
+  createLaunchRequestsService,
+  diskLaunchRequests,
+  tasksInWorkspace
+} from '@host/launchRequestsService.js'
+import {
   createSession,
   findSessionByTask,
   killSession,
@@ -76,7 +81,7 @@ import {
   writeToSession
 } from './terminal/ptyManager.js'
 import { CodexMonitor, prepareCodex } from './codexMonitor.js'
-import { agentPrompts, publishAgentConversation, usage } from './usage.js'
+import { agentPrompts, onWaitChange, publishAgentConversation, usage } from './usage.js'
 import { agentCliStatus, ensureAgentCli } from './agentCli.js'
 import { mcpEntry } from './mcpEntry.js'
 import { mcpSetupStatus } from './mcpSetup.js'
@@ -194,6 +199,7 @@ const agentsService = createAgentsService({
   },
   createMonitor: (onUpdate, onConversation) => new CodexMonitor(onUpdate, onConversation),
   publishConversation: publishAgentConversation,
+  conversation: (terminalId) => usage.conversation(terminalId),
   prompts: {
     promptInbox: (terminalId) => agentPrompts.promptInbox(terminalId),
     promptAgent: (terminalId, text) => agentPrompts.promptAgent(terminalId, text)
@@ -208,6 +214,21 @@ const agentsService = createAgentsService({
   },
   requestAutoRun: () => dispatchService.requestAutoRun()
 })
+
+// A question or approval an agent starts or stops waiting on changes what agents:list says.
+onWaitChange(() => agentsService.notifyAgentsChanged())
+
+/** The MCP server's `start_task`: the card's Start, asked for through a request file. */
+const launchRequests = createLaunchRequestsService({
+  broadcast,
+  ...diskLaunchRequests,
+  tasks: (workspaceId) => tasksInWorkspace(workspaceId, queryTasks, inOtherWorkspace),
+  launch: (taskId, options, workspaceId) => agentsService.launch(taskId, options, workspaceId)
+})
+
+export function processLaunchRequests(workspaceId: string): void {
+  void launchRequests.process(workspaceId)
+}
 
 /**
  * The terminal tabs across a relaunch (`terminalTabs.ts`). A tab created or closed saves the layout;
@@ -429,7 +450,10 @@ export const channelTable = createChannelTable({
     context: (terminalId) => usage.context(terminalId),
     conversation: (terminalId) => usage.conversation(terminalId),
     prompt: (terminalId, text) => usage.prompt(terminalId, text),
-    approval: (terminalId, approvalId, optionId) => usage.approval(terminalId, approvalId, optionId)
+    approval: (terminalId, approvalId, optionId) =>
+      usage.approval(terminalId, approvalId, optionId),
+    answerQuestion: (terminalId, questionId, answers) =>
+      usage.answerQuestion(terminalId, questionId, answers)
   },
   terminals: {
     createSession: (options) => createSession(options),

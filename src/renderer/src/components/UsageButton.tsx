@@ -127,7 +127,7 @@ export function UsageButton({
 
   return (
     // Positioned wrapper, so the popover opens over the button rather than the bar's far edge.
-    <span className="relative inline-flex">
+    <span className="relative inline-flex shrink-0">
       <button
         ref={button}
         type="button"

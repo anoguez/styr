@@ -103,9 +103,16 @@ export const SECTIONS = [
     scope: 'workspace',
     sub: 'Environment',
     blurb: 'Where agents work, which shell they get, and how files open.',
-    keys: ['defaultRepoPath', 'worktreeLocation', 'shell', 'restoreTabs', 'openFilesWith'],
+    keys: [
+      'defaultRepoPath',
+      'worktreeLocation',
+      'shell',
+      'restoreTabs',
+      'agentTabView',
+      'openFilesWith'
+    ],
     words:
-      'working directory worktree location node_modules shell terminal tabs restore open files editor app'
+      'working directory worktree location node_modules shell terminal tabs restore open files editor app agent chat view'
   },
   {
     id: 'remote-sharing',
@@ -113,8 +120,10 @@ export const SECTIONS = [
     scope: 'workspace',
     sub: 'Environment',
     blurb:
-      'Whether devices you have paired may open this workspace. Each workspace opts in on its own.',
+      "Whether devices paired with this workspace's host may open it. A workspace on this computer is shared from Connections.",
     keys: ['remoteAccess'],
+    // A local workspace is shared from Connections, at once; only an ssh remote's needs this page.
+    remoteOnly: true,
     words: 'remote access share sharing phone device allow workspace'
   },
   {
@@ -137,15 +146,15 @@ export const SECTIONS = [
   },
   {
     id: 'remote-access',
-    label: 'Remote devices',
+    label: 'Connections',
     scope: 'app',
     live: true,
     blurb:
-      'Let devices you pair, such as a phone, reach this computer over a private network. Each workspace decides on its own page whether they may open it.',
+      'Use this computer from your phone or another computer on the same network, or on a VPN they share. Only devices you pair, and only the workspaces you choose.',
     // These controls act at once, like Remote hosts: nothing here waits for Save.
     keys: [],
     words:
-      'remote access devices phone mobile pair qr tailscale network listen port token revoke awake sleep flutter app'
+      'remote access connections devices phone mobile pair qr tailscale vpn lan wifi network local share workspace token revoke awake sleep flutter app'
   },
   {
     id: 'remote',
@@ -197,6 +206,8 @@ export const SECTIONS = [
   sub?: 'Board' | 'Agents' | 'Environment'
   /** Nothing on the page waits for Save: its controls act at once. */
   live?: true
+  /** Shown only while the workspace being edited lives on a remote host. */
+  remoteOnly?: true
   /** An Integrations page edits only this provider's entries of `sources`. */
   provider?: string
   /** Hidden unless this experimental feature is switched on. */
@@ -226,7 +237,12 @@ export function scopeNoteFor(scope: SectionScope, workspaceName: string): string
 }
 
 /** A section behind an experimental flag shows only while the flag is on. */
-export function sectionShown(section: Section, experimental: ExperimentalSettings): boolean {
+export function sectionShown(
+  section: Section,
+  experimental: ExperimentalSettings,
+  editingRemote = false
+): boolean {
+  if ('remoteOnly' in section && !editingRemote) return false
   return !('flag' in section) || experimental[section.flag]
 }
 
@@ -273,10 +289,14 @@ export interface NavGroup {
 }
 
 /** The nav: shown sections matching the search box, under their group; empty groups drop out. */
-export function settingsNav(search: string, experimental: ExperimentalSettings): NavGroup[] {
+export function settingsNav(
+  search: string,
+  experimental: ExperimentalSettings,
+  editingRemote = false
+): NavGroup[] {
   const query = search.trim().toLowerCase()
   const matches = (item: Section): boolean =>
-    sectionShown(item, experimental) &&
+    sectionShown(item, experimental, editingRemote) &&
     (!query || `${item.label} ${item.words}`.toLowerCase().includes(query))
   return NAV_GROUPS.map(({ label, picker, scope }) => {
     const inScope = SECTIONS.filter((item) => item.scope === scope && matches(item))

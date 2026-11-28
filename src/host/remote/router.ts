@@ -279,6 +279,13 @@ export function createRemoteRouter(ports: RouterPorts) {
       ports.broadcast(method, registry.mapIn(entry.host, payload))
       return
     }
+    if (method === 'terminal:launched') {
+      // An MCP `start_task` may start a task in a workspace that is not on screen, and its tab
+      // opens all the same, so this is not held back with the board's broadcasts.
+      const launched = registry.mapIn(entry.host, payload) as TerminalSessionInfo
+      if (terminals.tagSession(entry, launched)) ports.broadcast(method, launched)
+      return
+    }
     if (!BOARD_BROADCASTS.has(method) || !registry.activeOnLive(entry)) return
     const mapped = registry.mapIn(entry.host, payload)
     if (method === 'orchestrate:autoStarted') {
@@ -335,6 +342,9 @@ export function createRemoteRouter(ports: RouterPorts) {
       case 'terminal:openInCode': {
         const target = registry.activeRemote()
         if (!target) return local()
+        // VS Code would hand the host name to ssh; another computer on the LAN is not an ssh host
+        // (its name here is made up), so nothing opens.
+        if (target.link.lan) return undefined
         ports.openExternal(remoteEditorUri('vscode', target.link.host, String(args[0])))
         return 'code'
       }
@@ -395,6 +405,8 @@ export function createRemoteRouter(ports: RouterPorts) {
       return
     }
     if (target.kind !== 'remote') return
+    // As for Open in VS Code: a computer on the LAN has no ssh host for the editor to reach.
+    if (target.link.lan) return
     const task = (await forwarder.forward(target, 'tasks:get', [id])) as Task | null
     const editor = remoteEditorFor((await settings.get(undefined)).openFilesWith)
     if (task && editor) {

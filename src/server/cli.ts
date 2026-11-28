@@ -1,8 +1,6 @@
-import { DEFAULT_RELAY_PORT } from '@host/remoteAccess/relayProtocol.js'
-
 /** What `styr serve …` was asked to do. */
 export type ServerCommand =
-  | { command: 'serve'; socket?: string; listen?: ListenSpec; relay?: ListenSpec; pair?: boolean }
+  | { command: 'serve'; socket?: string; listen?: ListenSpec; pair?: boolean }
   | { command: 'attach'; socket?: string }
   | { command: 'pair'; socket?: string }
   | { command: 'devices'; socket?: string }
@@ -11,31 +9,31 @@ export type ServerCommand =
   | { command: 'help' }
   | { command: 'invalid'; message: string }
 
-/** `--listen <address>[:port]`: where devices reach this server (`remote-access.md`). */
+/** `--listen [--port <port>]`: devices on this machine's networks reach it (`remote-access.md`). */
 export interface ListenSpec {
-  address: string
   port: number
 }
 
 export const DEFAULT_LISTEN_PORT = 7878
 
+const LISTEN_CHANGED =
+  "--listen no longer takes an address: devices on any of this machine's private networks " +
+  '(its LAN, or a VPN such as Tailscale) can connect. Use --listen, and --port <port> to change ' +
+  'the port.'
+
 export const USAGE = `Usage:
   styr serve [--socket <path>]          Run the headless Styr server
-  styr serve --listen <address>[:port] [--pair]
-                                        Also accept paired devices over WebSocket on one
-                                        Tailscale or loopback address; --pair
-                                        prints a QR to pair a device with
-  styr serve --relay <address>[:port] [--pair]
-                                        Also take paired devices through a styr relay
-                                        (port 7879 by default), for a machine devices
-                                        cannot connect in to. With --listen too, both work
+  styr serve --listen [--port <port>] [--pair]
+                                        Also accept paired devices on this machine's own
+                                        networks (its LAN, or a VPN such as Tailscale), never
+                                        the internet; port 7878 by default. --pair prints a
+                                        QR to pair a device with
   styr serve attach [--socket <path>]   Pipe stdio to the running server (what ssh runs)
   styr serve pair [--socket <path>]     Show a QR to pair another device with the running server
   styr serve devices [--socket <path>]  List the paired devices
   styr serve revoke <id> [--socket <path>]
                                         Remove a paired device and end its connections
   styr serve --version                  Print the server's version
-  styr relay --help                     Run a relay, for hosts that cannot accept connections
 
 Devices see only the workspaces that have "Allow remote clients" switched on in their settings.
 The socket defaults to ~/.styr/server.sock ($STYR_HOME/server.sock), or $STYR_SERVER_SOCKET.`
@@ -49,8 +47,8 @@ export function parseServerArgs(argv: string[]): ServerCommand {
   let command: 'serve' | 'attach' | 'pair' | 'devices' | 'revoke' = 'serve'
   let id: string | undefined
   let socket: string | undefined
-  let listen: ListenSpec | undefined
-  let relay: ListenSpec | undefined
+  let listen = false
+  let port: number | undefined
   let pair = false
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!
@@ -67,44 +65,32 @@ export function parseServerArgs(argv: string[]): ServerCommand {
       socket = value
     } else if (arg.startsWith('--socket=')) socket = arg.slice('--socket='.length)
     else if (arg === '--pair') pair = true
-    else if (arg === '--listen' || arg.startsWith('--listen=')) {
-      const value = arg === '--listen' ? args[++i] : arg.slice('--listen='.length)
-      const spec = value ? parseListen(value) : undefined
-      if (!spec) return { command: 'invalid', message: '--listen needs <address>[:port]' }
-      listen = spec
-    } else if (arg === '--relay' || arg.startsWith('--relay=')) {
-      const value = arg === '--relay' ? args[++i] : arg.slice('--relay='.length)
-      const spec = value ? parseListen(value, DEFAULT_RELAY_PORT) : undefined
-      if (!spec) return { command: 'invalid', message: '--relay needs <address>[:port]' }
-      relay = spec
+    else if (arg === '--listen') {
+      // `--listen <address>` from before: say what changed rather than read the address as junk.
+      const next = args[i + 1]
+      if (next !== undefined && !next.startsWith('-'))
+        return { command: 'invalid', message: LISTEN_CHANGED }
+      listen = true
+    } else if (arg.startsWith('--listen=')) return { command: 'invalid', message: LISTEN_CHANGED }
+    else if (arg === '--port' || arg.startsWith('--port=')) {
+      const value = arg === '--port' ? args[++i] : arg.slice('--port='.length)
+      const parsed = /^\d{1,5}$/.test(value ?? '') ? Number(value) : NaN
+      if (!(parsed >= 1024 && parsed <= 65535)) {
+        return { command: 'invalid', message: '--port needs a port from 1024 to 65535' }
+      }
+      port = parsed
     } else return { command: 'invalid', message: `Unknown argument: ${arg}` }
   }
-  if (pair && !listen && !relay) {
-    return { command: 'invalid', message: '--pair needs --listen or --relay' }
-  }
-  if (command !== 'serve' && (listen || relay || pair)) {
+  if (pair && !listen) return { command: 'invalid', message: '--pair needs --listen' }
+  if (port !== undefined && !listen) return { command: 'invalid', message: '--port needs --listen' }
+  if (command !== 'serve' && (listen || pair)) {
     return { command: 'invalid', message: `${command} takes only --socket` }
   }
   if (command === 'revoke') return { command, id: id!, ...(socket ? { socket } : {}) }
   return {
     command,
     ...(socket ? { socket } : {}),
-    ...(listen ? { listen } : {}),
-    ...(relay ? { relay } : {}),
+    ...(listen ? { listen: { port: port ?? DEFAULT_LISTEN_PORT } } : {}),
     ...(pair ? { pair } : {})
   } as ServerCommand
-}
-
-/** `192.168.1.5`, `192.168.1.5:7878`, `[fd7a::1]:7878` or `fd7a::1`. */
-export function parseListen(
-  value: string,
-  defaultPort = DEFAULT_LISTEN_PORT
-): ListenSpec | undefined {
-  const bracketed = /^\[([^\]]+)\](?::(\d+))?$/.exec(value)
-  const ipv4 = /^([^:]+)(?::(\d+))?$/.exec(value)
-  const match = bracketed ?? ipv4
-  const address = match?.[1] ?? (value.includes(':') ? value : undefined)
-  if (!address) return undefined
-  const port = match?.[2] ? Number(match[2]) : defaultPort
-  return { address, port }
 }

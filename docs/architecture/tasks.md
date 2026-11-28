@@ -223,6 +223,19 @@ the fallback (`core/boardTools.ts`). `set_task_status` and `update_task` are unc
   `getSection(description, 'Handoff')` (`core/sections.ts`, pure) reads the tool's section and a
   hand-written one alike. Sections are `## ` lines matched case-insensitively and run to the next `## `;
   headings inside code fences do not count.
+- **`start_task`** (`core/launchRequests.ts`, `host/launchRequestsService.ts`) is the exception:
+  it writes no task file and has no file-only form. It is the card's Start, asked for by an agent. The MCP server has no terminals, so it writes a request file to the
+  workspace's `.styr/launches/` and polls for `<id>.result.json`. The host's watcher
+  (`startWatchingLaunchRequests`, every workspace, restarted with the agents watcher) claims each
+  request by renaming it, then does what the card does in the request's workspace, active or not
+  (`startForTask`'s `workspaceId`: a background task is read from its files with its settings in one
+  synchronous pin, and the board is not switched). It warns about open blockers (unless the task has a chat to resume) by answering with an error
+  that names them until `startAnyway: true` is the confirm, and calls `agentsService.launch` with
+  the optional `templateId`/`provider` the launch menu offers. The new session goes out as
+  `terminal:launched`, which the renderer adopts like the click's result (no Dispatch run chip,
+  unlike `orchestrate:autoStarted`). A request unclaimed after `LAUNCH_REQUEST_TTL_MS` is withdrawn
+  by the MCP server and dropped by the host, so a Styr opened later never starts it. Both hosts wire
+  it (`ipc.ts`/`index.ts` and `serverHost.ts`), so it works on a remote workspace's server too.
 - **No question tool.** Agents put a question to the owner in their own conversation, in the
   terminal, and nowhere else: `ASK_LINE` says so. There is no `ask_owner` / `resolve_question`, and
   the Inbox and the task dialog show no questions, because the owner works in the terminal and does

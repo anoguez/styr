@@ -1,7 +1,9 @@
+import { basename, dirname } from 'node:path'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { pathsInWorkspace } from '@core/config.js'
 import { loadSettings, tasksDir } from '@core/settingsStore.js'
 import { agentsDir } from '@core/agentStore.js'
+import { launchRequestsDir } from '@core/launchRequests.js'
 import { listWorkspaces } from '@core/workspaces.js'
 
 interface Watched {
@@ -11,6 +13,7 @@ interface Watched {
 
 const tasks: Watched = { watcher: null, timer: null }
 const agents: Watched = { watcher: null, timer: null }
+const launches: Watched = { watcher: null, timer: null }
 
 /**
  * Clears the handle synchronously before awaiting the close, so a caller that immediately starts a
@@ -61,8 +64,42 @@ export function startWatchingAgents(onChange: () => void): void {
   const dirs = listWorkspaces(settings).map(({ id }) => agentsDir(pathsInWorkspace(settings, id)))
   // Depth 1 reaches each task's `<id>.subagents/` folder of subagent events.
   start(agents, dirs, 60, onChange, 1)
+  if (onLaunchRequest) watchLaunchRequests(onLaunchRequest)
+}
+
+let onLaunchRequest: ((workspaceId: string) => void) | null = null
+
+/**
+ * The MCP server's `start_task` requests (`core/launchRequests.ts`), in every workspace so one
+ * from a background workspace is answered rather than left to time out. Restarted with the agents
+ * watcher, which follows workspaces being created and removed.
+ */
+export function startWatchingLaunchRequests(handler: (workspaceId: string) => void): void {
+  onLaunchRequest = handler
+  watchLaunchRequests(handler)
+}
+
+function watchLaunchRequests(handler: (workspaceId: string) => void): void {
+  void close(launches)
+  const settings = loadSettings()
+  const byDir = new Map(
+    listWorkspaces(settings).map(({ id }) => [
+      launchRequestsDir(pathsInWorkspace(settings, id)),
+      id
+    ])
+  )
+  const watcher = chokidar.watch([...byDir.keys()], {
+    ignoreInitial: true,
+    depth: 0,
+    awaitWriteFinish: { stabilityThreshold: 40, pollInterval: 15 }
+  })
+  launches.watcher = watcher
+  watcher.on('add', (path) => {
+    const id = byDir.get(dirname(path))
+    if (id && /^[0-9a-f-]{36}\.json$/.test(basename(path))) handler(id)
+  })
 }
 
 export async function stopWatching(): Promise<void> {
-  await Promise.all([close(tasks), close(agents)])
+  await Promise.all([close(tasks), close(agents), close(launches)])
 }

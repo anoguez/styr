@@ -14,10 +14,11 @@ import type {
   DiffBlock,
   StyrBlock
 } from '@core/types/blocks.js'
-import { CommandInput, type Look } from './TerminalBlockList.js'
+import { CommandInput, type Look } from './CommandInput.js'
 import type { AgentCommand, ApprovalOption } from '@core/agentConversation.js'
-import { quiet } from './TerminalBlocks.js'
+import { quiet } from './quiet.js'
 import { editRows } from '@core/diffView.js'
+import { ChatMarkdown } from './ChatMarkdown.js'
 
 /** Rows of a diff shown before "Show all". */
 const DIFF_PREVIEW = 16
@@ -40,6 +41,8 @@ export interface ApprovalRequest {
    * dialog's default option, so the keys are shown on the buttons.
    */
   keys: boolean
+  /** Answered only in the CLI's own interface (a question it asks there); no options are offered. */
+  inTui?: boolean
 }
 
 /**
@@ -129,6 +132,11 @@ export function AgentBlockList({
         ) : working ? (
           <Working label={label} onInterrupt={onInterrupt} />
         ) : null}
+        {working && !approval ? (
+          <div className="text-faint -mx-0.5 shrink-0 px-2 font-sans text-[11.5px]">
+            Your message will be queued until {label} finishes this turn.
+          </div>
+        ) : null}
         {attachedImages > 0 ? (
           <div className="text-faint -mx-0.5 shrink-0 px-2 font-sans text-[11.5px]">
             {attachedImages === 1 ? 'An image' : `${attachedImages} images`} in {label}&apos;s
@@ -191,9 +199,10 @@ function Message({
         {user ? '❯' : '✦'}
       </span>
       <div
-        className={`min-w-0 flex-1 break-words whitespace-pre-wrap ${user ? 'text-ink' : 'text-ink/90'}`}
+        className={`min-w-0 flex-1 break-words ${user ? 'text-ink whitespace-pre-wrap' : 'text-ink/90'}`}
       >
-        {text}
+        {/* The person's words as typed; the agent's reply as the markdown it writes. */}
+        {user ? text : <ChatMarkdown text={text} />}
         {streaming ? (
           <span aria-hidden className="text-accent-ink wd-pulse">
             {' ▍'}
@@ -480,7 +489,7 @@ function Approval({
   onAnswer: (option: ApprovalOption) => void
   onShowTui: () => void
 }): ReactNode {
-  const { prompt, tool, summary, edit, options, keys } = request
+  const { prompt, tool, summary, edit, options, keys, inTui } = request
   const firstAllow = options.find((option) => option.kind !== 'deny')
   return (
     <section
@@ -527,10 +536,14 @@ function Approval({
         ))}
         <button
           type="button"
-          className="text-dim hover:bg-raised/70 hover:text-ink inline-flex h-[22px] items-center rounded-md px-2 text-[11.5px] font-medium"
+          className={
+            inTui
+              ? 'border-accent/40 bg-accent/15 text-accent-ink hover:bg-accent/30 inline-flex h-[22px] items-center rounded-md border px-2 text-[11.5px] font-medium'
+              : 'text-dim hover:bg-raised/70 hover:text-ink inline-flex h-[22px] items-center rounded-md px-2 text-[11.5px] font-medium'
+          }
           onClick={onShowTui}
         >
-          Answer in {label}
+          {inTui ? 'Answer in Terminal' : `Answer in ${label}`}
         </button>
       </div>
     </section>

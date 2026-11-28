@@ -90,7 +90,8 @@ const DESKTOP_ONLY = new Set([
   'access:cancelPair',
   'access:revoke',
   'access:checkNetwork',
-  'access:shareWorkspace',
+  'access:setShared',
+  'access:answer',
   // The client's own connections to remote hosts (`src/main/remote.ts`).
   'remote:state',
   'remote:retry',
@@ -103,7 +104,16 @@ const DESKTOP_ONLY = new Set([
   'remote:upgrade',
   'remote:stopServer',
   'remote:disconnect',
-  'remote:connect'
+  'remote:connect',
+  'lan:hosts',
+  'lan:pair',
+  'lan:pairLink',
+  'lan:confirmPair',
+  'lan:cancelPair',
+  'lan:boards',
+  'lan:addWorkspace',
+  'lan:remove',
+  'lan:takePairLink'
 ])
 
 describe('the server channel table', () => {

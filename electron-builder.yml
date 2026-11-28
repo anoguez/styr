@@ -40,6 +40,12 @@ publish:
   provider: github
   owner: anoguez
   repo: styr
+# Clicking a styr://pair link opens Styr on Add computer (src/main/deepLinks.ts): the scheme in
+# Info.plist on macOS and the .desktop file on Linux; Windows registers it at runtime.
+protocols:
+  - name: Styr pair link
+    schemes:
+      - styr
 mac:
   target:
     # The DMG is for people installing by hand. The zip is what electron-updater downloads, and

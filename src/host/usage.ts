@@ -14,9 +14,12 @@ import chokidar from 'chokidar'
 import { MAX_PROMPT_CHARS } from '@core/agentPrompt.js'
 import { configDir } from '@core/config.js'
 import {
+  ANSWER_IN_TERMINAL,
   approvalOptions,
   parseAgentConversation,
-  type AgentConversation
+  questionAnswers,
+  type AgentConversation,
+  type QuestionAnswer
 } from '@core/agentConversation.js'
 import {
   parseCodexRollout,
@@ -147,6 +150,30 @@ export function sendApprovalAnswer(terminalId: string, approvalId: string, optio
 }
 
 /**
+ * Answers the questions the conversation file shows (AskUserQuestion) through the inbox, as a
+ * `{"question", "answers"}` line with the tool's own `answers` (`questionAnswers`); Claude Code's
+ * mod allows the call with them, as its picker would. Refused when the file no longer shows that
+ * question (it was answered in the CLI's view), and with `ANSWER_IN_TERMINAL` when the answers do
+ * not fit it: nothing is sent that the CLI would not take.
+ */
+export function sendQuestionAnswer(
+  terminalId: string,
+  questionId: string,
+  answers: readonly QuestionAnswer[]
+): void {
+  if (!/^[\w-]{1,64}$/.test(terminalId)) throw new Error('Not an agent terminal.')
+  const question = readConversation(terminalId)?.question
+  if (!question || question.id !== questionId) {
+    throw new Error('This question is no longer waiting for an answer.')
+  }
+  appendFileSync(
+    promptInbox(terminalId),
+    `${JSON.stringify({ question: questionId, answers: questionAnswers(question, answers) })}\n`,
+    { mode: 0o600 }
+  )
+}
+
+/**
  * The agent CLIs' usage and conversations: the account's quota and each terminal's context fill
  * (written by Claude Code's usage mod, or read from a Codex rollout), the conversation Styr
  * Terminal draws as blocks, and the prompts and approvals sent back to the agent. Read-only on the
@@ -185,6 +212,17 @@ export function createUsage(ports: UsagePorts) {
   const liveConversations = new Map<string, AgentConversation>()
   const conversationPrompts = new Map<string, (text: string) => Promise<void>>()
   const conversationApprovals = new Map<string, ApprovalAnswer>()
+  /** Each terminal's wait (question or approval id) as last published, to see it change. */
+  const waits = new Map<string, string>()
+  const waitListeners = new Set<(terminalId: string) => void>()
+
+  /**
+   * Calls `listener` when a terminal's agent starts, changes or stops waiting on a question or an
+   * approval, so the agent list (`agents:list`) can say so; not on every streamed word.
+   */
+  function onWaitChange(listener: (terminalId: string) => void): void {
+    waitListeners.add(listener)
+  }
 
   /** A terminal's file means nothing once it is gone, and its id is never reused. */
   function forgetContext(terminalId: string): void {
@@ -194,6 +232,7 @@ export function createUsage(ports: UsagePorts) {
     liveConversations.delete(terminalId)
     conversationPrompts.delete(terminalId)
     conversationApprovals.delete(terminalId)
+    waits.delete(terminalId)
   }
 
   /** All live conversation sources publish through the same renderer channel and prompt route. */
@@ -209,6 +248,15 @@ export function createUsage(ports: UsagePorts) {
     if (answerApproval) conversationApprovals.set(terminalId, answerApproval)
     else conversationApprovals.delete(terminalId)
     ports.broadcast('agent:conversation', { terminalId, conversation })
+    const wait = conversation.question
+      ? `question:${conversation.question.id}`
+      : conversation.approval
+        ? `approval:${conversation.approval.id}`
+        : ''
+    if (wait === (waits.get(terminalId) ?? '')) return
+    if (wait) waits.set(terminalId, wait)
+    else waits.delete(terminalId)
+    for (const listener of waitListeners) listener(terminalId)
   }
 
   /**
@@ -274,6 +322,21 @@ export function createUsage(ports: UsagePorts) {
   }
 
   /**
+   * Answers the questions the agent is waiting on. Only Claude Code's mod takes answers; an agent
+   * with a live channel of its own (Codex) asks none Styr can answer, so the terminal does.
+   */
+  async function answerQuestion(
+    terminalId: string,
+    questionId: string,
+    answers: readonly QuestionAnswer[]
+  ): Promise<void> {
+    if (liveConversations.has(terminalId) && conversationApprovals.has(terminalId)) {
+      throw new Error(ANSWER_IN_TERMINAL)
+    }
+    sendQuestionAnswer(terminalId, questionId.slice(0, 200), answers)
+  }
+
+  /**
    * Clears the files a previous run left and pushes each new reading. Read-only: the mod is the only
    * writer. Called once, after the handlers are registered.
    */
@@ -311,12 +374,14 @@ export function createUsage(ports: UsagePorts) {
     usageEnv,
     forgetContext,
     publishAgentConversation,
+    onWaitChange,
     claudeUsage: readClaudeUsage,
     codexUsage,
     context: readContext,
     conversation,
     prompt,
     approval,
+    answerQuestion,
     start
   }
 }

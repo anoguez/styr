@@ -30,9 +30,15 @@ function workspacesRoot(settings: Settings): string {
 /** The link in a stub's `workspace.json`, or undefined when the folder is a local workspace. */
 export function parseRemoteLink(raw: unknown): RemoteWorkspaceLink | undefined {
   if (!raw || typeof raw !== 'object') return undefined
-  const { host, workspaceId, server } = raw as Record<string, unknown>
+  const { host, workspaceId, server, lan } = raw as Record<string, unknown>
   if (typeof host !== 'string' || !isValidRemoteHost(host.trim())) return undefined
   if (typeof workspaceId !== 'string' || !isWorkspaceId(workspaceId.trim())) return undefined
+  if (lan !== undefined) {
+    // Another Styr on the network: named by its fingerprint alone, and never given a command.
+    const fingerprint = (lan as { fingerprint?: unknown } | null)?.fingerprint
+    if (typeof fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(fingerprint)) return undefined
+    return { host: host.trim(), workspaceId: workspaceId.trim(), lan: { fingerprint } }
+  }
   const command = typeof server === 'string' ? server.trim() : ''
   return {
     host: host.trim(),

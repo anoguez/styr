@@ -1,17 +1,32 @@
+import { randomUUID } from 'node:crypto'
 import { encode } from 'uqr'
 import type {
-  AccessConfig,
   AccessConfigPatch,
   AccessInterface,
   AccessPairing,
+  AccessRequest,
   AccessState,
-  RelayConfig,
-  RelayStatus
+  AccessWorkspace
 } from '@core/types/access.js'
 import type { AccessStore } from './accessStore.js'
-import { bindAddressProblem, defaultBindAddress, portProblem } from './addresses.js'
+import { portProblem } from './addresses.js'
 import { createKeepAwake, type KeepAwakePorts } from './keepAwake.js'
-import { relayAddressProblem, type RelayClient } from './relayClient.js'
+
+/** A device asking to pair by approval, as the listener hands it over. */
+export type ApprovalQuestion = Omit<AccessRequest, 'id'>
+
+/**
+ * Who answers a device's request to pair (this service, for the listener). `ask` returns undefined
+ * when it cannot take the question now (another is waiting, or no Add device window is open), and
+ * the device is turned away; otherwise the listener calls `withdraw` if the device leaves or its
+ * time runs out first.
+ */
+export interface ApprovalPort {
+  ask(
+    question: ApprovalQuestion,
+    answer: (allow: boolean) => void
+  ): { withdraw(): void } | undefined
+}
 
 /** What the transport gives back once it listens (`src/server/wsListener.ts`). */
 export interface RunningListener {
@@ -22,14 +37,13 @@ export interface RunningListener {
 
 export interface AccessServicePorts {
   store: AccessStore
-  /** Opens the listener. Rejects with the reason it could not (`EADDRINUSE` …). */
-  listen(address: string, port: number): Promise<RunningListener>
-  interfaces(): AccessInterface[]
   /**
-   * Why `address` looks like an internet provider's shared network rather than Tailscale
-   * (`sharedNetworkWarning`), or undefined. Absent: no warning.
+   * Opens the listener on every interface (`admitConnection` keeps it to this computer's
+   * networks). Rejects with the reason it could not (`EADDRINUSE` …).
    */
-  addressWarning?(address: string): string | undefined
+  listen(port: number): Promise<RunningListener>
+  /** Where devices on this computer's networks reach it, best first (`reachableAddresses`). */
+  interfaces(): AccessInterface[]
   keepAwake: KeepAwakePorts
   /** `access:changed`, to the Settings screen. */
   broadcast(state: AccessState): void
@@ -39,45 +53,44 @@ export interface AccessServicePorts {
    * a host with no screen to warn on.
    */
   shieldsUp?(): Promise<boolean | undefined>
-  /** Whether any workspace has `remoteAccess` on. Absent: assumed so. */
-  workspaceShared?(): boolean
   /**
-   * Connects out to a relay (`relayClient.ts`), which reports back through `relayChanged` and
-   * `relayConnections`. Absent: the relay setting is ignored.
+   * This computer's own workspaces and whether each is shared. Absent (`styr serve`, which has no
+   * screen): none listed, and a workspace is assumed shared.
    */
-  relay?(address: string, port: number): RelayClient
+  workspaces?(): AccessWorkspace[]
 }
 
 /**
- * Remote access as the Settings screen drives it: whether the listener is up, the interface and
- * port, pairing and removing devices. The listener is only ever started from a config that passed
- * `bindAddressProblem` and `portProblem`; if it cannot start the setting goes back to off with the
- * reason shown, and the app carries on.
+ * How many ports after the saved one are tried when it is taken. The one found is saved, so a
+ * paired device finds the computer on the same port next time.
+ */
+export const PORT_ATTEMPTS = 10
+
+/**
+ * Remote access as the Settings screen drives it: one switch, then pairing and removing devices.
+ * Devices reach this computer from the networks it is on (`addresses.ts`); there is nothing to
+ * pick. If the listener cannot start the setting goes back to off with the reason shown, and the
+ * app carries on.
  */
 export function createAccessService(ports: AccessServicePorts) {
   const { store } = ports
   let running: RunningListener | undefined
   let error: string | undefined
-  let relay: { client: RelayClient; address: string; port: number } | undefined
-  /** Why the relay could not be started (a bad address); its own refusals are the client's. */
-  let relayProblem: string | undefined
-  const counts = { direct: 0, relay: 0 }
   let shieldsUp: boolean | undefined
   let applying: Promise<void> = Promise.resolve()
+  /** The one request to pair that waits for an answer, with how to give it. */
+  let pending: (AccessRequest & { answer(allow: boolean): void }) | undefined
   const awake = createKeepAwake(ports.keepAwake)
 
   function state(): AccessState {
     const config = store.config()
     // Read, never made here: this runs at startup, before any window is up (see `reconcile`).
     const fingerprint = store.fingerprint()
-    const connected = new Set([
-      ...(running?.connectedDevices() ?? []),
-      ...(relay?.client.connectedDevices() ?? [])
-    ])
-    const relayError = relayProblem ?? relay?.client.error()
-    const bindWarning = config.bindAddress ? ports.addressWarning?.(config.bindAddress) : undefined
+    const connected = new Set(running?.connectedDevices() ?? [])
+    const workspaces = ports.workspaces?.() ?? []
     return {
       ...config,
+      ...(running ? { port: running.address.port } : {}),
       listening: running !== undefined,
       ...(error ? { error } : {}),
       interfaces: ports.interfaces(),
@@ -87,16 +100,19 @@ export function createAccessService(ports: AccessServicePorts) {
       ...(fingerprint !== undefined ? { fingerprint } : {}),
       ...(store.pairing() ? { pairingExpiresAt: store.pairing()!.expiresAt } : {}),
       ...(shieldsUp !== undefined ? { shieldsUp } : {}),
-      ...(bindWarning ? { bindWarning } : {}),
-      workspaceShared: ports.workspaceShared?.() ?? true,
-      relayStatus: relayStatus(config.relay),
-      ...(relayError ? { relayError } : {})
+      workspaces,
+      workspaceShared: ports.workspaces ? workspaces.some((entry) => entry.shared) : true,
+      ...(pending
+        ? {
+            request: {
+              id: pending.id,
+              name: pending.name,
+              code: pending.code,
+              source: pending.source
+            }
+          }
+        : {})
     }
-  }
-
-  function relayStatus(config: RelayConfig): RelayStatus {
-    if (!config.enabled || relayProblem) return 'off'
-    return relay?.client.status() ?? 'connecting'
   }
 
   /**
@@ -108,7 +124,7 @@ export function createAccessService(ports: AccessServicePorts) {
     if (ports.shieldsUp) {
       const next = await ports.shieldsUp().catch(() => undefined)
       if (next && !shieldsUp)
-        ports.log('Remote access: Tailscale Shields Up is on; devices cannot connect in')
+        ports.log('Remote access: Tailscale Shields Up is on; devices cannot connect in over it')
       shieldsUp = next
     }
     return publish()
@@ -122,25 +138,36 @@ export function createAccessService(ports: AccessServicePorts) {
 
   store.onChange(() => publish())
 
-  async function stopListener(): Promise<void> {
-    const listener = running
-    running = undefined
-    counts.direct = 0
-    awake.connections(counts.relay)
-    if (listener) await listener.close()
+  /** Turns down the waiting request, if any: its window closed, or access went off. */
+  function declinePending(): void {
+    const waiting = pending
+    pending = undefined
+    waiting?.answer(false)
   }
 
-  async function stopRelay(): Promise<void> {
-    const current = relay
-    relay = undefined
-    counts.relay = 0
-    awake.connections(counts.direct)
-    if (current) await current.client.close()
+  const approvals: ApprovalPort = {
+    ask(question, answer) {
+      if (pending || !store.pairing()) return undefined
+      const id = randomUUID()
+      pending = { ...question, id, answer }
+      publish()
+      return {
+        withdraw() {
+          if (pending?.id !== id) return
+          pending = undefined
+          publish()
+        }
+      }
+    }
   }
 
   async function stop(): Promise<void> {
+    declinePending()
     store.cancelPairing()
-    await Promise.all([stopListener(), stopRelay()])
+    const listener = running
+    running = undefined
+    awake.connections(0)
+    if (listener) await listener.close()
   }
 
   /** Brings the listener in line with the saved config. Serialised, so quick changes apply in order. */
@@ -152,24 +179,30 @@ export function createAccessService(ports: AccessServicePorts) {
   async function reconcile(): Promise<void> {
     const config = store.config()
     awake.enabled(config.keepAwake)
-    const wanted = config.enabled
-    await reconcileRelay(config.relay)
-    const sameSpot =
-      running?.address.address === config.bindAddress && running.address.port === config.port
-    if (running && (!wanted || !sameSpot)) await stopListener()
-    if (!running && !relay) store.cancelPairing()
-    if (!wanted || running) return publishQuietly()
-    const problem = bindAddressProblem(config.bindAddress) ?? portProblem(config.port)
+    if (running && !config.enabled) await stop()
+    if (!config.enabled || running) return void publish()
+    const problem = portProblem(config.port)
     if (problem) return failed(problem)
-    try {
-      running = await ports.listen(config.bindAddress, config.port)
-      error = undefined
-      ports.log(`Remote access: listening on ${config.bindAddress}:${config.port}`)
-      const warning = ports.addressWarning?.(config.bindAddress)
-      if (warning) ports.log(`Remote access: warning: ${warning}`)
-    } catch (failure) {
-      return failed(describe(failure, config))
+    let lastFailure: unknown
+    for (let offset = 0; offset < PORT_ATTEMPTS && !running; offset++) {
+      const port = config.port + offset
+      if (port > 65535) break
+      try {
+        running = await ports.listen(port)
+      } catch (failure) {
+        lastFailure = failure
+        // Only a taken port moves on to the next; anything else will not be better there.
+        if ((failure as NodeJS.ErrnoException | undefined)?.code !== 'EADDRINUSE') break
+      }
     }
+    if (!running) return failed(describe(lastFailure, config.port))
+    error = undefined
+    const port = running.address.port
+    if (port !== config.port) {
+      ports.log(`Remote access: port ${config.port} is taken; using ${port}`)
+      store.setConfig({ port })
+    }
+    ports.log(`Remote access: devices on this computer's networks can connect on port ${port}`)
     // The key is made (and sealed) once access is on, so Settings can show its fingerprint. Left on
     // from before, it already exists and only its public half is read.
     try {
@@ -177,32 +210,7 @@ export function createAccessService(ports: AccessServicePorts) {
     } catch {
       // The keychain would not seal it: pairing or the first sign-in tries again.
     }
-    publishQuietly()
-  }
-
-  /** The relay link in line with its config: dialled, moved or dropped. */
-  async function reconcileRelay(config: RelayConfig): Promise<void> {
-    const wanted = config.enabled && ports.relay !== undefined
-    const address = config.address.trim()
-    if (relay && (!wanted || relay.address !== address || relay.port !== config.port)) {
-      await stopRelay()
-    }
-    if (!wanted) relayProblem = undefined
-    if (!wanted || relay) return
-    relayProblem = relayAddressProblem(address) ?? portProblem(config.port)
-    if (relayProblem) {
-      ports.log(`Remote access: relay: ${relayProblem}`)
-      return
-    }
-    ports.log(`Remote access: connecting to the relay at ${address}:${config.port}`)
-    relay = { client: ports.relay!(address, config.port), address, port: config.port }
-    // As for the listener: the key is made once the relay is on, so Settings can show the
-    // fingerprint to allow. The client signs its registration with it anyway.
-    try {
-      store.identity()
-    } catch {
-      // The keychain would not seal it: the registration says so.
-    }
+    publish()
   }
 
   function failed(message: string): void {
@@ -210,10 +218,6 @@ export function createAccessService(ports: AccessServicePorts) {
     ports.log(`Remote access: ${message}`)
     // Never left switched on without a listener behind it.
     store.setConfig({ enabled: false })
-  }
-
-  function publishQuietly(): void {
-    publish()
   }
 
   return {
@@ -224,32 +228,16 @@ export function createAccessService(ports: AccessServicePorts) {
 
     async configure(patch: AccessConfigPatch): Promise<AccessState> {
       const next: AccessConfigPatch = {}
-      if (patch.relay !== undefined) {
-        next.relay = { ...patch.relay }
-        if (next.relay.address !== undefined) next.relay.address = next.relay.address.trim()
-      }
-      if (patch.bindAddress !== undefined) next.bindAddress = patch.bindAddress.trim()
-      if (patch.port !== undefined) next.port = patch.port
       if (patch.enabled !== undefined) next.enabled = patch.enabled
       if (patch.keepAwake !== undefined) next.keepAwake = patch.keepAwake
-      // Switched on with nothing picked: the Tailscale IPv4 address. Only an empty choice is
-      // filled; an address the user picked, IPv6 included, is never swapped for another.
-      if (next.enabled && patch.bindAddress === undefined && !store.config().bindAddress) {
-        const fallback = defaultBindAddress(ports.interfaces())
-        if (fallback) next.bindAddress = fallback
+      if (patch.port !== undefined) {
+        const problem = portProblem(patch.port)
+        if (problem) throw new Error(problem)
+        next.port = patch.port
+        // A new port takes effect on the next start of the listener.
+        if (running && patch.port !== running.address.port) await stop()
       }
-      const { relay: _relay, ...direct } = next
-      const merged = { ...store.config(), ...direct }
       if (next.enabled) void checkNetwork()
-      if (merged.enabled) {
-        const problem = bindAddressProblem(merged.bindAddress) ?? portProblem(merged.port)
-        if (problem) {
-          error = problem
-          store.setConfig({ ...next, enabled: false })
-          await apply()
-          return publish()
-        }
-      }
       error = undefined
       store.setConfig(next)
       await apply()
@@ -257,33 +245,50 @@ export function createAccessService(ports: AccessServicePorts) {
     },
 
     /**
-     * The QR for one new device (`v=2`, protocol 2): through the relay (`relay=`) whenever it has
-     * registered this host, otherwise to the listener (`host=`, `port=`). Refused while neither can
-     * take a device, as nothing could answer the phone.
+     * The QR for one new device (`v=2`, protocol 2). `host` is the address a device on the same
+     * Wi-Fi reaches first; `hosts` lists every address it may try, best first (a device on the
+     * computer's VPN needs that one). Refused while nothing listens, as nothing could answer.
      */
     pair(): AccessPairing {
-      const viaRelay = relay?.client.status() === 'connected' ? relay : undefined
-      if (!running && !viaRelay) {
-        if (store.config().relay.enabled) {
-          throw new Error(
-            'Styr is not connected to the relay, so a device cannot pair through it. ' +
-              'Check the relay status above, or turn on Allow other devices to connect.'
-          )
-        }
-        throw new Error('Turn on Remote access and pick a network interface first.')
+      if (!running) throw new Error('Turn on Allow devices on your network to connect first.')
+      const addresses = ports.interfaces().map((entry) => entry.address)
+      if (addresses.length === 0) {
+        throw new Error(
+          'This computer is not on a network a device could reach it on. Connect it to Wi-Fi, ' +
+            'Ethernet or a VPN first.'
+        )
       }
       const offer = store.startPairing()
       const fingerprint = store.identity().fingerprint
-      const where = viaRelay
-        ? `relay=${encodeURIComponent(`${bracketed(viaRelay.address)}:${viaRelay.port}`)}`
-        : `host=${encodeURIComponent(bracketed(running!.address.address))}&port=${running!.address.port}`
+      const hosts = addresses.map(bracketed)
       const uri =
-        `styr://pair?v=2&${where}&fp=${fingerprint}` +
+        `styr://pair?v=2&host=${encodeURIComponent(hosts[0]!)}&port=${running.address.port}` +
+        `&hosts=${encodeURIComponent(hosts.join(','))}&fp=${fingerprint}` +
         `&secret=${offer.secret}&exp=${offer.expiresAt}`
       return { uri, expiresAt: offer.expiresAt, modules: encode(uri, { ecc: 'M', border: 0 }).data }
     },
 
-    cancelPairing: (): void => store.cancelPairing(),
+    /** The Add device window closed: its QR stops working and a waiting request is turned down. */
+    cancelPairing(): void {
+      declinePending()
+      store.cancelPairing()
+    },
+
+    approvals,
+
+    /**
+     * The person's answer to the waiting request. Throws when `requestId` is not the one waiting
+     * (it was withdrawn, or already answered), so a stale click allows nothing.
+     */
+    answer(requestId: string, allow: boolean): AccessState {
+      if (!pending || pending.id !== requestId) {
+        throw new Error('That device is no longer waiting. Ask it to try again.')
+      }
+      const waiting = pending
+      pending = undefined
+      waiting.answer(allow)
+      return publish()
+    },
 
     checkNetwork,
 
@@ -297,20 +302,9 @@ export function createAccessService(ports: AccessServicePorts) {
 
     /** The listener reports how many devices are connected. */
     connections(count: number): void {
-      counts.direct = count
-      awake.connections(counts.direct + counts.relay)
+      awake.connections(count)
       publish()
     },
-
-    /** The relay client reports how many devices are signed in through it. */
-    relayConnections(count: number): void {
-      counts.relay = count
-      awake.connections(counts.direct + counts.relay)
-      publish()
-    },
-
-    /** The relay link changed (connected, refused, dropped). */
-    relayChanged: (): AccessState => publish(),
 
     stop,
     dispose: stop
@@ -321,12 +315,11 @@ export type AccessService = ReturnType<typeof createAccessService>
 
 const bracketed = (address: string): string => (address.includes(':') ? `[${address}]` : address)
 
-function describe(failure: unknown, config: AccessConfig): string {
+function describe(failure: unknown, port: number): string {
   const code = (failure as NodeJS.ErrnoException | undefined)?.code
-  if (code === 'EADDRINUSE')
-    return `Port ${config.port} is already in use on ${config.bindAddress}.`
-  if (code === 'EADDRNOTAVAIL')
-    return `${config.bindAddress} is not an address of this computer any more.`
-  if (code === 'EACCES') return `Not allowed to listen on port ${config.port}.`
+  if (code === 'EADDRINUSE') {
+    return `Ports ${port} to ${port + PORT_ATTEMPTS - 1} are all in use by other programs.`
+  }
+  if (code === 'EACCES') return `Not allowed to listen on port ${port}.`
   return failure instanceof Error ? failure.message : String(failure)
 }

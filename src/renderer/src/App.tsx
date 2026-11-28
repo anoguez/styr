@@ -34,6 +34,7 @@ import { useTabRestore } from './hooks/useTabRestore.js'
 import { QuickTaskDialog } from './components/QuickTaskDialog.js'
 import { RemoveAgentDialog } from './components/RemoveAgentDialog.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
+import { PairLinkDialog } from './components/settings/OtherComputersPane.js'
 import type { SectionId } from './components/settings/sections.js'
 import { StatusBar } from './components/StatusBar.js'
 import { TaskDialog } from './components/TaskDialog.js'
@@ -97,6 +98,17 @@ export default function App(): ReactNode {
   const activeTheme = previewTheme ?? settings?.theme ?? DEFAULT_THEME
   useTheme(activeTheme)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
+  // A clicked `styr://pair` link (`src/main/deepLinks.ts`): the one that launched the app, then
+  // any clicked while it runs. It only fills Add computer; pairing waits for Connect.
+  const [pairLink, setPairLink] = useState<string>()
+  useEffect(() => {
+    const take = (): void =>
+      void window.api.lan.takePairLink().then((link) => {
+        if (link) setPairLink(link)
+      })
+    take()
+    return window.api.lan.onPairLinkWaiting(take)
+  }, [])
   useEffect(() => {
     void window.api.app.info().then(setAppInfo)
     // Whether Styr Terminal is bundled (no loading), so a new terminal can decide without waiting.
@@ -355,6 +367,7 @@ export default function App(): ReactNode {
                         theme={activeTheme}
                         bindings={bindings}
                         nativeTerminal={settings?.experimental.nativeTerminal ?? false}
+                        agentTabView={settings?.agentTabView ?? 'terminal'}
                         taskTitles={taskTitles}
                         taskStates={taskStates}
                         diffStats={diffStats}
@@ -596,6 +609,25 @@ export default function App(): ReactNode {
                   setPreviewTheme(null)
                   dispatch({ type: 'setup', mode: null })
                 }}
+              />
+            ) : null}
+
+            {pairLink && settings ? (
+              <PairLinkDialog
+                key={pairLink}
+                link={pairLink}
+                remoteEnabled={settings.experimental.remoteWorkspaces}
+                onEnableRemote={() =>
+                  save({
+                    workspaceId: settings.activeWorkspaceId,
+                    workspace: workspaceSettingsFor(settings),
+                    global: {
+                      ...globalSettingsFor(settings),
+                      experimental: { ...settings.experimental, remoteWorkspaces: true }
+                    }
+                  })
+                }
+                onClose={() => setPairLink(undefined)}
               />
             ) : null}
 

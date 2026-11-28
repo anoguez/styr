@@ -254,6 +254,7 @@ export function Modal({
   flush = false,
   bare = false,
   xl = false,
+  compact = false,
   backdropCloses = true
 }: {
   title: string
@@ -269,6 +270,8 @@ export function Modal({
   bare?: boolean
   /** With `bare`: the near-full-window size for two-pane viewers. */
   xl?: boolean
+  /** With `bare`: as tall as its content and narrow, for a short announcement. */
+  compact?: boolean
   /** Clicking the dimmed backdrop closes the dialog. Turn off where a stray click would lose edits. */
   backdropCloses?: boolean
 }): ReactNode {
@@ -281,7 +284,7 @@ export function Modal({
     >
       <div
         aria-label={bare ? title : undefined}
-        className={`flex ${bare ? (xl ? 'h-[94vh]' : 'h-[min(700px,88vh)]') : 'max-h-[88vh]'} w-full ${bare ? (xl ? 'max-w-none' : 'max-w-[960px]') : wide ? 'max-w-3xl' : 'max-w-xl'} flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]`}
+        className={`flex ${bare && !compact ? (xl ? 'h-[94vh]' : 'h-[min(700px,88vh)]') : 'max-h-[88vh]'} w-full ${bare ? (xl ? 'max-w-none' : compact ? 'max-w-md' : 'max-w-[960px]') : wide ? 'max-w-3xl' : 'max-w-xl'} flex-col overflow-hidden rounded-2xl border border-edge-strong bg-panel shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         {bare ? null : (

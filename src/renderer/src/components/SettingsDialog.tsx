@@ -27,7 +27,7 @@ import {
 import { AgentsSection } from './settings/AgentsSection.js'
 import { DispatchSection } from './settings/DispatchSection.js'
 import { ExperimentalSection } from './settings/ExperimentalSection.js'
-import { RemoteAccessSection } from './settings/RemoteAccessSection.js'
+import { ConnectionsSection } from './settings/ConnectionsSection.js'
 import { RemoteSection } from './settings/RemoteSection.js'
 import { RemoteContext, boardAccess, useRemoteState } from '../lib/remoteStatus.js'
 import { EnvironmentSection } from './settings/EnvironmentSection.js'
@@ -115,8 +115,12 @@ export function SettingsDialog({
     [remoteState, target.editedWorkspaceId, openId]
   )
 
+  // A remote workspace's sharing is set on its own page; a local one's from Connections.
+  const editingRemote = workspaces.overview.workspaces.some(
+    (entry) => entry.id === target.editedWorkspaceId && entry.remote !== undefined
+  )
   const active = SECTIONS.find((item) => item.id === section) ?? SECTIONS[0]
-  const activeHidden = !sectionShown(active, draft.experimental)
+  const activeHidden = !sectionShown(active, draft.experimental, editingRemote)
   // What is on disk now: the app-level values, with the edited workspace's own laid over them.
   const baseline: Settings = { ...settings, ...target.savedWorkspaceSettings }
   const { sections: dirtySections, count: dirtyCount } = unsavedChanges(draft, baseline)
@@ -124,12 +128,14 @@ export function SettingsDialog({
   const themeEdited =
     JSON.stringify(draft.theme) !== JSON.stringify(target.savedWorkspaceSettings.theme)
   const previewedTheme = target.editingActiveWorkspace && themeEdited ? draft.theme : null
-  const navGroups = settingsNav(search, draft.experimental)
+  const navGroups = settingsNav(search, draft.experimental, editingRemote)
 
   // Switching the feature off while on its page would leave a page that no longer exists.
   useEffect(() => {
-    if (activeHidden) setSection('experimental')
-  }, [activeHidden])
+    // A flagged page goes to Experimental, where it is switched back on; the remote-only sharing
+    // page goes to its neighbour once a local workspace is picked.
+    if (activeHidden) setSection(active.id === 'remote-sharing' ? 'environment' : 'experimental')
+  }, [activeHidden, active.id])
 
   useEffect(() => {
     onPreviewTheme(previewedTheme)
@@ -390,14 +396,17 @@ export function SettingsDialog({
                   <WorkspaceSharingSection draft={draft} patch={patch} />
                 ) : null}
                 {section === 'remote-access' ? (
-                  <RemoteAccessSection
-                    openWorkspaceName={workspaces.names.get(openId) ?? 'this workspace'}
-                    onShared={() => {
+                  <ConnectionsSection
+                    openWorkspaceId={openId}
+                    remoteEnabled={settings.experimental.remoteWorkspaces}
+                    overview={workspaces.overview}
+                    onOpenExperimental={() => setSection('experimental')}
+                    onSharedChange={(workspaceId, remoteAccess) => {
                       // Saved on disk already: the draft and its baseline follow, so it is not
                       // shown as an unsaved change and a later Save does not undo it.
-                      if (!target.editingActiveWorkspace) return
-                      setDraft((current) => ({ ...current, remoteAccess: true }))
-                      target.markSaved({ ...target.savedWorkspaceSettings, remoteAccess: true })
+                      if (workspaceId !== target.editedWorkspaceId) return
+                      setDraft((current) => ({ ...current, remoteAccess }))
+                      target.markSaved({ ...target.savedWorkspaceSettings, remoteAccess })
                     }}
                   />
                 ) : null}

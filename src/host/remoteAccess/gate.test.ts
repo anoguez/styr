@@ -46,6 +46,17 @@ function refused(run: () => void): boolean {
 }
 
 describe('network policy: calls', () => {
+  it('lets a device upload an image only while the active workspace is shared', () => {
+    const args = ['TASK-0001', 'shot.png', 'image/png', 'iVBORw0KGgo=']
+    expect(refused(() => setup().policy.check('files:uploadImage', args))).toBe(false)
+    expect(refused(() => setup({ shared: [] }).policy.check('files:uploadImage', args))).toBe(true)
+    expect(
+      refused(() =>
+        setup({ shared: ['other'], active: 'open' }).policy.check('files:uploadImage', args)
+      )
+    ).toBe(true)
+  })
+
   it('lets a shared active workspace use the board', () => {
     const { policy } = setup()
     for (const method of [
@@ -155,9 +166,17 @@ describe('network policy: calls', () => {
       expect(refused(() => policy.check(method, ['t-missing']))).toBe(true)
       expect(refused(() => policy.check(method, []))).toBe(true)
     }
-    for (const method of ['agent:prompt', 'agent:approval', 'usage:context', 'terminal:handOff']) {
+    for (const method of [
+      'agent:prompt',
+      'agent:approval',
+      'agent:answerQuestion',
+      'usage:context',
+      'terminal:handOff'
+    ]) {
       expect(refused(() => policy.check(method, ['t-closed']))).toBe(true)
     }
+    // Answering an agent's question is open for a shared workspace's terminal, like a prompt.
+    expect(refused(() => policy.check('agent:answerQuestion', ['t-open', 'q1', []]))).toBe(false)
     // A plain shell is open on the desktop; a device may not touch it.
     expect(refused(() => policy.check('terminal:attach', ['t-shell']))).toBe(true)
     expect(refused(() => policy.check('terminal:write', ['t-shell']))).toBe(true)

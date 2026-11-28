@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AGENT_STATES } from './agentState.js'
+import { AGENT_STATES, AGENT_WAITS } from './agentState.js'
 import {
   ANSI_COLOURS,
   DEFAULT_AUTO_LIMITS,
@@ -301,6 +301,7 @@ export const settingsSchema = z.object({
     .object({ checkAutomatically: z.boolean().default(true) })
     .default({ checkAutomatically: true }),
   restoreTabs: z.enum(['ask', 'always', 'never']).default('ask'),
+  agentTabView: z.enum(['chat', 'terminal']).default('terminal'),
   experimental: z
     .object({
       externalSources: z.boolean().default(false),
@@ -345,6 +346,7 @@ const GLOBAL_KEY_MASK = {
   activeWorkspaceId: true,
   updates: true,
   restoreTabs: true,
+  agentTabView: true,
   shortcuts: true,
   experimental: true
 } as const satisfies Record<GlobalSettingKey, true>
@@ -491,6 +493,8 @@ export const remoteAgentStatusSchema = z.object({
   at: short,
   sessionId: short.optional(),
   lastMessage: message.optional(),
+  // A kind a later host adds reads as absent, not as a broken list.
+  waitingOn: z.enum(AGENT_WAITS).optional().catch(undefined),
   branch: line.optional(),
   subagents: list(subagentStatusSchema, 1000).optional(),
   workspaceId: short.optional(),
@@ -690,6 +694,30 @@ const approvalOptionSchema = z.object({
   kind: z.enum(['allow', 'allow-always', 'deny'])
 })
 
+/** `agent:answerQuestion`'s answers: per question, in order, the labels picked and "Other"'s text. */
+export const questionAnswersSchema = z
+  .array(
+    z.object({
+      labels: z.array(z.string().min(1).max(200)).max(8).optional(),
+      other: z.string().max(2_000).optional()
+    })
+  )
+  .min(1)
+  .max(4)
+
+const questionSchema = z.object({
+  id: short,
+  questions: list(
+    z.object({
+      question: message,
+      header: line,
+      multiSelect: z.boolean(),
+      options: list(z.object({ label: line, description: line }), 8)
+    }),
+    4
+  )
+})
+
 export const remoteConversationSchema = z.object({
   at: short,
   working: z.boolean(),
@@ -719,7 +747,8 @@ export const remoteConversationSchema = z.object({
       input: z.record(z.string(), z.unknown()).optional(),
       options: list(approvalOptionSchema, 20).optional()
     })
-    .optional()
+    .optional(),
+  question: questionSchema.optional()
 })
 
 export const remoteWorklogSchema = z.object({

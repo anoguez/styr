@@ -152,6 +152,81 @@
           ]
         }
       ]
+    },
+    {
+      "name": "request",
+      "keys": {
+        "hostStatic": "b5656c21f0c6560a98154a7901421c7484968c7e536d0cf81920f5c471a8f8f0",
+        "hostEphemeral": "60a90c4e1e24eaf3aec045e42ed9993c4d4bbeca35aa1e19bcec73ac516cde9a",
+        "phoneStatic": "be93c57b82bace617a9f6c55847e7ca6ffdd6e6c8f3c10606495e06b9f028f12",
+        "phoneEphemeral": "1363d75fab2966b4c6d59aeeedee2f2e52ab05f4ae99d0b244c263fab05eb113"
+      },
+      "frames": [
+        {
+          "from": "phone",
+          "frame": "{\"type\":\"hello\",\"protocol\":2,\"noise\":\"xD5Tju1YhNDTh1eOgczkJepAbovYh7OtkO5m9Sm9SR0=\"}"
+        },
+        {
+          "from": "host",
+          "frame": "9FNluNnJXANKKBlkUIhuwSd2UWHMlNlF/YHUmtF1nFO9GOQTmyVhTLYjp+s0NJPsHfeU7iZVZmaSFS2dki94wHmKkfLKPnFPBjOEWxwgPiaq1fQYMXd2E5hHte90xhkmejodTxPW0+vTSPmo1mrq+i1e0p2gfGYLuFghwrqz4Ibi4K0tlPgnEc9YydFB5Xxyo2liTGcHldggMnd6wuzuPRn1pNV7mc6mOQvNPFrYcf/lHKLGGFkCWMitYkT6lcIqsZhmAFlZgxe52DFIVJrn0M9P+PIOhqe2Xc61cbuRmICUV/Dpgin49kKqkgFw8wTvYeGqFyRNkBTzltn/aES36cP3+5wYa/B8GuTv2NDzLRydFiYJ0g=="
+        },
+        {
+          "from": "phone",
+          "frame": "Db6fOERvfiJnPmz/hOY1/WI9oJhBNFUq0o5ax1+y+7XvfT4veREoEWC/JIWX55ofJIXar2xOsd9VEM+D+iu8dqK+/Ht7bQFMwctitxV/x5g1i9LagVTn59thZi9e+hh+73FzBQh7hp5uIGrVBTJsBNV0suoa45wyY1ONgrVaTLZqcx/3cPCHaT8ug/uUroI04wY013MnG76CvQSE6dVPloM5nJweDeT6re4dR2O9ohvF4zoUeSS8PcK6vn/3btzBI5+NAhroIk43pP2tWIfWuo0ovFifGo8yx0T6xtQJigLhV2VS6wGYOi1wlMsEhDM0JNZQ1vu2Dvi3bkZ6AirxNu6S0TLlcH6B4PzEwUkjbVFpx+dUJbWVJkaYuP/U7zcrp++ozsExJLeV68TYJnXWK4HS59duEGQl67SLXXpSi7GF4PsfEzn5qNJtjiH8CxpUTIQjeMSPTJ4CnmYehyMO1yEL"
+        },
+        {
+          "from": "host",
+          "frame": "kL/Kw20gItUcpcoHOdcdgy0rk6YhfjAt4QgFCD24VFBZ4Tyb5ce/pkkW4/r8kjaWvGt2c2KCr/+VMvTuv9nMpg0McpdyQoBZlyGnvmbJrWTH7VDGolmQmQ=="
+        },
+        {
+          "from": "phone",
+          "frame": "dTJzZvKSp1GjGKku4M44jIlda+X2PsLW1tj2T7lMfEyWrfKqPQtOkIle81XDe6LRYBZOoLAq847vqfwjFItiy1FwvIuDohtv9+W9eUSIUaUm0E9/Ohi7jqY="
+        },
+        {
+          "from": "host",
+          "frame": "Ofp6zhTcg602TPXLVlnRtjb4u7lOJ3HtkUVeVV7fW9cqzxzP5ZXYw245CQ2ZoC7du7uHbDeAYrU="
+        },
+        {
+          "from": "host",
+          "frame": "fK5yyBRwBfzOLYIY3Hox1oQKM1GCy45XrX469pNnOOhP"
+        }
+      ],
+      "handshakeHash": "c4fb9a84ed7594074d9b679f7d4504cec3e27af2091838d92c9d60f438d7060a",
+      "approvalCode": "893974",
+      "approvalNonces": {
+        "device": "6aa905ced1d794424f98f1e2c2ee5d951c68c6d786cca0f8ec663bc7777958d8",
+        "host": "a2b5c4318c25b0def6dfc700eafff73c465f5b606bbfe18eea00fa71fd455c70"
+      },
+      "transport": [
+        {
+          "from": "phone",
+          "text": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server:hello\",\"params\":[]}",
+          "frames": [
+            "2NVTFaIZ+v64nlMErHsxOGsqbxGlwV5bmp01XuqxDr6mpncHXixCu1maz8SvahgxsyVshW3hOHZkIz5oG422VDw2blbXpEgNkn0WO/M="
+          ]
+        },
+        {
+          "from": "host",
+          "text": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocol\":1}}",
+          "frames": [
+            "/TYGKFHl2sWWYUxCTSbgkfenT0kiC8/SEEIoDFxu1UFQRlHBeP73Fl4oB72dx4rErUJyMRmYtm/x1RFtNM8m8wo="
+          ]
+        },
+        {
+          "from": "host",
+          "text": "{\"jsonrpc\":\"2.0\",\"method\":\"terminal:data\",\"params\":[\"é ✓ 🙂\"]}",
+          "frames": [
+            "Bac4OeDK879nTklkeJV8I5t35IUBcYXxilbrl5qA7rqhdIKOm3d0qZ5wlIYRPKpqKLmH+xuDXbbKhEA5SlfButJuht6XKFAlZLRPOgwUu9lDvdug"
+          ]
+        },
+        {
+          "from": "phone",
+          "text": "",
+          "frames": [
+            "/v+vQl36G4FntUYqOcJoneg="
+          ]
+        }
+      ]
     }
   ],
   "refusedHosts": {

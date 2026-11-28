@@ -10,7 +10,6 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'n
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import type { AccessConfig, AccessConfigPatch } from '@core/types/access.js'
-import { DEFAULT_RELAY_PORT } from './relayProtocol.js'
 
 export type { AccessConfig }
 
@@ -21,10 +20,21 @@ export const MAX_DEVICES = 50
 
 export const DEFAULT_ACCESS_CONFIG: AccessConfig = {
   enabled: false,
-  bindAddress: '',
   port: DEFAULT_ACCESS_PORT,
-  keepAwake: false,
-  relay: { enabled: false, address: '', port: DEFAULT_RELAY_PORT }
+  keepAwake: false
+}
+
+/**
+ * A config from before same-network access had `bindAddress` (one Tailscale address) and `relay`.
+ * Such a file reads as switched off: the listener now takes every network this computer is on, a
+ * wider reach than the user agreed to, so they switch it on again knowingly. Paired devices stay.
+ */
+function fromOlderConfig(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return raw
+  const config = raw as Record<string, unknown>
+  if (!('bindAddress' in config) && !('relay' in config)) return raw
+  const { bindAddress: _bindAddress, relay: _relay, ...rest } = config
+  return { ...rest, enabled: false }
 }
 
 export interface DeviceRecord {
@@ -44,20 +54,14 @@ export type DeviceView = Omit<DeviceRecord, 'publicKey'>
 
 const fileSchema = z.object({
   config: z
-    .object({
-      enabled: z.boolean().default(false),
-      bindAddress: z.string().max(100).default(''),
-      port: z.number().int().default(DEFAULT_ACCESS_PORT),
-      keepAwake: z.boolean().default(false),
-      // Added with the relay client: a file from before it reads as relay off.
-      relay: z
-        .object({
-          enabled: z.boolean().default(false),
-          address: z.string().max(100).default(''),
-          port: z.number().int().default(DEFAULT_RELAY_PORT)
-        })
-        .default(DEFAULT_ACCESS_CONFIG.relay)
-    })
+    .preprocess(
+      fromOlderConfig,
+      z.object({
+        enabled: z.boolean().default(false),
+        port: z.number().int().default(DEFAULT_ACCESS_PORT),
+        keepAwake: z.boolean().default(false)
+      })
+    )
     .default(DEFAULT_ACCESS_CONFIG),
   devices: z
     .array(
@@ -107,6 +111,11 @@ export interface SecretBox {
 export interface PairingOffer {
   secret: string
   expiresAt: number
+  /**
+   * A device asking to pair by approval was sent this window's host value: no other request may
+   * have one in the same window (`claimPairing`).
+   */
+  claimed?: boolean
 }
 
 export interface AccessStorePorts {
@@ -274,18 +283,14 @@ export function createAccessStore(ports: AccessStorePorts) {
   }
 
   return {
-    config: (): AccessConfig => ({ ...file.config, relay: { ...file.config.relay } }),
+    config: (): AccessConfig => ({ ...file.config }),
 
-    /** Merges `patch`; its `relay`, when given, is merged into the saved one. */
+    /** Merges `patch` into the saved config. */
     setConfig(patch: AccessConfigPatch): AccessConfig {
-      const { relay, ...rest } = patch
-      file = {
-        ...file,
-        config: { ...file.config, ...rest, relay: { ...file.config.relay, ...relay } }
-      }
+      file = { ...file, config: { ...file.config, ...patch } }
       save()
       changed()
-      return { ...file.config, relay: { ...file.config.relay } }
+      return { ...file.config }
     },
 
     /**
@@ -385,10 +390,26 @@ export function createAccessStore(ports: AccessStorePorts) {
       return offer
     },
 
-    cancelPairing(): void {
-      if (!offer) return
+    /**
+     * Ends the open offer; with `only`, only if it is still that one, so a request from an earlier
+     * window cannot close a window opened since.
+     */
+    cancelPairing(only?: PairingOffer): void {
+      if (!offer || (only && offer !== only)) return
       offer = undefined
       changed()
+    },
+
+    /**
+     * Takes the open window for one request to pair by approval, before it is sent the host value:
+     * undefined when there is no open window or another request already holds it. One code per
+     * window, so nobody can look at several and keep the one that matches.
+     */
+    claimPairing(): PairingOffer | undefined {
+      const open = currentOffer()
+      if (!open || open.claimed) return undefined
+      open.claimed = true
+      return open
     },
 
     /** The open offer, if it has not expired. */

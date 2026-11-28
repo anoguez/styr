@@ -63,7 +63,8 @@ describe.skipIf(!enabled)('styr serve --listen (integration)', { timeout: 60_000
         '--socket',
         socket,
         '--listen',
-        `127.0.0.1:${port}`,
+        '--port',
+        String(port),
         ...extra
       ],
       {

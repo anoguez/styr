@@ -57,6 +57,7 @@ vi.mock('./ipc.js', () => ({
   markAgentExited: record('markAgentExited'),
   notifyAgentsChanged: record('notifyAgentsChanged'),
   notifyTasksChanged: record('notifyTasksChanged'),
+  processLaunchRequests: record('processLaunchRequests'),
   freezeTerminalLayout: record('freezeTerminalLayout'),
   registerIpcHandlers: record('registerIpcHandlers'),
   sendWindowCommand: record('sendWindowCommand'),
@@ -65,6 +66,13 @@ vi.mock('./ipc.js', () => ({
   startRemoteWorkspaces: record('startRemoteWorkspaces'),
   stopRemoteWorkspaces: record('stopRemoteWorkspaces'),
   switchWorkspace: record('switchWorkspace')
+}))
+vi.mock('./deepLinks.js', () => ({
+  initDeepLinks: () => {
+    calls.push('initDeepLinks')
+    return true
+  },
+  registerDeepLinkHandlers: record('registerDeepLinkHandlers')
 }))
 vi.mock('./taskIndex.js', () => ({
   closeIndex: record('closeIndex'),
@@ -86,6 +94,7 @@ vi.mock('./terminal/ptyManager.js', () => ({
 vi.mock('./watcher.js', () => ({
   startWatching: record('startWatching'),
   startWatchingAgents: record('startWatchingAgents'),
+  startWatchingLaunchRequests: record('startWatchingLaunchRequests'),
   stopWatching: async () => {}
 }))
 vi.mock('./appIcon.js', () => ({ linuxIconPath: () => '' }))
@@ -116,7 +125,8 @@ describe('start-up order', () => {
       .slice(beforeReady.length)
       .filter((call) => !call.startsWith('app:on') && !call.startsWith('app:set'))
 
-    expect(beforeReady).toEqual(['app:on window-all-closed', 'app:on before-quit'])
+    // The link that launched the app arrives before `ready` on macOS, so deep links start first.
+    expect(beforeReady).toEqual(['initDeepLinks', 'app:on window-all-closed', 'app:on before-quit'])
     expect(startup).toEqual([
       'migrateSettings',
       'syncAppImageMcp',
@@ -124,6 +134,7 @@ describe('start-up order', () => {
       'syncIndex',
       'registerIpcHandlers',
       'registerAccessHandlers',
+      'registerDeepLinkHandlers',
       'startRemoteWorkspaces',
       'startAutoDispatch',
       'installAppMenu',
@@ -135,6 +146,7 @@ describe('start-up order', () => {
       'onBroadcast',
       'startWatching',
       'startWatchingAgents',
+      'startWatchingLaunchRequests',
       'notifyAgentsChanged',
       'window:create',
       'window:on',

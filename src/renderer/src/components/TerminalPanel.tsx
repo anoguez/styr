@@ -23,6 +23,7 @@ import {
 import type { DiffStat } from '@core/diff.js'
 import { shortcutHint } from '@core/shortcuts.js'
 import type {
+  AgentTabView,
   ShortcutBindings,
   Task,
   TerminalRuntimeState,
@@ -159,6 +160,7 @@ export function TerminalPanel({
   theme,
   bindings,
   nativeTerminal,
+  agentTabView,
   taskTitles,
   taskStates,
   diffStats,
@@ -190,6 +192,8 @@ export function TerminalPanel({
   bindings: ShortcutBindings
   /** `experimental.nativeTerminal`: new terminals try Styr Terminal. */
   nativeTerminal: boolean
+  /** What an agent tab shows until its Chat switch is used (Settings → Open agent tabs in). */
+  agentTabView: AgentTabView
   taskTitles: ReadonlyMap<string, string>
   taskStates: ReadonlyMap<string, { status: TaskStatus; prsDone: boolean }>
   /** Per-task change totals; a task with no changes has no entry. */
@@ -429,6 +433,7 @@ export function TerminalPanel({
                   theme={theme}
                   bindings={bindings}
                   nativeTerminal={nativeTerminal}
+                  agentTabView={agentTabView}
                   runtime={runtimes.get(session.id)}
                   agentStatus={
                     session.taskId && session.workspaceId === workspaces.activeId

@@ -37,7 +37,17 @@ import {
   type TerminalsPorts
 } from '@host/terminals/terminalsService.js'
 import { createUsage, watchFiles } from '@host/usage.js'
-import { startWatching, startWatchingAgents, stopWatching } from '@host/watcher.js'
+import {
+  startWatching,
+  startWatchingAgents,
+  startWatchingLaunchRequests,
+  stopWatching
+} from '@host/watcher.js'
+import {
+  createLaunchRequestsService,
+  diskLaunchRequests,
+  tasksInWorkspace
+} from '@host/launchRequestsService.js'
 import { createWorklogService } from '@host/worklogService.js'
 import { createReviewService, diskReviewStore } from '@host/reviewService.js'
 import {
@@ -175,6 +185,7 @@ export function createServerHost(ports: ServerHostPorts) {
     },
     createMonitor: (onUpdate, onConversation) => new CodexMonitor(onUpdate, onConversation),
     publishConversation: usage.publishAgentConversation,
+    conversation: (terminalId) => usage.conversation(terminalId),
     prompts: {
       promptInbox: (terminalId) => usage.conversation(terminalId)?.promptInbox === true,
       promptAgent: (terminalId, text) => usage.prompt(terminalId, text)
@@ -186,6 +197,8 @@ export function createServerHost(ports: ServerHostPorts) {
       broadcast('server:tray', { statuses, titles: Object.fromEntries(titles) }),
     requestAutoRun: () => dispatchService.requestAutoRun()
   })
+  // A question or approval an agent starts or stops waiting on changes what agents:list says.
+  usage.onWaitChange(() => notifyAgentsChanged())
 
   const gitService = createGitService({
     loadSettings: () => loadSettings(),
@@ -232,6 +245,13 @@ export function createServerHost(ports: ServerHostPorts) {
     launch: agentsService.launch,
     checkForMergedWork,
     clock: realClock
+  })
+
+  const launchRequests = createLaunchRequestsService({
+    broadcast,
+    ...diskLaunchRequests,
+    tasks: (workspaceId) => tasksInWorkspace(workspaceId, queryTasks, inOtherWorkspace),
+    launch: agentsService.launch
   })
 
   const settingsService = createSettingsService({
@@ -305,6 +325,7 @@ export function createServerHost(ports: ServerHostPorts) {
 
     startWatching(notifyTasksChanged)
     startWatchingAgents(notifyAgentsChanged)
+    startWatchingLaunchRequests((id) => void launchRequests.process(id))
     notifyAgentsChanged()
     usage.start()
   }

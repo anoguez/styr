@@ -2,12 +2,14 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import type { AgentStatus } from '../core/agentState.js'
 import type { DiagnosticsSnapshot } from '../core/diagnostics.js'
 import type { ContextUsage, ProviderUsage } from '../core/usage.js'
-import type { AgentConversation } from '../core/agentConversation.js'
+import type { AgentConversation, QuestionAnswer } from '../core/agentConversation.js'
 import type { DiffResult, DiffStat, PatchResult } from '../core/diff.js'
 import type { TerminalBenchRecord } from '../core/terminalBench.js'
 import type {
   AccessConfigPatch,
   AccessPairing,
+  LanBoard,
+  LanHostInfo,
   AccessState,
   AgentCliReport,
   McpSetupReport,
@@ -85,6 +87,13 @@ const api = {
       ipcRenderer.invoke('tasks:update', id, patch),
     addNote: (id: string, author: string, message: string): Promise<Task> =>
       ipcRenderer.invoke('tasks:note', id, author, message),
+    /** Saves an image under `.styr/attachments/` and answers its path (devices use it). */
+    uploadImage: (
+      taskId: string | null,
+      name: string,
+      mime: string,
+      base64: string
+    ): Promise<string> => ipcRenderer.invoke('files:uploadImage', taskId, name, mime, base64),
     reorder: (status: TaskStatus, orderedIds: string[]): Promise<Task[]> =>
       ipcRenderer.invoke('tasks:reorder', status, orderedIds),
     archive: (id: string, archived: boolean): Promise<Task> =>
@@ -157,6 +166,16 @@ const api = {
     /** Answers an approval with one of its options (`approvalOptions`). */
     approval: (terminalId: string, approvalId: string, optionId: string): Promise<void> =>
       ipcRenderer.invoke('agent:approval', terminalId, approvalId, optionId),
+    /**
+     * Answers the conversation's `question` (AskUserQuestion): per question, in order, the labels
+     * picked and "Other"'s text. Rejects with "Answer this one in the terminal." when the answers
+     * do not fit it, or when the agent takes none through Styr.
+     */
+    answerQuestion: (
+      terminalId: string,
+      questionId: string,
+      answers: QuestionAnswer[]
+    ): Promise<void> => ipcRenderer.invoke('agent:answerQuestion', terminalId, questionId, answers),
     onConversation: (
       handler: (update: { terminalId: string; conversation: AgentConversation }) => void
     ): (() => void) => subscribe('agent:conversation', handler as (...args: never[]) => void)
@@ -275,26 +294,68 @@ const api = {
     /** Starts the server if needed, then connects. */
     connect: (host: string): Promise<void> => ipcRenderer.invoke('remote:connect', host)
   },
+  lan: {
+    /** Settings → Connections → Other computers: the computers this one paired with. */
+    hosts: (): Promise<LanHostInfo[]> => ipcRenderer.invoke('lan:hosts'),
+    /**
+     * Asks the computer at `address` (`192.168.1.20`, `studio.local:7878`) to pair by approval;
+     * `onPairCode` gets the code to show while the person there decides.
+     */
+    pair: (address: string, name: string): Promise<{ code: string; name: string }> =>
+      ipcRenderer.invoke('lan:pair', address, name),
+    /**
+     * Pairs with a pair link (`styr://pair?…`, the QR's link, copied from the other computer's
+     * Add device window). Nobody has to allow it there; the computer is kept at once.
+     */
+    pairLink: (link: string, name: string): Promise<LanHostInfo> =>
+      ipcRenderer.invoke('lan:pairLink', link, name),
+    /** A `styr://pair` link the system opened Styr with, once; undefined when none waits. */
+    takePairLink: (): Promise<string | undefined> => ipcRenderer.invoke('lan:takePairLink'),
+    /** A link was clicked while Styr runs: take it with `takePairLink`. */
+    onPairLinkWaiting: (handler: () => void): (() => void) =>
+      subscribe('lan:pairLinkWaiting', handler as (...args: never[]) => void),
+    /**
+     * After the other computer allowed this one: whether it showed the same code. Only a yes
+     * keeps the pairing; anything else discards it.
+     */
+    confirmPair: (matched: boolean): Promise<LanHostInfo | null> =>
+      ipcRenderer.invoke('lan:confirmPair', matched),
+    cancelPair: (): Promise<void> => ipcRenderer.invoke('lan:cancelPair'),
+    onPairCode: (handler: (update: { code: string }) => void): (() => void) =>
+      subscribe('lan:pairCode', handler as (...args: never[]) => void),
+    /** The workspaces a paired computer shares with this one. */
+    boards: (fingerprint: string): Promise<LanBoard[]> =>
+      ipcRenderer.invoke('lan:boards', fingerprint),
+    /** Links one of them here as a remote workspace and opens it. */
+    addWorkspace: (draft: {
+      fingerprint: string
+      workspaceId: string
+      name: string
+    }): Promise<unknown> => ipcRenderer.invoke('lan:addWorkspace', draft),
+    /** Forgets a computer and its key. */
+    remove: (fingerprint: string): Promise<boolean> => ipcRenderer.invoke('lan:remove', fingerprint)
+  },
   access: {
-    /** Settings → Remote access: the listener, the interfaces to pick from and the paired devices. */
+    /** Settings → Connections: the switch, where devices reach this computer, devices, sharing. */
     state: (): Promise<AccessState> => ipcRenderer.invoke('access:state'),
     onChanged: (handler: (state: AccessState) => void): (() => void) =>
       subscribe('access:changed', handler as (...args: never[]) => void),
-    /**
-     * Switches the listener or the relay on or off, or moves it; a listener that fails is left off
-     * with `error` set, a relay that cannot be reached says why in `relayError`.
-     */
+    /** Switches access on or off, or keep-awake; a listener that fails is left off with `error` set. */
     configure: (patch: AccessConfigPatch): Promise<AccessState> =>
       ipcRenderer.invoke('access:configure', patch),
     /** The QR for one new device, good for two minutes and one use. */
     pair: (): Promise<AccessPairing> => ipcRenderer.invoke('access:pair'),
     cancelPair: (): Promise<void> => ipcRenderer.invoke('access:cancelPair'),
+    /** Allows or turns down the device waiting to pair (`AccessState.request`). */
+    answer: (requestId: string, allow: boolean): Promise<AccessState> =>
+      ipcRenderer.invoke('access:answer', requestId, allow),
     revoke: (deviceId: string): Promise<AccessState> =>
       ipcRenderer.invoke('access:revoke', deviceId),
     /** Asks Tailscale whether Shields Up is on; the answer lands in `shieldsUp`. */
     checkNetwork: (): Promise<AccessState> => ipcRenderer.invoke('access:checkNetwork'),
-    /** Turns `remoteAccess` on for the open workspace and saves it. */
-    shareWorkspace: (): Promise<AccessState> => ipcRenderer.invoke('access:shareWorkspace')
+    /** Turns `remoteAccess` on or off for one of this computer's workspaces, and saves it. */
+    setShared: (workspaceId: string, shared: boolean): Promise<AccessState> =>
+      ipcRenderer.invoke('access:setShared', workspaceId, shared)
   },
   settings: {
     get: (workspaceId?: string): Promise<Settings> =>
@@ -386,6 +447,9 @@ const api = {
       subscribe('terminal:detachedChanged', handler as (...args: never[]) => void),
     onData: (handler: (payload: { id: string } & TerminalOutput) => void): (() => void) =>
       subscribe('terminal:data', handler as (...args: never[]) => void),
+    /** A task session started outside the window (the MCP server's `start_task`). */
+    onLaunched: (handler: (session: TerminalSessionInfo) => void): (() => void) =>
+      subscribe('terminal:launched', handler as (...args: never[]) => void),
     onExit: (handler: (payload: { id: string; exitCode: number }) => void): (() => void) =>
       subscribe('terminal:exit', handler as (...args: never[]) => void),
     onRuntimeState: (handler: (state: TerminalRuntimeState) => void): (() => void) =>

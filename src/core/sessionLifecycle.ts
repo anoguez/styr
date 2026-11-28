@@ -392,12 +392,18 @@ export function createSessionLifecycle(ports: SessionPorts) {
   async function start(
     taskId: string,
     requested: LaunchOptions,
-    into?: TerminalSessionInfo
+    into?: TerminalSessionInfo,
+    inWorkspace?: string
   ): Promise<TerminalSessionInfo> {
-    const task = ports.findTask(taskId)
+    // A background workspace is read from its files with its own settings, both inside one
+    // synchronous pin: `pinWorkspace` never stays set across an await.
+    const background =
+      inWorkspace !== undefined && inWorkspace !== ports.settings().activeWorkspaceId
+    const [task, settings] = background
+      ? ports.pinWorkspace(inWorkspace, () => [ports.getTask(taskId), ports.settings()] as const)
+      : [ports.findTask(taskId), ports.settings()]
     if (!task) throw new Error(`Task ${taskId} not found`)
 
-    const settings = ports.settings()
     const options = reworkLaunch(settings, task, requested, (entry) =>
       providerById(entry.provider).sessionExists(entry.id)
     )
@@ -421,7 +427,8 @@ export function createSessionLifecycle(ports: SessionPorts) {
         : undefined
     // The board may have switched while Codex was being checked; everything below writes to the
     // active workspace's files, so it must still be the one this launch was planned in.
-    if (ports.settings().activeWorkspaceId !== workspaceId) {
+    // A background launch writes through `saveLaunchMetadata`, which pins its workspace either way.
+    if (!background && ports.settings().activeWorkspaceId !== workspaceId) {
       throw new Error('The workspace changed while the agent was starting. Try again.')
     }
 
@@ -572,12 +579,19 @@ export function createSessionLifecycle(ports: SessionPorts) {
    * orchestrator so both advance the board and record the session the same way. Task ids repeat
    * across workspaces, so "one live session per task" is per workspace too.
    */
-  function startForTask(taskId: string, options: LaunchOptions = {}): Promise<TerminalSessionInfo> {
-    const workspaceId = ports.settings().activeWorkspaceId
+  /**
+   * Starts (or reuses) a task's agent. `workspaceId` launches a task of a background workspace
+   * without switching to it (the MCP server's `start_task`); the default is the active one.
+   */
+  function startForTask(
+    taskId: string,
+    options: LaunchOptions = {},
+    workspaceId: string = ports.settings().activeWorkspaceId
+  ): Promise<TerminalSessionInfo> {
     return gate.startOrReuse(
       monitorKey(workspaceId, taskId),
       () => ports.findSessionByTask(taskId, workspaceId),
-      () => start(taskId, options)
+      () => start(taskId, options, undefined, workspaceId)
     )
   }
 

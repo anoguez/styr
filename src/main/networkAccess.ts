@@ -1,22 +1,22 @@
-import { app, ipcMain, powerSaveBlocker, safeStorage } from 'electron'
+import { app, ipcMain, powerSaveBlocker } from 'electron'
 import { pinWorkspace, pinnedWorkspaceId } from '@core/config.js'
 import { loadSettings } from '@core/settingsStore.js'
 import { globalSettingsFor, workspaceSettingsFor, type SettingsChange } from '@core/types.js'
 import { listWorkspaces } from '@core/workspaces.js'
-import type { AccessConfigPatch, AccessState, RelayConfig } from '@core/types/access.js'
-import type { SecretBox } from '@host/remoteAccess/accessStore.js'
+import type { AccessConfigPatch, AccessState, AccessWorkspace } from '@core/types/access.js'
 import { tailscaleShieldsUp } from '@host/remoteAccess/tailscale.js'
 import { computerName, createHub, PROTOCOL_VERSION } from '../server/hub.js'
 import { createNetworkAccess, forwardToHub } from '../server/networkAccess.js'
 import { channelTable, onLocalTray } from './ipc.js'
+import { keychain } from './keychain.js'
 import { electronHost, onBroadcast } from './electronHost.js'
 import { listSessions, resizeSession, sessionBacklog } from './terminal/ptyManager.js'
 
 /**
  * Remote access in the desktop app (`docs/architecture/remote-access.md`): the same hub `styr
  * serve` runs, answering the same channel table (`ipc.ts`), over a WebSocket that devices paired
- * with a QR can open. It lives in the main process, never the renderer, and listens only when
- * Settings → Remote access is on.
+ * with a QR can open, from this computer's networks only. It lives in the main process, never the
+ * renderer, and listens only when Settings → Remote devices is on.
  */
 const startedAt = new Date().toISOString()
 let lastTray: unknown = { statuses: [], titles: {} }
@@ -48,22 +48,6 @@ function isOpen(workspaceId: string): boolean {
   return loadSettings(workspaceId).remoteAccess === true
 }
 
-/**
- * The host's private key is sealed with `safeStorage` (the macOS Keychain, DPAPI, libsecret) once
- * it is there. Linux without a keyring falls back to a fixed key, which is no better than the file,
- * so the key then stays as it was: plaintext, 0600.
- */
-function keychain(): SecretBox | undefined {
-  if (!safeStorage.isEncryptionAvailable()) return undefined
-  if (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') {
-    return undefined
-  }
-  return {
-    seal: (plain) => safeStorage.encryptString(plain).toString('base64'),
-    open: (sealed) => safeStorage.decryptString(Buffer.from(sealed, 'base64'))
-  }
-}
-
 const access = createNetworkAccess({
   hub,
   gate: {
@@ -83,28 +67,48 @@ const access = createNetworkAccess({
   broadcast: (state) => electronHost.broadcast('access:changed', state),
   log: (message) => console.warn(message),
   secrets: keychain,
+  takesRequests: true,
   shieldsUp: () => tailscaleShieldsUp(),
-  workspaceShared: () => listWorkspaces(loadSettings()).some((entry) => isOpen(entry.id))
+  workspaces: localWorkspaces
 })
 
+/** This computer's own workspaces, never an ssh remote's stub, and whether each is shared. */
+function localWorkspaces(): AccessWorkspace[] {
+  return listWorkspaces(loadSettings())
+    .filter((entry) => !entry.remote)
+    .map((entry) => ({ id: entry.id, name: entry.name, shared: isOpen(entry.id) }))
+}
+
 /**
- * "Share this workspace", from the notice Settings shows once a device is paired and nothing is
- * shared: turns `remoteAccess` on for the open workspace through the ordinary save, so the
- * workspaces, the hub and every window hear `settings:changed` as after Settings → Save.
+ * A switch in Settings → Connections: turns `remoteAccess` on or off for one of this computer's
+ * workspaces through the ordinary save, so the workspaces, the hub (which detaches what a device
+ * held in a workspace no longer shared) and every window hear `settings:changed` as after Save.
+ * Only a workspace that exists here, and is not an ssh remote's stub, can be named.
  */
-async function shareActiveWorkspace(): Promise<AccessState> {
+export async function setWorkspaceShared(
+  workspaceId: unknown,
+  shared: unknown
+): Promise<AccessState> {
+  if (typeof workspaceId !== 'string' || typeof shared !== 'boolean') {
+    throw new Error('Expected a workspace id and whether to share it.')
+  }
   const global = loadSettings()
-  const id = global.activeWorkspaceId
-  if (listWorkspaces(global).find((entry) => entry.id === id)?.remote) {
-    throw new Error('The open workspace lives on a remote host, so devices cannot open it here.')
+  const workspace = listWorkspaces(global).find((entry) => entry.id === workspaceId)
+  if (!workspace) throw new Error('That workspace no longer exists.')
+  if (workspace.remote) {
+    throw new Error(
+      `${workspace.name} lives on a remote host; share it in its own settings, on that host.`
+    )
   }
-  const own = loadSettings(id)
-  const change: SettingsChange = {
-    workspaceId: id,
-    workspace: { ...workspaceSettingsFor(own), remoteAccess: true },
-    global: globalSettingsFor(global)
+  const own = loadSettings(workspaceId)
+  if (own.remoteAccess !== shared) {
+    const change: SettingsChange = {
+      workspaceId,
+      workspace: { ...workspaceSettingsFor(own), remoteAccess: shared },
+      global: globalSettingsFor(global)
+    }
+    await channelTable.invoke['settings:save']!.run(change as never)
   }
-  await channelTable.invoke['settings:save']!.run(change as never)
   return access.service.refresh()
 }
 
@@ -138,8 +142,16 @@ export function registerAccessHandlers(): void {
   )
   ipcMain.handle('access:pair', () => access.service.pair())
   ipcMain.handle('access:cancelPair', () => access.service.cancelPairing())
+  ipcMain.handle('access:answer', (_event, requestId: unknown, allow: unknown) => {
+    if (typeof requestId !== 'string' || typeof allow !== 'boolean') {
+      throw new Error('Expected a request id and an answer.')
+    }
+    return access.service.answer(requestId, allow)
+  })
   ipcMain.handle('access:checkNetwork', () => access.service.checkNetwork())
-  ipcMain.handle('access:shareWorkspace', () => shareActiveWorkspace())
+  ipcMain.handle('access:setShared', (_event, workspaceId: unknown, shared: unknown) =>
+    setWorkspaceShared(workspaceId, shared)
+  )
   ipcMain.handle('access:revoke', (_event, deviceId: unknown) =>
     access.service.revoke(String(deviceId))
   )
@@ -148,21 +160,14 @@ export function registerAccessHandlers(): void {
 const asRecord = (value: unknown): Record<string, unknown> =>
   (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
 
-/** Only the config's own keys, each of the right type: the renderer is not trusted with more. */
+/**
+ * Only the switches, each of the right type: the renderer is not trusted with more. The port is
+ * not the renderer's to set; it is `styr serve --port`'s, or found free by the service.
+ */
 export function pickConfig(value: unknown): AccessConfigPatch {
   const raw = asRecord(value)
   const patch: AccessConfigPatch = {}
   if (typeof raw.enabled === 'boolean') patch.enabled = raw.enabled
   if (typeof raw.keepAwake === 'boolean') patch.keepAwake = raw.keepAwake
-  if (typeof raw.port === 'number') patch.port = raw.port
-  if (typeof raw.bindAddress === 'string') patch.bindAddress = raw.bindAddress
-  if (raw.relay !== undefined) {
-    const entry = asRecord(raw.relay)
-    const relay: Partial<RelayConfig> = {}
-    if (typeof entry.enabled === 'boolean') relay.enabled = entry.enabled
-    if (typeof entry.address === 'string') relay.address = entry.address
-    if (typeof entry.port === 'number') relay.port = entry.port
-    patch.relay = relay
-  }
   return patch
 }

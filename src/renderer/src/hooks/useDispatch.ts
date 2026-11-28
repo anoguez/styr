@@ -43,7 +43,9 @@ export function useDispatch({
   }, [])
 
   const refresh = useCallback(() => {
-    void window.api.orchestrate.plan().then(setOrchestration)
+    // A remote board still connecting refuses the read; the last plan stands until it is live and
+    // the board's change refreshes it.
+    window.api.orchestrate.plan().then(setOrchestration, () => undefined)
   }, [])
   useEffect(refresh, [refresh, board, sessions, agents])
   useEffect(
