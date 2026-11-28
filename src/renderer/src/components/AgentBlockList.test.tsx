@@ -133,12 +133,13 @@ describe('agent chat interactions', () => {
     expect(props.onShowTui).toHaveBeenCalledOnce()
   })
 
-  it('interrupts a turn and opens the CLI’s own view from the composer', () => {
+  it('interrupts a turn from the composer, which leaves the CLI’s view to the tab’s switch', () => {
     const { elements, props } = draw({ working: true })
     click(button(elements, 'Interrupt'))
     expect(props.onInterrupt).toHaveBeenCalledOnce()
-    click(button(elements, 'Claude Code view'))
-    expect(props.onShowTui).toHaveBeenCalledOnce()
+    expect(elements.some((element) => text(element.props.children) === 'Claude Code view')).toBe(
+      false
+    )
   })
 
   it('keeps Send off until something is typed, and sends nothing empty', () => {

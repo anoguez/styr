@@ -162,8 +162,9 @@ describe('agent block list', () => {
     // A failed call is outlined in the danger colour and marked with a cross, not colour alone.
     expect(html).toMatch(/Bash npm test, failed.*border-danger/)
     expect(html).toContain('✕')
-    // The conversation keeps to a readable column on a wide screen.
-    expect(html).toContain('max-w-[800px]')
+    // The conversation fills the tab, however wide or narrow the panel is docked.
+    expect(html).not.toContain('max-w-[800px]')
+    expect(html).toContain('w-full px-4')
     expect(html).not.toContain('Nothing here yet')
   })
 

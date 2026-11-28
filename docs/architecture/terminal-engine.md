@@ -278,7 +278,9 @@ markdown (`ChatMarkdown`) beside Styr's avatar (`StyrMark`, on the first row of 
 `danger`), "• Working…" while a turn runs, the approval pinned under the conversation as the app's
 card (Deny beside the wider Allow, the CLI's other answers under them), "Jump to latest" once
 scrolled up, and the app's composer: a note on what happens to a message now, a rounded field and a
-round Send button. The conversation keeps to an 800px column, centred, on a wide tab. The composer
+round Send button. The conversation fills the tab's width, since a side-docked terminal panel can
+be narrow, and the composer has no button for the CLI's own view: the tab's Chat / Terminal switch
+is the way there. The composer
 keeps the `❯` input's keys (`useCommandInput` in `CommandInput.tsx`: history, the slash-command
 menu, Escape to interrupt, image paste), which the native engine's shell input shares.
 

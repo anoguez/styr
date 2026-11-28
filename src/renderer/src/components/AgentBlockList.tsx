@@ -18,8 +18,8 @@ const DIFF_PREVIEW = 16
 /** How far (px) the person scrolls up before "Jump to latest" shows, as on the phone. */
 const PILL_THRESHOLD = 240
 
-/** The conversation's column: readable on a wide monitor, centred, the phone's gutters. */
-const COLUMN = 'mx-auto w-full max-w-[800px] px-4'
+/** The conversation's column: the tab's full width (a side-docked panel can be narrow), the phone's gutters. */
+const COLUMN = 'w-full px-4'
 
 type Patch = Pick<DiffBlock['payload'], 'patch' | 'additions' | 'deletions'>
 
@@ -183,7 +183,6 @@ export function AgentBlockList({
         onSubmit={onSubmit}
         onInterrupt={onInterrupt}
         onPasteImage={onPasteImage}
-        onShowTui={onShowTui}
       />
     </div>
   )
@@ -616,8 +615,7 @@ function Composer({
   commands,
   onSubmit,
   onInterrupt,
-  onPasteImage,
-  onShowTui
+  onPasteImage
 }: {
   label: string
   working: boolean
@@ -630,7 +628,6 @@ function Composer({
   onSubmit: (text: string) => void
   onInterrupt: () => void
   onPasteImage?: () => void
-  onShowTui: () => void
 }): ReactNode {
   const input = useCommandInput({
     inputRef,
@@ -669,14 +666,6 @@ function Composer({
               Interrupt <span className="text-faint font-mono text-[10px]">esc</span>
             </button>
           ) : null}
-          <button
-            type="button"
-            title={`Show ${label}'s own interface`}
-            className={`${quiet} h-6 shrink-0`}
-            onClick={onShowTui}
-          >
-            {label} view
-          </button>
         </div>
         <div className="flex items-end gap-2">
           <div className="relative min-w-0 flex-1">
