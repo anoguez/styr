@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type MutableRefObject,
+  type ReactNode
+} from 'react'
+import { syntaxFor, type ShellDialect } from '@core/shell.js'
 import { AGENT_PROVIDER_LABELS } from '@core/types.js'
 import type { AgentProviderId } from '@core/providers/types.js'
 import {
@@ -6,6 +14,7 @@ import {
   useAgentConversation,
   type AgentChat
 } from '../lib/agentChat/useAgentChat.js'
+import { droppedText } from '../lib/nativeTerminal/pointerMath.js'
 import { AgentBlockList } from './AgentBlockList.js'
 import type { TerminalHandle } from './TerminalView.js'
 
@@ -31,6 +40,38 @@ export function chatGap(
 }
 
 /**
+ * Files dropped on the chat: their paths, quoted in the tab's shell dialect as the terminal quotes
+ * a drop, go into the message field at the cursor. The person sees what will be sent, and the
+ * prompt reaches the CLI the way any chat prompt does. Nothing happens without a field to fill.
+ */
+export function dropFilesIntoChat(
+  event: Pick<DragEvent, 'dataTransfer' | 'preventDefault'>,
+  input: HTMLTextAreaElement | null,
+  dialect: ShellDialect | undefined,
+  pathsFor: (files: File[]) => string[] = (files) => window.api.terminal.pathsForFiles(files)
+): void {
+  const files = Array.from(event.dataTransfer.files)
+  if (files.length === 0) return
+  event.preventDefault()
+  const paths = pathsFor(files)
+  if (paths.length === 0 || !input) return
+  input.focus()
+  // insertText keeps the field's undo and fires its input event, so React sees the change.
+  document.execCommand(
+    'insertText',
+    false,
+    droppedText(paths, (path) => syntaxFor(dialect).quote(path))
+  )
+}
+
+/** A drag carrying files may drop on the chat (it copies their paths, it moves nothing). */
+function allowFileDrop(event: DragEvent): void {
+  if (!event.dataTransfer.types.includes('Files')) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+}
+
+/**
  * The xterm.js engine's chat for an agent tab: it lies over the terminal, which stays mounted
  * underneath — only hidden (`onShownChange`), so its scrollback, scroll position and PTY are
  * untouched. It draws the phone app's chat with `AgentBlockList`, fed by `useAgentChat`, the hook the native engine uses
@@ -44,7 +85,8 @@ export function XtermAgentChat({
   active,
   handle,
   onChatChange,
-  onShownChange
+  onShownChange,
+  dialect
 }: {
   sessionId: string
   run: AgentRun
@@ -56,6 +98,8 @@ export function XtermAgentChat({
   onChatChange: (on: boolean) => void
   /** The chat started (true) or stopped covering the terminal, which hides beneath it. */
   onShownChange: (shown: boolean) => void
+  /** The tab's shell dialect, which quotes a dropped file's path. */
+  dialect?: ShellDialect
 }): ReactNode {
   const agent = useAgentChat({
     sessionId,
@@ -99,6 +143,7 @@ export function XtermAgentChat({
             agent={agent}
             run={run}
             inputRef={inputRef}
+            dialect={dialect}
             onShowTerminal={() => onChatChange(false)}
           />
         </div>
@@ -113,11 +158,14 @@ export function AgentChatPane({
   agent,
   run,
   inputRef,
+  dialect,
   onShowTerminal
 }: {
   agent: AgentChat
   run: AgentRun
   inputRef: MutableRefObject<HTMLTextAreaElement | null>
+  /** The tab's shell dialect, which quotes a dropped file's path. */
+  dialect?: ShellDialect
   onShowTerminal: () => void
 }): ReactNode {
   const label = AGENT_PROVIDER_LABELS[run.provider]
@@ -127,6 +175,8 @@ export function AgentChatPane({
       role="region"
       aria-label={`${label} chat`}
       className="bg-surface text-ink h-full w-full overflow-hidden"
+      onDragOver={allowFileDrop}
+      onDrop={(event) => dropFilesIntoChat(event, gap ? null : inputRef.current, dialect)}
     >
       {gap ? (
         <ChatGap text={gap} label={label} onShowTerminal={onShowTerminal} />

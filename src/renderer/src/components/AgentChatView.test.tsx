@@ -9,6 +9,7 @@ import {
   BackToChat,
   XtermAgentChat,
   chatGap,
+  dropFilesIntoChat,
   type AgentRun
 } from './AgentChatView.js'
 import { AgentBlockList, type ApprovalRequest } from './AgentBlockList.js'
@@ -271,5 +272,39 @@ describe('xterm.js chat overlay', () => {
     expect(renderToStaticMarkup(createElement(BackToChat, { onClick: noop }))).toContain(
       'Back to chat'
     )
+  })
+})
+
+describe('dropping files on the chat', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const drop = (count: number) => ({
+    dataTransfer: { files: Array.from({ length: count }, () => ({}) as File) } as never,
+    preventDefault: vi.fn()
+  })
+
+  it('puts the quoted paths into the message field at the cursor', () => {
+    const execCommand = vi.fn()
+    vi.stubGlobal('document', { execCommand })
+    const input = { focus: vi.fn() } as unknown as HTMLTextAreaElement
+    const event = drop(2)
+    dropFilesIntoChat(event, input, 'posix', () => ['/tmp/a.png', '/tmp/my file.txt'])
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(input.focus).toHaveBeenCalled()
+    expect(execCommand).toHaveBeenCalledWith(
+      'insertText',
+      false,
+      "'/tmp/a.png' '/tmp/my file.txt' "
+    )
+  })
+
+  it('leaves a drag without files, or a chat without a field, alone', () => {
+    const execCommand = vi.fn()
+    vi.stubGlobal('document', { execCommand })
+    const none = drop(0)
+    dropFilesIntoChat(none, null, 'posix', () => [])
+    expect(none.preventDefault).not.toHaveBeenCalled()
+    dropFilesIntoChat(drop(1), null, 'posix', () => ['/tmp/a.png'])
+    expect(execCommand).not.toHaveBeenCalled()
   })
 })

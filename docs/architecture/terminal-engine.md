@@ -282,7 +282,9 @@ round Send button. The conversation fills the tab's width, since a side-docked t
 be narrow, and the composer has no button for the CLI's own view: the tab's Chat / Terminal switch
 is the way there. The composer
 keeps the `❯` input's keys (`useCommandInput` in `CommandInput.tsx`: history, the slash-command
-menu, Escape to interrupt, image paste), which the native engine's shell input shares.
+menu, Escape to interrupt, image paste), which the native engine's shell input shares. Files dropped on
+the chat go into the composer at the cursor as paths, quoted in the tab's shell dialect as the
+terminal quotes a drop (`dropFilesIntoChat`), so the person sees them before sending.
 
 - `lib/agentChat/useAgentChat.ts` — the conversation (`agent:conversation` and its pushes), prompt
   sending (`agent:prompt`, else typed), approvals (`agent:approval`, else keys), pasted images and
