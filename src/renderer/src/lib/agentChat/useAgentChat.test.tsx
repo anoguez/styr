@@ -161,9 +161,8 @@ describe('useAgentChat', () => {
       })
     )
     expect(html).toContain('Run the tests')
-    expect(html).toContain('yarn test')
-    // Tool calls fold to a line, as on the phone; the edit's row counts its change.
-    expect(html).toContain('aria-label="Bash yarn test, completed"')
+    // Calls in a row fold into one group row, which names its tools and counts the edit's change.
+    expect(html).toContain('aria-label="Bash · Edit, 2 calls, completed"')
     expect(html).toContain('aria-expanded="false"')
     expect(html).toContain('+1')
     expect(html).toContain('<pre')

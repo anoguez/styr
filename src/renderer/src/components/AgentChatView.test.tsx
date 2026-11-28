@@ -155,6 +155,7 @@ describe('agent block list', () => {
         message('m1', 'user', 'Debounce the watcher'),
         message('m2', 'assistant', 'I found **the watcher**.'),
         toolCall('t1', 'Read', 'src/main/watcher.ts'),
+        message('m3', 'assistant', 'Now the tests.'),
         toolCall('t2', 'Bash', 'npm test', 'failed')
       ]
     })

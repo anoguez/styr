@@ -275,7 +275,9 @@ tabs have none. The chat is `AgentBlockList` on either engine, fed by one hook. 
 phone app's chat (`styr-app`, `lib/ui/session/chat/widgets/`), mapped to the desktop's theme tokens:
 the person's prompts in bubbles on the right with a copy button on hover, the agent's replies as
 markdown (`ChatMarkdown`) beside Styr's avatar (`StyrMark`, on the first row of each turn), tool calls as folded bordered rows (a failed one outlined in
-`danger`), "• Working…" while a turn runs, the approval pinned under the conversation as the app's
+`danger`), and two or more calls in a row folded into one group row (`lib/agentChat/toolGroups.ts`:
+"Bash ×4 · Read", the running call's command shown live with a spinner, otherwise how many calls
+and how many failed, and the summed `+N −M` of its edits; it opens to the calls as single rows), "• Working…" while a turn runs, the approval pinned under the conversation as the app's
 card (Deny beside the wider Allow, the CLI's other answers under them), "Jump to latest" once
 scrolled up, and the app's composer: a note on what happens to a message now, a rounded field and a
 round Send button. The conversation fills the tab's width, since a side-docked terminal panel can

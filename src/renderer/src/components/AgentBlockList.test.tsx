@@ -29,6 +29,14 @@ const toolCall = (id: string, state: BlockState, extra: object = {}): StyrBlock 
   kind: 'agent-tool-call',
   payload: { tool: 'Bash', summary: 'npm test', ...extra }
 })
+const diffOf = (parentId: string): StyrBlock => ({
+  ...envelope,
+  id: `d-${parentId}`,
+  parentId,
+  state: 'completed',
+  kind: 'diff',
+  payload: { path: 'a.ts', patch: '@@ -1 +1,2 @@\n-a\n+b\n+c\n', additions: 2, deletions: 1 }
+})
 
 /**
  * Every host element the list draws, its function components called in place, inside one probe
@@ -172,14 +180,15 @@ describe('agent chat interactions', () => {
 
   it('marks every state of a tool call by its shape and opens it on click', () => {
     const states: BlockState[] = ['pending', 'streaming', 'completed', 'failed', 'cancelled']
-    const { elements } = draw({
-      blocks: states.map((state, at) => toolCall(`t${at}`, state, { result: 'Exit code 1' }))
-    })
+    // A message between the calls keeps each one its own row rather than a group.
+    const apart = (extra: object = {}): StyrBlock[] =>
+      states.flatMap((state, at) => [
+        toolCall(`t${at}`, state, extra),
+        message(`m${at}`, 'assistant', 'Next.')
+      ])
+    const { elements } = draw({ blocks: apart({ result: 'Exit code 1' }) })
     const html = renderToStaticMarkup(
-      createElement(AgentBlockList, {
-        ...draw().props,
-        blocks: states.map((state, at) => toolCall(`t${at}`, state))
-      })
+      createElement(AgentBlockList, { ...draw().props, blocks: apart() })
     )
     expect(html.match(/animate-spin/g)).toHaveLength(2)
     expect(html).toContain('✓')
@@ -189,6 +198,30 @@ describe('agent chat interactions', () => {
     const rows = elements.filter((element) => element.props['aria-expanded'] === false)
     expect(rows).toHaveLength(states.length)
     for (const row of rows) click(row)
+  })
+
+  it('folds calls in a row into a group that shows the running call live and opens to them', () => {
+    const running = toolCall('t3', 'streaming', { summary: 'yarn build\nmore' })
+    const blocks = [toolCall('t1', 'completed'), toolCall('t2', 'failed'), running, diffOf('t2')]
+    const html = renderToStaticMarkup(createElement(AgentBlockList, { ...draw().props, blocks }))
+    expect(html).toContain('aria-label="Bash ×3, 3 calls, running"')
+    expect(html).toMatch(/role="status"[^>]*>yarn build</)
+    expect(html).toContain('border-danger')
+    expect(html).toContain('+2')
+    // Folded, the calls themselves are not drawn; a click opens the group to them.
+    expect(html).not.toContain('Bash npm test, failed')
+    const { elements } = draw({ blocks })
+    const group = elements.find((element) => element.props['aria-expanded'] === false)!
+    click(group)
+
+    const done = renderToStaticMarkup(
+      createElement(AgentBlockList, {
+        ...draw().props,
+        blocks: [toolCall('t1', 'completed'), toolCall('t2', 'failed')]
+      })
+    )
+    expect(done).toContain('2 calls')
+    expect(done).toContain('1 failed')
   })
 
   it('stays on the newest row until the person scrolls up', () => {

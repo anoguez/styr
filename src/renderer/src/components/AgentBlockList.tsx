@@ -1,4 +1,11 @@
 import type { ChatImage } from '../lib/agentChat/agentChat.js'
+import {
+  groupToolCalls,
+  isRunning,
+  summarizeToolGroup,
+  type ChatRow,
+  type ToolGroup
+} from '../lib/agentChat/toolGroups.js'
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type {
   AgentMessageBlock,
@@ -132,19 +139,21 @@ export function AgentBlockList({
                 Nothing here yet. Send {label} a message to start.
               </p>
             ) : null}
-            {rows.map((block, at) =>
-              block.kind === 'agent-message' && block.payload.role === 'user' ? (
-                <Message key={block.id} block={block} label={label} />
+            {groupToolCalls(rows).map(({ row, avatar }) =>
+              row.kind === 'agent-message' && row.payload.role === 'user' ? (
+                <Message key={row.id} block={row} label={label} />
               ) : (
                 <AgentRow
-                  key={block.id}
-                  avatar={startsTurn(rows, at)}
-                  pad={block.kind === 'agent-tool-call' ? 'pt-2' : 'pt-1'}
+                  key={row.id}
+                  avatar={avatar}
+                  pad={row.kind === 'agent-message' ? 'pt-1' : 'pt-2'}
                 >
-                  {block.kind === 'agent-message' ? (
-                    <Message block={block} label={label} />
+                  {row.kind === 'agent-message' ? (
+                    <Message block={row} label={label} />
+                  ) : row.kind === 'tool-group' ? (
+                    <ToolCallGroup group={row} diffs={diffs} />
                   ) : (
-                    <ToolCall block={block} diff={diffs.get(block.id)} />
+                    <ToolCall block={row} diff={diffs.get(row.id)} />
                   )}
                 </AgentRow>
               )
@@ -195,8 +204,6 @@ export function AgentBlockList({
     </div>
   )
 }
-
-type ChatRow = AgentMessageBlock | AgentToolCallBlock
 
 const isUserMessage = (block: ChatRow): boolean =>
   block.kind === 'agent-message' && block.payload.role === 'user'
@@ -288,10 +295,6 @@ function Message({ block, label }: { block: AgentMessageBlock; label: string }):
   )
 }
 
-/** A call not finished yet: running, about to, or waiting on the person. */
-const isRunning = (state: AgentToolCallBlock['state']): boolean =>
-  state === 'streaming' || state === 'pending' || state === 'awaiting-input'
-
 /** A tool call's state by a mark of its own shape, so it does not rest on colour. */
 function StateMark({ state }: { state: AgentToolCallBlock['state'] }): ReactNode {
   if (isRunning(state)) {
@@ -369,6 +372,80 @@ function ToolCall({ block, diff }: { block: AgentToolCallBlock; diff?: DiffBlock
               <p className="text-faint text-[13px]">Interrupted</p>
             ) : null}
             {diff ? <Diff patch={diff.payload} /> : null}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * A run of tool calls folded into one row: what tools it holds ("Bash ×4 · Read"), and while one of
+ * them runs, that call's work, live. Opening it lists the calls, each as its own row. A group with a
+ * failed call is outlined in the danger colour and says how many failed.
+ */
+function ToolCallGroup({
+  group,
+  diffs
+}: {
+  group: ToolGroup
+  diffs: { get: (callId: string) => DiffBlock | undefined }
+}): ReactNode {
+  const [open, setOpen] = useState(false)
+  const { label, running, failed, state } = summarizeToolGroup(group.calls)
+  // The group's edits, summed, so the size of a change shows while it is folded.
+  const changes = group.calls.flatMap((call) => diffs.get(call.id) ?? [])
+  const added = changes.reduce((sum, diff) => sum + diff.payload.additions, 0)
+  const removed = changes.reduce((sum, diff) => sum + diff.payload.deletions, 0)
+  const live = running ? (running.payload.summary.split('\n')[0] ?? '') : ''
+  const count = `${group.calls.length} calls`
+  return (
+    <section
+      aria-label={`${label}, ${count}, ${stateWord(state)}`}
+      aria-busy={running ? true : undefined}
+      className="shrink-0 py-0.5"
+    >
+      <div
+        className={`bg-card overflow-hidden rounded-[10px] border ${failed > 0 ? 'border-danger' : 'border-edge'}`}
+      >
+        <button
+          type="button"
+          aria-expanded={open}
+          className="hover:bg-raised/50 flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left"
+          onClick={() => setOpen(!open)}
+        >
+          <StateMark state={state} />
+          <span className="text-ink shrink-0 text-[15px] font-semibold">{label}</span>
+          {running ? (
+            <span
+              role="status"
+              className="text-dim wd-pulse min-w-0 flex-1 truncate font-mono text-[12px]"
+            >
+              {/* With several tools in the group, name the one that is running. */}
+              {label.includes(' · ') ? `${running.payload.tool} ` : ''}
+              {live}
+            </span>
+          ) : (
+            <span className="text-faint min-w-0 flex-1 truncate text-[12.5px]">
+              {count}
+              {failed > 0 ? <span className="text-danger"> · {failed} failed</span> : null}
+            </span>
+          )}
+          {changes.length > 0 ? (
+            <span className="shrink-0 font-mono text-[11px]">
+              <span className="text-col-done">+{added}</span>{' '}
+              <span className="text-danger">−{removed}</span>
+            </span>
+          ) : null}
+          <span className={`text-faint transition-transform ${open ? 'rotate-180' : ''}`}>
+            <ChevronIcon size={16} />
+          </span>
+        </button>
+        {open ? (
+          <div className="border-edge flex flex-col border-t px-2 py-1.5">
+            {group.calls.map((call) => (
+              <ToolCall key={call.id} block={call} diff={diffs.get(call.id)} />
+            ))}
           </div>
         ) : null}
       </div>
