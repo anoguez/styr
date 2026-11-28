@@ -1308,6 +1308,47 @@
         "maxItems": 3
       }
     },
+    "agent:answerQuestion": {
+      "kind": "invoke",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "minItems": 1,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "labels": {
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "other": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              }
+            }
+          }
+        ],
+        "items": false,
+        "minItems": 3,
+        "maxItems": 3
+      }
+    },
     "terminal:write": {
       "kind": "send",
       "params": {
@@ -1448,7 +1489,7 @@
     "terminal:launched": "the session an MCP start_task started",
     "usage:claude": "ProviderUsage",
     "usage:context": "ContextUsage",
-    "agent:conversation": "AgentConversation",
+    "agent:conversation": "AgentConversation; a waiting `question` (AskUserQuestion: { id, questions[] }) is answered with agent:answerQuestion and is never also an `approval`",
     "tasks:activate": "a task id the desktop wants shown",
     "settings:changed": "Settings of the active workspace; { remoteAccess: false } alone when it stopped being shared with remote devices",
     "workspaces:changed": "WorkspaceOverview, shared workspaces only",

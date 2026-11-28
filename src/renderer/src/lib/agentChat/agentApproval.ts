@@ -15,7 +15,22 @@ export function approvalRequest(
   adapter: ConversationAdapter | undefined,
   waiting: string | null
 ): ApprovalRequest | null {
+  // Questions the agent asks (AskUserQuestion): its picker is answered in the terminal for now;
+  // the status's keys must not stand in for it, since Enter there picks an option.
+  // TODO(TASK-0030): draw the question card and answer it over `agent:answerQuestion`.
+  const question = conversation?.question
+  if (question) {
+    const first = question.questions[0]?.question ?? 'The agent has a question for you.'
+    const more = question.questions.length - 1
+    return {
+      prompt: more > 0 ? `${first} (and ${more} more)` : first,
+      options: [],
+      keys: false,
+      inTui: true
+    }
+  }
   const approval = conversation?.approval
+  // An older mod sent AskUserQuestion as a permission request: Allow would leave it unanswered.
   if (approval?.tool && adapter?.asksInTui?.(approval.tool)) {
     // A question, not a permission: Allow/Deny would hang it, so only the terminal answers it.
     return { prompt: approval.prompt, tool: approval.tool, options: [], keys: false, inTui: true }

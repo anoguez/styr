@@ -84,6 +84,27 @@ describe('approvalRequest', () => {
     expect(bash?.options.length).toBeGreaterThan(0)
   })
 
+  it('sends questions the agent asks to the terminal, never answering them by keys', () => {
+    const item = (question: string) => ({ question, header: 'H', multiSelect: false, options: [] })
+    const one = {
+      at: 'a',
+      working: true,
+      messages: [],
+      question: { id: 'q1', questions: [item('Which library?')] }
+    } as AgentConversation
+    expect(approvalRequest(one, undefined, 'Waiting on you')).toEqual({
+      prompt: 'Which library?',
+      options: [],
+      keys: false,
+      inTui: true
+    })
+    const two = {
+      ...one,
+      question: { id: 'q2', questions: [item('Which library?'), item('Where?')] }
+    }
+    expect(approvalRequest(two, undefined, null)?.prompt).toBe('Which library? (and 1 more)')
+  })
+
   it('is null with neither', () => {
     expect(approvalRequest(null, undefined, null)).toBeNull()
     expect(approvalRequest(conversation(), undefined, '')).toBeNull()

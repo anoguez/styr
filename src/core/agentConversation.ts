@@ -63,6 +63,79 @@ export interface AgentConversation {
    * shows it as its approval. Without it a wait is answered by keys in the CLI's TUI.
    */
   approval?: AgentApproval
+  /**
+   * Questions the agent waits on an answer to (Claude Code's AskUserQuestion), which Styr can
+   * answer through the agent's own channel (`agent:answerQuestion`). Never also an `approval`:
+   * the picker is no permission, and Allow would answer none of it.
+   */
+  question?: AgentQuestion
+}
+
+/** One answer a question offers. */
+export interface QuestionOption {
+  label: string
+  description: string
+}
+
+/** One question of an `AgentQuestion`, as the agent asked it; the CLI adds "Other" itself. */
+export interface QuestionItem {
+  question: string
+  /** A chip's few words naming it ("Library"). */
+  header: string
+  /** Several options may be picked. */
+  multiSelect: boolean
+  options: QuestionOption[]
+}
+
+/** Questions the agent asks the person, answered all together. */
+export interface AgentQuestion {
+  id: string
+  questions: QuestionItem[]
+}
+
+/**
+ * The person's answer to one question: the labels picked (one at most unless `multiSelect`), and
+ * what they typed under "Other". A single-select question takes one of the two.
+ */
+export interface QuestionAnswer {
+  labels?: string[]
+  other?: string
+}
+
+/** What `questionAnswers` says when an answer is not one the question takes. */
+export const ANSWER_IN_TERMINAL = 'Answer this one in the terminal.'
+
+/**
+ * The answers as the CLI's tool takes them: each question's text to the label picked, labels
+ * joined by ", " for a multi-select (the TUI's own joining), with "Other"'s text last. Throws
+ * `ANSWER_IN_TERMINAL` for answers the question would not take: one per question, known labels,
+ * one choice for a single-select, something chosen for each.
+ */
+export function questionAnswers(
+  question: AgentQuestion,
+  answers: readonly QuestionAnswer[]
+): Record<string, string> {
+  const refuse = (why: string): never => {
+    throw new Error(`${ANSWER_IN_TERMINAL} (${why})`)
+  }
+  if (answers.length !== question.questions.length) refuse('one answer per question')
+  const out: Record<string, string> = {}
+  question.questions.forEach((item, index) => {
+    const answer = answers[index]!
+    const labels = answer.labels ?? []
+    const other = answer.other?.trim() ?? ''
+    const known = new Set(item.options.map((option) => option.label))
+    if (labels.some((label) => !known.has(label))) refuse(`not an option of "${item.header}"`)
+    if (new Set(labels).size !== labels.length) refuse(`an option picked twice in "${item.header}"`)
+    const picked = labels.length + (other ? 1 : 0)
+    if (picked === 0) refuse(`nothing picked for "${item.header}"`)
+    if (!item.multiSelect && picked > 1) refuse(`"${item.header}" takes one answer`)
+    if (item.question in out) refuse('two questions alike')
+    // In the options' order, as the TUI lists them.
+    const ordered = item.options.map((option) => option.label).filter((l) => labels.includes(l))
+    out[item.question] = [...ordered, ...(other ? [other] : [])].join(', ')
+  })
+  return out
 }
 
 /** How an answer to an approval goes: once, for good (the CLI remembers a rule), or refused. */
@@ -195,6 +268,36 @@ function parseApproval(value: unknown): AgentApproval | undefined {
   }
 }
 
+function parseQuestion(value: unknown): AgentQuestion | undefined {
+  if (!isRecord(value) || typeof value.id !== 'string' || !Array.isArray(value.questions)) {
+    return undefined
+  }
+  const questions: QuestionItem[] = []
+  for (const item of value.questions.slice(0, 4)) {
+    if (!isRecord(item) || typeof item.question !== 'string' || !Array.isArray(item.options)) {
+      return undefined
+    }
+    const options = item.options
+      .slice(0, 8)
+      .filter(isRecord)
+      .filter((option) => typeof option.label === 'string' && option.label !== '')
+      .map((option) => ({
+        label: text(option.label, 200),
+        description: text(option.description, 400)
+      }))
+    // A question with nothing to pick is not one Styr can answer: the terminal does.
+    if (options.length === 0) return undefined
+    questions.push({
+      question: text(item.question, 2_000),
+      header: text(item.header, 40),
+      multiSelect: item.multiSelect === true,
+      options
+    })
+  }
+  if (questions.length === 0) return undefined
+  return { id: value.id.slice(0, 200), questions }
+}
+
 /** A conversation file, or null when it is not one. */
 export function parseAgentConversation(source: string): AgentConversation | null {
   let raw: unknown
@@ -231,6 +334,7 @@ export function parseAgentConversation(source: string): AgentConversation | null
   const working = raw.working === true
   const streaming = working ? text(raw.streaming, MAX_TEXT) : ''
   const approval = parseApproval(raw.approval)
+  const question = parseQuestion(raw.question)
   return {
     at: text(raw.at, 64),
     working,
@@ -238,7 +342,8 @@ export function parseAgentConversation(source: string): AgentConversation | null
     ...(commands ? { commands } : {}),
     ...(raw.promptInbox === true ? { promptInbox: true } : {}),
     ...(streaming.trim() ? { streaming } : {}),
-    ...(approval ? { approval } : {})
+    ...(approval ? { approval } : {}),
+    ...(question ? { question } : {})
   }
 }
 

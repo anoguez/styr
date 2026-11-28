@@ -81,7 +81,8 @@ const BROADCASTS: Record<string, string> = {
   'terminal:launched': 'the session an MCP start_task started',
   'usage:claude': 'ProviderUsage',
   'usage:context': 'ContextUsage',
-  'agent:conversation': 'AgentConversation',
+  'agent:conversation':
+    'AgentConversation; a waiting `question` (AskUserQuestion: { id, questions[] }) is answered with agent:answerQuestion and is never also an `approval`',
   'tasks:activate': 'a task id the desktop wants shown',
   'settings:changed':
     'Settings of the active workspace; { remoteAccess: false } alone when it stopped being shared with remote devices',
