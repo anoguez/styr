@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.47.0](https://github.com/anoguez/styr/compare/v0.46.0...v0.47.0) (2026-11-28)
+
+
+### Features
+
+* detach a terminal tab into its own window ([#277](https://github.com/anoguez/styr/issues/277)) ([ec0f4a7](https://github.com/anoguez/styr/commit/ec0f4a700d6ffb35008212d2937a6aa70d5049b7))
+* draw the agent chat as the phone app's chat ([#299](https://github.com/anoguez/styr/issues/299)) ([572546d](https://github.com/anoguez/styr/commit/572546d0401449f33f20176e33ae65f39e758615))
+
 ## [0.46.0](https://github.com/anoguez/styr/compare/v0.45.0...v0.46.0) (2026-11-28)
 
 
