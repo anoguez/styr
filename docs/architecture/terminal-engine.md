@@ -275,12 +275,22 @@ tabs have none. The chat is `AgentBlockList` on either engine, fed by one hook. 
 phone app's chat (`styr-app`, `lib/ui/session/chat/widgets/`), mapped to the desktop's theme tokens:
 the person's prompts in bubbles on the right with a copy button on hover, the agent's replies as
 markdown (`ChatMarkdown`) beside Styr's avatar (`StyrMark`, on the first row of each turn), tool calls as folded bordered rows (a failed one outlined in
-`danger`), "• Working…" while a turn runs, the approval pinned under the conversation as the app's
+`danger`), and two or more calls in a row folded into one group row (`lib/agentChat/toolGroups.ts`:
+"Bash ×4 · Read", the running call's command shown live with a spinner, otherwise how many calls
+and how many failed, and the summed `+N −M` of its edits; it opens to the calls as single rows), "• Working…" while a turn runs, the approval pinned under the conversation as the app's
 card (Deny beside the wider Allow, the CLI's other answers under them), "Jump to latest" once
 scrolled up, and the app's composer: a note on what happens to a message now, a rounded field and a
-round Send button. The conversation keeps to an 800px column, centred, on a wide tab. The composer
+round Send button. The conversation fills the tab's width, since a side-docked terminal panel can
+be narrow, and the composer has no button for the CLI's own view: the tab's Chat / Terminal switch
+is the way there. The composer
 keeps the `❯` input's keys (`useCommandInput` in `CommandInput.tsx`: history, the slash-command
-menu, Escape to interrupt, image paste), which the native engine's shell input shares.
+menu, Escape to interrupt, image paste), which the native engine's shell input shares. Files dropped on
+the chat (`dropFilesIntoChat`) are quoted in the tab's shell dialect, as the terminal quotes a drop.
+An image, for a CLI that takes images (`pasteImageKey`), becomes a thumbnail card above the field.
+The thumbnail is a `data:` URL, which the CSP allows (`blob:` it does not), and the card can be
+removed. On send its path goes into the CLI's own input as one bracketed paste (`imagesPaste`), so
+Claude Code attaches it, and the prompt is then typed after it. Any other file goes into the field
+at the cursor as its path.
 
 - `lib/agentChat/useAgentChat.ts` — the conversation (`agent:conversation` and its pushes), prompt
   sending (`agent:prompt`, else typed), approvals (`agent:approval`, else keys), pasted images and
@@ -292,13 +302,15 @@ menu, Escape to interrupt, image paste), which the native engine's shell input s
   on, and the terminal is only made `invisible`, so its scrollback, scroll position and PTY stay.
   The chat stays mounted once shown and keeps its own scroll. Whichever view shows takes focus.
 - **Styr Terminal**: `NativeTerminalView` takes the switch as `chat`; agent mode is
-  `ready && chat && !tuiRequested`. "<agent> view" and "Answer in <agent>" turn the switch off.
+  `ready && chat && !tuiRequested`. "Answer in <agent>" turns the switch off.
 - What the chat cannot draw says so with **Switch to Terminal** (`chatGap`: no adapter, the agent
   not running, no conversation yet). A question the agent asks (the file's `question`, see
   Questions above; or, from an older mod, an approval whose tool `ConversationAdapter.asksInTui`
   names) offers only "Answer in Terminal": Allow/Deny or the status's keys would answer nothing, or
   pick an option. Drawing the question card in the chat is a follow-up to TASK-0030.
-- The switch is remembered per tab (`lib/agentChat/agentView.ts`, by session id, in memory and
+- The switch is remembered per task (`lib/agentChat/agentView.ts`, `agentViewKey`: workspace and
+  task id, so a tab restored after a relaunch or a task's new run opens as it was left; session id
+  for a tab without a task), in memory and
   `localStorage`); a tab never switched opens as Settings → Folders & terminal → "Open agent tabs
   in" says (`agentTabView`, global, default Terminal). `terminalChat` (⌘⇧M / Ctrl+Shift+M; Ctrl+Shift+T is New tab inside a terminal where `mod` is Ctrl)
   toggles it.

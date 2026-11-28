@@ -1,3 +1,4 @@
+import type { PanelHeaderProps } from './PanelGrid.js'
 import { useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   DndContext,
@@ -177,7 +178,8 @@ export function TerminalPanel({
   onOpenTaskById,
   onAskReview,
   onAskFork,
-  onOpenTask
+  onOpenTask,
+  headerProps
 }: {
   /** The tabs of the strip: detached ones are drawn in their own windows instead. */
   sessions: TerminalSessionInfo[]
@@ -214,6 +216,8 @@ export function TerminalPanel({
   onAskFork: (sessionId: string, question: string) => Promise<boolean>
   /** Open a task in the task dialog, from its activity panel. */
   onOpenTask: (task: Task) => void
+  /** Drag the panel by its header, or right-click it for the edges (`usePanelMove`). */
+  headerProps?: PanelHeaderProps
 }): ReactNode {
   const runtimes = useTerminalRuntimes(sessions)
   const [fullscreen, setFullscreen] = useState<ReadonlySet<string>>(new Set())
@@ -279,9 +283,12 @@ export function TerminalPanel({
     <section
       data-terminal-panel
       tabIndex={-1}
-      className="flex h-full min-h-0 flex-col border-t border-edge-strong bg-chrome outline-none"
+      className="flex h-full min-h-0 flex-col bg-chrome outline-none"
     >
-      <header className="flex h-[42px] items-stretch border-b border-edge bg-[color-mix(in_oklab,var(--color-chrome)_70%,black)]">
+      <header
+        {...headerProps}
+        className="flex h-[42px] select-none items-stretch border-b border-edge bg-[color-mix(in_oklab,var(--color-chrome)_70%,black)]"
+      >
         <div className="flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto overflow-y-hidden px-2">
           <DndContext
             sensors={sensors}

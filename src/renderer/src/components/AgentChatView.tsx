@@ -1,11 +1,21 @@
-import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type MutableRefObject,
+  type ReactNode
+} from 'react'
+import { syntaxFor, type ShellDialect } from '@core/shell.js'
 import { AGENT_PROVIDER_LABELS } from '@core/types.js'
 import type { AgentProviderId } from '@core/providers/types.js'
+import { isImageFile } from '../lib/agentChat/agentChat.js'
 import {
   useAgentChat,
   useAgentConversation,
   type AgentChat
 } from '../lib/agentChat/useAgentChat.js'
+import { droppedText } from '../lib/nativeTerminal/pointerMath.js'
 import { AgentBlockList } from './AgentBlockList.js'
 import type { TerminalHandle } from './TerminalView.js'
 
@@ -31,6 +41,46 @@ export function chatGap(
 }
 
 /**
+ * Files dropped on the chat. An image becomes a card in the composer (`attachImages`) when the CLI
+ * takes images; any other file, or every file for a CLI that takes none, goes into the message
+ * field at the cursor as its path. Paths are quoted in the tab's shell dialect, as the terminal
+ * quotes a drop. Nothing happens without a field to fill.
+ */
+export function dropFilesIntoChat(
+  event: Pick<DragEvent, 'dataTransfer' | 'preventDefault'>,
+  input: HTMLTextAreaElement | null,
+  dialect: ShellDialect | undefined,
+  attachImages?: (images: { name: string; quoted: string; file: Blob }[]) => void,
+  pathsFor: (files: File[]) => string[] = (files) => window.api.terminal.pathsForFiles(files)
+): void {
+  const files = Array.from(event.dataTransfer.files)
+  if (files.length === 0) return
+  event.preventDefault()
+  if (!input) return
+  const quote = (path: string): string => syntaxFor(dialect).quote(path)
+  const images: { name: string; quoted: string; file: Blob }[] = []
+  const others: string[] = []
+  for (const file of files) {
+    const [path] = pathsFor([file])
+    if (!path) continue
+    if (attachImages && isImageFile(file))
+      images.push({ name: file.name, quoted: quote(path), file })
+    else others.push(path)
+  }
+  if (images.length > 0) attachImages?.(images)
+  input.focus()
+  // insertText keeps the field's undo and fires its input event, so React sees the change.
+  if (others.length > 0) document.execCommand('insertText', false, droppedText(others, quote))
+}
+
+/** A drag carrying files may drop on the chat (it copies their paths, it moves nothing). */
+function allowFileDrop(event: DragEvent): void {
+  if (!event.dataTransfer.types.includes('Files')) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+}
+
+/**
  * The xterm.js engine's chat for an agent tab: it lies over the terminal, which stays mounted
  * underneath — only hidden (`onShownChange`), so its scrollback, scroll position and PTY are
  * untouched. It draws the phone app's chat with `AgentBlockList`, fed by `useAgentChat`, the hook the native engine uses
@@ -44,7 +94,8 @@ export function XtermAgentChat({
   active,
   handle,
   onChatChange,
-  onShownChange
+  onShownChange,
+  dialect
 }: {
   sessionId: string
   run: AgentRun
@@ -56,6 +107,8 @@ export function XtermAgentChat({
   onChatChange: (on: boolean) => void
   /** The chat started (true) or stopped covering the terminal, which hides beneath it. */
   onShownChange: (shown: boolean) => void
+  /** The tab's shell dialect, which quotes a dropped file's path. */
+  dialect?: ShellDialect
 }): ReactNode {
   const agent = useAgentChat({
     sessionId,
@@ -99,6 +152,7 @@ export function XtermAgentChat({
             agent={agent}
             run={run}
             inputRef={inputRef}
+            dialect={dialect}
             onShowTerminal={() => onChatChange(false)}
           />
         </div>
@@ -113,11 +167,14 @@ export function AgentChatPane({
   agent,
   run,
   inputRef,
+  dialect,
   onShowTerminal
 }: {
   agent: AgentChat
   run: AgentRun
   inputRef: MutableRefObject<HTMLTextAreaElement | null>
+  /** The tab's shell dialect, which quotes a dropped file's path. */
+  dialect?: ShellDialect
   onShowTerminal: () => void
 }): ReactNode {
   const label = AGENT_PROVIDER_LABELS[run.provider]
@@ -127,6 +184,10 @@ export function AgentChatPane({
       role="region"
       aria-label={`${label} chat`}
       className="bg-surface text-ink h-full w-full overflow-hidden"
+      onDragOver={allowFileDrop}
+      onDrop={(event) =>
+        dropFilesIntoChat(event, gap ? null : inputRef.current, dialect, agent.attachImages)
+      }
     >
       {gap ? (
         <ChatGap text={gap} label={label} onShowTerminal={onShowTerminal} />
@@ -140,6 +201,8 @@ export function AgentChatPane({
           history={agent.history}
           commands={agent.conversation?.commands}
           attachedImages={agent.attachedImages}
+          images={agent.images}
+          onRemoveImage={agent.removeImage}
           onSubmit={agent.onSubmit}
           onInterrupt={agent.onInterrupt}
           onAnswer={agent.onAnswer}

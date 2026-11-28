@@ -24,7 +24,7 @@ import { ACTIVITY_RESERVE } from './TerminalActivity.js'
 import { ContextBar, agentButton, iconProps, quietButton } from './TerminalContextBar.js'
 import { ChatSwitch } from './ChatSwitch.js'
 import type { AgentRun } from './AgentChatView.js'
-import { agentViewFor, rememberAgentView } from '../lib/agentChat/agentView.js'
+import { agentViewFor, agentViewKey, rememberAgentView } from '../lib/agentChat/agentView.js'
 import { ActionsMenu, type MenuItem } from './TerminalMenu.js'
 import { TerminalBlocks, type ActionBlock, type BlockActions } from './TerminalBlocks.js'
 import type { BlockLayout } from '../lib/blockTracker.js'
@@ -249,15 +249,17 @@ export function TerminalSurface({
   const [hoverLine, setHoverLine] = useState<number | null>(null)
   const [stickyBlock, setStickyBlock] = useState<string | null>(null)
   const [blockMenu, setBlockMenu] = useState<string | null>(null)
-  // The tab's Chat switch, remembered per tab; a tab never switched opens as Settings says.
-  const [view, setView] = useState<AgentTabView>(() => agentViewFor(session.id, agentTabView))
+  // The tab's Chat switch, remembered per task (or per tab without one) across relaunches; a tab
+  // never switched opens as Settings says.
+  const viewKey = agentViewKey(session)
+  const [view, setView] = useState<AgentTabView>(() => agentViewFor(viewKey, agentTabView))
   const setChat = useCallback(
     (on: boolean) => {
       const next: AgentTabView = on ? 'chat' : 'terminal'
-      rememberAgentView(session.id, next)
+      rememberAgentView(viewKey, next)
       setView(next)
     },
-    [session.id]
+    [viewKey]
   )
 
   const cwd = runtime?.cwd || session.cwd

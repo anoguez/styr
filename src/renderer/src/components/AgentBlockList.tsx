@@ -1,3 +1,11 @@
+import type { ChatImage } from '../lib/agentChat/agentChat.js'
+import {
+  groupToolCalls,
+  isRunning,
+  summarizeToolGroup,
+  type ChatRow,
+  type ToolGroup
+} from '../lib/agentChat/toolGroups.js'
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type {
   AgentMessageBlock,
@@ -18,8 +26,8 @@ const DIFF_PREVIEW = 16
 /** How far (px) the person scrolls up before "Jump to latest" shows, as on the phone. */
 const PILL_THRESHOLD = 240
 
-/** The conversation's column: readable on a wide monitor, centred, the phone's gutters. */
-const COLUMN = 'mx-auto w-full max-w-[800px] px-4'
+/** The conversation's column: the tab's full width (a side-docked panel can be narrow), the phone's gutters. */
+const COLUMN = 'w-full px-4'
 
 type Patch = Pick<DiffBlock['payload'], 'patch' | 'additions' | 'deletions'>
 
@@ -63,6 +71,8 @@ export function AgentBlockList({
   history,
   commands,
   attachedImages = 0,
+  images = NO_IMAGES,
+  onRemoveImage,
   onSubmit,
   onInterrupt,
   onAnswer,
@@ -81,6 +91,9 @@ export function AgentBlockList({
   commands?: AgentCommand[]
   /** Images pasted into the CLI's own input, which go with the next prompt. */
   attachedImages?: number
+  /** Images dropped on the chat, drawn as cards above the field until the next prompt. */
+  images?: ChatImage[]
+  onRemoveImage?: (id: string) => void
   /** A prompt (or `/command`) as typed. */
   onSubmit: (text: string) => void
   onInterrupt: () => void
@@ -126,19 +139,21 @@ export function AgentBlockList({
                 Nothing here yet. Send {label} a message to start.
               </p>
             ) : null}
-            {rows.map((block, at) =>
-              block.kind === 'agent-message' && block.payload.role === 'user' ? (
-                <Message key={block.id} block={block} label={label} />
+            {groupToolCalls(rows).map(({ row, avatar }) =>
+              row.kind === 'agent-message' && row.payload.role === 'user' ? (
+                <Message key={row.id} block={row} label={label} />
               ) : (
                 <AgentRow
-                  key={block.id}
-                  avatar={startsTurn(rows, at)}
-                  pad={block.kind === 'agent-tool-call' ? 'pt-2' : 'pt-1'}
+                  key={row.id}
+                  avatar={avatar}
+                  pad={row.kind === 'agent-message' ? 'pt-1' : 'pt-2'}
                 >
-                  {block.kind === 'agent-message' ? (
-                    <Message block={block} label={label} />
+                  {row.kind === 'agent-message' ? (
+                    <Message block={row} label={label} />
+                  ) : row.kind === 'tool-group' ? (
+                    <ToolCallGroup group={row} diffs={diffs} />
                   ) : (
-                    <ToolCall block={block} diff={diffs.get(block.id)} />
+                    <ToolCall block={row} diff={diffs.get(row.id)} />
                   )}
                 </AgentRow>
               )
@@ -177,19 +192,18 @@ export function AgentBlockList({
         working={working}
         question={approval?.inTui ?? false}
         attachedImages={attachedImages}
+        images={images}
+        onRemoveImage={onRemoveImage}
         inputRef={inputRef}
         history={history}
         commands={commands}
         onSubmit={onSubmit}
         onInterrupt={onInterrupt}
         onPasteImage={onPasteImage}
-        onShowTui={onShowTui}
       />
     </div>
   )
 }
-
-type ChatRow = AgentMessageBlock | AgentToolCallBlock
 
 const isUserMessage = (block: ChatRow): boolean =>
   block.kind === 'agent-message' && block.payload.role === 'user'
@@ -281,10 +295,6 @@ function Message({ block, label }: { block: AgentMessageBlock; label: string }):
   )
 }
 
-/** A call not finished yet: running, about to, or waiting on the person. */
-const isRunning = (state: AgentToolCallBlock['state']): boolean =>
-  state === 'streaming' || state === 'pending' || state === 'awaiting-input'
-
 /** A tool call's state by a mark of its own shape, so it does not rest on colour. */
 function StateMark({ state }: { state: AgentToolCallBlock['state'] }): ReactNode {
   if (isRunning(state)) {
@@ -362,6 +372,80 @@ function ToolCall({ block, diff }: { block: AgentToolCallBlock; diff?: DiffBlock
               <p className="text-faint text-[13px]">Interrupted</p>
             ) : null}
             {diff ? <Diff patch={diff.payload} /> : null}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * A run of tool calls folded into one row: what tools it holds ("Bash ×4 · Read"), and while one of
+ * them runs, that call's work, live. Opening it lists the calls, each as its own row. A group with a
+ * failed call is outlined in the danger colour and says how many failed.
+ */
+function ToolCallGroup({
+  group,
+  diffs
+}: {
+  group: ToolGroup
+  diffs: { get: (callId: string) => DiffBlock | undefined }
+}): ReactNode {
+  const [open, setOpen] = useState(false)
+  const { label, running, failed, state } = summarizeToolGroup(group.calls)
+  // The group's edits, summed, so the size of a change shows while it is folded.
+  const changes = group.calls.flatMap((call) => diffs.get(call.id) ?? [])
+  const added = changes.reduce((sum, diff) => sum + diff.payload.additions, 0)
+  const removed = changes.reduce((sum, diff) => sum + diff.payload.deletions, 0)
+  const live = running ? (running.payload.summary.split('\n')[0] ?? '') : ''
+  const count = `${group.calls.length} calls`
+  return (
+    <section
+      aria-label={`${label}, ${count}, ${stateWord(state)}`}
+      aria-busy={running ? true : undefined}
+      className="shrink-0 py-0.5"
+    >
+      <div
+        className={`bg-card overflow-hidden rounded-[10px] border ${failed > 0 ? 'border-danger' : 'border-edge'}`}
+      >
+        <button
+          type="button"
+          aria-expanded={open}
+          className="hover:bg-raised/50 flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left"
+          onClick={() => setOpen(!open)}
+        >
+          <StateMark state={state} />
+          <span className="text-ink shrink-0 text-[15px] font-semibold">{label}</span>
+          {running ? (
+            <span
+              role="status"
+              className="text-dim wd-pulse min-w-0 flex-1 truncate font-mono text-[12px]"
+            >
+              {/* With several tools in the group, name the one that is running. */}
+              {label.includes(' · ') ? `${running.payload.tool} ` : ''}
+              {live}
+            </span>
+          ) : (
+            <span className="text-faint min-w-0 flex-1 truncate text-[12.5px]">
+              {count}
+              {failed > 0 ? <span className="text-danger"> · {failed} failed</span> : null}
+            </span>
+          )}
+          {changes.length > 0 ? (
+            <span className="shrink-0 font-mono text-[11px]">
+              <span className="text-col-done">+{added}</span>{' '}
+              <span className="text-danger">−{removed}</span>
+            </span>
+          ) : null}
+          <span className={`text-faint transition-transform ${open ? 'rotate-180' : ''}`}>
+            <ChevronIcon size={16} />
+          </span>
+        </button>
+        {open ? (
+          <div className="border-edge flex flex-col border-t px-2 py-1.5">
+            {group.calls.map((call) => (
+              <ToolCall key={call.id} block={call} diff={diffs.get(call.id)} />
+            ))}
           </div>
         ) : null}
       </div>
@@ -601,6 +685,46 @@ function Approval({
   )
 }
 
+const NO_IMAGES: ChatImage[] = []
+
+/** The images going with the next prompt, as thumbnails with a way to take one back. */
+function ImageCards({
+  images,
+  onRemove
+}: {
+  images: ChatImage[]
+  onRemove?: (id: string) => void
+}): ReactNode {
+  return (
+    <ul aria-label="Images to send" className="flex flex-wrap gap-2 pb-2">
+      {images.map((image) => (
+        <li
+          key={image.id}
+          title={image.name}
+          className="group border-edge-strong bg-card relative size-16 shrink-0 overflow-hidden rounded-[10px] border"
+        >
+          {image.preview ? (
+            <img src={image.preview} alt={image.name} className="size-full object-cover" />
+          ) : (
+            <span className="text-faint grid size-full place-items-center text-[10px]">…</span>
+          )}
+          {onRemove ? (
+            <button
+              type="button"
+              aria-label={`Remove ${image.name}`}
+              title="Remove"
+              className="bg-panel/90 text-dim hover:text-ink absolute top-1 right-1 grid size-5 place-items-center rounded-full text-[11px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              onClick={() => onRemove(image.id)}
+            >
+              ✕
+            </button>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 /**
  * The phone's composer: a note on what happens to a message now, a rounded field and a round Send
  * button. Enter sends and Shift+Enter breaks the line; ↑ steps back through history, `/` opens the
@@ -611,26 +735,28 @@ function Composer({
   working,
   question,
   attachedImages,
+  images,
+  onRemoveImage,
   inputRef,
   history,
   commands,
   onSubmit,
   onInterrupt,
-  onPasteImage,
-  onShowTui
+  onPasteImage
 }: {
   label: string
   working: boolean
   /** The agent asked a question only its own interface answers. */
   question: boolean
   attachedImages: number
+  images: ChatImage[]
+  onRemoveImage?: (id: string) => void
   inputRef: RefObject<HTMLTextAreaElement | null>
   history: string[]
   commands?: AgentCommand[]
   onSubmit: (text: string) => void
   onInterrupt: () => void
   onPasteImage?: () => void
-  onShowTui: () => void
 }): ReactNode {
   const input = useCommandInput({
     inputRef,
@@ -650,34 +776,30 @@ function Composer({
   return (
     <div className="border-edge bg-chrome shrink-0 border-t">
       <div className={`${COLUMN} pt-2 pb-3`}>
-        <div className="text-dim flex min-h-6 items-center gap-1.5 pb-1.5 text-[13px]">
-          {note ? (
-            <span role="status" className="min-w-0 truncate">
-              {note}
-            </span>
-          ) : null}
-          {attachedImages > 0 ? (
-            <span className="min-w-0 truncate">
-              {note ? '· ' : ''}
-              {attachedImages === 1 ? 'An image' : `${attachedImages} images`} in {label}&apos;s
-              input, sent with your next prompt
-            </span>
-          ) : null}
-          <span className="flex-1" />
-          {working ? (
-            <button type="button" className={`${quiet} h-6 shrink-0`} onClick={onInterrupt}>
-              Interrupt <span className="text-faint font-mono text-[10px]">esc</span>
-            </button>
-          ) : null}
-          <button
-            type="button"
-            title={`Show ${label}'s own interface`}
-            className={`${quiet} h-6 shrink-0`}
-            onClick={onShowTui}
-          >
-            {label} view
-          </button>
-        </div>
+        {/* Only drawn when it has something to say, so an idle composer has no gap above it. */}
+        {note || attachedImages > 0 || working ? (
+          <div className="text-dim flex min-h-6 items-center gap-1.5 pb-1.5 text-[13px]">
+            {note ? (
+              <span role="status" className="min-w-0 truncate">
+                {note}
+              </span>
+            ) : null}
+            {attachedImages > 0 ? (
+              <span className="min-w-0 truncate">
+                {note ? '· ' : ''}
+                {attachedImages === 1 ? 'An image' : `${attachedImages} images`} in {label}&apos;s
+                input, sent with your next prompt
+              </span>
+            ) : null}
+            <span className="flex-1" />
+            {working ? (
+              <button type="button" className={`${quiet} h-6 shrink-0`} onClick={onInterrupt}>
+                Interrupt <span className="text-faint font-mono text-[10px]">esc</span>
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {images.length > 0 ? <ImageCards images={images} onRemove={onRemoveImage} /> : null}
         <div className="flex items-end gap-2">
           <div className="relative min-w-0 flex-1">
             {choice ? <CommandMenu commands={matches} picked={choice} onPick={input.pick} /> : null}

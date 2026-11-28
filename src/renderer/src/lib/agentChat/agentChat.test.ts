@@ -3,6 +3,8 @@ import type { AgentConversation, ApprovalOption } from '@core/agentConversation.
 import {
   answerApproval,
   commandSettled,
+  imagesPaste,
+  isImageFile,
   sendChatPrompt,
   watchConversation,
   type AgentChatPort
@@ -176,5 +178,18 @@ describe('commandSettled', () => {
   it('settles once a turn starts or a message is added', () => {
     expect(commandSettled(sent, conversation({ at: 'b', working: true }))).toBe(true)
     expect(commandSettled(sent, conversation({ at: 'b', messages: [message] }))).toBe(true)
+  })
+})
+
+describe('images dropped on the chat', () => {
+  it('tells an image from another file', () => {
+    expect(isImageFile({ type: 'image/png' })).toBe(true)
+    expect(isImageFile({ type: 'text/plain' })).toBe(false)
+  })
+
+  it('pastes their quoted paths as one bracketed paste, as a terminal drop does', () => {
+    expect(imagesPaste([{ quoted: "'/a.png'" }, { quoted: "'/b c.png'" }])).toBe(
+      "\x1b[200~'/a.png' '/b c.png' \x1b[201~"
+    )
   })
 })

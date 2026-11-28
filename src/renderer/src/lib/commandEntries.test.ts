@@ -33,6 +33,8 @@ function source(overrides: Partial<PaletteSource> = {}): PaletteSource {
     workspaceNames: new Map([['default', 'Default']]),
     terminalOpen: false,
     agentsOpen: true,
+    terminalDock: 'bottom',
+    agentsDock: 'right',
     autoRunOn: false,
     ...overrides
   }
@@ -47,6 +49,8 @@ function actions(): PaletteActions {
     launchAgent: vi.fn(),
     activateTask: vi.fn(),
     selectSession: vi.fn(),
+    movePanel: vi.fn(),
+    resetPanels: vi.fn(),
     checkMergedWork: vi.fn()
   }
 }
@@ -228,5 +232,21 @@ describe('buildCommandEntries', () => {
     const act = actions()
     byId(buildCommandEntries(source(), act), 'action:checkMerged')?.run()
     expect(act.checkMergedWork).toHaveBeenCalled()
+  })
+
+  it('offers to move each panel to every edge but the one it is on', () => {
+    const act = actions()
+    const entries = buildCommandEntries(source({ terminalDock: 'right' }), act)
+    const moves = entries.filter((entry) => entry.id.startsWith('panel:terminal:'))
+    expect(moves.map((entry) => entry.id)).toEqual([
+      'panel:terminal:left',
+      'panel:terminal:top',
+      'panel:terminal:bottom'
+    ])
+    expect(byId(entries, 'panel:agents:right')).toBeUndefined()
+    byId(entries, 'panel:agents:left')?.run()
+    expect(act.movePanel).toHaveBeenCalledWith('agents', 'left')
+    byId(entries, 'panel:reset')?.run()
+    expect(act.resetPanels).toHaveBeenCalled()
   })
 })

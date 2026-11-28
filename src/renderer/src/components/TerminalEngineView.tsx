@@ -143,6 +143,7 @@ export function TerminalEngineView({
               chat={chat}
               active={props.active}
               handle={props.handle}
+              dialect={props.dialect}
               onChatChange={onChatChange}
               onShownChange={setChatShown}
             />

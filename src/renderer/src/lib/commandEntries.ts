@@ -11,6 +11,7 @@ import {
   type WorkspaceOverview
 } from '@core/types.js'
 import type { AgentRow } from './agentRows.js'
+import { DOCKS, DOCK_LABELS, PANEL_LABELS, type Dock, type PanelId } from './panelLayout.js'
 import type { CommandEntry } from '../components/CommandPalette.js'
 import { SECTIONS } from '../components/settings/sections.js'
 import type { AppShellAction } from './appShell.js'
@@ -34,6 +35,9 @@ export interface PaletteSource {
   workspaceNames: ReadonlyMap<string, string>
   terminalOpen: boolean
   agentsOpen: boolean
+  /** Where the panels sit now: the palette offers the other edges. */
+  terminalDock: Dock
+  agentsDock: Dock
   autoRunOn: boolean
   /** The running version of a packaged build; absent in a dev build, which has no What's new. */
   whatsNewVersion?: string
@@ -48,6 +52,8 @@ export interface PaletteActions {
   launchAgent: (taskId: string) => void
   activateTask: (taskId: string) => void
   selectSession: (id: string) => void
+  movePanel: (panel: PanelId, dock: Dock) => void
+  resetPanels: () => void
   /** Fetch `origin` and move In Review work whose PR was merged to Done. */
   checkMergedWork: () => void
 }
@@ -129,6 +135,28 @@ export function buildCommandEntries(
       run: () => dispatch({ type: 'whatsNew', request: { mode: 'installed' } })
     })
   }
+  const docks: Record<PanelId, Dock> = { terminal: source.terminalDock, agents: source.agentsDock }
+  for (const panel of ['terminal', 'agents'] as const) {
+    for (const dock of DOCKS) {
+      if (dock === docks[panel]) continue
+      entries.push({
+        id: `panel:${panel}:${dock}`,
+        label: `Move ${PANEL_LABELS[panel]} to the ${DOCK_LABELS[dock]}`,
+        group: 'Actions',
+        mode: 'command',
+        keywords: 'panel layout dock position move side left right top bottom',
+        run: () => actions.movePanel(panel, dock)
+      })
+    }
+  }
+  entries.push({
+    id: 'panel:reset',
+    label: 'Reset panel layout',
+    group: 'Actions',
+    mode: 'command',
+    keywords: 'panel layout dock position default terminal agents sidebar size',
+    run: () => actions.resetPanels()
+  })
   entries.push({
     id: 'view:setup',
     label: 'Quick setup…',
