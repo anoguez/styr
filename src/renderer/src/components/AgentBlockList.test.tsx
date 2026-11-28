@@ -142,6 +142,15 @@ describe('agent chat interactions', () => {
     )
   })
 
+  it('draws no status row above an idle composer', () => {
+    const { elements } = draw()
+    expect(elements.some((element) => String(element.props.className).includes('pb-1.5'))).toBe(
+      false
+    )
+    const busy = draw({ working: true }).elements
+    expect(busy.some((element) => String(element.props.className).includes('pb-1.5'))).toBe(true)
+  })
+
   it('keeps Send off until something is typed, and sends nothing empty', () => {
     const { elements, props } = draw()
     const send = button(elements, 'Send')

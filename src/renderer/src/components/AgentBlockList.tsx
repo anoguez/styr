@@ -647,26 +647,29 @@ function Composer({
   return (
     <div className="border-edge bg-chrome shrink-0 border-t">
       <div className={`${COLUMN} pt-2 pb-3`}>
-        <div className="text-dim flex min-h-6 items-center gap-1.5 pb-1.5 text-[13px]">
-          {note ? (
-            <span role="status" className="min-w-0 truncate">
-              {note}
-            </span>
-          ) : null}
-          {attachedImages > 0 ? (
-            <span className="min-w-0 truncate">
-              {note ? '· ' : ''}
-              {attachedImages === 1 ? 'An image' : `${attachedImages} images`} in {label}&apos;s
-              input, sent with your next prompt
-            </span>
-          ) : null}
-          <span className="flex-1" />
-          {working ? (
-            <button type="button" className={`${quiet} h-6 shrink-0`} onClick={onInterrupt}>
-              Interrupt <span className="text-faint font-mono text-[10px]">esc</span>
-            </button>
-          ) : null}
-        </div>
+        {/* Only drawn when it has something to say, so an idle composer has no gap above it. */}
+        {note || attachedImages > 0 || working ? (
+          <div className="text-dim flex min-h-6 items-center gap-1.5 pb-1.5 text-[13px]">
+            {note ? (
+              <span role="status" className="min-w-0 truncate">
+                {note}
+              </span>
+            ) : null}
+            {attachedImages > 0 ? (
+              <span className="min-w-0 truncate">
+                {note ? '· ' : ''}
+                {attachedImages === 1 ? 'An image' : `${attachedImages} images`} in {label}&apos;s
+                input, sent with your next prompt
+              </span>
+            ) : null}
+            <span className="flex-1" />
+            {working ? (
+              <button type="button" className={`${quiet} h-6 shrink-0`} onClick={onInterrupt}>
+                Interrupt <span className="text-faint font-mono text-[10px]">esc</span>
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex items-end gap-2">
           <div className="relative min-w-0 flex-1">
             {choice ? <CommandMenu commands={matches} picked={choice} onPick={input.pick} /> : null}
