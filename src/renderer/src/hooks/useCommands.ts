@@ -43,7 +43,10 @@ export function useCommands({
   autoRun: { on: boolean; setOn: (on: boolean) => void }
   /** What the palette lists, apart from the open tabs and Auto-run, which come from above. */
   palette: Omit<PaletteSource, 'sessions' | 'autoRunOn'>
-  actions: Pick<PaletteActions, 'switchWorkspace' | 'archiveTask' | 'launchAgent' | 'activateTask'>
+  actions: Pick<
+    PaletteActions,
+    'switchWorkspace' | 'archiveTask' | 'launchAgent' | 'activateTask' | 'movePanel' | 'resetPanels'
+  >
 }): { runCommand: (command: ShortcutCommand) => void; entries: CommandEntry[] } {
   const { sessions, strip, activeSession, toggleTerminal, select, close, detach } = terminals
   const { on: autoRunOn, setOn: setAutoOn } = autoRun
@@ -129,9 +132,12 @@ export function useCommands({
     workspaceNames,
     terminalOpen,
     agentsOpen,
+    terminalDock,
+    agentsDock,
     whatsNewVersion
   } = palette
-  const { switchWorkspace, archiveTask, launchAgent, activateTask } = actions
+  const { switchWorkspace, archiveTask, launchAgent, activateTask, movePanel, resetPanels } =
+    actions
   const entries = useMemo(
     () =>
       buildCommandEntries(
@@ -150,6 +156,8 @@ export function useCommands({
           workspaceNames,
           terminalOpen,
           agentsOpen,
+          terminalDock,
+          agentsDock,
           autoRunOn,
           whatsNewVersion
         },
@@ -161,6 +169,8 @@ export function useCommands({
           launchAgent,
           activateTask,
           selectSession: select,
+          movePanel,
+          resetPanels,
           checkMergedWork: () => void window.api.tasks.checkMerged()
         }
       ),
@@ -179,6 +189,8 @@ export function useCommands({
       workspaceNames,
       terminalOpen,
       agentsOpen,
+      terminalDock,
+      agentsDock,
       autoRunOn,
       whatsNewVersion,
       dispatch,
@@ -187,6 +199,8 @@ export function useCommands({
       archiveTask,
       launchAgent,
       activateTask,
+      movePanel,
+      resetPanels,
       select
     ]
   )

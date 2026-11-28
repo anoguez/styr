@@ -293,8 +293,33 @@ double-click-to-zoom on that part of the title bar.
 symbol characters like ⚙ render at wildly different weights across fonts and were nearly invisible
 at 11px.
 
-The terminal opens at `TERMINAL_OPEN_RATIO` of the window height, but `manuallyResized` in `App`
-latches on the first drag so a user's chosen height is never reset by a later toggle.
+## Panel layout
+
+The terminal panel and the agents sidebar each dock to any edge — left, right, top or bottom — and
+resize by the handle on their inner edge (double-click it for the default size). The model is pure,
+in `lib/panelLayout.ts`; `hooks/usePanelLayout.ts` remembers it; `components/PanelGrid.tsx` draws it.
+
+- **Nesting.** One panel is `outer` and spans its whole edge; the other docks against the board
+  alone. The panel moved last goes inside, as in VS Code: with the terminal on the left, the agents
+  moved to the bottom span only the width beside it, and the terminal keeps the full height.
+- **Never remount.** `PanelGrid` is one CSS grid with a fixed DOM order (board, terminal handle,
+  terminal, agents handle, agents). Only `panelGrid`'s template changes with the edges and the
+  nesting, and a closed panel keeps zero-size tracks, so moving the terminal never remounts
+  `TerminalView`.
+- **Moving.** Drag a panel by its header, anywhere but its controls and tabs, and drop near an
+  edge. `usePanelMove` picks the nearest edge as a share of the area
+  (`dropDockAt`), and `PanelDropOverlay` shows where the panel will land. Escape cancels the drag.
+  Right-clicking the header opens `PanelMenu` with the edges. The palette
+  has "Move terminal / agents sidebar to the …" and "Reset panel layout".
+- **Sizes.** A size is in pixels along the dock's axis. It carries over when a panel moves along
+  the same axis and resets to the default when the axis changes. If you never resized a panel, the
+  terminal takes 45% of its room and the sidebar a fixed width. Every size is clamped so the panel
+  keeps its floor and leaves `MIN_CONTENT_SIZE` for the board. A drag holds the size in
+  `PanelGrid` and saves it once, on release.
+- **Per workspace, per window.** The layout is saved in `localStorage` under
+  `styr:panelLayout:<workspace id>`, not in the workspace's `settings.json`. It describes how this
+  window is arranged, and a remote workspace's server must not move every client's panels.
+  `e2e/panels.e2e.ts` checks that it survives a relaunch.
 
 ## App shell
 

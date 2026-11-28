@@ -1,3 +1,4 @@
+import type { PanelHeaderProps } from './PanelGrid.js'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { AGENT_STATE_LABELS } from '@core/agentState.js'
 import { AGENT_TONE } from '../lib/agentTone.js'
@@ -160,7 +161,8 @@ export function AgentsSidebar({
   onOpenTask,
   onShowChanges,
   onRemove,
-  onClose
+  onClose,
+  headerProps
 }: {
   rows: AgentRow[]
   /** The task owning the active terminal tab; its row stays highlighted. */
@@ -171,12 +173,17 @@ export function AgentsSidebar({
   onOpenTask: (task: Task) => void
   onRemove: (row: AgentRow) => void
   onClose: () => void
+  /** Drag the panel by its header, or right-click it for the edges (`usePanelMove`). */
+  headerProps?: PanelHeaderProps
 }): ReactNode {
   const waiting = rows.filter((row) => row.agent?.state === 'waiting').length
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-l border-edge bg-chrome">
-      <header className="flex items-center gap-2 border-b border-edge px-3 py-3">
+    <aside className="flex min-h-0 flex-1 flex-col bg-chrome">
+      <header
+        {...headerProps}
+        className="flex select-none items-center gap-2 border-b border-edge px-3 py-3"
+      >
         <h2 className="text-[12.5px] font-semibold tracking-[-0.005em]">Agents</h2>
         <span className="rounded-md bg-raised px-1.5 py-[1px] font-mono text-[10.5px] text-dim">
           {rows.length}
@@ -186,12 +193,8 @@ export function AgentsSidebar({
             {waiting} waiting
           </span>
         ) : null}
-        <Button
-          variant="subtle"
-          className="ml-auto px-2"
-          onClick={onClose}
-          aria-label="Hide agents"
-        >
+        <span className="ml-auto" />
+        <Button variant="subtle" className="px-2" onClick={onClose} aria-label="Hide agents">
           ✕
         </Button>
       </header>

@@ -159,6 +159,10 @@ Six tests on throwaway profiles, run with the others and in the packaged app too
 Every `expectNoErrors()` also fails on an `uncaughtException` or `unhandledRejection` in the main
 process output since launch, whatever a step's `allowed` pattern excuses.
 
+`e2e/panels.e2e.ts` drags the terminal panel by its header to the right, resizes it, opens its
+right-click menu, moves it left and the agents sidebar to the bottom (which then spans only the
+width beside the terminal), and relaunches on the same profile to check that the layout came back.
+
 `e2e/nativeTerminal.e2e.ts` runs a shell in a Styr Terminal tab in the same sandboxed window. The
 engine is private, so it is skipped unless `STYR_TERMINAL_PATH` names a build of its package
 (`terminal-engine.md`); run it locally with that set before changing the preload, the sandbox or

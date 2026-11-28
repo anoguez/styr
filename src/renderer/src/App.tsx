@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { buildInbox } from '@core/inbox.js'
 import { resolveTemplateFor } from '@core/prompt.js'
 import {
@@ -27,6 +27,7 @@ import { ViewTabs } from './components/header/ViewTabs.js'
 import { Inbox } from './components/Inbox.js'
 import { Worklog } from './components/worklog/Worklog.js'
 import { OrchestrateDialog, StopAutoRunDialog } from './components/OrchestrateDialog.js'
+import { PanelDropOverlay, PanelGrid, PanelMenu, usePanelMove } from './components/PanelGrid.js'
 import { PerformanceDialog } from './components/PerformanceDialog.js'
 import { ProblemsBanner } from './components/ProblemsBanner.js'
 import { RestoreTabsBanner } from './components/RestoreTabsBanner.js'
@@ -52,7 +53,7 @@ import { useDispatch } from './hooks/useDispatch.js'
 import { usePendingActivation } from './hooks/usePendingActivation.js'
 import { useSettings } from './hooks/useSettings.js'
 import { useTasks } from './hooks/useTasks.js'
-import { useTerminalHeight } from './hooks/useTerminalHeight.js'
+import { usePanelLayout } from './hooks/usePanelLayout.js'
 import { useRemoteSessions, useTerminalSessions } from './hooks/useTerminalSessions.js'
 import { useTheme } from './hooks/useTheme.js'
 import { useReleaseNotes, useUpdates } from './hooks/useUpdates.js'
@@ -147,7 +148,9 @@ export default function App(): ReactNode {
   const [terminalExpanded, setTerminalExpanded] = useState(false)
   /** Request changes just went out: the toast that confirms it after the dialog closed. */
   const [reviewSent, setReviewSent] = useState<{ sent: ReviewSent; task: Task } | null>(null)
-  const { height: terminalHeight, startResize } = useTerminalHeight(terminalOpen)
+  const panels = usePanelLayout(activeWorkspaceId)
+  const panelArea = useRef<HTMLDivElement>(null)
+  const panelMove = usePanelMove(panelArea, panels.move)
   const agentRows = useMemo(
     () => agentRowsFor(tasks, shown, sessions, activeWorkspaceId),
     [tasks, shown, sessions, activeWorkspaceId]
@@ -216,9 +219,18 @@ export default function App(): ReactNode {
       workspaceNames,
       terminalOpen,
       agentsOpen,
+      terminalDock: panels.layout.terminal.dock,
+      agentsDock: panels.layout.agents.dock,
       whatsNewVersion: appInfo?.isPackaged ? appInfo.version : undefined
     },
-    actions: { switchWorkspace: switchTo, archiveTask, launchAgent: launch, activateTask }
+    actions: {
+      switchWorkspace: switchTo,
+      archiveTask,
+      launchAgent: launch,
+      activateTask,
+      movePanel: panels.move,
+      resetPanels: panels.reset
+    }
   })
 
   if (!settings) return <div className="p-6 text-muted">Loading…</div>
@@ -293,12 +305,16 @@ export default function App(): ReactNode {
             <ProblemsBanner problems={problems} />
             <RestoreTabsBanner restore={tabRestore} />
 
-            <div className="flex min-h-0 flex-1">
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                <main
-                  className="flex min-h-0 flex-1 flex-col"
-                  hidden={terminalOpen && terminalExpanded}
-                >
+            {/* The board and both panels: one grid, so moving a panel never remounts it. */}
+            <PanelGrid
+              areaRef={panelArea}
+              layout={panels.layout}
+              open={{ terminal: terminalOpen, agents: agentsOpen }}
+              terminalFills={terminalExpanded}
+              onResize={panels.resize}
+              overlay={<PanelDropOverlay drag={panelMove.drag} />}
+              board={
+                <main className="flex min-h-0 flex-1 flex-col">
                   {loading ? (
                     <p className="p-6 text-dim">Loading board…</p>
                   ) : view === 'worklog' ? (
@@ -344,59 +360,45 @@ export default function App(): ReactNode {
                     />
                   )}
                 </main>
-
-                {terminalOpen ? (
-                  <>
-                    {terminalExpanded ? null : (
-                      <div
-                        className="h-1 shrink-0 cursor-row-resize bg-edge/60 hover:bg-accent/60"
-                        onMouseDown={startResize}
-                      />
-                    )}
-                    <div
-                      className={terminalExpanded ? 'min-h-0 flex-1' : 'shrink-0'}
-                      style={terminalExpanded ? undefined : { height: terminalHeight }}
-                    >
-                      <TerminalPanel
-                        sessions={terminals.strip}
-                        detachedCount={terminals.detached.length}
-                        agents={agents}
-                        shownAgents={shown}
-                        activeId={activeSession}
-                        expanded={terminalExpanded}
-                        theme={activeTheme}
-                        bindings={bindings}
-                        nativeTerminal={settings?.experimental.nativeTerminal ?? false}
-                        agentTabView={settings?.agentTabView ?? 'terminal'}
-                        taskTitles={taskTitles}
-                        taskStates={taskStates}
-                        diffStats={diffStats}
-                        onShowChanges={(taskId) => {
-                          const task = allTasks.find((candidate) => candidate.id === taskId)
-                          if (task) showChanges(task)
-                        }}
-                        onAskReview={launcher.askReview}
-                        onAskFork={launcher.askFork}
-                        workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
-                        onToggleExpand={() => setTerminalExpanded((open) => !open)}
-                        onSelect={selectSession}
-                        onReorder={terminals.reorder}
-                        onNewSession={(cwd) => void newShell(cwd)}
-                        onCreateTask={launcher.createTaskFromTerminal}
-                        onLaunchTask={(id) => launcher.launchAgent(id)}
-                        onOpenTaskById={(id) =>
-                          void window.api.tasks.get(id).then((task) => task && editTask(task))
-                        }
-                        onCloseSession={(id) => void closeSession(id)}
-                        onDetachSession={terminals.detach}
-                        onOpenTask={editTask}
-                      />
-                    </div>
-                  </>
-                ) : null}
-              </div>
-
-              {agentsOpen ? (
+              }
+              terminal={
+                <TerminalPanel
+                  sessions={terminals.strip}
+                  detachedCount={terminals.detached.length}
+                  agents={agents}
+                  shownAgents={shown}
+                  activeId={activeSession}
+                  expanded={terminalExpanded}
+                  theme={activeTheme}
+                  bindings={bindings}
+                  nativeTerminal={settings?.experimental.nativeTerminal ?? false}
+                  agentTabView={settings?.agentTabView ?? 'terminal'}
+                  taskTitles={taskTitles}
+                  taskStates={taskStates}
+                  diffStats={diffStats}
+                  onShowChanges={(taskId) => {
+                    const task = allTasks.find((candidate) => candidate.id === taskId)
+                    if (task) showChanges(task)
+                  }}
+                  onAskReview={launcher.askReview}
+                  onAskFork={launcher.askFork}
+                  workspaces={{ activeId: activeWorkspaceId, names: workspaceNames }}
+                  onToggleExpand={() => setTerminalExpanded((open) => !open)}
+                  onSelect={selectSession}
+                  onReorder={terminals.reorder}
+                  onNewSession={(cwd) => void newShell(cwd)}
+                  onCreateTask={launcher.createTaskFromTerminal}
+                  onLaunchTask={(id) => launcher.launchAgent(id)}
+                  onOpenTaskById={(id) =>
+                    void window.api.tasks.get(id).then((task) => task && editTask(task))
+                  }
+                  onCloseSession={(id) => void closeSession(id)}
+                  onDetachSession={terminals.detach}
+                  onOpenTask={editTask}
+                  headerProps={panelMove.headerProps('terminal')}
+                />
+              }
+              agents={
                 <AgentsSidebar
                   rows={agentRows}
                   selectedTaskId={selectedAgentTaskId(agentRows, activeSession, terminalOpen)}
@@ -406,9 +408,17 @@ export default function App(): ReactNode {
                   onRemove={(row) => dispatch({ type: 'confirmRemoveAgent', row })}
                   onClose={() => dispatch({ type: 'closeAgents' })}
                   onActivate={(row) => activateTask(row.task.id)}
+                  headerProps={panelMove.headerProps('agents')}
                 />
-              ) : null}
-            </div>
+              }
+            />
+            <PanelMenu
+              request={panelMove.menu}
+              dock={(panel) => panels.layout[panel].dock}
+              onMove={panels.move}
+              onReset={panels.reset}
+              onClose={panelMove.closeMenu}
+            />
 
             <StatusBar
               agentsOpen={agentsOpen}
