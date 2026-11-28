@@ -283,8 +283,12 @@ be narrow, and the composer has no button for the CLI's own view: the tab's Chat
 is the way there. The composer
 keeps the `❯` input's keys (`useCommandInput` in `CommandInput.tsx`: history, the slash-command
 menu, Escape to interrupt, image paste), which the native engine's shell input shares. Files dropped on
-the chat go into the composer at the cursor as paths, quoted in the tab's shell dialect as the
-terminal quotes a drop (`dropFilesIntoChat`), so the person sees them before sending.
+the chat (`dropFilesIntoChat`) are quoted in the tab's shell dialect, as the terminal quotes a drop.
+An image, for a CLI that takes images (`pasteImageKey`), becomes a thumbnail card above the field.
+The thumbnail is a `data:` URL, which the CSP allows (`blob:` it does not), and the card can be
+removed. On send its path goes into the CLI's own input as one bracketed paste (`imagesPaste`), so
+Claude Code attaches it, and the prompt is then typed after it. Any other file goes into the field
+at the cursor as its path.
 
 - `lib/agentChat/useAgentChat.ts` — the conversation (`agent:conversation` and its pushes), prompt
   sending (`agent:prompt`, else typed), approvals (`agent:approval`, else keys), pasted images and

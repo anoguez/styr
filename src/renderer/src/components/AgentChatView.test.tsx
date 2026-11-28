@@ -54,6 +54,9 @@ const chat = (extra: Partial<AgentChat> = {}): AgentChat => ({
   adapter: claude,
   conversation,
   attachedImages: 0,
+  images: [],
+  attachImages: undefined,
+  removeImage: noop,
   ready: true,
   tuiRequested: false,
   blocks: [],
@@ -278,33 +281,87 @@ describe('xterm.js chat overlay', () => {
 describe('dropping files on the chat', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  const drop = (count: number) => ({
-    dataTransfer: { files: Array.from({ length: count }, () => ({}) as File) } as never,
+  const file = (name: string, type: string): File => ({ name, type }) as File
+  const drop = (files: File[]) => ({
+    dataTransfer: { files } as never,
     preventDefault: vi.fn()
   })
+  const paths = new Map<File, string>()
+  const pathsFor = (files: File[]): string[] => files.map((f) => paths.get(f) ?? '')
 
-  it('puts the quoted paths into the message field at the cursor', () => {
+  it('puts the quoted path of a file that is not an image into the message field', () => {
     const execCommand = vi.fn()
     vi.stubGlobal('document', { execCommand })
     const input = { focus: vi.fn() } as unknown as HTMLTextAreaElement
-    const event = drop(2)
-    dropFilesIntoChat(event, input, 'posix', () => ['/tmp/a.png', '/tmp/my file.txt'])
+    const notes = file('my notes.txt', 'text/plain')
+    paths.set(notes, '/tmp/my notes.txt')
+    const attach = vi.fn()
+    const event = drop([notes])
+    dropFilesIntoChat(event, input, 'posix', attach, pathsFor)
     expect(event.preventDefault).toHaveBeenCalled()
     expect(input.focus).toHaveBeenCalled()
-    expect(execCommand).toHaveBeenCalledWith(
-      'insertText',
-      false,
-      "'/tmp/a.png' '/tmp/my file.txt' "
-    )
+    expect(execCommand).toHaveBeenCalledWith('insertText', false, "'/tmp/my notes.txt' ")
+    expect(attach).not.toHaveBeenCalled()
+  })
+
+  it('makes an image a card, and its path text only when the CLI takes no images', () => {
+    const execCommand = vi.fn()
+    vi.stubGlobal('document', { execCommand })
+    const input = { focus: vi.fn() } as unknown as HTMLTextAreaElement
+    const shot = file('shot.png', 'image/png')
+    paths.set(shot, '/tmp/shot.png')
+    const attach = vi.fn()
+    dropFilesIntoChat(drop([shot]), input, 'posix', attach, pathsFor)
+    expect(attach).toHaveBeenCalledWith([
+      { name: 'shot.png', quoted: "'/tmp/shot.png'", file: shot }
+    ])
+    expect(execCommand).not.toHaveBeenCalled()
+    dropFilesIntoChat(drop([shot]), input, 'posix', undefined, pathsFor)
+    expect(execCommand).toHaveBeenCalledWith('insertText', false, "'/tmp/shot.png' ")
   })
 
   it('leaves a drag without files, or a chat without a field, alone', () => {
     const execCommand = vi.fn()
     vi.stubGlobal('document', { execCommand })
-    const none = drop(0)
-    dropFilesIntoChat(none, null, 'posix', () => [])
+    const none = drop([])
+    dropFilesIntoChat(none, null, 'posix', undefined, pathsFor)
     expect(none.preventDefault).not.toHaveBeenCalled()
-    dropFilesIntoChat(drop(1), null, 'posix', () => ['/tmp/a.png'])
+    const shot = file('shot.png', 'image/png')
+    paths.set(shot, '/tmp/shot.png')
+    const attach = vi.fn()
+    dropFilesIntoChat(drop([shot]), null, 'posix', attach, pathsFor)
     expect(execCommand).not.toHaveBeenCalled()
+    expect(attach).not.toHaveBeenCalled()
+  })
+
+  it('draws dropped images as cards above the field, with a way to remove one', () => {
+    const html = renderToStaticMarkup(
+      createElement(AgentBlockList, {
+        blocks: [],
+        working: false,
+        label: 'Claude Code',
+        approval: null,
+        inputRef: createRef<HTMLTextAreaElement>(),
+        history: [],
+        images: [
+          {
+            id: 'i1',
+            name: 'shot.png',
+            quoted: "'/tmp/shot.png'",
+            preview: 'data:image/png;base64,AA'
+          },
+          { id: 'i2', name: 'later.png', quoted: "'/tmp/later.png'" }
+        ],
+        onRemoveImage: noop,
+        onSubmit: noop,
+        onInterrupt: noop,
+        onAnswer: noop,
+        onShowTui: noop
+      })
+    )
+    expect(html).toContain('aria-label="Images to send"')
+    expect(html).toContain('src="data:image/png;base64,AA"')
+    expect(html).toContain('aria-label="Remove shot.png"')
+    expect(html).not.toContain('/tmp/shot.png')
   })
 })

@@ -1,3 +1,4 @@
+import type { ChatImage } from '../lib/agentChat/agentChat.js'
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type {
   AgentMessageBlock,
@@ -63,6 +64,8 @@ export function AgentBlockList({
   history,
   commands,
   attachedImages = 0,
+  images = NO_IMAGES,
+  onRemoveImage,
   onSubmit,
   onInterrupt,
   onAnswer,
@@ -81,6 +84,9 @@ export function AgentBlockList({
   commands?: AgentCommand[]
   /** Images pasted into the CLI's own input, which go with the next prompt. */
   attachedImages?: number
+  /** Images dropped on the chat, drawn as cards above the field until the next prompt. */
+  images?: ChatImage[]
+  onRemoveImage?: (id: string) => void
   /** A prompt (or `/command`) as typed. */
   onSubmit: (text: string) => void
   onInterrupt: () => void
@@ -177,6 +183,8 @@ export function AgentBlockList({
         working={working}
         question={approval?.inTui ?? false}
         attachedImages={attachedImages}
+        images={images}
+        onRemoveImage={onRemoveImage}
         inputRef={inputRef}
         history={history}
         commands={commands}
@@ -600,6 +608,46 @@ function Approval({
   )
 }
 
+const NO_IMAGES: ChatImage[] = []
+
+/** The images going with the next prompt, as thumbnails with a way to take one back. */
+function ImageCards({
+  images,
+  onRemove
+}: {
+  images: ChatImage[]
+  onRemove?: (id: string) => void
+}): ReactNode {
+  return (
+    <ul aria-label="Images to send" className="flex flex-wrap gap-2 pb-2">
+      {images.map((image) => (
+        <li
+          key={image.id}
+          title={image.name}
+          className="group border-edge-strong bg-card relative size-16 shrink-0 overflow-hidden rounded-[10px] border"
+        >
+          {image.preview ? (
+            <img src={image.preview} alt={image.name} className="size-full object-cover" />
+          ) : (
+            <span className="text-faint grid size-full place-items-center text-[10px]">…</span>
+          )}
+          {onRemove ? (
+            <button
+              type="button"
+              aria-label={`Remove ${image.name}`}
+              title="Remove"
+              className="bg-panel/90 text-dim hover:text-ink absolute top-1 right-1 grid size-5 place-items-center rounded-full text-[11px] opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              onClick={() => onRemove(image.id)}
+            >
+              ✕
+            </button>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 /**
  * The phone's composer: a note on what happens to a message now, a rounded field and a round Send
  * button. Enter sends and Shift+Enter breaks the line; ↑ steps back through history, `/` opens the
@@ -610,6 +658,8 @@ function Composer({
   working,
   question,
   attachedImages,
+  images,
+  onRemoveImage,
   inputRef,
   history,
   commands,
@@ -622,6 +672,8 @@ function Composer({
   /** The agent asked a question only its own interface answers. */
   question: boolean
   attachedImages: number
+  images: ChatImage[]
+  onRemoveImage?: (id: string) => void
   inputRef: RefObject<HTMLTextAreaElement | null>
   history: string[]
   commands?: AgentCommand[]
@@ -670,6 +722,7 @@ function Composer({
             ) : null}
           </div>
         ) : null}
+        {images.length > 0 ? <ImageCards images={images} onRemove={onRemoveImage} /> : null}
         <div className="flex items-end gap-2">
           <div className="relative min-w-0 flex-1">
             {choice ? <CommandMenu commands={matches} picked={choice} onPick={input.pick} /> : null}

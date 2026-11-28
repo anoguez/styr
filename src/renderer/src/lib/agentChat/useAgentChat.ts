@@ -13,6 +13,8 @@ import { approvalRequest } from './agentApproval.js'
 import {
   answerApproval,
   commandSettled,
+  imagesPaste,
+  type ChatImage,
   sendChatPrompt,
   watchConversation,
   windowChatPort,
@@ -74,7 +76,13 @@ export function useAgentChat({
   )
   // Images pasted into the CLI's own input wait there for the prompt, so it must be typed too.
   const [attachedImages, setAttachedImages] = useState(0)
-  useEffect(() => setAttachedImages(0), [sessionId])
+  // Images dropped on the chat: shown as cards, pasted into the CLI's input on the next prompt.
+  const [images, setImages] = useState<ChatImage[]>([])
+  useEffect(() => {
+    setAttachedImages(0)
+    setImages([])
+  }, [sessionId])
+  const nextImage = useRef(0)
 
   /** Types a prompt into the CLI's own input, for a CLI without a channel or when it refused. */
   const typePrompt = (text: string): void => {
@@ -110,15 +118,17 @@ export function useAgentChat({
   )
 
   const onSubmit = (text: string): void => {
+    if (images.length > 0) write(imagesPaste(images))
     sendChatPrompt({
       port,
       terminalId: sessionId,
       text,
       conversation,
-      attachedImages,
+      attachedImages: attachedImages + images.length,
       type: typePrompt
     })
     setAttachedImages(0)
+    setImages([])
     if (isSlashCommand(text) && run && conversation) {
       commandSent.current = { at: conversation.at, messages: conversation.messages.length }
       setTuiFor(run)
@@ -133,11 +143,33 @@ export function useAgentChat({
       }
     : undefined
 
+  /** Adds dropped images as cards, reading each one's preview as it loads. */
+  const attachImages = (dropped: { name: string; quoted: string; file: Blob }[]): void => {
+    const added = dropped.map(({ name, quoted, file }) => {
+      const id = `image-${nextImage.current++}`
+      const reader = new FileReader()
+      reader.onload = () => {
+        const preview = typeof reader.result === 'string' ? reader.result : undefined
+        setImages((current) =>
+          current.map((image) => (image.id === id ? { ...image, preview } : image))
+        )
+      }
+      reader.readAsDataURL(file)
+      return { id, name, quoted }
+    })
+    setImages((current) => [...current, ...added])
+  }
+
   return {
     provider,
     adapter,
     conversation,
     attachedImages,
+    /** Images dropped on the chat, going with the next prompt. */
+    images,
+    /** Absent when the CLI takes no images: a dropped image is then only its path. */
+    attachImages: adapter?.pasteImageKey ? attachImages : undefined,
+    removeImage: (id: string) => setImages((current) => current.filter((image) => image.id !== id)),
     /** An agent runs, its provider can be drawn, and its conversation is being written. */
     ready,
     /** A slash command sent from the chat asked for the CLI's own interface for this run. */

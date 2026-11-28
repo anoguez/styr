@@ -9,6 +9,7 @@ import {
 import { syntaxFor, type ShellDialect } from '@core/shell.js'
 import { AGENT_PROVIDER_LABELS } from '@core/types.js'
 import type { AgentProviderId } from '@core/providers/types.js'
+import { isImageFile } from '../lib/agentChat/agentChat.js'
 import {
   useAgentChat,
   useAgentConversation,
@@ -40,28 +41,36 @@ export function chatGap(
 }
 
 /**
- * Files dropped on the chat: their paths, quoted in the tab's shell dialect as the terminal quotes
- * a drop, go into the message field at the cursor. The person sees what will be sent, and the
- * prompt reaches the CLI the way any chat prompt does. Nothing happens without a field to fill.
+ * Files dropped on the chat. An image becomes a card in the composer (`attachImages`) when the CLI
+ * takes images; any other file, or every file for a CLI that takes none, goes into the message
+ * field at the cursor as its path. Paths are quoted in the tab's shell dialect, as the terminal
+ * quotes a drop. Nothing happens without a field to fill.
  */
 export function dropFilesIntoChat(
   event: Pick<DragEvent, 'dataTransfer' | 'preventDefault'>,
   input: HTMLTextAreaElement | null,
   dialect: ShellDialect | undefined,
+  attachImages?: (images: { name: string; quoted: string; file: Blob }[]) => void,
   pathsFor: (files: File[]) => string[] = (files) => window.api.terminal.pathsForFiles(files)
 ): void {
   const files = Array.from(event.dataTransfer.files)
   if (files.length === 0) return
   event.preventDefault()
-  const paths = pathsFor(files)
-  if (paths.length === 0 || !input) return
+  if (!input) return
+  const quote = (path: string): string => syntaxFor(dialect).quote(path)
+  const images: { name: string; quoted: string; file: Blob }[] = []
+  const others: string[] = []
+  for (const file of files) {
+    const [path] = pathsFor([file])
+    if (!path) continue
+    if (attachImages && isImageFile(file))
+      images.push({ name: file.name, quoted: quote(path), file })
+    else others.push(path)
+  }
+  if (images.length > 0) attachImages?.(images)
   input.focus()
   // insertText keeps the field's undo and fires its input event, so React sees the change.
-  document.execCommand(
-    'insertText',
-    false,
-    droppedText(paths, (path) => syntaxFor(dialect).quote(path))
-  )
+  if (others.length > 0) document.execCommand('insertText', false, droppedText(others, quote))
 }
 
 /** A drag carrying files may drop on the chat (it copies their paths, it moves nothing). */
@@ -176,7 +185,9 @@ export function AgentChatPane({
       aria-label={`${label} chat`}
       className="bg-surface text-ink h-full w-full overflow-hidden"
       onDragOver={allowFileDrop}
-      onDrop={(event) => dropFilesIntoChat(event, gap ? null : inputRef.current, dialect)}
+      onDrop={(event) =>
+        dropFilesIntoChat(event, gap ? null : inputRef.current, dialect, agent.attachImages)
+      }
     >
       {gap ? (
         <ChatGap text={gap} label={label} onShowTerminal={onShowTerminal} />
@@ -190,6 +201,8 @@ export function AgentChatPane({
           history={agent.history}
           commands={agent.conversation?.commands}
           attachedImages={agent.attachedImages}
+          images={agent.images}
+          onRemoveImage={agent.removeImage}
           onSubmit={agent.onSubmit}
           onInterrupt={agent.onInterrupt}
           onAnswer={agent.onAnswer}

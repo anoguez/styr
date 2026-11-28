@@ -1,3 +1,4 @@
+import { pasteSequence } from '@core/agentPrompt.js'
 import type { AgentConversation, ApprovalOption } from '@core/agentConversation.js'
 import { promptRoute } from '../nativeTerminal/commandInput.js'
 
@@ -124,4 +125,28 @@ export interface CommandSent {
 export function commandSettled(sent: CommandSent, conversation: AgentConversation | null): boolean {
   if (!conversation || conversation.at === sent.at) return false
   return conversation.working || conversation.messages.length !== sent.messages
+}
+
+/** An image dropped on the chat, waiting in the composer for the next prompt. */
+export interface ChatImage {
+  id: string
+  name: string
+  /** Its path, quoted for the tab's shell, as a terminal drop pastes it. */
+  quoted: string
+  /** A data URL to draw its card from (the CSP allows `data:`), once read. */
+  preview?: string
+}
+
+/** Whether a dropped file is an image the chat shows as a card rather than as its path. */
+export function isImageFile(file: Pick<File, 'type'>): boolean {
+  return file.type.startsWith('image/')
+}
+
+/**
+ * What the CLI's own input gets for the images going with a prompt: their paths as one bracketed
+ * paste, as a drop on the terminal pastes them. Claude Code turns a pasted image path into an
+ * attachment; the prompt is then typed after them, since the images only go with a typed prompt.
+ */
+export function imagesPaste(images: readonly Pick<ChatImage, 'quoted'>[]): string {
+  return pasteSequence(images.map((image) => image.quoted).join(' ') + ' ', true)
 }
