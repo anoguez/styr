@@ -103,9 +103,16 @@ export const SECTIONS = [
     scope: 'workspace',
     sub: 'Environment',
     blurb: 'Where agents work, which shell they get, and how files open.',
-    keys: ['defaultRepoPath', 'worktreeLocation', 'shell', 'restoreTabs', 'openFilesWith'],
+    keys: [
+      'defaultRepoPath',
+      'worktreeLocation',
+      'shell',
+      'restoreTabs',
+      'agentTabView',
+      'openFilesWith'
+    ],
     words:
-      'working directory worktree location node_modules shell terminal tabs restore open files editor app'
+      'working directory worktree location node_modules shell terminal tabs restore open files editor app agent chat view'
   },
   {
     id: 'remote-sharing',

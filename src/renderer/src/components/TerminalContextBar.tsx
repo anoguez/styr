@@ -68,6 +68,7 @@ export function ContextBar({
   onReview,
   onCreatePr,
   reviewHint,
+  chat,
   children
 }: {
   runtime: TerminalRuntimeState
@@ -106,6 +107,8 @@ export function ContextBar({
   /** Offered once a task in review has passed and its agent is idle. */
   onCreatePr?: () => void
   reviewHint: string
+  /** An agent tab's Chat switch; absent for a shell. */
+  chat?: ReactNode
   children?: ReactNode
 }): ReactNode {
   const cwd = runtime.cwd || fallbackCwd
@@ -170,6 +173,8 @@ export function ContextBar({
           <span className="truncate">{branch}</span>
         </button>
       ) : null}
+
+      {chat}
 
       {usage}
 

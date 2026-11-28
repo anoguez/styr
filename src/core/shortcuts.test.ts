@@ -81,6 +81,7 @@ describe('where Control is the primary modifier (Windows)', () => {
     // A command bound to Ctrl+Shift+letter itself keeps it.
     expect(commandForEvent(DEFAULT_SHORTCUTS, shifted('c'), inTerminal)).toBe('terminalCopyOutput')
     expect(commandForEvent(DEFAULT_SHORTCUTS, shifted('p'), inTerminal)).toBe('commandPalette')
+    expect(commandForEvent(DEFAULT_SHORTCUTS, shifted('m'), inTerminal)).toBe('terminalChat')
   })
 
   it('still runs non-letter combinations in the terminal', () => {

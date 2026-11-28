@@ -366,6 +366,7 @@ export default function App(): ReactNode {
                         theme={activeTheme}
                         bindings={bindings}
                         nativeTerminal={settings?.experimental.nativeTerminal ?? false}
+                        agentTabView={settings?.agentTabView ?? 'terminal'}
                         taskTitles={taskTitles}
                         taskStates={taskStates}
                         diffStats={diffStats}

@@ -193,6 +193,11 @@ export interface ConversationAdapter {
    * Ctrl+V); absent when an image pasted in Styr's input cannot reach the CLI.
    */
   pasteImageKey?: string
+  /**
+   * A tool whose permission request is really a question the CLI asks in its own interface (Claude
+   * Code's AskUserQuestion): allowing or refusing it answers nothing, so Styr only offers the TUI.
+   */
+  asksInTui?: (tool: string) => boolean
 }
 
 const MAX_MESSAGES = 300

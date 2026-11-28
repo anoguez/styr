@@ -80,7 +80,7 @@ render ends — `gridRef`, `selectionRef`, `bindingsRef`, the `on*Ref` callbacks
 | File (under `lib/nativeTerminal/` unless noted) | Owns                                                                                                                                                        |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `useNativeEngine.ts`                            | attach/detach per `sessionId`, frame and block-list subscriptions, cell measure, resize, `TerminalHandle`, fullscreen/block-list reports, fallback, `write` |
-| `useAgentSession.ts`, `agentApproval.ts`        | the agent CLI's conversation, TUI vs Styr view, prompt sending, approval card (`approvalRequest` is pure)                                                   |
+| `useAgentSession.ts`                            | which agent the block list runs; binds it to `lib/agentChat/useAgentChat.ts` (shared with xterm.js, see Chat view) and the tab's Chat switch                |
 | `useGridSelection.ts`                           | the grid's selection (state and ref), clearing, its text from the engine's buffer                                                                           |
 | `useGridInput.ts`                               | keys, clipboard, paste, file drop, IME composition, focus and focus reporting                                                                               |
 | `useGridPointer.ts`, `pointerMath.ts`           | wheel, hover, mouse reporting, selection drag, link click; `pointerMath` is the pure part (wheel lines, selection start, dropped text)                      |
@@ -259,6 +259,33 @@ while the agent waits, and Styr's `❯` input. It is provider-agnostic end to en
   the conversation brings Styr's back.
 - Styr's mod is put first in `CLAUDE_CODE_PLUGIN_DIRS`: of two plugins with one name the earlier
   loads, and an inherited list may hold another Styr install's copy.
+
+## Chat view (both engines)
+
+Every agent tab (a task session, or `claude`/`codex` typed into a shell) has a **Chat** switch in
+its context bar (`ChatSwitch`): on draws the conversation as a chat, off shows the terminal. Shell
+tabs have none. The chat is `AgentBlockList` on either engine, fed by one hook:
+
+- `lib/agentChat/useAgentChat.ts` — the conversation (`agent:conversation` and its pushes), prompt
+  sending (`agent:prompt`, else typed), approvals (`agent:approval`, else keys), pasted images and
+  a slash command's "show the TUI until the conversation moves on". Its pure half is
+  `agentChat.ts` (`watchConversation`, `sendChatPrompt`, `answerApproval`, `commandSettled`, over
+  an `AgentChatPort`); `agentApproval.ts` builds the approval card.
+- **xterm.js**: `TerminalEngineView` keeps `TerminalView` in the same wrapper whatever happens, so
+  it never remounts; `XtermAgentChat` (`components/AgentChatView.tsx`) lies over it while Chat is
+  on, and the terminal is only made `invisible`, so its scrollback, scroll position and PTY stay.
+  The chat stays mounted once shown and keeps its own scroll. Whichever view shows takes focus.
+- **Styr Terminal**: `NativeTerminalView` takes the switch as `chat`; agent mode is
+  `ready && chat && !tuiRequested`. "<agent> view" and "Answer in <agent>" turn the switch off.
+- What the chat cannot draw says so with **Switch to Terminal** (`chatGap`: no adapter, the agent
+  not running, no conversation yet). A question the agent asks (the file's `question`, see
+  Questions above; or, from an older mod, an approval whose tool `ConversationAdapter.asksInTui`
+  names) offers only "Answer in Terminal": Allow/Deny or the status's keys would answer nothing, or
+  pick an option. Drawing the question card in the chat is a follow-up to TASK-0030.
+- The switch is remembered per tab (`lib/agentChat/agentView.ts`, by session id, in memory and
+  `localStorage`); a tab never switched opens as Settings → Folders & terminal → "Open agent tabs
+  in" says (`agentTabView`, global, default Terminal). `terminalChat` (⌘⇧M / Ctrl+Shift+M; Ctrl+Shift+T is New tab inside a terminal where `mod` is Ctrl)
+  toggles it.
 
 ## Capabilities and known limitations (experimental level)
 

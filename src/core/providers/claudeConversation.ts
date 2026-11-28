@@ -117,5 +117,7 @@ export const claudeConversation: ConversationAdapter = {
   promptText,
   describeTool,
   // Claude Code reads an image off the clipboard on Ctrl+V (Cmd+V pastes only text).
-  pasteImageKey: '\x16'
+  pasteImageKey: '\x16',
+  // TODO(TASK-0030): draw AskUserQuestion's own question card once the feed carries `question`.
+  asksInTui: (tool) => tool === 'AskUserQuestion'
 }
